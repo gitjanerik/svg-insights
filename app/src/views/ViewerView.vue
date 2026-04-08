@@ -54,8 +54,9 @@ const strokeScales = { thin: 0.5, medium: 1.0, bold: 2.0 }
 
 const colorized = ref(false)
 const colorizing = ref(false)
-const fillDelay = ref(0.5)
-const fillsData = ref([])  // computed fills from photo
+const fillDelay = ref(0.1)
+const fillBatch = ref(5)
+const fillsData = ref([])
 const revealedCount = ref(0)
 let revealTimer = null
 
@@ -150,26 +151,25 @@ async function startColorize(fills = null) {
     if (container) {
       const paths = container.querySelectorAll('.fill-region')
       const delayMs = fillDelay.value * 1000
+      const batch = fillBatch.value
       paths.forEach(p => {
         p.style.opacity = '0'
-        p.style.transition = `opacity ${Math.max(300, delayMs)}ms ease-in-out`
+        p.style.transition = `opacity ${Math.max(200, delayMs)}ms ease-in-out`
       })
 
       if (delayMs === 0) {
-        // Instant reveal
         paths.forEach(p => { p.style.opacity = '1' })
         revealedCount.value = paths.length
       } else {
-        // Staggered reveal
         let i = 0
         revealTimer = setInterval(() => {
-          if (i < paths.length) {
-            paths[i].style.opacity = '1'
-            i++
-            revealedCount.value = i
-          } else {
-            clearInterval(revealTimer)
+          const end = Math.min(i + batch, paths.length)
+          for (let j = i; j < end; j++) {
+            paths[j].style.opacity = '1'
           }
+          i = end
+          revealedCount.value = i
+          if (i >= paths.length) clearInterval(revealTimer)
         }, delayMs)
       }
     }
@@ -454,14 +454,26 @@ onMounted(() => {
             <template v-if="activeTab === 'color'">
               <!-- Delay slider -->
               <div>
-                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Animasjon</label>
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Hastighet</label>
                 <div class="flex items-center gap-2">
-                  <span class="text-[10px] text-white/30 shrink-0">0s</span>
-                  <input v-model.number="fillDelay" type="range" min="0" max="2" step="0.5"
+                  <span class="text-[10px] text-white/30 shrink-0">0</span>
+                  <input v-model.number="fillDelay" type="range" min="0" max="1" step="0.1"
                     class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
-                  <span class="text-[10px] text-white/30 shrink-0">2s</span>
+                  <span class="text-[10px] text-white/30 shrink-0">1s</span>
                 </div>
-                <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillDelay === 0 ? 'Umiddelbart' : fillDelay + 's mellom hvert omrade' }}</p>
+                <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillDelay === 0 ? 'Umiddelbart' : (fillDelay * 1000) + 'ms mellom hver gruppe' }}</p>
+              </div>
+
+              <!-- Batch size slider -->
+              <div>
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Omrader per steg</label>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] text-white/30 shrink-0">1</span>
+                  <input v-model.number="fillBatch" type="range" min="1" max="100" step="1"
+                    class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                  <span class="text-[10px] text-white/30 shrink-0">100</span>
+                </div>
+                <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillBatch }} omrade{{ fillBatch > 1 ? 'r' : '' }} samtidig</p>
               </div>
 
               <!-- Action buttons -->
