@@ -11,6 +11,23 @@
 // ---------------------------------------------------------------------------
 
 /**
+ * Insert an attribute before the closing `>` or `/>` of an element tag.
+ */
+function insertAttr(tag, attr) {
+  return tag.replace(/\s*\/?>$/, ` ${attr}$&`.replace(/\s+\/>/, ' />').replace(/\s+>/, ' >'))
+}
+
+/**
+ * Safely append an attribute to an SVG tag, handling both `>` and `/>` endings.
+ */
+function appendAttr(tag, attr) {
+  if (tag.endsWith('/>')) {
+    return tag.slice(0, -2) + ` ${attr}/>`;
+  }
+  return tag.slice(0, -1) + ` ${attr}>`;
+}
+
+/**
  * Simple linear congruential generator (LCG) for deterministic "random"
  * jitter so that repeated calls with the same seed produce identical output.
  *
@@ -118,13 +135,11 @@ export function setDashPattern(svgString, pattern) {
   }
 
   // For each <path ...> tag, either update existing or append new attribute.
-  return svgString.replace(/<path\b[^>]*>/g, (tag) => {
+  return svgString.replace(/<path\b[^>]*\/?>/g, (tag) => {
     if (/stroke-dasharray="[^"]*"/.test(tag)) {
-      // Update existing attribute.
       return tag.replace(/stroke-dasharray="[^"]*"/, `stroke-dasharray="${pattern}"`);
     }
-    // Append before the closing >.
-    return tag.replace(/>$/, ` stroke-dasharray="${pattern}">`);
+    return appendAttr(tag, `stroke-dasharray="${pattern}"`);
   });
 }
 
@@ -141,21 +156,21 @@ export function setDashPattern(svgString, pattern) {
  * @returns {string} modified SVG
  */
 export function setLinecap(svgString, linecap, linejoin) {
-  return svgString.replace(/<path\b[^>]*>/g, (tag) => {
+  return svgString.replace(/<path\b[^>]*\/?>/g, (tag) => {
     let updated = tag;
 
     // --- linecap ---
     if (/stroke-linecap="[^"]*"/.test(updated)) {
       updated = updated.replace(/stroke-linecap="[^"]*"/, `stroke-linecap="${linecap}"`);
     } else {
-      updated = updated.replace(/>$/, ` stroke-linecap="${linecap}">`);
+      updated = appendAttr(updated, `stroke-linecap="${linecap}"`);
     }
 
     // --- linejoin ---
     if (/stroke-linejoin="[^"]*"/.test(updated)) {
       updated = updated.replace(/stroke-linejoin="[^"]*"/, `stroke-linejoin="${linejoin}"`);
     } else {
-      updated = updated.replace(/>$/, ` stroke-linejoin="${linejoin}">`);
+      updated = appendAttr(updated, `stroke-linejoin="${linejoin}"`);
     }
 
     return updated;
@@ -193,8 +208,7 @@ export function setGroupOpacities(svgString, opacities) {
         // Update existing opacity attribute.
         return tag.replace(/\bopacity="[^"]*"/, `opacity="${opacityValue}"`);
       }
-      // Insert opacity before the closing >.
-      return tag.replace(/>$/, ` opacity="${opacityValue}">`);
+      return appendAttr(tag, `opacity="${opacityValue}"`);
     });
   }
 
@@ -253,8 +267,7 @@ export function applyGroupFilter(svgString, filterName) {
         // Update existing filter attribute.
         return tag.replace(/\bfilter="[^"]*"/, filterAttr);
       }
-      // Append before closing >.
-      return tag.replace(/>$/, ` ${filterAttr}>`);
+      return appendAttr(tag, filterAttr);
     }
   );
 }

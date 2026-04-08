@@ -190,6 +190,15 @@ describe('setLinecap', () => {
     const joinMatches = result.match(/stroke-linejoin="round"/g);
     expect(joinMatches).toHaveLength(3);
   });
+
+  it('inserts attributes before /> on self-closing tags without linejoin', () => {
+    const svg = '<svg><path d="M0,0 L1,1" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>';
+    const result = setLinecap(svg, 'butt', 'miter');
+    // Must not produce: .../  stroke-linejoin="miter">
+    expect(result).not.toMatch(/\/\s+stroke/);
+    expect(result).toContain('stroke-linejoin="miter"/>');
+    expect(result).toContain('stroke-linecap="butt"');
+  });
 });
 
 // ---------------------------------------------------------------------------
