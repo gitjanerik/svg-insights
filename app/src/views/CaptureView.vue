@@ -114,7 +114,7 @@ onUnmounted(stopCamera)
           autoplay
           playsinline
           muted
-          class="w-full h-full object-cover"
+          class="w-full h-full object-cover max-h-[80vh]"
         />
 
         <!-- Processing spinner -->
