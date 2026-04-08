@@ -70,6 +70,8 @@ async function processImage(src) {
     sessionStorage.setItem('svgInsights_svg', result.svg)
     sessionStorage.setItem('svgInsights_w', result.width)
     sessionStorage.setItem('svgInsights_h', result.height)
+    // Store original RGBA data in memory for colorization
+    window.__svgInsights_rgba = result.imageData
   } finally {
     processing.value = false
   }

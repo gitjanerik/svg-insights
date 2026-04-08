@@ -784,5 +784,5 @@ export async function imageToSvg(src, options = {}) {
     `</svg>`,
   ].filter(Boolean).join('\n')
 
-  return { svg, width: w, height: h, pathCount: totalPaths }
+  return { svg, width: w, height: h, pathCount: totalPaths, imageData: imageData.data }
 }
