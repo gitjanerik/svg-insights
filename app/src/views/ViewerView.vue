@@ -7,7 +7,7 @@ import { filterPresets, svgFilterDefs, dashPatterns } from '../lib/filterPresets
 import {
   straightenPaths, wobblePaths, adjustStrokeWidths,
   setDashPattern, setLinecap, setGroupOpacities,
-  injectFilterDefs, applyGroupFilter,
+  injectFilterDefs, applyGroupFilter, convertToDrawByNumbers,
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 
@@ -38,6 +38,8 @@ const isSmooth = ref(true)
 const wobbleIntensity = ref(0)
 const svgFilter = ref(null)
 const showPanel = ref(false)
+const drawByNumbers = ref(false)
+const dotSpacing = ref(15)
 
 const opacities = reactive({ edges: 100, contours: 50, hatching: 35 })
 
@@ -94,11 +96,17 @@ function rebuildSvg() {
     svg = applyGroupFilter(svg, null)
   }
   svg = svg.replace(/stroke="currentColor"/g, `stroke="${strokeColor.value}"`)
+
+  // Draw by numbers (must be last — replaces strokes with dots)
+  if (drawByNumbers.value) {
+    svg = convertToDrawByNumbers(svg, { spacing: dotSpacing.value, dotColor: strokeColor.value })
+  }
+
   svgHtml.value = svg
 }
 
 watch(
-  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized],
+  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, drawByNumbers, dotSpacing],
   rebuildSvg,
   { deep: true }
 )
@@ -446,6 +454,27 @@ onMounted(() => {
                     :class="svgFilter === f ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                     {{ f === 'blur' ? 'Uskarp' : f === 'glow' ? 'Glod' : f === 'shadow' ? 'Skygge' : f === 'charcoal' ? 'Kull' : 'Preging' }}
                   </button>
+                </div>
+              </div>
+              <!-- Draw by numbers -->
+              <div class="pt-3 border-t border-white/5">
+                <label class="flex items-center justify-between mb-3">
+                  <span class="text-xs text-white/70">Tegn etter tall</span>
+                  <button @click="drawByNumbers = !drawByNumbers"
+                    class="w-10 h-5 rounded-full transition-colors" :class="drawByNumbers ? 'bg-sky-600' : 'bg-white/10'">
+                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
+                      :class="drawByNumbers ? 'translate-x-5' : 'translate-x-0.5'" />
+                  </button>
+                </label>
+                <div v-if="drawByNumbers">
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Avstand mellom prikker</label>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-white/30 shrink-0">Tett</span>
+                    <input v-model.number="dotSpacing" type="range" min="8" max="40" step="2"
+                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    <span class="text-[10px] text-white/30 shrink-0">Spredt</span>
+                  </div>
+                  <p class="text-[10px] text-white/30 mt-1 text-center">{{ dotSpacing }}px mellomrom</p>
                 </div>
               </div>
             </template>

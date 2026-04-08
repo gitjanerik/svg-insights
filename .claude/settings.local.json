@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(rm -rf /c/SourceCode/SVGInsights/app/dist/.git)",
+      "Bash(curl -sI https://gitjanerik.github.io/svg-insights/)"
     ]
   }
 }

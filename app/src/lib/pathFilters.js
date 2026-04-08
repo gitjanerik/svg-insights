@@ -271,3 +271,139 @@ export function applyGroupFilter(svgString, filterName) {
     }
   );
 }
+
+// ---------------------------------------------------------------------------
+// 9. convertToDrawByNumbers
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse numeric coordinates from an SVG path `d` attribute.
+ * Handles M, L (absolute) and C (takes endpoint only).
+ * Returns array of {x, y} points.
+ */
+function parsePathPoints(d) {
+  const points = []
+  // Match command letter followed by its coordinates
+  const re = /([MLCmlc])\s*([-\d.e]+[\s,]+[-\d.e]+(?:[\s,]+[-\d.e]+[\s,]+[-\d.e]+[\s,]+[-\d.e]+[\s,]+[-\d.e]+)?)/g
+  let match
+  let cx = 0, cy = 0
+
+  while ((match = re.exec(d)) !== null) {
+    const cmd = match[1]
+    const nums = match[2].match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g)
+    if (!nums) continue
+
+    const values = nums.map(Number)
+
+    if (cmd === 'M' || cmd === 'L') {
+      cx = values[0]; cy = values[1]
+      points.push({ x: cx, y: cy })
+    } else if (cmd === 'm' || cmd === 'l') {
+      cx += values[0]; cy += values[1]
+      points.push({ x: cx, y: cy })
+    } else if (cmd === 'C') {
+      // Cubic Bezier: take endpoint (last pair)
+      cx = values[4]; cy = values[5]
+      points.push({ x: cx, y: cy })
+    } else if (cmd === 'c') {
+      cx += values[4]; cy += values[5]
+      points.push({ x: cx, y: cy })
+    }
+  }
+
+  return points
+}
+
+/**
+ * Subsample a list of points so that consecutive kept points are at least
+ * `minDist` pixels apart.  Always keeps the first and last point.
+ */
+function subsamplePoints(points, minDist) {
+  if (points.length <= 2) return points
+  const result = [points[0]]
+  let last = points[0]
+  for (let i = 1; i < points.length - 1; i++) {
+    const dx = points[i].x - last.x
+    const dy = points[i].y - last.y
+    if (dx * dx + dy * dy >= minDist * minDist) {
+      result.push(points[i])
+      last = points[i]
+    }
+  }
+  result.push(points[points.length - 1])
+  return result
+}
+
+/**
+ * Convert an SVG line drawing into a "draw by numbers" version.
+ *
+ * All stroke paths are hidden and replaced with numbered dots at key
+ * vertices.  A child can then connect the dots on paper.
+ *
+ * @param {string} svgString   - Input SVG markup
+ * @param {object} [options]
+ * @param {number} [options.spacing=15]    - Min pixel distance between dots
+ * @param {number} [options.dotRadius=3]   - Radius of each dot
+ * @param {number} [options.fontSize=6]    - Font size for the numbers
+ * @param {string} [options.dotColor]      - Dot colour (default: current stroke)
+ * @param {string} [options.numColor]      - Number colour (default: same as dot)
+ * @returns {string} Modified SVG with dots overlay and hidden strokes
+ */
+export function convertToDrawByNumbers(svgString, options = {}) {
+  const {
+    spacing = 15,
+    dotRadius = 3,
+    fontSize = 6,
+    dotColor = null,
+    numColor = null,
+  } = options
+
+  // Collect all points from all paths in all groups
+  const allPoints = []
+  const pathDRegex = /\bd\s*=\s*"([^"]*)"/g
+  let pathMatch
+
+  while ((pathMatch = pathDRegex.exec(svgString)) !== null) {
+    const raw = parsePathPoints(pathMatch[1])
+    const sampled = subsamplePoints(raw, spacing)
+    allPoints.push(...sampled)
+  }
+
+  if (allPoints.length === 0) return svgString
+
+  // Detect stroke colour from first path if not specified
+  let color = dotColor
+  if (!color) {
+    const strokeMatch = svgString.match(/stroke="([^"]+)"/)
+    color = strokeMatch ? strokeMatch[1] : '#c4b5fd'
+  }
+  const nColor = numColor || color
+
+  // Build dot + number elements
+  const dotEls = allPoints.map((p, i) => {
+    const num = i + 1
+    return [
+      `    <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${dotRadius}" fill="${color}" opacity="0.8"/>`,
+      `    <text x="${(p.x + dotRadius + 1).toFixed(1)}" y="${(p.y + fontSize * 0.35).toFixed(1)}" font-size="${fontSize}" fill="${nColor}" opacity="0.6" font-family="sans-serif">${num}</text>`,
+    ].join('\n')
+  }).join('\n')
+
+  const dotsGroup = `  <g class="draw-by-numbers">\n${dotEls}\n  </g>`
+
+  // Hide all existing path strokes (set opacity to 0.08 as faint guide)
+  let modified = svgString.replace(
+    /<g class="(edges|contours|hatching)"([^>]*)>/g,
+    '<g class="$1"$2 opacity="0.08">'
+  )
+
+  // Remove any existing draw-by-numbers group
+  modified = modified.replace(/\s*<g class="draw-by-numbers">[\s\S]*?<\/g>\s*/g, '\n')
+
+  // Insert dots before </svg>
+  const closeIdx = modified.lastIndexOf('</svg>')
+  if (closeIdx !== -1) {
+    modified = modified.slice(0, closeIdx) + dotsGroup + '\n' + modified.slice(closeIdx)
+  }
+
+  return modified
+}
