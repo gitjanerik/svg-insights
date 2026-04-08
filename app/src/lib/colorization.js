@@ -813,7 +813,7 @@ export function regionBoundaryToSvgPath(pixels, w, h) {
 /**
  * Convert an RGB color to a CSS hex string.
  */
-function rgbToHex(r, g, b) {
+export function rgbToHex(r, g, b) {
   const toHex = (v) => {
     const clamped = Math.max(0, Math.min(255, Math.round(v)));
     return clamped.toString(16).padStart(2, '0');
@@ -841,6 +841,67 @@ function regionLuminance(imageData, w, pixels) {
     sum += 0.299 * r + 0.587 * g + 0.114 * b;
   }
   return sum / pixels.length;
+}
+
+/**
+ * Compute fill data (paths + colors) without modifying the SVG.
+ * Returns an array of fills that can be applied incrementally.
+ *
+ * @param {string} svgString
+ * @param {Uint8ClampedArray} imageData
+ * @param {number} w
+ * @param {number} h
+ * @param {object} [options]
+ * @returns {Array<{id: number, pathD: string, color: string, centroid: {x: number, y: number}}>}
+ */
+export function computeFills(svgString, imageData, w, h, options = {}) {
+  const { minRegionSize = 20 } = options;
+  const mask = createEdgeMask(svgString, w, h);
+  const regions = detectAllRegions(mask, w, h, minRegionSize);
+  const fills = [];
+
+  for (const region of regions) {
+    const color = sampleRegionColor(imageData, w, region);
+    const avgLum = regionLuminance(imageData, w, region.pixels);
+    const modulated = modulateByLuminance(color, avgLum);
+    const pathD = regionBoundaryToSvgPath(region.pixels, w, h);
+    if (!pathD) continue;
+
+    fills.push({
+      id: region.id,
+      pathD,
+      color: rgbToHex(modulated.r, modulated.g, modulated.b),
+      centroid: region.centroid,
+    });
+  }
+
+  return fills;
+}
+
+/**
+ * Insert pre-computed fills into SVG as a fills group.
+ *
+ * @param {string} svgString
+ * @param {Array<{pathD: string, color: string}>} fills
+ * @param {number} [fillOpacity=0.85]
+ * @returns {string}
+ */
+export function insertFills(svgString, fills, fillOpacity = 0.85) {
+  const pathEls = fills
+    .map((f, i) => `    <path d="${f.pathD}" fill="${f.color}" class="fill-region" data-fill-index="${i}" />`)
+    .join('\n');
+  const fillsGroup = `  <g class="fills" opacity="${fillOpacity}">\n${pathEls}\n  </g>`;
+
+  const firstGMatch = svgString.match(/<g[\s>]/);
+  if (firstGMatch) {
+    const insertPos = svgString.indexOf(firstGMatch[0]);
+    return svgString.slice(0, insertPos) + fillsGroup + '\n' + svgString.slice(insertPos);
+  }
+  const closingIdx = svgString.lastIndexOf('</svg>');
+  if (closingIdx !== -1) {
+    return svgString.slice(0, closingIdx) + fillsGroup + '\n' + svgString.slice(closingIdx);
+  }
+  return svgString + '\n' + fillsGroup;
 }
 
 /**

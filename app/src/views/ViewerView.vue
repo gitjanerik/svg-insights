@@ -9,7 +9,7 @@ import {
   setDashPattern, setLinecap, setGroupOpacities,
   injectFilterDefs, applyGroupFilter,
 } from '../lib/pathFilters.js'
-import { autoColorize, removeColorization } from '../lib/colorization.js'
+import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 
 const router = useRouter()
 
@@ -54,6 +54,10 @@ const strokeScales = { thin: 0.5, medium: 1.0, bold: 2.0 }
 
 const colorized = ref(false)
 const colorizing = ref(false)
+const fillDelay = ref(0.5)
+const fillsData = ref([])  // computed fills from photo
+const revealedCount = ref(0)
+let revealTimer = null
 
 const PARALLAX_PX = 25
 const PERSPECTIVE_DEG = 8
@@ -115,17 +119,93 @@ function applyPreset(name) {
   bgGlow.value = bgColor.value === '#0a0a0f'
 }
 
-async function toggleColorize() {
-  if (colorized.value) { colorized.value = false; return }
+async function startColorize(fills = null) {
+  clearInterval(revealTimer)
   const rgba = window.__svgInsights_rgba
-  if (!rgba) return
+  if (!rgba && !fills) return
+
   colorizing.value = true
   await new Promise(r => setTimeout(r, 50))
+
   try {
-    const result = autoColorize(originalSvg.value, rgba, svgWidth.value, svgHeight.value)
-    originalSvg.value = result.svg
+    // Compute fills if not provided (photo-based)
+    if (!fills) {
+      fills = computeFills(originalSvg.value, rgba, svgWidth.value, svgHeight.value)
+    }
+    fillsData.value = fills
+
+    // Insert all fills with opacity 0 initially
+    const baseSvg = removeColorization(originalSvg.value)
+    const hiddenFills = fills.map(f => ({ ...f, color: f.color }))
+    originalSvg.value = insertFills(baseSvg, hiddenFills)
     colorized.value = true
+    revealedCount.value = 0
+
+    // Rebuild so the SVG is in the DOM, then animate
+    rebuildSvg()
+    await new Promise(r => setTimeout(r, 50))
+
+    // Set all fill regions to hidden, then reveal one by one
+    const container = containerRef.value
+    if (container) {
+      const paths = container.querySelectorAll('.fill-region')
+      const delayMs = fillDelay.value * 1000
+      paths.forEach(p => {
+        p.style.opacity = '0'
+        p.style.transition = `opacity ${Math.max(300, delayMs)}ms ease-in-out`
+      })
+
+      if (delayMs === 0) {
+        // Instant reveal
+        paths.forEach(p => { p.style.opacity = '1' })
+        revealedCount.value = paths.length
+      } else {
+        // Staggered reveal
+        let i = 0
+        revealTimer = setInterval(() => {
+          if (i < paths.length) {
+            paths[i].style.opacity = '1'
+            i++
+            revealedCount.value = i
+          } else {
+            clearInterval(revealTimer)
+          }
+        }, delayMs)
+      }
+    }
   } finally { colorizing.value = false }
+}
+
+function stopColorize() {
+  clearInterval(revealTimer)
+  colorized.value = false
+  fillsData.value = []
+  revealedCount.value = 0
+}
+
+function randomizeColors() {
+  clearInterval(revealTimer)
+  const rgba = window.__svgInsights_rgba
+  if (!rgba) return
+
+  // Compute fills from photo first if we don't have them
+  let baseFills = fillsData.value
+  if (!baseFills.length) {
+    baseFills = computeFills(originalSvg.value, rgba, svgWidth.value, svgHeight.value)
+  }
+
+  // Pick a random base hue, then assign complementary/analogous colors
+  const baseHue = Math.random() * 360
+  const randomFills = baseFills.map((f, i) => {
+    // Spread hues evenly + some randomness, vary saturation and lightness
+    const hue = (baseHue + (i / baseFills.length) * 360 + Math.random() * 40 - 20) % 360
+    const sat = 40 + Math.random() * 45
+    const lit = 25 + Math.random() * 50
+    const rgb = hslToRgb(hue, sat, lit)
+    return { ...f, color: rgbToHex(rgb.r, rgb.g, rgb.b) }
+  })
+
+  startColorize(randomFills)
 }
 
 function handleReset() { resetZoom(); recalibrate() }
@@ -372,18 +452,43 @@ onMounted(() => {
 
             <!-- ── Color tab ── -->
             <template v-if="activeTab === 'color'">
-              <p class="text-xs text-white/50">
-                Fyll regioner med farger fra originalbildet. Bevarer dybde.
-              </p>
-              <button @click="toggleColorize" :disabled="colorizing"
-                class="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
-                :class="colorized
-                  ? 'bg-white/10 border border-white/20 text-white/70'
-                  : 'bg-gradient-to-r from-sky-600 to-violet-600 text-white shadow-[0_0_20px_rgba(56,189,248,0.2)]'">
-                <span v-if="colorizing">Fargelegger...</span>
-                <span v-else-if="colorized">Fjern farger</span>
-                <span v-else>Auto-fargelegg</span>
-              </button>
+              <!-- Delay slider -->
+              <div>
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Animasjon</label>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] text-white/30 shrink-0">0s</span>
+                  <input v-model.number="fillDelay" type="range" min="0" max="2" step="0.5"
+                    class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                  <span class="text-[10px] text-white/30 shrink-0">2s</span>
+                </div>
+                <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillDelay === 0 ? 'Umiddelbart' : fillDelay + 's mellom hvert omrade' }}</p>
+              </div>
+
+              <!-- Action buttons -->
+              <div class="flex gap-2">
+                <button @click="colorized ? stopColorize() : startColorize()" :disabled="colorizing"
+                  class="flex-1 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
+                  :class="colorized
+                    ? 'bg-white/10 border border-white/20 text-white/70'
+                    : 'bg-gradient-to-r from-sky-600 to-violet-600 text-white shadow-[0_0_20px_rgba(56,189,248,0.2)]'">
+                  <span v-if="colorizing">Fargelegger...</span>
+                  <span v-else-if="colorized">Fjern farger</span>
+                  <span v-else>Auto-fargelegg</span>
+                </button>
+                <button @click="randomizeColors" :disabled="colorizing"
+                  class="px-4 py-3 rounded-xl text-sm font-semibold bg-white/5 border border-white/10 text-white/60 transition-all active:scale-[0.98] hover:bg-white/10">
+                  Tilfeldig
+                </button>
+              </div>
+
+              <!-- Progress -->
+              <div v-if="colorized && fillsData.length > 0" class="text-center">
+                <p class="text-[11px] text-white/30">{{ revealedCount }} / {{ fillsData.length }} omrader</p>
+                <div class="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                  <div class="h-full bg-sky-500/50 rounded-full transition-all duration-300"
+                    :style="{ width: (revealedCount / fillsData.length * 100) + '%' }" />
+                </div>
+              </div>
             </template>
           </div>
         </div>
