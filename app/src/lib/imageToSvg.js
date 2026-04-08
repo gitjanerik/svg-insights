@@ -13,12 +13,9 @@
  *   8.  traceLuminanceContours — interior detail via iso-luminance boundary tracing
  *   9.  generateHatching       — hatching/crosshatch lines for dark regions
  *  10.  detectSkinRegions      — YCbCr skin-tone classification
- *  11.  wireframe overlay      — parametric human wireframe for skin areas
- *  12.  pathsToSvgD            — polyline or smooth Catmull-Rom→Bezier paths
- *  13.  ensure ≥1000 vectors   — adaptive detail if below target
+ *  11.  pathsToSvgD            — polyline or smooth Catmull-Rom→Bezier paths
+ *  12.  ensure ≥1000 vectors   — adaptive detail if below target
  */
-
-import { generateHumanWireframe } from './humanWireframe.js'
 
 const MAX_DIM = 600
 
@@ -737,37 +734,8 @@ export async function imageToSvg(src, options = {}) {
   // Stage 9: Hatching for dark regions
   let hatchPaths = generateHatching(enhanced, w, h)
 
-  // Stage 10: Skin detection + wireframe overlay
-  const skinMask = detectSkinRegions(imageData.data, w, h)
-  const skinBox = findSkinBoundingBox(skinMask, w, h)
-  let wireframeGroup = ''
-  let wireframePathCount = 0
-
-  if (skinBox) {
-    const boxW = skinBox.maxX - skinBox.minX
-    const boxH = skinBox.maxY - skinBox.minY
-
-    if (boxW > 20 && boxH > 30) {
-      const wf = generateHumanWireframe({
-        width: 400,
-        height: 600,
-        strokeWidth: 0.5,
-        showFace: true,
-        stroke: 'currentColor',
-      })
-      wireframePathCount = wf.pathCount
-
-      // Extract viewBox and inner content from wireframe SVG
-      const vbMatch = wf.svg.match(/viewBox="([^"]+)"/)
-      const viewBox = vbMatch ? vbMatch[1] : '-200 -300 400 600'
-      const inner = wf.svg.replace(/<svg[^>]*>/, '').replace(/<\/svg>/, '')
-
-      wireframeGroup = `  <svg x="${skinBox.minX}" y="${skinBox.minY}" width="${boxW}" height="${boxH}" viewBox="${viewBox}" opacity="0.25" overflow="visible">\n${inner}\n  </svg>`
-    }
-  }
-
-  // Stage 11: Ensure minimum 1000 vectors
-  let totalPaths = edgePaths.length + contourPaths.length + hatchPaths.length + wireframePathCount
+  // Stage 10: Ensure minimum 1000 vectors
+  let totalPaths = edgePaths.length + contourPaths.length + hatchPaths.length
   if (totalPaths < 1000) {
     // Add extra contour levels
     const extraLevels = [20, 60, 100, 140, 180, 220]
@@ -781,7 +749,7 @@ export async function imageToSvg(src, options = {}) {
     const fineHatch = generateHatching(enhanced, w, h, 100, 3)
     hatchPaths.push(...fineHatch)
 
-    totalPaths = edgePaths.length + contourPaths.length + hatchPaths.length + wireframePathCount
+    totalPaths = edgePaths.length + contourPaths.length + hatchPaths.length
   }
 
   // Stage 12: Generate SVG path strings
@@ -813,7 +781,6 @@ export async function imageToSvg(src, options = {}) {
     `  <g class="hatching" opacity="0.35">`,
     hatchEls,
     `  </g>`,
-    wireframeGroup,
     `</svg>`,
   ].filter(Boolean).join('\n')
 
