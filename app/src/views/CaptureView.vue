@@ -102,10 +102,10 @@ onUnmounted(stopCamera)
     </header>
 
     <!-- Main area -->
-    <div class="flex-1 flex flex-col">
+    <div class="flex-1 flex flex-col min-h-0">
 
       <!-- Camera / Preview -->
-      <div class="relative flex-1 flex items-center justify-center bg-black overflow-hidden">
+      <div class="flex-1 flex items-center justify-center bg-black min-h-0">
 
         <!-- Live camera -->
         <video
@@ -114,7 +114,7 @@ onUnmounted(stopCamera)
           autoplay
           playsinline
           muted
-          class="w-full h-full object-contain max-h-[80vh]"
+          class="max-w-full max-h-full object-contain"
         />
 
         <!-- Processing spinner -->
@@ -126,14 +126,14 @@ onUnmounted(stopCamera)
         <!-- SVG Preview -->
         <div
           v-if="previewSvg && !processing"
-          class="w-full h-full flex items-center justify-center p-4 text-violet-300"
+          class="max-w-full max-h-full flex items-center justify-center p-4 text-violet-300"
           v-html="previewSvg.svg"
         />
 
         <!-- No camera fallback hint -->
         <div
           v-if="!cameraReady && !previewSvg && !processing"
-          class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white/40"
+          class="flex flex-col items-center justify-center gap-3 text-white/40 py-20"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 opacity-30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
