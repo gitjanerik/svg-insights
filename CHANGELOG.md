@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-04-09 — v1.1.5: Sammenslaing av rasterpunkter
+
+### Nye funksjoner
+
+#### Sammenslaaing av naerliggende rasterpunkter
+- Ny `mergeNearbyClusters(dots, mergeFactor)` funksjon i `pathFilters.js`
+- Union-Find-algoritme med spatial hashing (grid) for O(n) nabooppslag
+- Arealbevarende radius: sammenslatt sirkel har `r = sqrt(sum ri^2)` — bevarer totalt areal
+- Arealvektet sentroid for posisjon og RGB-fargeblanding
+- Terskel: `(r1 + r2) * (1 + mergeFactor * 2.5)` — gradvis fra naesten-overlappende til aggressiv
+
+#### Ny UI-kontroll: Sammenslaing-slider
+- Slider i Effekter-fanen under Punktstorrelse (0–1, steg 0.1, default 0)
+- Vises kun naar Rasterpunkter er aktivert
+- Verdi 0 = ingen endring (100% bakoverkompatibel)
+
+#### Ripple-animasjon for sammenslatte punkter
+- CSS `transform: scale()` animasjon med `transform-box: fill-box` for korrekt SVG-sentrering
+- Pseudo-tilfeldig `animation-delay` basert paa punktposisjon (0–0.5s)
+- Skala 0.4 → 1.18 → 1.0 over 0.7s — vanndraape-effekt
+
+#### Ovre grense paa rasterpunkter
+- Nytt `maxDots`-parameter (default 800) for `convertToHalftone()`
+- Jevnt fordelt nedsampling naar antall punkter overstiger grensen
+- 800 punkter gir god dekning paa 600x400 canvas uten ytelsesproblemer
+
+### Hjelpefunksjoner
+- `parseColor(color)` — parser baade `rgb(r,g,b)` og hex-farger til `{r, g, b}`
+- Dot-objekter `{x, y, radius, color, merged}` erstatter direkte SVG-strenger — forberedt for fremtidig per-punkt-fargelegging
+
+### Tester
+- Alle 124 tester bestaar uendret
+
 ## 2026-04-08 — Forbedret bildeprosesseringspipeline
 
 ### Nye funksjoner

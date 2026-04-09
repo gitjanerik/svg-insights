@@ -8,6 +8,7 @@ import {
   straightenPaths, wobblePaths, adjustStrokeWidths,
   setDashPattern, setLinecap, setGroupOpacities,
   injectFilterDefs, applyGroupFilter, convertToDrawByNumbers,
+  convertToHalftone,
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 
@@ -29,8 +30,7 @@ const activeTab = ref('presets') // presets, stroke, layers, effects, color
 const strokeScale = ref('medium')
 const strokeColor = ref('#c4b5fd')
 const bgColor = ref('#0a0a0f')
-const bgGlow = ref(true)
-const perspective = ref(true)
+const perspective = ref(false)
 const currentPreset = ref(null)
 const dashPattern = ref('solid')
 const linecapStyle = ref('round')
@@ -39,7 +39,13 @@ const wobbleIntensity = ref(0)
 const svgFilter = ref(null)
 const showPanel = ref(false)
 const drawByNumbers = ref(false)
-const dotSpacing = ref(15)
+const dotCount = ref(100)
+const hideGuideStrokes = ref(false)
+const halftone = ref(false)
+const halftoneScale = ref(1.0)
+const halftoneMerge = ref(0)
+
+const rotation = ref(0)
 
 const opacities = reactive({ edges: 100, contours: 50, hatching: 35 })
 
@@ -50,6 +56,19 @@ const colorPresets = [
   { name: 'Rosa', value: '#f9a8d4' },
   { name: 'Hvit', value: '#ffffff' },
   { name: 'Gull', value: '#fbbf24' },
+]
+
+const bgPresets = [
+  { name: 'Sort', value: '#000000' },
+  { name: 'Hvit', value: '#ffffff' },
+  { name: 'Morkt', value: '#0a0a0f' },
+  { name: 'Rod', value: '#991b1b' },
+  { name: 'Oransj', value: '#9a3412' },
+  { name: 'Gul', value: '#854d0e' },
+  { name: 'Gronn', value: '#166534' },
+  { name: 'Bla', value: '#1e3a5f' },
+  { name: 'Lilla', value: '#581c87' },
+  { name: 'Rosa', value: '#831843' },
 ]
 
 const strokeScales = { thin: 0.5, medium: 1.0, bold: 2.0 }
@@ -71,7 +90,7 @@ const transformStyle = computed(() => {
   const rx = perspective.value ? -tiltY.value * PERSPECTIVE_DEG : 0
   const ry = perspective.value ? tiltX.value * PERSPECTIVE_DEG : 0
   return {
-    transform: `perspective(800px) scale(${scale.value}) translate(${tx}px, ${ty}px) rotateX(${rx}deg) rotateY(${ry}deg)`,
+    transform: `perspective(800px) scale(${scale.value}) translate(${tx}px, ${ty}px) rotateX(${rx}deg) rotateY(${ry}deg) rotate(${rotation.value}deg)`,
     transition: 'transform 0.1s ease-out',
   }
 })
@@ -99,14 +118,27 @@ function rebuildSvg() {
 
   // Draw by numbers (must be last — replaces strokes with dots)
   if (drawByNumbers.value) {
-    svg = convertToDrawByNumbers(svg, { spacing: dotSpacing.value, dotColor: strokeColor.value })
+    svg = convertToDrawByNumbers(svg, {
+      maxPoints: dotCount.value,
+      dotColor: strokeColor.value,
+      hideStrokes: hideGuideStrokes.value,
+    })
+  }
+
+  // Halftone effect — uses photo colors per dot
+  if (halftone.value) {
+    svg = convertToHalftone(svg, {
+      scale: halftoneScale.value,
+      usePhotoColors: true,
+      merge: halftoneMerge.value,
+    })
   }
 
   svgHtml.value = svg
 }
 
 watch(
-  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, drawByNumbers, dotSpacing],
+  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, drawByNumbers, dotCount, hideGuideStrokes, halftone, halftoneScale, halftoneMerge],
   rebuildSvg,
   { deep: true }
 )
@@ -125,7 +157,6 @@ function applyPreset(name) {
   dashPattern.value = Object.keys(dashPatterns).find(k => dashPatterns[k] === p.dashPattern) || 'solid'
   wobbleIntensity.value = p.wobble || 0
   svgFilter.value = p.svgFilter || null
-  bgGlow.value = bgColor.value === '#0a0a0f'
 }
 
 async function startColorize(fills = null) {
@@ -216,7 +247,7 @@ function randomizeColors() {
   startColorize(randomFills)
 }
 
-function handleReset() { resetZoom(); recalibrate() }
+function handleReset() { resetZoom(); recalibrate(); rotation.value = 0 }
 
 function downloadSvg() {
   const blob = new Blob([svgHtml.value], { type: 'image/svg+xml' })
@@ -280,15 +311,27 @@ onMounted(() => {
 
       <!-- SVG canvas -->
       <div ref="containerRef" class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
-        <div v-if="bgGlow" class="absolute inset-0 -z-10"
-          :style="{ background: `radial-gradient(ellipse at ${50 + tiltX * 20}% ${50 + tiltY * 20}%, ${strokeColor}15 0%, transparent 70%)` }" />
         <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle" v-html="svgHtml" />
 
         <!-- Floating buttons -->
-        <div class="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+        <div class="absolute bottom-4 right-4 flex gap-2 z-10">
+          <button @click="rotation = (rotation - 90) % 360"
+            class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+          </button>
+          <button @click="rotation = (rotation + 90) % 360"
+            class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/>
+            </svg>
+          </button>
           <button @click="handleReset"
             class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/>
+            </svg>
           </button>
         </div>
         <p class="absolute bottom-4 left-4 text-[10px] text-white/20 z-10">
@@ -329,14 +372,34 @@ onMounted(() => {
 
             <!-- ── Stroke tab ── -->
             <template v-if="activeTab === 'stroke'">
-              <!-- Color -->
+              <!-- Stroke color -->
               <div>
-                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Farge</label>
-                <div class="flex gap-2 flex-wrap">
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Strekfarge</label>
+                <div class="flex gap-2 flex-wrap items-center">
                   <button v-for="c in colorPresets" :key="c.value" @click="strokeColor = c.value; currentPreset = null"
                     class="w-8 h-8 rounded-full border-2 transition-all active:scale-90"
                     :class="strokeColor === c.value ? 'border-white scale-110' : 'border-white/10'"
                     :style="{ background: c.value }" />
+                  <label class="w-8 h-8 rounded-full border-2 border-white/10 overflow-hidden cursor-pointer relative">
+                    <input type="color" :value="strokeColor" @input="strokeColor = $event.target.value; currentPreset = null"
+                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <div class="w-full h-full" :style="{ background: `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)` }" />
+                  </label>
+                </div>
+              </div>
+              <!-- Background color -->
+              <div>
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Bakgrunnsfarge</label>
+                <div class="flex gap-2 flex-wrap items-center">
+                  <button v-for="c in bgPresets" :key="c.value" @click="bgColor = c.value"
+                    class="w-7 h-7 rounded-full border-2 transition-all active:scale-90"
+                    :class="bgColor === c.value ? 'border-white scale-110' : 'border-white/10'"
+                    :style="{ background: c.value }" />
+                  <label class="w-7 h-7 rounded-full border-2 border-white/10 overflow-hidden cursor-pointer relative">
+                    <input type="color" :value="bgColor" @input="bgColor = $event.target.value"
+                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <div class="w-full h-full" :style="{ background: `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)` }" />
+                  </label>
                 </div>
               </div>
               <!-- Width -->
@@ -415,14 +478,6 @@ onMounted(() => {
                       :class="perspective ? 'translate-x-5' : 'translate-x-0.5'" />
                   </button>
                 </label>
-                <label class="flex items-center justify-between">
-                  <span class="text-xs text-white/70">Bakgrunnsglod</span>
-                  <button @click="bgGlow = !bgGlow"
-                    class="w-10 h-5 rounded-full transition-colors" :class="bgGlow ? 'bg-violet-600' : 'bg-white/10'">
-                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
-                      :class="bgGlow ? 'translate-x-5' : 'translate-x-0.5'" />
-                  </button>
-                </label>
               </div>
             </template>
 
@@ -460,21 +515,63 @@ onMounted(() => {
               <div class="pt-3 border-t border-white/5">
                 <label class="flex items-center justify-between mb-3">
                   <span class="text-xs text-white/70">Tegn etter tall</span>
-                  <button @click="drawByNumbers = !drawByNumbers"
+                  <button @click="drawByNumbers = !drawByNumbers; if (drawByNumbers) halftone = false"
                     class="w-10 h-5 rounded-full transition-colors" :class="drawByNumbers ? 'bg-sky-600' : 'bg-white/10'">
                     <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
                       :class="drawByNumbers ? 'translate-x-5' : 'translate-x-0.5'" />
                   </button>
                 </label>
-                <div v-if="drawByNumbers">
-                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Avstand mellom prikker</label>
-                  <div class="flex items-center gap-2">
-                    <span class="text-[10px] text-white/30 shrink-0">Tett</span>
-                    <input v-model.number="dotSpacing" type="range" min="8" max="40" step="2"
-                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
-                    <span class="text-[10px] text-white/30 shrink-0">Spredt</span>
+                <div v-if="drawByNumbers" class="space-y-3">
+                  <div>
+                    <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Antall punkter</label>
+                    <div class="flex items-center gap-2">
+                      <span class="text-[10px] text-white/30 shrink-0">50</span>
+                      <input v-model.number="dotCount" type="range" min="50" max="200" step="10"
+                        class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                      <span class="text-[10px] text-white/30 shrink-0">200</span>
+                    </div>
+                    <p class="text-[10px] text-white/30 mt-1 text-center">{{ dotCount }} punkter</p>
                   </div>
-                  <p class="text-[10px] text-white/30 mt-1 text-center">{{ dotSpacing }}px mellomrom</p>
+                  <label class="flex items-center justify-between">
+                    <span class="text-xs text-white/70">Skjul streker</span>
+                    <button @click="hideGuideStrokes = !hideGuideStrokes"
+                      class="w-10 h-5 rounded-full transition-colors" :class="hideGuideStrokes ? 'bg-sky-600' : 'bg-white/10'">
+                      <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
+                        :class="hideGuideStrokes ? 'translate-x-5' : 'translate-x-0.5'" />
+                    </button>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Halftone -->
+              <div class="pt-3 border-t border-white/5">
+                <label class="flex items-center justify-between mb-3">
+                  <span class="text-xs text-white/70">Rasterpunkter</span>
+                  <button @click="halftone = !halftone; if (halftone) drawByNumbers = false"
+                    class="w-10 h-5 rounded-full transition-colors" :class="halftone ? 'bg-sky-600' : 'bg-white/10'">
+                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
+                      :class="halftone ? 'translate-x-5' : 'translate-x-0.5'" />
+                  </button>
+                </label>
+                <div v-if="halftone">
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Punktstorrelse</label>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-white/30 shrink-0">Sma</span>
+                    <input v-model.number="halftoneScale" type="range" min="0.3" max="2.5" step="0.1"
+                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    <span class="text-[10px] text-white/30 shrink-0">Store</span>
+                  </div>
+                  <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneScale.toFixed(1) }}x</p>
+
+                  <!-- Merge slider -->
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-3 block">Sammenslaing</label>
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] text-white/30 shrink-0">Ingen</span>
+                    <input v-model.number="halftoneMerge" type="range" min="0" max="1" step="0.1"
+                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    <span class="text-[10px] text-white/30 shrink-0">Mye</span>
+                  </div>
+                  <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneMerge === 0 ? 'Av' : halftoneMerge.toFixed(1) }}</p>
                 </div>
               </div>
             </template>
