@@ -147,7 +147,7 @@ onUnmounted(stopCamera)
 
       <!-- Hidden elements -->
       <canvas ref="canvasRef" class="hidden" />
-      <input ref="fileInputRef" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileSelect" />
+      <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileSelect" />
 
       <!-- Controls -->
       <div class="bg-black/60 backdrop-blur-xl border-t border-white/5 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
