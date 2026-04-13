@@ -341,7 +341,7 @@ ${orbitMarkup}
     <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${(s.radius * 1.7).toFixed(2)}" fill="${s.color}" opacity="0.25"/>
     <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${(s.radius * 1.25).toFixed(2)}" fill="${s.color}" opacity="0.4"/>
   </g>
-  <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.radius.toFixed(2)}" fill="${s.color}"/>
+  <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.radius.toFixed(2)}" fill="${s.color}" opacity="0.82"/>
   <text x="${s.x.toFixed(1)}" y="${s.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="serif" font-style="italic" fill="#1a1a1a" font-weight="600">ω ∝ r⁻³ᐟ²</text>`
     out = out.replace(/<\/svg>\s*$/i, `${sunBlock}\n</svg>`)
   }
@@ -464,7 +464,7 @@ onMounted(() => {
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 1.25"
                         :fill="sunDot.color" opacity="0.4" pointer-events="none" />
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius"
-                        :fill="sunDot.color" />
+                        :fill="sunDot.color" opacity="0.82" />
               </template>
               <!-- Kepler's 3rd law etched on the sun -->
               <g v-if="solarSystem && sunDot" pointer-events="none">
@@ -745,7 +745,7 @@ onMounted(() => {
                       Kombiner med å flytte sirkelen for å forsterke effekten.
                     </p>
                     <ul class="space-y-1 list-disc list-inside marker:text-white/40">
-                      <li><strong class="text-sky-300">Magnet</strong> &mdash; trekker mindre sirkler mot den du holder</li>
+                      <li><strong class="text-sky-300">Gravitasjon</strong> &mdash; trekker mindre sirkler mot den du holder</li>
                       <li><strong class="text-pink-300">Antistoff</strong> &mdash; støter mindre sirkler unna</li>
                       <li><strong class="text-violet-300">Sort hull</strong> &mdash; sluker mindre sirkler, vokser for hver som spises</li>
                     </ul>
@@ -756,7 +756,7 @@ onMounted(() => {
                   <div class="grid grid-cols-2 gap-1.5">
                     <button v-for="m in [
                       { v: 'off',    label: 'Av' },
-                      { v: 'magnet', label: 'Magnet' },
+                      { v: 'magnet', label: 'Gravitasjon' },
                       { v: 'repel',  label: 'Antistoff' },
                       { v: 'eraser', label: 'Sort hull' },
                     ]" :key="m.v"
@@ -777,7 +777,7 @@ onMounted(() => {
                       Grip <span class="text-amber-300">sola</span> og dra planetsystemet rundt — planetene følger gravitasjonen, men <em>sliter litt med å finne banene</em> igjen.
                       Formelen <span class="text-amber-300 font-serif italic">ω ∝ r⁻³ᐟ²</span> er Keplers 3. lov: jo lenger ute en planet er, desto langsommere vinkelhastighet — ytre baner tar mye lengre tid per runde enn indre.
                     </template>
-                    <template v-else-if="gameMode === 'magnet'">Grip en stor sirkel — mindre sirkler tiltrekkes. Lengre holdetid = sterkere magnet.</template>
+                    <template v-else-if="gameMode === 'magnet'">Grip en stor sirkel — mindre sirkler tiltrekkes av gravitasjonen. Lengre holdetid = sterkere tyngdekraft.</template>
                     <template v-else-if="gameMode === 'repel'">Grip en stor sirkel — mindre sirkler støtes unna som av antistoff. Lengre holdetid = kraftigere effekt.</template>
                     <template v-else-if="gameMode === 'eraser'">Grip en stor sirkel og hold inne — mindre sirkler tiltrekkes og slukes. Hullet vokser for hver sirkel det spiser. Tøm hele lerretet for en liten overraskelse!</template>
                   </p>

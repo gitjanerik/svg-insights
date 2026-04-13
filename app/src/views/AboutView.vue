@@ -111,12 +111,27 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 2.1.1 -->
+          <!-- 2.1.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-pink-500 animate-pulse" />
             <details class="group" open>
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white/80">2.1.1</span>
+                <span class="font-semibold text-white/80">2.1.2</span>
+                <span class="text-white/40">&mdash; Romtema: Magnet &rarr; Gravitasjon</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">14. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Interaktiv modus «Magnet» er omdøpt til <strong class="text-white/70">Gravitasjon</strong> for å passe bedre med rom-temaet</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 2.1.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-500" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/70">2.1.1</span>
                 <span class="text-white/40">&mdash; Mobil-fiks: «Last opp»-knappen</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">14. apr 2026</span>
               </summary>
@@ -151,7 +166,7 @@ const router = useRouter()
                 <li>Rasterpunkter: gjennomsiktigheten virker nå også i de interaktive modi (feil i game-overlay rettet)</li>
                 <li>Rasterpunkter: ca. 6&times; så mange sirkler som standard (tettere rutenett + høyere tak på 4800 punkter)</li>
                 <li>Rasterpunkter: sammenslåing er nå på 0.3 som default &mdash; sirklene fusjonerer lett i sammenhengende felt</li>
-                <li>Interaktive modi i rekkefølgen <strong>Magnet</strong>, <strong>Antistoff</strong> og <strong>Sort hull</strong></li>
+                <li>Interaktive modi i rekkefølgen <strong>Gravitasjon</strong> (opprinnelig «Magnet»), <strong>Antistoff</strong> og <strong>Sort hull</strong></li>
                 <li>Interaktive modi: grip en sirkel ved å trykke/klikke på den &mdash; den grepne sirkelen følger fingeren mens effekten virker rundt den</li>
                 <li><strong>Sort hull</strong> fungerer nå som en magnet: mindre sirkler tiltrekkes og slukes &mdash; hullet vokser i størrelse etter hvert som det spiser (radius √(r₁²+r₂²) så arealet bevares)</li>
                 <li>«Interaktivt»-seksjonen har fått et klikkbart info-ikon som forklarer hva hver modus gjør og gir et «klikk + hold + dra»-tips</li>
