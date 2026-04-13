@@ -104,13 +104,13 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Wireframe demo link -->
+        <!-- About link -->
         <button
-          @click="router.push('/wireframe')"
+          @click="router.push('/about')"
           class="mt-6 text-[12px] text-white/30 underline underline-offset-4 decoration-white/10
                  hover:text-white/50 transition-colors"
         >
-          Wireframe-demo &rarr;
+          Om SVG Insights &rarr;
         </button>
 
       </div>

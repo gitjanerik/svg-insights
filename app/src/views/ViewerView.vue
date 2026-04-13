@@ -1,16 +1,16 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDeviceMotion } from '../composables/useDeviceMotion.js'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { filterPresets, svgFilterDefs, dashPatterns } from '../lib/filterPresets.js'
 import {
   straightenPaths, wobblePaths, adjustStrokeWidths,
   setDashPattern, setLinecap, setGroupOpacities,
-  injectFilterDefs, applyGroupFilter, convertToDrawByNumbers,
+  injectFilterDefs, applyGroupFilter,
   convertToHalftone,
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
+import { useHalftoneGame } from '../composables/useHalftoneGame.js'
 
 const router = useRouter()
 
@@ -20,36 +20,91 @@ const svgWidth = ref(600)
 const svgHeight = ref(400)
 
 const containerRef = ref(null)
-const { tiltX, tiltY, supported: gyroSupported, recalibrate } = useDeviceMotion()
 const { scale, translateX, translateY, reset: resetZoom } = usePinchZoom(containerRef)
 
 // Panel: which tab is open in the sidebar
 const activeTab = ref('presets') // presets, stroke, layers, effects, color
 
 // Filter state
-const strokeScale = ref('medium')
+const strokeScale = ref(2.5)
 const strokeColor = ref('#c4b5fd')
 const bgColor = ref('#0a0a0f')
-const perspective = ref(false)
 const currentPreset = ref(null)
 const dashPattern = ref('solid')
 const linecapStyle = ref('round')
 const isSmooth = ref(true)
 const wobbleIntensity = ref(0)
 const svgFilter = ref(null)
-const showPanel = ref(false)
-const drawByNumbers = ref(false)
-const dotCount = ref(100)
-const hideGuideStrokes = ref(false)
+const showPanel = ref(true)
 const halftone = ref(false)
 const halftoneScale = ref(1.0)
-const halftoneMerge = ref(0)
+const halftoneMerge = ref(0.3)
+const halftoneBlend = ref('normal')
+const halftoneOpacity = ref(50)
+const halftoneColor = ref('#000000')
+
+const exportWithBg = ref(true)
+
+// Info popover for the interactive modes
+const showInteractivityInfo = ref(false)
+
+// Halftone gamification
+const game = useHalftoneGame({
+  halftone,
+  originalSvg,
+  halftoneScale,
+  halftoneMerge,
+  strokeColor: halftoneColor,
+  onEmpty: () => {},
+})
+const gameMode = game.mode
+const gameDots = game.dots
+const gamePointer = game.pointer
+const gameSvgRef = game.gameSvgRef
+const gameActive = game.isActive
+const solarSystem = game.solarSystem
+const onGamePointerDown = game.onPointerDown
+const onGamePointerMove = game.onPointerMove
+const onGamePointerUp = game.onPointerUp
+const resetGame = () => game.reset()
+
+// Live info about the sun (if solar system is active) for halo rendering
+const sunDot = computed(() => gameDots.value.find(d => d.isSun) || null)
+
+// Precomputed orbit-path ellipses (so the template stays readable)
+// Everything except the sun — the sun renders separately outside the halftone
+// opacity group so it stays fully opaque and knall gul.
+const nonSunDots = computed(() => gameDots.value.filter(d => !d.isSun))
+
+const orbitPaths = computed(() => {
+  if (!solarSystem.value || !sunDot.value) return []
+  const sx = sunDot.value.x
+  const sy = sunDot.value.y
+  const paths = []
+  for (const d of gameDots.value) {
+    if (!d.isPlanet) continue
+    // Sun sits at the right focus; ellipse centre is offset left by c, rotated.
+    const cosR = Math.cos(d.orbitRotation)
+    const sinR = Math.sin(d.orbitRotation)
+    const cx = sx - d.c * cosR
+    const cy = sy - d.c * sinR
+    paths.push({
+      id: d.id,
+      cx, cy,
+      rx: d.a,
+      ry: d.b,
+      rotDeg: d.orbitRotation * 180 / Math.PI,
+    })
+  }
+  return paths
+})
 
 const rotation = ref(0)
 
 const opacities = reactive({ edges: 100, contours: 50, hatching: 35 })
 
 const colorPresets = [
+  { name: 'Sort', value: '#000000' },
   { name: 'Fiolett', value: '#c4b5fd' },
   { name: 'Cyan', value: '#67e8f9' },
   { name: 'Gronn', value: '#86efac' },
@@ -71,7 +126,6 @@ const bgPresets = [
   { name: 'Rosa', value: '#831843' },
 ]
 
-const strokeScales = { thin: 0.5, medium: 1.0, bold: 2.0 }
 
 const colorized = ref(false)
 const colorizing = ref(false)
@@ -81,26 +135,16 @@ const fillsData = ref([])
 const revealedCount = ref(0)
 let revealTimer = null
 
-const PARALLAX_PX = 25
-const PERSPECTIVE_DEG = 8
-
-const transformStyle = computed(() => {
-  const tx = translateX.value + (perspective.value ? tiltX.value * PARALLAX_PX : 0)
-  const ty = translateY.value + (perspective.value ? tiltY.value * PARALLAX_PX : 0)
-  const rx = perspective.value ? -tiltY.value * PERSPECTIVE_DEG : 0
-  const ry = perspective.value ? tiltX.value * PERSPECTIVE_DEG : 0
-  return {
-    transform: `perspective(800px) scale(${scale.value}) translate(${tx}px, ${ty}px) rotateX(${rx}deg) rotateY(${ry}deg) rotate(${rotation.value}deg)`,
-    transition: 'transform 0.1s ease-out',
-  }
-})
+const transformStyle = computed(() => ({
+  transform: `scale(${scale.value}) translate(${translateX.value}px, ${translateY.value}px) rotate(${rotation.value}deg)`,
+  transition: 'transform 0.1s ease-out',
+}))
 
 function rebuildSvg() {
   let svg = originalSvg.value
   if (!svg) return
   if (!colorized.value) svg = removeColorization(svg)
-  const scaleVal = strokeScales[strokeScale.value] || 1.0
-  svg = adjustStrokeWidths(svg, scaleVal)
+  svg = adjustStrokeWidths(svg, strokeScale.value)
   const lj = linecapStyle.value === 'butt' ? 'miter' : 'round'
   svg = setLinecap(svg, linecapStyle.value, lj)
   const dp = dashPatterns[dashPattern.value] || ''
@@ -116,29 +160,27 @@ function rebuildSvg() {
   }
   svg = svg.replace(/stroke="currentColor"/g, `stroke="${strokeColor.value}"`)
 
-  // Draw by numbers (must be last — replaces strokes with dots)
-  if (drawByNumbers.value) {
-    svg = convertToDrawByNumbers(svg, {
-      maxPoints: dotCount.value,
-      dotColor: strokeColor.value,
-      hideStrokes: hideGuideStrokes.value,
-    })
-  }
-
-  // Halftone effect — uses photo colors per dot
-  if (halftone.value) {
+  // Halftone effect — dots use the current stroke colour and are placed by
+  // photo-luminance on a grid so they cover contiguous image regions.
+  // Skipped when gamification takes over: the game overlay renders dots reactively instead.
+  if (halftone.value && !gameActive.value) {
     svg = convertToHalftone(svg, {
       scale: halftoneScale.value,
-      usePhotoColors: true,
+      usePhotoColors: false,
+      dotColor: halftoneColor.value,
       merge: halftoneMerge.value,
+      blend: halftoneBlend.value,
+      opacity: halftoneOpacity.value,
     })
   }
+  // In game mode the halftone dots render as a reactive overlay. Guide strokes
+  // keep the user's Lag-tab opacity (we no longer force-dim them).
 
   svgHtml.value = svg
 }
 
 watch(
-  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, drawByNumbers, dotCount, hideGuideStrokes, halftone, halftoneScale, halftoneMerge],
+  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, halftone, halftoneScale, halftoneMerge, halftoneBlend, halftoneOpacity, halftoneColor, gameActive],
   rebuildSvg,
   { deep: true }
 )
@@ -147,7 +189,7 @@ function applyPreset(name) {
   const p = filterPresets[name]
   if (!p) return
   currentPreset.value = name
-  strokeScale.value = p.strokeScale <= 0.7 ? 'thin' : p.strokeScale >= 1.5 ? 'bold' : 'medium'
+  strokeScale.value = p.strokeScale
   strokeColor.value = p.strokeColor
   bgColor.value = p.bgColor
   opacities.edges = p.opacity.edges
@@ -157,6 +199,13 @@ function applyPreset(name) {
   dashPattern.value = Object.keys(dashPatterns).find(k => dashPatterns[k] === p.dashPattern) || 'solid'
   wobbleIntensity.value = p.wobble || 0
   svgFilter.value = p.svgFilter || null
+
+  // Trigger / clear auto-colorization per preset flag
+  if (p.autoColorize) {
+    if (!colorized.value && !colorizing.value) startColorize()
+  } else if (colorized.value) {
+    stopColorize()
+  }
 }
 
 async function startColorize(fills = null) {
@@ -247,10 +296,62 @@ function randomizeColors() {
   startColorize(randomFills)
 }
 
-function handleReset() { resetZoom(); recalibrate(); rotation.value = 0 }
+function handleReset() { resetZoom(); rotation.value = 0 }
 
 function downloadSvg() {
-  const blob = new Blob([svgHtml.value], { type: 'image/svg+xml' })
+  let out = svgHtml.value
+
+  // In game mode, svgHtml only contains the line drawing (halftone is rendered
+  // reactively as an overlay). Bake the live dot positions into the exported
+  // SVG so the raster effect actually appears in the saved file.
+  if (gameActive.value && gameDots.value.length > 0) {
+    const opacityVal = (halftoneOpacity.value / 100).toFixed(2)
+    const styleAttr = halftoneBlend.value !== 'normal'
+      ? ` style="mix-blend-mode:${halftoneBlend.value}"`
+      : ''
+    // Exclude the sun from the opacity-controlled group — it gets rendered
+    // separately below, fully opaque.
+    const dotsForGroup = solarSystem.value
+      ? gameDots.value.filter(d => !d.isSun)
+      : gameDots.value
+    const circles = dotsForGroup.map(d =>
+      `    <circle cx="${d.x.toFixed(1)}" cy="${d.y.toFixed(1)}" r="${d.radius.toFixed(2)}" fill="${d.color}"/>`
+    ).join('\n')
+    const group = `  <g class="halftone-dots" opacity="${opacityVal}"${styleAttr}>\n${circles}\n  </g>`
+    out = out.replace(/<\/svg>\s*$/i, `${group}\n</svg>`)
+  }
+
+  // Solar-system layering: orbits behind, sun + formula fully opaque on top
+  if (solarSystem.value && sunDot.value) {
+    const s = sunDot.value
+    const orbitMarkup = orbitPaths.value.map(o =>
+      `    <ellipse cx="${o.cx.toFixed(1)}" cy="${o.cy.toFixed(1)}" rx="${o.rx.toFixed(2)}" ry="${o.ry.toFixed(2)}" transform="rotate(${o.rotDeg.toFixed(2)}, ${o.cx.toFixed(1)}, ${o.cy.toFixed(1)})" fill="none" stroke="white" stroke-width="0.5" stroke-dasharray="1.5 3"/>`
+    ).join('\n')
+    const orbitsBefore = `  <g pointer-events="none" opacity="0.18">
+${orbitMarkup}
+  </g>`
+    // Inject orbits before the halftone group so they sit behind the planets
+    out = out.replace('<g class="halftone-dots"', `${orbitsBefore}\n  <g class="halftone-dots"`)
+
+    // Sun corona + disc + formula go AFTER the halftone group so they're fully
+    // opaque on top of everything.
+    const fontSize = Math.max(11, s.radius * 0.42).toFixed(1)
+    const sunBlock = `  <g pointer-events="none">
+    <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${(s.radius * 2.4).toFixed(2)}" fill="${s.color}" opacity="0.12"/>
+    <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${(s.radius * 1.7).toFixed(2)}" fill="${s.color}" opacity="0.25"/>
+    <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${(s.radius * 1.25).toFixed(2)}" fill="${s.color}" opacity="0.4"/>
+  </g>
+  <circle cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="${s.radius.toFixed(2)}" fill="${s.color}"/>
+  <text x="${s.x.toFixed(1)}" y="${s.y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="${fontSize}" font-family="serif" font-style="italic" fill="#1a1a1a" font-weight="600">ω ∝ r⁻³ᐟ²</text>`
+    out = out.replace(/<\/svg>\s*$/i, `${sunBlock}\n</svg>`)
+  }
+
+  if (exportWithBg.value && bgColor.value) {
+    // Insert a full-size background rect right after the opening <svg ...> tag
+    const bgRect = `<rect width="100%" height="100%" fill="${bgColor.value}"/>`
+    out = out.replace(/(<svg\b[^>]*>)/i, `$1\n${bgRect}`)
+  }
+  const blob = new Blob([out], { type: 'image/svg+xml' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -311,7 +412,71 @@ onMounted(() => {
 
       <!-- SVG canvas -->
       <div ref="containerRef" class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
-        <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle" v-html="svgHtml" />
+        <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle">
+          <div class="relative w-full h-full">
+            <div class="absolute inset-0" v-html="svgHtml" />
+            <!-- Interactive halftone game overlay -->
+            <svg v-if="gameActive" ref="gameSvgRef"
+                 class="absolute inset-0 w-full h-full"
+                 :viewBox="`0 0 ${svgWidth} ${svgHeight}`"
+                 preserveAspectRatio="xMidYMid meet"
+                 xmlns="http://www.w3.org/2000/svg"
+                 style="touch-action: none;"
+                 @pointerdown="onGamePointerDown"
+                 @pointermove="onGamePointerMove"
+                 @pointerup="onGamePointerUp"
+                 @pointerleave="onGamePointerUp"
+                 @pointercancel="onGamePointerUp">
+              <!-- Pointer aura (force visualisation) -->
+              <circle v-if="gamePointer.active && gameMode !== 'off' && gamePointer.forceStrength > 0"
+                      :cx="gamePointer.x" :cy="gamePointer.y"
+                      :r="20 + gamePointer.forceStrength * 20"
+                      fill="none"
+                      :stroke="gameMode === 'magnet' ? '#38bdf8'
+                               : gameMode === 'repel' ? '#f472b6'
+                               : '#a78bfa'"
+                      stroke-opacity="0.5" stroke-width="1.5"
+                      pointer-events="none" />
+              <!-- Subtle orbital paths (behind everything) -->
+              <g v-if="solarSystem" opacity="0.18" pointer-events="none">
+                <ellipse v-for="orbit in orbitPaths" :key="`orbit-${orbit.id}`"
+                         :cx="orbit.cx" :cy="orbit.cy"
+                         :rx="orbit.rx" :ry="orbit.ry"
+                         :transform="`rotate(${orbit.rotDeg}, ${orbit.cx}, ${orbit.cy})`"
+                         fill="none" stroke="white"
+                         stroke-width="0.5" stroke-dasharray="1.5 3" />
+              </g>
+              <!-- Planets, moons and regular halftone dots — subject to halftone opacity -->
+              <g :opacity="halftoneOpacity / 100"
+                 :style="halftoneBlend !== 'normal' ? { mixBlendMode: halftoneBlend } : {}">
+                <circle v-for="dot in nonSunDots" :key="dot.id"
+                        :cx="dot.x" :cy="dot.y" :r="dot.radius" :fill="dot.color"
+                        :opacity="dot.opacity"
+                        :class="{ 'game-dot-marked': dot.id === gamePointer.markedId }" />
+              </g>
+              <!-- Sun: always fully opaque and knall gul, rendered OUTSIDE the
+                   halftone opacity group. Corona → disc → formula. -->
+              <template v-if="sunDot">
+                <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 2.4"
+                        :fill="sunDot.color" opacity="0.12" pointer-events="none" />
+                <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 1.7"
+                        :fill="sunDot.color" opacity="0.25" pointer-events="none" />
+                <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 1.25"
+                        :fill="sunDot.color" opacity="0.4" pointer-events="none" />
+                <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius"
+                        :fill="sunDot.color" />
+              </template>
+              <!-- Kepler's 3rd law etched on the sun -->
+              <g v-if="solarSystem && sunDot" pointer-events="none">
+                <text :x="sunDot.x" :y="sunDot.y"
+                      text-anchor="middle" dominant-baseline="central"
+                      :font-size="Math.max(11, sunDot.radius * 0.42)"
+                      font-family="serif" font-style="italic"
+                      fill="#1a1a1a" font-weight="600">ω ∝ r⁻³ᐟ²</text>
+              </g>
+            </svg>
+          </div>
+        </div>
 
         <!-- Floating buttons -->
         <div class="absolute bottom-4 right-4 flex gap-2 z-10">
@@ -335,7 +500,7 @@ onMounted(() => {
           </button>
         </div>
         <p class="absolute bottom-4 left-4 text-[10px] text-white/20 z-10">
-          {{ (scale * 100).toFixed(0) }}%<template v-if="gyroSupported"> &middot; Gyro</template>
+          {{ (scale * 100).toFixed(0) }}%
         </p>
       </div>
 
@@ -387,31 +552,17 @@ onMounted(() => {
                   </label>
                 </div>
               </div>
-              <!-- Background color -->
-              <div>
-                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Bakgrunnsfarge</label>
-                <div class="flex gap-2 flex-wrap items-center">
-                  <button v-for="c in bgPresets" :key="c.value" @click="bgColor = c.value"
-                    class="w-7 h-7 rounded-full border-2 transition-all active:scale-90"
-                    :class="bgColor === c.value ? 'border-white scale-110' : 'border-white/10'"
-                    :style="{ background: c.value }" />
-                  <label class="w-7 h-7 rounded-full border-2 border-white/10 overflow-hidden cursor-pointer relative">
-                    <input type="color" :value="bgColor" @input="bgColor = $event.target.value"
-                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                    <div class="w-full h-full" :style="{ background: `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)` }" />
-                  </label>
-                </div>
-              </div>
               <!-- Width -->
               <div>
                 <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Bredde</label>
-                <div class="flex gap-1.5">
-                  <button v-for="s in ['thin', 'medium', 'bold']" :key="s" @click="strokeScale = s; currentPreset = null"
-                    class="flex-1 py-1.5 text-xs rounded-lg border transition-all"
-                    :class="strokeScale === s ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
-                    {{ s === 'thin' ? 'Tynn' : s === 'medium' ? 'Normal' : 'Bred' }}
-                  </button>
+                <div class="flex items-center gap-2">
+                  <span class="text-[10px] text-white/30 shrink-0">0.25</span>
+                  <input v-model.number="strokeScale" type="range" min="0.25" max="5" step="0.25"
+                    @input="currentPreset = null"
+                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                  <span class="text-[10px] text-white/30 shrink-0">5.0</span>
                 </div>
+                <p class="text-[10px] text-white/30 mt-1 text-center">{{ strokeScale.toFixed(2) }}×</p>
               </div>
               <!-- Dash -->
               <div>
@@ -448,6 +599,29 @@ onMounted(() => {
 
             <!-- ── Layers tab ── -->
             <template v-if="activeTab === 'layers'">
+              <!-- Background color -->
+              <div>
+                <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Bakgrunnsfarge</label>
+                <div class="flex gap-2 flex-wrap items-center">
+                  <button v-for="c in bgPresets" :key="c.value" @click="bgColor = c.value"
+                    class="w-7 h-7 rounded-full border-2 transition-all active:scale-90"
+                    :class="bgColor === c.value ? 'border-white scale-110' : 'border-white/10'"
+                    :style="{ background: c.value }" />
+                  <label class="w-7 h-7 rounded-full border-2 border-white/10 overflow-hidden cursor-pointer relative">
+                    <input type="color" :value="bgColor" @input="bgColor = $event.target.value"
+                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                    <div class="w-full h-full" :style="{ background: `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)` }" />
+                  </label>
+                </div>
+                <label class="flex items-center justify-between mt-3">
+                  <span class="text-xs text-white/70">Inkluder bakgrunn ved lagring</span>
+                  <button @click="exportWithBg = !exportWithBg"
+                    class="w-10 h-5 rounded-full transition-colors" :class="exportWithBg ? 'bg-violet-600' : 'bg-white/10'">
+                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
+                      :class="exportWithBg ? 'translate-x-5' : 'translate-x-0.5'" />
+                  </button>
+                </label>
+              </div>
               <div class="space-y-3 text-xs text-white/60">
                 <label class="flex items-center gap-2">
                   <span class="w-16 shrink-0">Kanter</span>
@@ -466,17 +640,6 @@ onMounted(() => {
                   <input v-model.number="opacities.hatching" type="range" min="0" max="100" step="5"
                     class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
                   <span class="w-8 text-right text-white/40">{{ opacities.hatching }}</span>
-                </label>
-              </div>
-              <!-- View toggles -->
-              <div class="space-y-2 pt-2 border-t border-white/5">
-                <label class="flex items-center justify-between">
-                  <span class="text-xs text-white/70">Perspektiv</span>
-                  <button @click="perspective = !perspective"
-                    class="w-10 h-5 rounded-full transition-colors" :class="perspective ? 'bg-violet-600' : 'bg-white/10'">
-                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
-                      :class="perspective ? 'translate-x-5' : 'translate-x-0.5'" />
-                  </button>
                 </label>
               </div>
             </template>
@@ -511,43 +674,11 @@ onMounted(() => {
                   </button>
                 </div>
               </div>
-              <!-- Draw by numbers -->
-              <div class="pt-3 border-t border-white/5">
-                <label class="flex items-center justify-between mb-3">
-                  <span class="text-xs text-white/70">Tegn etter tall</span>
-                  <button @click="drawByNumbers = !drawByNumbers; if (drawByNumbers) halftone = false"
-                    class="w-10 h-5 rounded-full transition-colors" :class="drawByNumbers ? 'bg-sky-600' : 'bg-white/10'">
-                    <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
-                      :class="drawByNumbers ? 'translate-x-5' : 'translate-x-0.5'" />
-                  </button>
-                </label>
-                <div v-if="drawByNumbers" class="space-y-3">
-                  <div>
-                    <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Antall punkter</label>
-                    <div class="flex items-center gap-2">
-                      <span class="text-[10px] text-white/30 shrink-0">50</span>
-                      <input v-model.number="dotCount" type="range" min="50" max="200" step="10"
-                        class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
-                      <span class="text-[10px] text-white/30 shrink-0">200</span>
-                    </div>
-                    <p class="text-[10px] text-white/30 mt-1 text-center">{{ dotCount }} punkter</p>
-                  </div>
-                  <label class="flex items-center justify-between">
-                    <span class="text-xs text-white/70">Skjul streker</span>
-                    <button @click="hideGuideStrokes = !hideGuideStrokes"
-                      class="w-10 h-5 rounded-full transition-colors" :class="hideGuideStrokes ? 'bg-sky-600' : 'bg-white/10'">
-                      <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
-                        :class="hideGuideStrokes ? 'translate-x-5' : 'translate-x-0.5'" />
-                    </button>
-                  </label>
-                </div>
-              </div>
-
               <!-- Halftone -->
               <div class="pt-3 border-t border-white/5">
                 <label class="flex items-center justify-between mb-3">
                   <span class="text-xs text-white/70">Rasterpunkter</span>
-                  <button @click="halftone = !halftone; if (halftone) drawByNumbers = false"
+                  <button @click="halftone = !halftone"
                     class="w-10 h-5 rounded-full transition-colors" :class="halftone ? 'bg-sky-600' : 'bg-white/10'">
                     <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
                       :class="halftone ? 'translate-x-5' : 'translate-x-0.5'" />
@@ -557,21 +688,122 @@ onMounted(() => {
                   <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Punktstorrelse</label>
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-white/30 shrink-0">Sma</span>
-                    <input v-model.number="halftoneScale" type="range" min="0.3" max="2.5" step="0.1"
+                    <input v-model.number="halftoneScale" type="range" min="0.3" max="1.5" step="0.1"
                       class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
                     <span class="text-[10px] text-white/30 shrink-0">Store</span>
                   </div>
                   <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneScale.toFixed(1) }}x</p>
 
                   <!-- Merge slider -->
-                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-3 block">Sammenslaing</label>
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-3 block">Sammenslåing</label>
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-white/30 shrink-0">Ingen</span>
-                    <input v-model.number="halftoneMerge" type="range" min="0" max="1" step="0.1"
+                    <input v-model.number="halftoneMerge" type="range" min="0" max="0.5" step="0.05"
                       class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
                     <span class="text-[10px] text-white/30 shrink-0">Mye</span>
                   </div>
                   <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneMerge === 0 ? 'Av' : halftoneMerge.toFixed(1) }}</p>
+
+                  <!-- Blend mode -->
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-3 block">Blend-modus</label>
+                  <div class="grid grid-cols-2 gap-1.5">
+                    <button v-for="b in [
+                      { v: 'normal', label: 'Normal' },
+                      { v: 'luminosity', label: 'Luminositet' },
+                      { v: 'multiply', label: 'Multiply' },
+                      { v: 'difference', label: 'Difference' },
+                    ]" :key="b.v"
+                      @click="halftoneBlend = b.v"
+                      class="py-1.5 text-[11px] rounded-lg border transition-all"
+                      :class="halftoneBlend === b.v ? 'bg-sky-600 border-sky-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                      {{ b.label }}
+                    </button>
+                  </div>
+
+                  <!-- Gamification modes -->
+                  <div class="flex items-center gap-1.5 mb-2 mt-3">
+                    <span class="text-[10px] text-white/40 uppercase tracking-wider">Interaktivt</span>
+                    <button @click="showInteractivityInfo = !showInteractivityInfo"
+                      type="button"
+                      :aria-expanded="showInteractivityInfo"
+                      aria-label="Vis info om interaktive modi"
+                      class="w-4 h-4 inline-flex items-center justify-center rounded-full transition-colors"
+                      :class="showInteractivityInfo ? 'bg-violet-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="11" x2="12" y2="17"/>
+                        <circle cx="12" cy="7.5" r="0.5" fill="currentColor"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <div v-if="showInteractivityInfo"
+                       class="relative mb-2 p-3 rounded-lg bg-black/60 border border-white/15 text-[11px] text-white/75 leading-relaxed">
+                    <button @click="showInteractivityInfo = false" type="button"
+                      aria-label="Lukk info"
+                      class="absolute top-1.5 right-2 text-white/40 hover:text-white text-sm leading-none">×</button>
+                    <p class="mb-2 pr-4">
+                      <strong class="text-white/90">Klikk og hold</strong> på en stor sirkel for å gripe den.
+                      Kombiner med å flytte sirkelen for å forsterke effekten.
+                    </p>
+                    <ul class="space-y-1 list-disc list-inside marker:text-white/40">
+                      <li><strong class="text-sky-300">Magnet</strong> &mdash; trekker mindre sirkler mot den du holder</li>
+                      <li><strong class="text-pink-300">Antistoff</strong> &mdash; støter mindre sirkler unna</li>
+                      <li><strong class="text-violet-300">Sort hull</strong> &mdash; sluker mindre sirkler, vokser for hver som spises</li>
+                    </ul>
+                    <p class="mt-2 text-[10px] text-white/40">
+                      Tips: Jo lenger du holder, jo sterkere blir kraften.
+                    </p>
+                  </div>
+                  <div class="grid grid-cols-2 gap-1.5">
+                    <button v-for="m in [
+                      { v: 'off',    label: 'Av' },
+                      { v: 'magnet', label: 'Magnet' },
+                      { v: 'repel',  label: 'Antistoff' },
+                      { v: 'eraser', label: 'Sort hull' },
+                    ]" :key="m.v"
+                      @click="gameMode = m.v"
+                      class="py-1.5 text-[11px] rounded-lg border transition-all"
+                      :class="gameMode === m.v
+                        ? (m.v === 'off' ? 'bg-white/10 border-white/20 text-white/80' : 'bg-pink-600 border-pink-500 text-white')
+                        : 'bg-white/5 border-white/10 text-white/60'">
+                      {{ m.label }}
+                    </button>
+                  </div>
+                  <button v-if="gameMode !== 'off'" @click="resetGame"
+                    class="w-full mt-2 py-1.5 text-[11px] rounded-lg bg-white/5 border border-white/10 text-white/70 active:scale-95 transition-all">
+                    Tilbakestill punkter
+                  </button>
+                  <p class="text-[10px] text-white/40 mt-2 leading-tight">
+                    <template v-if="solarSystem">
+                      Grip <span class="text-amber-300">sola</span> og dra planetsystemet rundt — planetene følger gravitasjonen, men <em>sliter litt med å finne banene</em> igjen.
+                      Formelen <span class="text-amber-300 font-serif italic">ω ∝ r⁻³ᐟ²</span> er Keplers 3. lov: jo lenger ute en planet er, desto langsommere vinkelhastighet — ytre baner tar mye lengre tid per runde enn indre.
+                    </template>
+                    <template v-else-if="gameMode === 'magnet'">Grip en stor sirkel — mindre sirkler tiltrekkes. Lengre holdetid = sterkere magnet.</template>
+                    <template v-else-if="gameMode === 'repel'">Grip en stor sirkel — mindre sirkler støtes unna som av antistoff. Lengre holdetid = kraftigere effekt.</template>
+                    <template v-else-if="gameMode === 'eraser'">Grip en stor sirkel og hold inne — mindre sirkler tiltrekkes og slukes. Hullet vokser for hver sirkel det spiser. Tøm hele lerretet for en liten overraskelse!</template>
+                  </p>
+
+                  <!-- Raster opacity (moved from Lag tab — nest nederst) -->
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-4 block">Raster (gjennomsiktighet)</label>
+                  <div class="flex items-center gap-2">
+                    <input v-model.number="halftoneOpacity" type="range" min="0" max="100" step="5"
+                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    <span class="w-8 text-right text-white/40 text-[10px]">{{ halftoneOpacity }}</span>
+                  </div>
+
+                  <!-- Raster colour picker (nederst) -->
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-4 block">Rasterfarge</label>
+                  <div class="flex gap-2 flex-wrap items-center">
+                    <button v-for="c in colorPresets" :key="c.value" @click="halftoneColor = c.value"
+                      class="w-7 h-7 rounded-full border-2 transition-all active:scale-90"
+                      :class="halftoneColor === c.value ? 'border-white scale-110' : 'border-white/10'"
+                      :style="{ background: c.value }"
+                      :aria-label="`Sett rasterfarge til ${c.name}`" />
+                    <label class="w-7 h-7 rounded-full border-2 border-white/10 overflow-hidden cursor-pointer relative">
+                      <input type="color" :value="halftoneColor" @input="halftoneColor = $event.target.value"
+                        class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                      <div class="w-full h-full" :style="{ background: `conic-gradient(red, yellow, lime, aqua, blue, magenta, red)` }" />
+                    </label>
+                  </div>
                 </div>
               </div>
             </template>
@@ -656,4 +888,11 @@ onMounted(() => {
 }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Gamification dot styling */
+.game-dot-marked {
+  stroke: white;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 6px rgba(244, 114, 182, 0.8));
+}
 </style>

@@ -111,6 +111,36 @@ export const filterPresets = {
     label: 'Akvarell',
     description: 'Watercolor',
   },
+
+  'cartoon': {
+    strokeScale: 2.0,
+    opacity: { edges: 100, contours: 100, hatching: 100 },
+    strokeColor: '#000000',
+    bgColor: '#ffffff',
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: true,
+    label: 'Tegneserie',
+    description: 'Bold ink + colors',
+  },
+
+  'auto-color': {
+    strokeScale: 0.6,
+    opacity: { edges: 45, contours: 25, hatching: 0 },
+    strokeColor: '#1a1a1a',
+    bgColor: '#ffffff',
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: true,
+    label: 'Foto-farger',
+    description: 'Auto-colorize from photo',
+  },
 };
 
 // ---------------------------------------------------------------------------

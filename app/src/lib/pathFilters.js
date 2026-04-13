@@ -653,49 +653,52 @@ function mergeNearbyClusters(dots, mergeFactor) {
  * @param {string} [options.dotColor]         - Fallback dot colour
  * @param {number} [options.merge=0]          - Merge factor (0–1): nearby dots fuse into larger circles
  * @param {number} [options.maxDots=800]      - Cap on dot count for performance
+ * @param {string} [options.blend='normal']   - CSS mix-blend-mode for the halftone group
+ * @param {number} [options.opacity=100]      - 0–100 opacity for the halftone group
  * @returns {string} Modified SVG with halftone dots and hidden strokes
  */
-export function convertToHalftone(svgString, options = {}) {
+/**
+ * Shared internal: build the raw dot list for halftone rendering (or for
+ * interactive gamification modes that need the data without SVG output).
+ *
+ * Returns { dots, svgW, svgH }.
+ */
+export function computeHalftoneDots(svgString, options = {}) {
   const {
-    gridSpacing = 6,
-    minRadius = 0.4,
-    maxRadius = 3.5,
+    gridSpacing = null,    // null = auto-compute from scale (exponential)
+    minRadius = 1.0,
+    maxRadius = 3.0,       // 1:3 max-to-min ratio ensures visible variation
     scale = 1.0,
     usePhotoColors = false,
     dotColor = null,
     merge = 0,
-    maxDots = 800,
+    maxDots = 4800,
+    lightThreshold = 230,  // pixels lighter than this are treated as background
   } = options
 
-  // Parse SVG dimensions
+  // When gridSpacing isn't explicitly set, make dot density fall off exponentially
+  // with dot size: small dots → dense grid, large dots → sparse grid.
+  const effSpacing = gridSpacing != null
+    ? gridSpacing
+    : Math.max(2, 2 * Math.pow(scale, 1.4))
+
+  // Parse SVG dimensions — prefer width/height attrs, fall back to viewBox
   const widthMatch = svgString.match(/\bwidth="(\d+(?:\.\d+)?)"/)
   const heightMatch = svgString.match(/\bheight="(\d+(?:\.\d+)?)"/)
-  const svgW = widthMatch ? parseFloat(widthMatch[1]) : 600
-  const svgH = heightMatch ? parseFloat(heightMatch[1]) : 400
-
-  // Collect all path points with minimal dedup
-  const allPoints = []
-  const pathDRegex = /\bd\s*=\s*"([^"]*)"/g
-  let pathMatch
-
-  while ((pathMatch = pathDRegex.exec(svgString)) !== null) {
-    const raw = parsePathPoints(pathMatch[1])
-    const deduped = subsamplePoints(raw, gridSpacing)
-    allPoints.push(...deduped)
-  }
-
-  // Cap dot count for performance and visual clarity
-  if (allPoints.length > maxDots) {
-    const step = allPoints.length / maxDots
-    const capped = []
-    for (let i = 0; i < maxDots; i++) {
-      capped.push(allPoints[Math.floor(i * step)])
+  let svgW = widthMatch ? parseFloat(widthMatch[1]) : null
+  let svgH = heightMatch ? parseFloat(heightMatch[1]) : null
+  if (svgW == null || svgH == null) {
+    const vb = svgString.match(/\bviewBox="([^"]+)"/)
+    if (vb) {
+      const parts = vb[1].split(/[\s,]+/).map(Number)
+      if (parts.length === 4) {
+        if (svgW == null) svgW = parts[2]
+        if (svgH == null) svgH = parts[3]
+      }
     }
-    allPoints.length = 0
-    allPoints.push(...capped)
   }
-
-  if (allPoints.length === 0) return svgString
+  svgW = svgW || 600
+  svgH = svgH || 400
 
   // Get original photo data if available
   const rgba = typeof window !== 'undefined' ? window.__svgInsights_rgba : null
@@ -710,9 +713,6 @@ export function convertToHalftone(svgString, options = {}) {
   const rMin = minRadius * scale
   const rMax = maxRadius * scale
 
-  /**
-   * Sample pixel at SVG coordinate, returning { r, g, b, lum } or null.
-   */
   function samplePixel(px, py) {
     if (!rgba || !rgba.width || !rgba.data) return null
     const ix = Math.round((px / svgW) * (rgba.width - 1))
@@ -725,34 +725,98 @@ export function convertToHalftone(svgString, options = {}) {
     return { r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b }
   }
 
-  // Build dot objects (for merge support and future per-dot colorization)
-  let dots = allPoints.map(p => {
-    const sample = samplePixel(p.x, p.y)
-    let radius = (rMin + rMax) / 2
-    let color = fallbackColor
+  let dots = []
 
-    if (sample) {
-      const t = 1 - sample.lum / 255
-      radius = rMin + t * (rMax - rMin)
+  if (rgba && rgba.width && rgba.data) {
+    // ── Grid sampling: cover natural blocks (contiguous fields) in the motif ──
+    // A regular grid over the SVG frame. At each cell, sample the photo's luminance
+    // and drop a dot if the pixel is dark enough. The dot's radius scales with
+    // darkness (within the rMin..rMax range). Small jitter keeps it organic.
+    const cellStep = Math.max(2, effSpacing * 0.55)
+    const rand = createLCG(1337)
 
-      if (usePhotoColors) {
-        const max = Math.max(sample.r, sample.g, sample.b, 1)
-        const boost = 1.15
-        const r = Math.min(255, Math.round(sample.r / max * 255 * boost))
-        const g = Math.min(255, Math.round(sample.g / max * 255 * boost))
-        const b = Math.min(255, Math.round(sample.b / max * 255 * boost))
-        color = `rgb(${r},${g},${b})`
-      }
+    // Average ~2x2 pixel neighbourhood to smooth over noise
+    function sampleAvg(cx, cy) {
+      const s1 = samplePixel(cx, cy)
+      if (!s1) return null
+      const s2 = samplePixel(cx + cellStep * 0.25, cy)
+      const s3 = samplePixel(cx, cy + cellStep * 0.25)
+      const samples = [s1, s2, s3].filter(Boolean)
+      let sr = 0, sg = 0, sb = 0, sl = 0
+      for (const s of samples) { sr += s.r; sg += s.g; sb += s.b; sl += s.lum }
+      const n = samples.length
+      return { r: sr / n, g: sg / n, b: sb / n, lum: sl / n }
     }
 
-    if (radius < rMin * 0.5) return null
-    return { x: p.x, y: p.y, radius, color, merged: false }
-  }).filter(Boolean)
+    for (let y = cellStep / 2; y < svgH; y += cellStep) {
+      for (let x = cellStep / 2; x < svgW; x += cellStep) {
+        const sample = sampleAvg(x, y)
+        if (!sample) continue
+        if (sample.lum > lightThreshold) continue // background pixel — skip
 
-  // Merge nearby dots if requested
+        // Darkness 0..1
+        const t = Math.max(0, Math.min(1, (lightThreshold - sample.lum) / lightThreshold))
+        const radius = rMin + t * (rMax - rMin)
+        if (radius < rMin * 0.5) continue
+
+        const jx = (rand() - 0.5) * cellStep * 0.35
+        const jy = (rand() - 0.5) * cellStep * 0.35
+
+        let color = fallbackColor
+        if (usePhotoColors) {
+          const max = Math.max(sample.r, sample.g, sample.b, 1)
+          const boost = 1.15
+          const r = Math.min(255, Math.round(sample.r / max * 255 * boost))
+          const g = Math.min(255, Math.round(sample.g / max * 255 * boost))
+          const b = Math.min(255, Math.round(sample.b / max * 255 * boost))
+          color = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`
+        }
+
+        dots.push({ x: x + jx, y: y + jy, radius, color, merged: false })
+      }
+    }
+  } else {
+    // ── Fallback: path-vertex-based placement (when no photo data) ──
+    const allPoints = []
+    const pathDRegex = /\bd\s*=\s*"([^"]*)"/g
+    let pathMatch
+    while ((pathMatch = pathDRegex.exec(svgString)) !== null) {
+      const raw = parsePathPoints(pathMatch[1])
+      const deduped = subsamplePoints(raw, effSpacing)
+      allPoints.push(...deduped)
+    }
+    dots = allPoints.map(p => ({
+      x: p.x, y: p.y,
+      radius: (rMin + rMax) / 2,
+      color: fallbackColor,
+      merged: false,
+    }))
+  }
+
+  // Cap dot count for performance
+  if (dots.length > maxDots) {
+    const step = dots.length / maxDots
+    const capped = []
+    for (let i = 0; i < maxDots; i++) capped.push(dots[Math.floor(i * step)])
+    dots = capped
+  }
+
   if (merge > 0) {
     dots = mergeNearbyClusters(dots, merge)
   }
+
+  return { dots, svgW, svgH }
+}
+
+export function convertToHalftone(svgString, options = {}) {
+  const {
+    blend = 'normal',
+    opacity = 100,
+  } = options
+
+  const { dots } = computeHalftoneDots(svgString, options)
+
+  if (dots.length === 0) return svgString
 
   // Generate SVG circles
   const hasMerged = dots.some(d => d.merged)
@@ -779,21 +843,16 @@ export function convertToHalftone(svgString, options = {}) {
       }
     </style>\n` : ''
 
-  const halftoneGroup = `  <g class="halftone-dots">\n${mergeStyle}${circles}\n  </g>`
+  const opacityVal = (Math.max(0, Math.min(100, opacity)) / 100).toFixed(2)
+  const styleAttr = blend && blend !== 'normal' ? ` style="mix-blend-mode:${blend}"` : ''
+  const halftoneGroup = `  <g class="halftone-dots" opacity="${opacityVal}"${styleAttr}>\n${mergeStyle}${circles}\n  </g>`
 
-  // Hide existing strokes
-  let modified = svgString.replace(
-    /<g\b([^>]*)\bclass="(edges|contours|hatching)"([^>]*)>/g,
-    (tag) => {
-      if (/\bopacity="[^"]*"/.test(tag)) {
-        return tag.replace(/\bopacity="[^"]*"/, 'opacity="0.04"')
-      }
-      return tag.replace(/>$/, ' opacity="0.04">')
-    }
-  )
+  // NOTE: guide strokes (edges/contours/hatching) keep whatever opacity the
+  // user set in the "Lag" tab. Halftone sits on top of them without forcing
+  // them to fade.
 
   // Remove any existing halftone group
-  modified = modified.replace(/\s*<g class="halftone-dots">[\s\S]*?<\/g>\s*/g, '\n')
+  let modified = svgString.replace(/\s*<g class="halftone-dots"[^>]*>[\s\S]*?<\/g>\s*/g, '\n')
 
   // Insert before </svg>
   const closeIdx = modified.lastIndexOf('</svg>')

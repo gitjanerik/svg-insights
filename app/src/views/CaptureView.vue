@@ -125,10 +125,10 @@ onUnmounted(stopCamera)
           <p class="text-sm text-white/50">Konverterer til strektegning...</p>
         </div>
 
-        <!-- SVG Preview -->
+        <!-- SVG Preview — same size as the viewer so the user sees what they'll get -->
         <div
           v-if="previewSvg && !processing"
-          class="max-w-full max-h-full flex items-center justify-center p-4 text-violet-300"
+          class="w-full h-full flex items-center justify-center p-4 text-violet-300"
           v-html="previewSvg.svg"
         />
 

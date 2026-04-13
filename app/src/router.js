@@ -5,7 +5,7 @@ const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/capture', name: 'capture', component: () => import('./views/CaptureView.vue') },
   { path: '/viewer', name: 'viewer', component: () => import('./views/ViewerView.vue') },
-  { path: '/wireframe', name: 'wireframe', component: () => import('./views/WireframeTestView.vue') },
+  { path: '/about', name: 'about', component: () => import('./views/AboutView.vue') },
 ]
 
 export default createRouter({
