@@ -140,24 +140,23 @@ function exitSolarSystem() {
   gameMode.value = 'off'
 }
 
-// Click on a planet → shift its orbit inward; shift-click (or long-press)
-// shifts outward. On touch we simply toggle direction based on the planet's
-// position: inner half shifts outward, outer half shifts inward, so every
-// tap is a meaningful move.
+// Click on a planet → shift its orbit either one slot in or out. Direction
+// is random per tap so each interaction is a little different. No modifier
+// keys (those don't work on mobile).
 function onPlanetTap(planet, event) {
   if (!solarSystem.value) return
   event?.stopPropagation()
-  // Use shift/alt modifier on desktop, otherwise decide by current orbit
-  const planets = gameDots.value.filter(d => d.isPlanet)
-  const sorted = [...planets].sort((a, b) => a.a - b.a)
-  const idx = sorted.indexOf(planet)
-  const mid = (sorted.length - 1) / 2
-  const direction = event?.shiftKey
-    ? -1
-    : event?.altKey
-      ? 1
-      : idx > mid ? -1 : 1 // outer planets move in, inner planets move out
+  const direction = Math.random() < 0.5 ? -1 : 1
   game.shiftPlanetOrbit(planet.id, direction)
+}
+
+// Reopen the planetarium setup modal with the CURRENT sun, so the user can
+// tweak parameters and regenerate without having to eat the scene again.
+function reopenSolarSetup() {
+  if (!sunDot.value) return
+  const currentSun = { ...sunDot.value }
+  game.cancelSolarSystem()          // tears down current solar system
+  game.pendingSolarSystem(currentSun) // reopens the modal with this sun
 }
 
 // Live info about the sun (if solar system is active) for halo rendering
@@ -746,6 +745,24 @@ onMounted(() => {
                stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"/>
             <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
+        <!-- Reconfigure button — bottom-right, only in planetarium mode.
+             Reopens the setup modal with the current sun so the user can
+             tweak planet count, periods, etc. without starting over. -->
+        <button v-if="solarSystem"
+                @click="reopenSolarSetup"
+                aria-label="Konfigurer planetarium på nytt"
+                class="absolute bottom-4 right-4 z-20 w-11 h-11 rounded-full
+                       bg-black/70 backdrop-blur-xl border border-white/15
+                       flex items-center justify-center text-white/80
+                       active:scale-95 active:bg-black/90 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
 

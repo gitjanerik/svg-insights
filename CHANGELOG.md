@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-22 — v4.12.6: Planetarium-UX
+
+- **Konfigurer-knapp** nederst til høyre i planetarium-modus (tannhjul-ikon). Åpner oppsett-modalen med gjeldende sol, så du kan endre planetantall/periode/størrelse og regenerere direkte uten å måtte spise scenen på nytt.
+- **Random ±1 per planet-tap**: tidligere var retningen bestemt av shift/alt-modifiers (desktop) eller av om planeten var indre/ytre halvdel (mobil). Shift/alt fungerer ikke på mobil, og fast regel ble forutsigbar. Nå er hver tap en 50/50-rulle — noen planeter beveger seg utover, andre innover. Mer lekent.
+- **Planeter flyttet ut**: `minA` endret fra `sun.radius * 1.5` til `sun.radius * 2.2`. Tidligere lå indre baner teknisk utenfor solskiven, men innenfor det klikkbare området til sol-sirkelen. Det gjorde små planeter vanskelig å treffe på mobil. Nå er selv perihelium godt utenfor sol-klikk-områdene.
+
+---
+
 ## 2026-04-22 — v4.12.5: Planetarium-fiks
 
 - **Sort bakgrunn**: solsystem-modus tvinger nå alltid svart bakgrunn, uavhengig av hva brukeren har satt som bakgrunnsfarge i Bakgrunn-fanen. Plasserer planetariet i riktig visuell kontekst.

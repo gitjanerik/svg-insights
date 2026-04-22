@@ -196,9 +196,11 @@ export function useHalftoneGame({
     // Release any active grab so the sun doesn't track the pointer
     pointer.markedId = null
 
-    // Inner orbit far enough out that perihelion (a(1−e)) stays outside the
-    // sun even at max eccentricity; outer orbit fills most of the canvas.
-    const minA = sun.radius * 1.5
+    // Inner orbit far enough out that perihelion (a(1−e)) stays clear of
+    // the clickable sun disc plus a margin, so tiny planets aren't swallowed
+    // visually or tap-wise by the sun. Previously 1.5× was geometrically
+    // outside the disc but still inside the clickable circle's hit area.
+    const minA = sun.radius * 2.2
     const maxA = minDim * 0.48
 
     // Kepler's third law: period ∝ a^1.5. Derive base angular speed from the
@@ -604,6 +606,7 @@ export function useHalftoneGame({
     reset,
     startSolarSystem,
     cancelSolarSystem,
+    pendingSolarSystem,
     shiftPlanetOrbit,
   }
 }
