@@ -1,10 +1,12 @@
 # SVG Insights
 
-Mobilapp som gjor bilder om til interaktive SVG-strektegninger. Ta et bilde med kameraet eller last opp en fil, og se det bli til en detaljert vektortegning du kan utforske med gyroskop og pinch-zoom.
+Mobilapp med to hovedfunksjoner: konverter bilder til interaktive SVG-strektegninger, og lag din egen webfont med egen .otf-eksport.
 
 **Live demo:** https://gitjanerik.github.io/svg-insights/
 
 ## Funksjoner
+
+### Lag SVG-tegning
 
 - **Bilde til SVG** — 12-trinns bildeprosesseringspipeline med Canny-kantdeteksjon
 - **Kontrastforbedring** — Histogram-equalization som forbehandling
@@ -15,6 +17,17 @@ Mobilapp som gjor bilder om til interaktive SVG-strektegninger. Ta et bilde med 
 - **Minimum 1000 vektorer** — Adaptiv detaljering hvis under terskel
 - **3D-visning** — Utforsk SVG med gyroskop-parallakse og pinch-zoom
 - **Wireframe-demo** — Parametrisk 3D menneskefigur med ansiktstrekk
+
+### Lag webfont
+
+- **24 kuraterte Google-fonter** som utgangspunkt (serif, sans, håndskrift)
+- **97 glyfer per font** (A–Å, a–å, 0–9, tegnsetting)
+- **Bezier-editor** med anker-drag, kontrollhåndtak, undo/redo
+- **Kvikk-handlinger**: gjør myk, rett, forenkle, tykkere, tynnere
+- **Foto-til-glyf**: ta bilde av en enkelt bokstav og spor konturen
+- **Hjørne-bevisst** kurve-algoritme med anti-støy-filter
+- **Live forhåndsvisning** via FontFace API
+- **.otf-eksport** via opentype.js
 
 ## Teknologi
 

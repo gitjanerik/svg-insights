@@ -2,29 +2,59 @@
 
 ## Hva er dette?
 
-SVG Insights er en Vue 3-mobilapp som konverterer bilder til interaktive SVG-strektegninger. Brukeren tar et bilde eller laster opp en fil, og appen kjører en 12-trinns bildeprosesseringspipeline for å generere SVG med kantdeteksjon, luminans-konturer og skravering.
+SVG Insights er en Vue 3-mobilapp med to hovedfunksjoner:
 
-Gjeldende versjon: **2.1.0** (release 14. april 2026).
+1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
+2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
+
+Gjeldende versjon: **4.8.6** (release 22. april 2026).
 
 ## Viktige kommandoer
 
 ```bash
 cd app
-npm run dev       # Start utviklingsserver (port 5173)
-npm run test      # Kjør tester (vitest run)
-npm run build     # Produksjonsbygg
+npm run dev         # Start utviklingsserver (port 5173)
+npm run test        # Kjør Vitest-tester (imageToSvg, pathFilters, colorization)
+npm run test:fonts  # Headless font-kvalitetstester → HTML-rapport
+npm run build       # Produksjonsbygg
 ```
 
 ## Arkitektur
 
+### Lag SVG-tegning (SVG-sporet)
+
 - **Ingen eksterne bildebiblioteker** — alt er ren JS med typed arrays (Float32Array, Uint8Array)
 - Bildeprosessering er i `app/src/lib/imageToSvg.js` (eksporterer alle trinn individuelt for testing)
 - SVG-transformasjoner i `app/src/lib/pathFilters.js` — alle operasjoner er string-baserte (ingen DOM-avhengighet), så de kan kjøres i Node/test
+- Fargelegging i `app/src/lib/colorization.js`, presets i `app/src/lib/filterPresets.js`
+- Visninger: `CaptureView.vue`, `ViewerView.vue`
+
+### Lag webfont (MinFont-sporet)
+
+- **Anker-algoritme** i `app/src/lib/curveFit.js` — `cornerAwareSimplify` oppdager hjørner, anti-støy-filter for glatte kurver, smoothstep-blending mellom tangent og chord
+- **Contour-tracing** i `app/src/lib/canvasGlyphRenderer.js` — 2-pass Moore-naboer med flood-fill for hull-deteksjon
+- **Catmull-Rom-smoothing** i `app/src/lib/bezierSmoothing.js`
+- **OTF-eksport** i `app/src/lib/fontBuilder.js` (opentype.js, dynamisk import)
+- **Font-katalog** i `app/src/lib/googleFontsCatalog.js` (24 kuraterte fonter, 3 kategorier)
+- **Delt tilstand** i `app/src/composables/useFontProject.js` (glyphs, fontMetrics, fontSettings)
+- **Editor-logikk** i `app/src/composables/useGlyphEditor.js` (path-parsing, drag, undo/redo, quick-actions)
+- Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
+
+### Delte komponenter
+
 - Vue-komposisjonsfunksjoner i `app/src/composables/`
   - `usePinchZoom.js` — pinch-to-zoom i vieweren
   - `useDeviceMotion.js` — gyroskop (per nå ubrukt etter v2.1)
   - `useHalftoneGame.js` — interaktivt rasterlag + solsystem-modus (se under)
-- Visninger i `app/src/views/` — HomeView, CaptureView, ViewerView, AboutView
+- Visninger: `HomeView.vue` (portal med to kort), `AboutView.vue` (felles med endringslogg)
+
+### Test-harness for font-kvalitet
+
+- I `app/tests/font-quality/`
+- Kjører samme algoritmer headless via `@napi-rs/canvas` (Node)
+- Genererer HTML-rapport med problem-glyfer markert i rødt
+- Metrikker: self-intersections, inter-contour crossings, anchor explosion, handle overshoot
+- Kjør: `npm run test:fonts`
 
 ### Rasterpunkter og interaktivitet
 

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Font quality test outputs
+tests/font-quality/report.html
+tests/font-quality/report.json

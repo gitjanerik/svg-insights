@@ -1,5 +1,96 @@
 # Changelog
 
+
+## 2026-04-22 — v4.8.6: Lag webfont — nytt hovedspor i appen
+
+### Nye funksjoner
+
+SVG Insights får i denne versjonen et helt nytt hovedspor: **Lag webfont**. Samme app inneholder nå to kjernefunksjoner som deler Hjem-side, Om-side og teknologi:
+
+1. **Lag SVG-tegning** — den eksisterende bildet-til-vektor-pipelinen (v1.x–2.x)
+2. **Lag webfont** — ny generator som lager en egen `.otf`-font basert på en inspirasjons-Google-font og (valgfritt) fotografier av enkeltbokstaver
+
+### MinFont-funksjonalitet
+
+- **24 kuraterte Google-fonter** som utgangspunkt (8 serif, 8 sans-serif, 8 håndskrift)
+- **Kategorivelger → font-velger → navngivings-flyt** før editoren åpnes
+- **Full glyf-editor** for alle 97 tegn (A–Å, a–å, 0–9, tegnsetting)
+- **Bezier-punkter** kan dras individuelt; kontroll-håndtak er synlige og redigerbare
+- **Kvikk-handlinger** per glyf: Gjør myk, Rett, Forenkle, Tykkere, Tynnere
+- **Auto-generering** av alle 97 glyfer fra valgt inspirasjons-font via canvas-tracing
+- **Foto-basert** glyf-fangst: ta bilde av en enkelt bokstav og spor konturen
+- **Statusmerking** i glyfoversikten: redigert (grønn), fra foto (oransje), auto (blå), tom (grå)
+- **Fontinnstillinger**: sporing (tracking) og skråstilling (skew)
+- **OTF-eksport** via opentype.js med direkte nedlasting
+- **Live forhåndsvisning** av fonten bygget i nettleseren via `FontFace` API
+
+### Teknisk
+
+- `curveFit.js` — hjørne-bevisst ankerplassering med smoothstep-blanding mellom estimert tangent og chord-retning; anti-støy-filter for glatte kurver
+- `canvasGlyphRenderer.js` — 2-pass Moore-naboer-konturspor med flood-fill for korrekt hull-deteksjon (B, O, A, P, D, 0, 6, 8, 9)
+- `bezierSmoothing.js` — Catmull-Rom-basert smoothing for polygon-til-Bezier-konvertering
+- `fontBuilder.js` — OTF-eksport via dynamisk importert opentype.js
+- `useFontProject.js` + `useGlyphEditor.js` — felles reaktiv tilstand og editor-logikk
+- **Automatisk test-harness** i `app/tests/font-quality/` som genererer alle glyfer headless (Node + @napi-rs/canvas) og rapporterer kvalitetsproblemer (self-intersections, krysninger mellom ytter/inner-kontur, ankerpunkt-eksplosjoner, håndtaks-overshoot)
+- Kjør: `npm run test:fonts` for HTML-rapport
+
+### Hjem-side
+
+- Oppdatert til portal-design med to hoved-kort og felles features-bar
+- "Lag SVG-tegning" (violett) og "Lag webfont" (bronse, med NY-badge)
+- Featurerad bevart: Bilde til SVG · Fysikk-effekter · Pinch & zoom
+
+### Hoppet over versjoner
+
+Intern utvikling gikk gjennom v4.5.0–v4.8.5 med fokus på kurvekvalitet for font-generering. Disse versjonene ble aldri publisert som egne releases; v4.8.6 er første samlede publisering med full `.otf`-eksport og stabil kurvealgoritme.
+
+---
+
+
+
+### Nye funksjoner
+
+SVG Insights får i denne versjonen et helt nytt hovedspor: **Lag webfont**. Samme app inneholder nå to kjernefunksjoner som deler Hjem-side, Om-side og teknologi:
+
+1. **Lag SVG-tegning** — den eksisterende bildet-til-vektor-pipelinen (v1.x–2.x)
+2. **Lag webfont** — ny generator som lager en egen `.otf`-font basert på en inspirasjons-Google-font og (valgfritt) fotografier av enkeltbokstaver
+
+### MinFont-funksjonalitet
+
+- **24 kuraterte Google-fonter** som utgangspunkt (8 serif, 8 sans-serif, 8 håndskrift)
+- **Kategorivelger → font-velger → navngivings-flyt** før editoren åpnes
+- **Full glyf-editor** for alle 97 tegn (A–Å, a–å, 0–9, tegnsetting)
+- **Bezier-punkter** kan dras individuelt; kontroll-håndtak er synlige og redigerbare
+- **Kvikk-handlinger** per glyf: Gjør myk, Rett, Forenkle, Tykkere, Tynnere
+- **Auto-generering** av alle 97 glyfer fra valgt inspirasjons-font via canvas-tracing
+- **Foto-basert** glyf-fangst: ta bilde av en enkelt bokstav og spor konturen
+- **Statusmerking** i glyfoversikten: redigert (grønn), fra foto (oransje), auto (blå), tom (grå)
+- **Fontinnstillinger**: sporing (tracking) og skråstilling (skew)
+- **OTF-eksport** via opentype.js med direkte nedlasting
+- **Live forhåndsvisning** av fonten bygget i nettleseren via `FontFace` API
+
+### Teknisk
+
+- `curveFit.js` — hjørne-bevisst ankerplassering med smoothstep-blanding mellom estimert tangent og chord-retning; anti-støy-filter for glatte kurver
+- `canvasGlyphRenderer.js` — 2-pass Moore-naboer-konturspor med flood-fill for korrekt hull-deteksjon (B, O, A, P, D, 0, 6, 8, 9)
+- `bezierSmoothing.js` — Catmull-Rom-basert smoothing for polygon-til-Bezier-konvertering
+- `fontBuilder.js` — OTF-eksport via dynamisk importert opentype.js
+- `useFontProject.js` + `useGlyphEditor.js` — felles reaktiv tilstand og editor-logikk
+- **Automatisk test-harness** i `app/tests/font-quality/` som genererer alle glyfer headless (Node + @napi-rs/canvas) og rapporterer kvalitetsproblemer (self-intersections, krysninger mellom ytter/inner-kontur, ankerpunkt-eksplosjoner, håndtaks-overshoot)
+- Kjør: `npm run test:fonts` for HTML-rapport
+
+### Hjem-side
+
+- Oppdatert til portal-design med to hoved-kort og felles features-bar
+- "Lag SVG-tegning" (violett) og "Lag webfont" (bronse, med NY-badge)
+- Featurerad bevart: Bilde til SVG · Fysikk-effekter · Pinch & zoom
+
+### Hoppet over versjoner
+
+Intern utvikling gikk gjennom v4.5.0–v4.8.5 med fokus på kurvekvalitet for font-generering. Disse versjonene ble aldri publisert som egne releases; v4.8.6 er første samlede publisering med full `.otf`-eksport og stabil kurvealgoritme.
+
+---
+
 ## 2026-04-09 — v1.1.5: Sammenslaing av rasterpunkter
 
 ### Nye funksjoner
