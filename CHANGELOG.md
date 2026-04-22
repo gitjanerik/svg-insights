@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-04-22 — v4.10.0: Drag-drawer og live statistikk
+
+### Nye funksjoner
+
+**Live statistikk ved siden av zoom-indikatoren:**
+
+Nederst til venstre i utforsk-visningen viser appen nå alltid antall synlige streker i tegningen, f.eks. `100% · 1 974 streker`. Når farger er aktivert, utvides linjen med `· 235 fargede områder` som teller opp etter hvert som fargene reveales. Nummerformateringen bruker norsk lokalitet (mellomrom som tusenskilletegn).
+
+Tekstfargen kalkuleres fra bakgrunnsfargens relative luminans (Rec. 709): lys bakgrunn → mørk skrift (`slate-900` @ 70%), mørk bakgrunn → lys skrift (hvit @ 60%). Dette gjør tellerne alltid lesbare uansett om brukeren bytter bakgrunn.
+
+**Drag-drawer på mobil:**
+
+Kontrollpanelet nederst på mobile visninger er nå en drag-drawer med to stabile posisjoner:
+- **Ekspandert**: ~50% av viewport-høyden — standard når panelet åpnes
+- **Minimert**: en smal stripe på ~52 px som viser handle og kanten av tab-baren
+
+Brukeren kan:
+- **Dra handle** opp eller ned for å flytte panelet kontinuerlig
+- **Tappe handle** for å toggle mellom de to posisjonene
+- **Swipe kort** (mindre enn 1/3 av full drag-bane) → magnet-effekt trekker panelet tilbake til opprinnelig tilstand
+- **Swipe langt** (over 1/3) → commit til den andre posisjonen
+
+Handle-opacity fader elegant mens man drar — sterkest i hvile, lett ghost midt i dragget. Spring-animasjon (`cubic-bezier(0.2, 0.8, 0.2, 1)`, 220 ms) gir en tilfredsstillende snap-feel.
+
+Desktop-sidebaren beholder sin vanlige oppførsel (drawer aktiveres kun under 768 px bredde via `matchMedia`).
+
+### Teknisk
+
+- Ny composable `useDraggableDrawer.js` isolerer drag-fysikken — kan gjenbrukes for andre bottom sheets senere
+- `strokeCount` og `colouredRegionCount` som computed-refs basert på eksisterende tilstand (ingen ekstra state)
+- `statsTextColor` computed fra `bgColor` via relative luminans
+- Panelet reset til ekspandert automatisk når det åpnes på nytt, så brukeren ikke ender opp med skjult panel de ikke husker
+
+---
+
 ## 2026-04-22 — v4.9.1: PWA + fiks av modal-scroll
 
 ### PWA-støtte

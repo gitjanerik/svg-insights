@@ -111,10 +111,31 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.9.1 -->
+          <!-- 4.10.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.10.0</span>
+                <span class="text-white/40">&mdash; Drag-drawer og live statistikk</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/70">Streker-teller</strong> ved siden av zoom-nivået viser antall synlige streker i tegningen</li>
+                <li>Når farger er aktivert, vises også <strong class="text-white/70">antall fargede områder</strong> — teller opp etter hvert som de reveales</li>
+                <li>Tekstfarge for statistikken tilpasses bakgrunnsfargen automatisk (mørk tekst på lys bakgrunn, lys tekst på mørk)</li>
+                <li>Mobilt kontrollpanel er nå en <strong class="text-white/70">drag-drawer</strong>: swipe opp/ned for å minifisere eller ekspandere</li>
+                <li>Magnet-effekt: slipp før 1/3 av banen er dratt, og panelet hopper tilbake til opprinnelig tilstand</li>
+                <li>Drag-handle fader elegant mens du drar</li>
+                <li>Tap på handle for å bare toggle &mdash; ingen drag nødvendig</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.9.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.9.1</span>
                 <span class="text-white/40">&mdash; PWA + fiks av modal-scroll</span>

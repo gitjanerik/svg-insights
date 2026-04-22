@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { filterPresets, svgFilterDefs, dashPatterns } from '../lib/filterPresets.js'
@@ -11,6 +11,7 @@ import {
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 import { useHalftoneGame } from '../composables/useHalftoneGame.js'
+import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import SolarSystemSetupModal from '../components/SolarSystemSetupModal.vue'
 
 const router = useRouter()
@@ -167,10 +168,67 @@ const fillsData = ref([])
 const revealedCount = ref(0)
 let revealTimer = null
 
+// Mobile drawer — only active on narrow viewports. Desktop keeps the sidebar.
+const isMobileView = ref(false)
+function updateMobile() {
+  isMobileView.value = window.matchMedia('(max-width: 767px)').matches
+}
+if (typeof window !== 'undefined') {
+  updateMobile()
+  window.addEventListener('resize', updateMobile, { passive: true })
+  onBeforeUnmount?.(() => window.removeEventListener('resize', updateMobile))
+}
+const drawer = useDraggableDrawer({
+  expandedHeight: 0.5,     // drawer takes ~50% of viewport
+  minimizedPeek: 52,       // just enough for handle + tab bar edge
+  snapThreshold: 1 / 3,    // magnet kicks in past 1/3 travel
+})
+
+// Reset drawer to expanded whenever the panel re-opens so the user doesn't
+// return to a minimised state they forgot about.
+watch(showPanel, (open) => {
+  if (open) drawer.reset()
+})
+
 const transformStyle = computed(() => ({
   transform: `scale(${scale.value}) translate(${translateX.value}px, ${translateY.value}px) rotate(${rotation.value}deg)`,
   transition: 'transform 0.1s ease-out',
 }))
+
+// Visible stroke count — counts <path> tags in the rendered SVG
+const strokeCount = computed(() => {
+  const html = svgHtml.value
+  if (!html) return 0
+  // Count self-closing and open <path ...> occurrences. A simple regex is
+  // enough since we control the output ourselves.
+  const matches = html.match(/<path\b/gi)
+  return matches ? matches.length : 0
+})
+
+// Count of "coloured regions" — only visible when colorization is active
+const colouredRegionCount = computed(() => {
+  if (!colorized.value) return null
+  // Use revealedCount so the number grows as the reveal animation runs
+  return revealedCount.value
+})
+
+// Choose text colour based on background luminance: light bg → dark text,
+// dark bg → light text. Returns 'white/70' or 'slate-900/70' style values.
+const statsTextColor = computed(() => {
+  const hex = (bgColor.value || '#0a0a0f').trim()
+  // Accept '#rrggbb' (ignore rgba() or named — rare in our palette)
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.replace(/^#/, '#'))
+  if (!m) return 'rgba(255,255,255,0.6)' // sensible default (dark bg)
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 0xff
+  const g = (n >> 8) & 0xff
+  const b = n & 0xff
+  // Relative luminance (Rec. 709). Threshold 0.5 is the standard cutover.
+  const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+  return lum > 0.5
+    ? 'rgba(15,23,42,0.7)'   // slate-900 at 70% — for light backgrounds
+    : 'rgba(255,255,255,0.6)' // white at 60% — for dark backgrounds
+})
 
 function rebuildSvg() {
   let svg = originalSvg.value
@@ -525,8 +583,17 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <p class="absolute bottom-4 left-4 text-[10px] text-white/20 z-10">
-          {{ (scale * 100).toFixed(0) }}%
+        <!-- Stats readout: zoom · strokes · coloured regions. Text colour
+             auto-adjusts to the current background for readability. -->
+        <p class="absolute bottom-4 left-4 z-10 text-[10px] flex items-center gap-2"
+           :style="{ color: statsTextColor }">
+          <span>{{ (scale * 100).toFixed(0) }}%</span>
+          <span :style="{ opacity: 0.5 }">·</span>
+          <span>{{ strokeCount.toLocaleString('no-NO') }} streker</span>
+          <template v-if="colouredRegionCount !== null">
+            <span :style="{ opacity: 0.5 }">·</span>
+            <span>{{ colouredRegionCount.toLocaleString('no-NO') }} fargede omr&aring;der</span>
+          </template>
         </p>
       </div>
 
@@ -534,7 +601,19 @@ onMounted(() => {
       <Transition name="sidebar">
         <div v-if="showPanel"
           class="shrink-0 bg-[#111118] border-t md:border-t-0 md:border-l border-white/5
-                 w-full md:w-72 h-[45vh] md:h-auto overflow-hidden flex flex-col">
+                 w-full md:w-72 h-[50vh] md:h-auto overflow-hidden flex flex-col relative"
+          :style="isMobileView ? drawer.drawerStyle.value : {}">
+
+          <!-- Drawer handle — only on mobile. Tap or drag to toggle/minimize. -->
+          <div v-if="isMobileView"
+               class="shrink-0 h-7 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing select-none"
+               @pointerdown="drawer.onPointerDown"
+               @pointermove="drawer.onPointerMove"
+               @pointerup="drawer.onPointerUp"
+               @pointercancel="drawer.onPointerUp">
+            <span class="block h-1 w-10 rounded-full bg-white/30 transition-opacity"
+                  :style="{ opacity: drawer.handleOpacity.value }" />
+          </div>
 
           <!-- Tab bar -->
           <div class="shrink-0 flex border-b border-white/5 overflow-x-auto scrollbar-none">
