@@ -28,6 +28,110 @@
  *   description   - short English description
  */
 export const filterPresets = {
+  // ─── Nullstill — vis original SVG, nullstill alle effekter ────────────
+  'nullstill': {
+    strokeScale: 1.0,
+    opacity: { edges: 100, contours: 100, hatching: 100 },
+    strokeColor: '#a78bfa',
+    bgColor: '#0a0a0f',
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: false,
+    halftone: false,
+    gameMode: 'off',
+    resetEffects: true,   // signals applyPreset to clear all effect toggles
+    label: 'Nullstill',
+    description: 'Se original SVG',
+  },
+
+  // ─── Warhol — kraftige farger, trimmete streker, tykk kontur ─────────
+  'warhol': {
+    strokeScale: 2.2,
+    opacity: { edges: 100, contours: 80, hatching: 40 },
+    strokeColor: '#0a0a0f',
+    bgColor: '#ff3b9a',       // Warhol-pink
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: true,
+    halftone: false,
+    gameMode: 'off',
+    effects: { trim: 0.25 },  // trim 25% av strekene for grafisk renhet
+    label: 'Warhol',
+    description: 'Pop-art med tykk kontur',
+  },
+
+  // ─── Tegneserie — skisse-aktig med kraftig kontrast ──────────────────
+  'tegneserie': {
+    strokeScale: 1.6,
+    opacity: { edges: 100, contours: 70, hatching: 60 },
+    strokeColor: '#000000',
+    bgColor: '#fffbe6',       // varm papirbakgrunn
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0.3,
+    dashPattern: '',
+    autoColorize: false,
+    halftone: false,
+    gameMode: 'off',
+    effects: { kurvatur: 0.4 },   // litt firkantet tegneseriefølelse
+    label: 'Tegneserie',
+    description: 'Tegnet stil med sort kontur',
+  },
+
+  // ─── Rastafari — tette rasterpunkter, multiply, tilfeldig kontrast-bg
+  'rastafari': {
+    strokeScale: 0.6,
+    opacity: { edges: 30, contours: 20, hatching: 0 },
+    strokeColor: '#1a1a1a',
+    bgColor: null,            // tilfeldig kontrast-bg ved apply
+    randomBg: true,           // signals applyPreset to pick a random vivid colour
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: false,
+    halftone: true,
+    halftoneScale: 0.55,      // små prikker
+    halftoneMerge: 0.1,       // litt variasjon i størrelse
+    halftoneBlend: 'multiply',
+    halftoneOpacity: 85,
+    halftoneColor: '#000000',
+    gameMode: 'eraser',       // sort hull
+    label: 'Rastafari',
+    description: 'Rastertrykk i multiply',
+  },
+
+  // ─── Einstein — synlige orbit-ringer + gravitasjon ───────────────────
+  'einstein': {
+    strokeScale: 0.8,
+    opacity: { edges: 60, contours: 40, hatching: 20 },
+    strokeColor: '#ffffff',
+    bgColor: '#0a0a0f',
+    linecap: 'round',
+    linejoin: 'round',
+    svgFilter: null,
+    wobble: 0,
+    dashPattern: '',
+    autoColorize: false,
+    halftone: true,
+    halftoneScale: 1.2,
+    halftoneMerge: 0.3,
+    halftoneBlend: 'screen',
+    halftoneOpacity: 70,
+    halftoneColor: '#a78bfa',
+    gameMode: 'magnet',       // gravitasjon
+    label: 'Einstein',
+    description: 'Raster + gravitasjon',
+  },
+
   'pen-ink': {
     strokeScale: 1.2,
     opacity: { edges: 100, contours: 100, hatching: 0 },

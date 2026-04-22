@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-04-22 — v4.12.0: Nye presets og felt-effekter
+
+### Fem nye presets
+
+Plassert øverst i Presets-fanen:
+
+- **Nullstill** (alltid først) — fjerner alle effekter og viser original SVG
+- **Warhol** — pop-art med kraftig rosa bakgrunn, tykke streker, automatisk fargelegging og 25 % trim
+- **Tegneserie** — varm papir-bakgrunn, sort kontur, lett kurvatur
+- **Rastafari** — tette små raster-prikker, multiply-blend, tilfeldig kontrast-bakgrunn, sort-hull-interaktivitet aktivert
+- **Einstein** — raster med screen-blend og violet prikker, gravitasjon-interaktivitet aktivert
+
+Presets kan nå aktivere halftone, fargelegging, interaktivitet OG Strek-fanens effekter i én handling. Når Nullstill trykkes, går absolutt alt tilbake til originalen.
+
+### Fire nye felt-effekter i Farge-fanen
+
+Hver med av/på-bryter og slider — skru av brytern for å reversere effekten.
+
+1. **Forenkling** — morfologisk closing (dilate + erode) slår sammen nærliggende fargefelt. Ingen blur!
+2. **Avrunding** — runder hjørner i fargefelt geometrisk med ekte Q-kurver. Hver L-til-L-overgang blir til `L→Q→L` med et bevel-segment proporsjonalt til kortest kant. Deterministisk og crisp.
+3. **Gradient** — erstatter hver unike fargeverdi med en `<linearGradient>` fra lysere til mørkere nyanse av samme farge. Lysstyrke-swing er 40 % ved max.
+4. **Fragmentering** — `feTurbulence` + `feDisplacementMap` gir knust-glass-effekt (ingen blur her heller)
+
+### Andre endringer
+
+- "Transparens på strek" og "Transparens på skravering" fjernet fra Strek-fanen (hører hjemme i Lag-fanen)
+
+### Teknisk
+
+- Ny modul `fillEffects.js` for felt-effekter, separert fra `colorization.js`
+- Alle presets har nytt schema: `effects`, `halftone*`, `gameMode`, `randomBg`
+- `applyPreset()` nuller alle Strek- og Farge-effekt-togglere før preset-spesifikke settes på
+- 138/138 tester passerer
+
+---
+
 ## 2026-04-22 — v4.11.1: Flex-basert drawer-layout
 
 ### Hvorfor

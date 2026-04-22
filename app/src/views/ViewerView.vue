@@ -9,9 +9,12 @@ import {
   injectFilterDefs, applyGroupFilter,
   convertToHalftone,
   trimPaths, simplifyPaths, spaghettify, calligraphy, kurvatur,
-  setStrokeOpacity, setHatchOpacity,
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
+import {
+  applyFillSimplification, applyFillRounding,
+  applyFillGradient, applyFillFragmentation,
+} from '../lib/fillEffects.js'
 import { useHalftoneGame } from '../composables/useHalftoneGame.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import SolarSystemSetupModal from '../components/SolarSystemSetupModal.vue'
@@ -72,11 +75,24 @@ const calligraphyAmount  = ref(-0.5)
 const kurvaturEnabled = ref(false)
 const kurvaturAmount  = ref(0.5)
 
-// Opacity slider for strokes
-const strokeOpacity = ref(1.0)
+// ── Farge-tab effects (v4.12) ──────────────────────────────────────────
+// Applied on top of the colorized fills group. All reversible via toggle.
 
-// Opacity slider for hatching
-const hatchOpacity = ref(1.0)
+// Forenkling: merges nearby fill regions via morphological dilate+erode
+const fillSimplifyEnabled = ref(false)
+const fillSimplifyAmount  = ref(0.4)
+
+// Avrunding: rounds sharp corners of fills
+const fillRoundEnabled = ref(false)
+const fillRoundAmount  = ref(0.5)
+
+// Gradient: two-tone gradient fills per region
+const fillGradientEnabled = ref(false)
+const fillGradientAmount  = ref(0.5)
+
+// Fragmentering: mosaic/shattered-glass displacement
+const fillFragmentEnabled = ref(false)
+const fillFragmentAmount  = ref(0.4)
 
 const exportWithBg = ref(true)
 
@@ -296,9 +312,6 @@ function rebuildSvg() {
   if (calligraphyEnabled.value && Math.abs(calligraphyAmount.value) > 0.01) {
     svg = calligraphy(svg, calligraphyAmount.value)
   }
-  // Opacity sliders are always live (no toggle needed — 1.0 is neutral)
-  if (strokeOpacity.value < 1) svg = setStrokeOpacity(svg, strokeOpacity.value)
-  if (hatchOpacity.value < 1)  svg = setHatchOpacity(svg, hatchOpacity.value)
 
   if (svgFilter.value) {
     svg = injectFilterDefs(svg, svgFilterDefs)
@@ -321,6 +334,25 @@ function rebuildSvg() {
       opacity: halftoneOpacity.value,
     })
   }
+
+  // ── Farge-tab effects (applied to the .fills group only) ────────────
+  // Gradient changes fill paints, so it runs before filter-based effects.
+  // Order: gradient → simplify (merge) → rounding → fragmentering (last,
+  // since it displaces whatever was built up).
+  if (colorized.value) {
+    if (fillGradientEnabled.value && fillGradientAmount.value > 0) {
+      svg = applyFillGradient(svg, fillGradientAmount.value)
+    }
+    if (fillSimplifyEnabled.value && fillSimplifyAmount.value > 0) {
+      svg = applyFillSimplification(svg, fillSimplifyAmount.value)
+    }
+    if (fillRoundEnabled.value && fillRoundAmount.value > 0) {
+      svg = applyFillRounding(svg, fillRoundAmount.value)
+    }
+    if (fillFragmentEnabled.value && fillFragmentAmount.value > 0) {
+      svg = applyFillFragmentation(svg, fillFragmentAmount.value)
+    }
+  }
   // In game mode the halftone dots render as a reactive overlay. Guide strokes
   // keep the user's Lag-tab opacity (we no longer force-dim them).
 
@@ -335,7 +367,12 @@ watch(
     // New Strek-tab effect refs
     trimEnabled, trimAmount, simplifyEnabled, simplifyAmount,
     spaghettiEnabled, spaghettiAmount, calligraphyEnabled, calligraphyAmount,
-    kurvaturEnabled, kurvaturAmount, strokeOpacity, hatchOpacity,
+    kurvaturEnabled, kurvaturAmount,
+    // Farge-tab effects
+    fillSimplifyEnabled, fillSimplifyAmount,
+    fillRoundEnabled, fillRoundAmount,
+    fillGradientEnabled, fillGradientAmount,
+    fillFragmentEnabled, fillFragmentAmount,
   ],
   rebuildSvg,
   { deep: true }
@@ -345,9 +382,18 @@ function applyPreset(name) {
   const p = filterPresets[name]
   if (!p) return
   currentPreset.value = name
+
   strokeScale.value = p.strokeScale
   strokeColor.value = p.strokeColor
-  bgColor.value = p.bgColor
+
+  // Background — can be explicit, null, or randomly picked
+  if (p.randomBg) {
+    const vivid = ['#ff3b9a', '#3bff9a', '#3b9aff', '#ffbf3b', '#bf3bff', '#3bffe6']
+    bgColor.value = vivid[Math.floor(Math.random() * vivid.length)]
+  } else if (p.bgColor != null) {
+    bgColor.value = p.bgColor
+  }
+
   opacities.edges = p.opacity.edges
   opacities.contours = p.opacity.contours
   opacities.hatching = p.opacity.hatching
@@ -355,6 +401,57 @@ function applyPreset(name) {
   dashPattern.value = Object.keys(dashPatterns).find(k => dashPatterns[k] === p.dashPattern) || 'solid'
   wobbleIntensity.value = p.wobble || 0
   svgFilter.value = p.svgFilter || null
+
+  // Reset all Strek-tab effect toggles back to off unless the preset
+  // specifies them (allows Nullstill to genuinely nullstill)
+  trimEnabled.value = false
+  simplifyEnabled.value = false
+  spaghettiEnabled.value = false
+  calligraphyEnabled.value = false
+  kurvaturEnabled.value = false
+
+  // Reset Farge-tab effect toggles too
+  fillSimplifyEnabled.value = false
+  fillRoundEnabled.value = false
+  fillGradientEnabled.value = false
+  fillFragmentEnabled.value = false
+
+  // Apply preset-specific effects (map of {name: amount})
+  if (p.effects) {
+    if (p.effects.trim != null) {
+      trimEnabled.value = true
+      trimAmount.value = p.effects.trim
+    }
+    if (p.effects.simplify != null) {
+      simplifyEnabled.value = true
+      simplifyAmount.value = p.effects.simplify
+    }
+    if (p.effects.spaghetti != null) {
+      spaghettiEnabled.value = true
+      spaghettiAmount.value = p.effects.spaghetti
+    }
+    if (p.effects.calligraphy != null) {
+      calligraphyEnabled.value = true
+      calligraphyAmount.value = p.effects.calligraphy
+    }
+    if (p.effects.kurvatur != null) {
+      kurvaturEnabled.value = true
+      kurvaturAmount.value = p.effects.kurvatur
+    }
+  }
+
+  // Halftone raster configuration
+  halftone.value = !!p.halftone
+  if (p.halftone) {
+    if (p.halftoneScale   != null) halftoneScale.value   = p.halftoneScale
+    if (p.halftoneMerge   != null) halftoneMerge.value   = p.halftoneMerge
+    if (p.halftoneBlend   != null) halftoneBlend.value   = p.halftoneBlend
+    if (p.halftoneOpacity != null) halftoneOpacity.value = p.halftoneOpacity
+    if (p.halftoneColor   != null) halftoneColor.value   = p.halftoneColor
+  }
+
+  // Interactivity mode
+  if (p.gameMode != null) gameMode.value = p.gameMode
 
   // Trigger / clear auto-colorization per preset flag
   if (p.autoColorize) {
@@ -892,26 +989,6 @@ onMounted(() => {
                          :class="{ 'opacity-30': !kurvaturEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Gjør kurver rette &mdash; som en norsk tegneserieskaper</p>
                 </div>
-
-                <!-- Stroke opacity (always live, no toggle) -->
-                <div class="mb-3">
-                  <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-xs text-white/80">Transparens p&aring; strek</span>
-                    <span class="text-[10px] text-white/40 tabular-nums">{{ Math.round(strokeOpacity * 100) }}%</span>
-                  </div>
-                  <input v-model.number="strokeOpacity" type="range" min="0" max="1" step="0.05"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
-                </div>
-
-                <!-- Hatch opacity -->
-                <div>
-                  <div class="flex items-center justify-between mb-1.5">
-                    <span class="text-xs text-white/80">Transparens p&aring; skravering</span>
-                    <span class="text-[10px] text-white/40 tabular-nums">{{ Math.round(hatchOpacity * 100) }}%</span>
-                  </div>
-                  <input v-model.number="hatchOpacity" type="range" min="0" max="1" step="0.05"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
-                </div>
               </div>
             </template>
 
@@ -1175,6 +1252,103 @@ onMounted(() => {
                 <div class="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
                   <div class="h-full bg-sky-500/50 rounded-full transition-all duration-300"
                     :style="{ width: (revealedCount / fillsData.length * 100) + '%' }" />
+                </div>
+              </div>
+
+              <!-- ── Felt-effekter ────────────────────────────────────── -->
+              <div class="pt-3 border-t border-white/5">
+                <label class="text-[10px] text-white/40 uppercase tracking-wider block mb-3">Felt-effekter</label>
+
+                <!-- Forenkling -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="fillSimplifyEnabled = !fillSimplifyEnabled"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="fillSimplifyEnabled ? 'bg-sky-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="fillSimplifyEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Forenkling</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(fillSimplifyAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="fillSimplifyAmount" type="range" min="0.1" max="1" step="0.05"
+                         :disabled="!fillSimplifyEnabled"
+                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !fillSimplifyEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Sl&aring;r sammen n&aelig;rliggende fargede felt</p>
+                </div>
+
+                <!-- Avrunding -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="fillRoundEnabled = !fillRoundEnabled"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="fillRoundEnabled ? 'bg-sky-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="fillRoundEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Avrunding</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(fillRoundAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="fillRoundAmount" type="range" min="0.1" max="1" step="0.05"
+                         :disabled="!fillRoundEnabled"
+                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !fillRoundEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Runder av hj&oslash;rner i fargefelt (ekte geometri)</p>
+                </div>
+
+                <!-- Gradient -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="fillGradientEnabled = !fillGradientEnabled"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="fillGradientEnabled ? 'bg-sky-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="fillGradientEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Gradient</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(fillGradientAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="fillGradientAmount" type="range" min="0.1" max="1" step="0.05"
+                         :disabled="!fillGradientEnabled"
+                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !fillGradientEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Tofarget gradient fra lysere til m&oslash;rkere nyanse</p>
+                </div>
+
+                <!-- Fragmentering -->
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="fillFragmentEnabled = !fillFragmentEnabled"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="fillFragmentEnabled ? 'bg-sky-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="fillFragmentEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Fragmentering</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(fillFragmentAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="fillFragmentAmount" type="range" min="0.1" max="1" step="0.05"
+                         :disabled="!fillFragmentEnabled"
+                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !fillFragmentEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Knust-glass-effekt (fractal noise displacement)</p>
                 </div>
               </div>
             </template>

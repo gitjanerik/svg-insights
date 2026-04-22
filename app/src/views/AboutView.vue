@@ -111,10 +111,35 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 4.12.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.0</span>
+                <span class="text-white/40">&mdash; Nye presets og felt-effekter</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Fem nye presets: <strong class="text-white/70">Nullstill</strong> (&oslash;verst), <strong class="text-white/70">Warhol</strong>, <strong class="text-white/70">Tegneserie</strong>, <strong class="text-white/70">Rastafari</strong> og <strong class="text-white/70">Einstein</strong></li>
+                <li>Presets kan n&aring; aktivere halftone, fargelegging, interaktivitet og Strek-effekter i &eacute;n handling</li>
+                <li>Fire nye felt-effekter i <strong class="text-white/70">Farge</strong>-fanen, hver med av/p&aring;-bryter:
+                  <ul class="ml-4 mt-1 space-y-0.5">
+                    <li>&bull; <strong>Forenkling</strong> &mdash; sl&aring;r sammen n&aelig;rliggende felt</li>
+                    <li>&bull; <strong>Avrunding</strong> &mdash; runder hj&oslash;rner geometrisk (ekte Q-kurver)</li>
+                    <li>&bull; <strong>Gradient</strong> &mdash; tofarget gradient per felt</li>
+                    <li>&bull; <strong>Fragmentering</strong> &mdash; knust-glass-effekt</li>
+                  </ul>
+                </li>
+                <li>Transparens-sliderne for strek og skravering er flyttet ut av Strek-fanen (h&aring;ndteres i Lag-fanen)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 4.11.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.11.1</span>
                 <span class="text-white/40">&mdash; Flex-basert drawer-layout</span>
