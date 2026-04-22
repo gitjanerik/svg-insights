@@ -37,9 +37,15 @@ export function applyFillRounding(svgString, amount = 0.5) {
   if (amount <= 0) return svgString
   const frac = Math.min(0.45, amount * 0.45)  // fraction of edge to bevel
 
-  const pathRe = /(<path\b[^>]*class="[^"]*fill-region[^"]*"[^>]*\bd\s*=\s*")([^"]+)("[^>]*\/?>)/gi
-  return svgString.replace(pathRe, (_m, pre, d, post) => {
-    return pre + roundPathCorners(d, frac) + post
+  // Match <path> tags that contain class="...fill-region..." anywhere in
+  // their attribute list, regardless of attribute order. We then rewrite
+  // the `d` attribute inside the matched tag.
+  const tagRe = /<path\b[^>]*\/?>/gi
+  return svgString.replace(tagRe, (tag) => {
+    if (!/class="[^"]*fill-region[^"]*"/i.test(tag)) return tag
+    return tag.replace(/(\bd\s*=\s*")([^"]+)(")/i, (_m, pre, d, post) => {
+      return pre + roundPathCorners(d, frac) + post
+    })
   })
 }
 

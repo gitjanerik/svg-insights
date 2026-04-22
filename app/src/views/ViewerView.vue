@@ -130,6 +130,16 @@ function onSolarCancel() {
   game.cancelSolarSystem()
 }
 
+// Triggered by the top-right X button while the planetarium is running.
+// Resets scene, returns UI to the normal state (drawer, stats, buttons).
+function exitSolarSystem() {
+  game.cancelSolarSystem()
+  // Also turn off whatever interactivity mode produced the sort-hull trigger
+  // so the user doesn't accidentally fall straight back into the planetarium
+  // when the last dot is eaten again.
+  gameMode.value = 'off'
+}
+
 // Click on a planet → shift its orbit inward; shift-click (or long-press)
 // shifts outward. On touch we simply toggle direction based on the planet's
 // position: inner half shifts outward, outer half shifts inward, so every
@@ -645,13 +655,6 @@ onMounted(() => {
       </button>
       <h1 class="text-sm font-medium text-white/80">Utforsk</h1>
       <div class="flex gap-2">
-        <button @click="showPanel = !showPanel"
-          class="text-white/60 active:text-white transition-colors"
-          :class="{ 'text-violet-400': showPanel }">
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
-          </svg>
-        </button>
         <button @click="downloadSvg" class="text-white/60 active:text-white transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -726,11 +729,30 @@ onMounted(() => {
           </div>
         </div>
 
+        <!-- Exit button — only shown when the planetarium is active. Clicking
+             cancels the solar system and returns the drawer / normal UI. -->
+        <button v-if="solarSystem"
+                @click="exitSolarSystem"
+                aria-label="Avslutt planetarium"
+                class="absolute top-4 right-4 z-20 w-11 h-11 rounded-full
+                       bg-black/70 backdrop-blur-xl border border-white/15
+                       flex items-center justify-center text-white/80
+                       active:scale-95 active:bg-black/90 transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+
         <!-- Floating buttons — absolute-positioned at bottom-4 of the canvas.
              On mobile the canvas shrinks as the drawer expands (via flex),
              so these naturally sit just above the drawer. On desktop the
-             drawer is a right-side sidebar, so bottom-4 is the viewport bottom. -->
-        <div class="absolute bottom-4 right-4 flex gap-2 z-10">
+             drawer is a right-side sidebar, so bottom-4 is the viewport bottom.
+             Hidden while the planetarium is running — the X button is the
+             only visible chrome in that mode. -->
+        <div v-if="!solarSystem" class="absolute bottom-4 right-4 flex gap-2 z-10">
           <button @click="rotation = (rotation - 90) % 360"
             class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -750,8 +772,9 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <!-- Stats readout — same bottom-4 as buttons. Text colour adapts to bg. -->
-        <p class="absolute bottom-4 left-4 z-10 text-[10px] flex items-center gap-2"
+        <!-- Stats readout — also hidden during the planetarium. -->
+        <p v-if="!solarSystem"
+           class="absolute bottom-4 left-4 z-10 text-[10px] flex items-center gap-2"
            :style="{ color: statsTextColor }">
           <span>{{ (scale * 100).toFixed(0) }}%</span>
           <span :style="{ opacity: 0.5 }">·</span>
@@ -765,7 +788,7 @@ onMounted(() => {
 
       <!-- ═══ Controls sidebar (desktop) / bottom panel (mobile) ═══ -->
       <Transition name="sidebar">
-        <div v-if="showPanel"
+        <div v-if="showPanel && !solarSystem"
           :class="[
             'bg-[#111118] border-white/5 overflow-hidden flex flex-col shrink-0',
             isMobileView ? 'w-full border-t' : 'w-72 h-auto border-l',

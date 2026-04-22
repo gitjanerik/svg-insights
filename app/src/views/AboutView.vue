@@ -111,10 +111,33 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 4.12.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.1</span>
+                <span class="text-white/40">&mdash; Kamera-redesign + planetarium-exit</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Fiks: avrunding av fargede felt virker n&aring; &mdash; regex krevde tidligere at <code>class</code> kom f&oslash;r <code>d</code> i path-taggen</li>
+                <li>Kamera-fanen heter n&aring; <strong class="text-white/70">"Ta bilde eller last opp"</strong></li>
+                <li>Sentrert shutter-knapp, opplasting til venstre, ny <strong class="text-white/70">flip-knapp</strong> til h&oslash;yre (bytter til selfie-kamera)</li>
+                <li>Ny <strong class="text-white/70">zoom-slider</strong> &mdash; bruker native MediaTrack-zoom n&aring;r tilgjengelig, ellers digital zoom via canvas-crop</li>
+                <li>Selfie-forh&aring;ndsvisning speiles horisontalt for naturlig f&oslash;lelse</li>
+                <li>&laquo;Ta nytt bilde&raquo; og &laquo;Utforsk SVG&raquo; er n&aring; alltid synlige etter opptak</li>
+                <li>&laquo;Utforsk i 3D&raquo; &rarr; omd&oslash;pt til &laquo;Utforsk SVG&raquo;</li>
+                <li>I planetarium-modus skjules drawer &mdash; <strong class="text-white/70">X-knapp &oslash;verst til h&oslash;yre</strong> avslutter scenen</li>
+                <li>Fjernet panel-toggle-knappen i Utforsk-headeren (drag-drawer erstatter den)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 4.12.0 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.0</span>
                 <span class="text-white/40">&mdash; Nye presets og felt-effekter</span>

@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-04-22 — v4.12.1: Kamera-redesign og planetarium-exit
+
+### Fikser
+
+- **Avrunding av fargede felt virker nå** — regex krevde tidligere at `class="fill-region"` kom før `d="..."` i path-taggen, men `insertFills` skriver dem i motsatt rekkefølge. Ny regex matcher uansett attributt-rekkefølge
+- Panel-toggle-knappen øverst i Utforsk-headeren er fjernet (drag-drawer erstatter den helt)
+
+### Kamera-redesign (CaptureView)
+
+- Tittel endret fra "Fang bilde" til **"Ta bilde eller last opp"**
+- Shutter-knappen er nå **midtstilt** via et 3-kolonnes grid
+- Opplastingsknappen flyttet til venstre
+- Ny **flip-knapp** til høyre: bytter mellom baksidekamera (`environment`) og frontkamera (`user`)
+- Selfie-forhåndsvisning speiles horisontalt (`-scale-x-100`), og capture-canvas mirrorer faktisk bildet før SVG-konvertering
+- Ny **zoom-slider** under detaljer-slideren. Bruker `MediaTrackCapabilities.zoom` når nettleseren/kameraet støtter det, ellers digital zoom via canvas cropping
+- "Ta nytt bilde" og "Utforsk SVG" (tidligere "Utforsk i 3D") er nå alltid synlige etter opptak
+
+### Planetarium-exit
+
+- Drawer skjules automatisk når planetarium-modus er aktiv (`showPanel && !solarSystem`)
+- **X-knapp** øverst til høyre avslutter scenen via `cancelSolarSystem()` og nuller `gameMode` så brukeren ikke uforvarende trigger planetariet på nytt med én gang
+
+### Teknisk
+
+- `useDraggableDrawer` uendret — drawer skjules via `v-if` på parent
+- `CaptureView.vue`: nye refs `facingMode`, `zoom`, `zoomSupported`, `zoomRange` + `flipCamera()`
+- 138/138 tester passerer
+
+---
+
 ## 2026-04-22 — v4.12.0: Nye presets og felt-effekter
 
 ### Fem nye presets
