@@ -18,27 +18,50 @@
   </head>
   <body class="bg-[#0a0a0f] text-white overscroll-none">
     <!-- On-screen debug: shows if Vue fails to mount -->
-    <div id="debug-overlay" style="position:fixed;bottom:0;left:0;right:0;max-height:50vh;overflow:auto;background:#400;color:#fff;font:12px/1.4 monospace;padding:8px;z-index:9999;display:none;white-space:pre-wrap;word-break:break-all;"></div>
+    <div id="debug-overlay" style="position:fixed;bottom:0;left:0;right:0;max-height:60vh;overflow:auto;background:#400;color:#fff;font:11px/1.4 monospace;padding:8px;z-index:9999;display:none;white-space:pre-wrap;word-break:break-all;"></div>
     <div id="app"></div>
     <script>
       (function(){
+        window.__debugLog = [];
         var overlay = document.getElementById('debug-overlay');
         function show(msg){
+          window.__debugLog.push(msg);
           overlay.style.display = 'block';
           overlay.textContent += msg + '\n\n';
         }
+        window.__show = show;
+
+        show('[1] Inline script ran at ' + new Date().toISOString());
+
+        // Catch ALL errors — including module load failures
         window.addEventListener('error', function(e){
-          show('ERROR: ' + e.message + '\n  at ' + (e.filename||'?') + ':' + e.lineno + ':' + e.colno);
-          if (e.error && e.error.stack) show('  stack: ' + e.error.stack.split('\n').slice(0,4).join(' | '));
-        });
+          if (e.target && e.target !== window) {
+            // Resource load error (script, link, img)
+            show('RESOURCE FAIL: ' + (e.target.tagName||'?') + ' src=' + (e.target.src||e.target.href||'?'));
+          } else {
+            show('JS ERROR: ' + e.message + '\n  at ' + (e.filename||'?') + ':' + e.lineno + ':' + e.colno);
+            if (e.error && e.error.stack) show('  stack: ' + e.error.stack.split('\n').slice(0,5).join(' | '));
+          }
+        }, true);
         window.addEventListener('unhandledrejection', function(e){
-          show('UNHANDLED PROMISE: ' + (e.reason && e.reason.message || e.reason));
+          show('PROMISE REJECT: ' + (e.reason && (e.reason.message||e.reason.stack) || e.reason));
         });
-        // Status line: did Vue actually mount?
+
+        // Test if we can actually fetch the main script
+        setTimeout(function(){
+          show('[2] At 1s. #app children: ' + document.getElementById('app').children.length);
+
+          // Try fetching the main bundle directly to verify it's reachable
+          fetch('/svg-insights/assets/index-Dz-QIaLs.js')
+            .then(function(r){ show('[fetch] main bundle: ' + r.status + ' ' + r.statusText + ' type=' + r.headers.get('content-type')); })
+            .catch(function(e){ show('[fetch] main bundle FAILED: ' + e.message); });
+        }, 1000);
+
         setTimeout(function(){
           var app = document.getElementById('app');
+          show('[3] At 3s. #app children: ' + app.children.length + ', innerHTML len: ' + app.innerHTML.length);
           if (!app.innerHTML || app.innerHTML.length < 10) {
-            show('DIAGNOSE: #app is empty after 3s. Vue did not mount.\nUA: ' + navigator.userAgent);
+            show('DIAGNOSE: Vue did not mount.\nUA: ' + navigator.userAgent);
           }
         }, 3000);
       })();
