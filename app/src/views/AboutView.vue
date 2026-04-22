@@ -111,10 +111,27 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.12.4 -->
+          <!-- 4.12.5 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.5</span>
+                <span class="text-white/40">&mdash; Planetarium-fiks</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Solsystem-modus har n&aring; alltid <strong class="text-white/70">sort bakgrunn</strong>, uavhengig av valgt bakgrunnsfarge</li>
+                <li>Planeter rendres n&aring; <strong class="text-white/70">oppå sola</strong> &mdash; indre baner er synlige selv n&aring;r de krysser solskiven</li>
+                <li>Orbit-linjer ligger fortsatt bak sola (de er jo linjer gjennom solsystemet)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.12.4 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.4</span>
                 <span class="text-white/40">&mdash; Avrunding-fiks, Kepler-rename, Installer-knapp</span>

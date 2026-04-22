@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-22 — v4.12.5: Planetarium-fiks
+
+- **Sort bakgrunn**: solsystem-modus tvinger nå alltid svart bakgrunn, uavhengig av hva brukeren har satt som bakgrunnsfarge i Bakgrunn-fanen. Plasserer planetariet i riktig visuell kontekst.
+- **Planeter over sola**: tidligere ble sola rendret etter planetene, slik at indre baner (semi-major akse < sun-radius) ble skjult bak solskiven. Nå rendres planetene oppå sola, så alle baner er synlige.
+- Orbit-linjer (dashed ellipser) ligger fortsatt bak sola som før — de er jo stier gjennom hele solsystemet.
+
+---
+
 ## 2026-04-22 — v4.12.4: Samling av parallelle commits
 
 Fem parallelle arbeidstråder landet på master med overlappende versjonsnumre (to v4.12.2 og to v4.12.3). Denne releasen samler dem alle på v4.12.4 og bevarer historien nedenfor.

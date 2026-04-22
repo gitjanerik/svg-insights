@@ -644,7 +644,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-[100dvh] overflow-hidden select-none" :style="{ background: bgColor }">
+  <div class="flex flex-col h-[100dvh] overflow-hidden select-none"
+       :style="{ background: (solarSystem || solarSystemPending) ? '#000' : bgColor }">
 
     <!-- Header -->
     <header class="shrink-0 z-20 flex items-center justify-between px-4 py-2 bg-black/60 backdrop-blur-xl border-b border-white/5">
@@ -703,18 +704,9 @@ onMounted(() => {
                          fill="none" stroke="white"
                          stroke-width="0.5" stroke-dasharray="1.5 3" />
               </g>
-              <!-- Planets, moons and regular halftone dots — subject to halftone opacity -->
-              <g :opacity="halftoneOpacity / 100"
-                 :style="halftoneBlend !== 'normal' ? { mixBlendMode: halftoneBlend } : {}">
-                <circle v-for="dot in nonSunDots" :key="dot.id"
-                        :cx="dot.x" :cy="dot.y" :r="dot.radius" :fill="dot.color"
-                        :opacity="dot.opacity"
-                        :class="{ 'game-dot-marked': dot.id === gamePointer.markedId, 'planet-clickable': dot.isPlanet }"
-                        @click="dot.isPlanet ? onPlanetTap(dot, $event) : null"
-                        :style="dot.isPlanet ? { cursor: 'pointer' } : {}" />
-              </g>
-              <!-- Sun: always fully opaque and knall gul, rendered OUTSIDE the
-                   halftone opacity group. Corona → disc. -->
+              <!-- Sun: rendered FIRST (bottom layer) with corona so inner
+                   planets stay visible on top. Always fully opaque yellow,
+                   outside the halftone opacity group. -->
               <template v-if="sunDot">
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 2.4"
                         :fill="sunDot.color" opacity="0.12" pointer-events="none" />
@@ -725,6 +717,17 @@ onMounted(() => {
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius"
                         :fill="sunDot.color" opacity="0.82" />
               </template>
+              <!-- Planets, moons and regular halftone dots — rendered AFTER
+                   the sun so inner-orbit planets sit on top of the disc. -->
+              <g :opacity="halftoneOpacity / 100"
+                 :style="halftoneBlend !== 'normal' ? { mixBlendMode: halftoneBlend } : {}">
+                <circle v-for="dot in nonSunDots" :key="dot.id"
+                        :cx="dot.x" :cy="dot.y" :r="dot.radius" :fill="dot.color"
+                        :opacity="dot.opacity"
+                        :class="{ 'game-dot-marked': dot.id === gamePointer.markedId, 'planet-clickable': dot.isPlanet }"
+                        @click="dot.isPlanet ? onPlanetTap(dot, $event) : null"
+                        :style="dot.isPlanet ? { cursor: 'pointer' } : {}" />
+              </g>
             </svg>
           </div>
         </div>
