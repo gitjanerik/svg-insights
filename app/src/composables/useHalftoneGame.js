@@ -25,11 +25,6 @@ import { ref, reactive, computed, watch, onBeforeUnmount } from 'vue'
 import { computeHalftoneDots } from '../lib/pathFilters.js'
 
 const SUN_COLOR = '#facc15' // knall gul
-const PLANET_COUNT = 10
-// Inspired by our own solar system: the sun is about 10× Jupiter's radius —
-// we use 8× so planets stay readable on screen.
-const MAX_PLANET_TO_SUN_RATIO = 1 / 8
-
 // Earth-tone planet palette: greys, browns, dark greens, ochre, beige, reds
 const EARTH_PALETTE = [
   '#6b7280', '#4b5563',                      // slate greys
@@ -39,6 +34,14 @@ const EARTH_PALETTE = [
   '#d4a574', '#b89968', '#c9a97c',           // beige / tan
   '#991b1b', '#7f1d1d', '#b91c1c',           // reds
 ]
+
+// Default planetarium configuration (user can override via setup modal)
+export const DEFAULT_SOLAR_CONFIG = {
+  planetCount: 10,       // 2..20
+  moonPlanets: 3,        // 0..20 — how many planets get moons
+  innerPeriodSec: 15,    // 10..60 — seconds per orbit at innermost
+  sunSizePct: 50,        // 0..100 — 0 = small/distinct, 100 = large halo
+}
 
 export function useHalftoneGame({
   halftone,           // ref<boolean>   — whether halftone is active
@@ -67,6 +70,10 @@ export function useHalftoneGame({
   })
 
   const solarSystem = ref(false)
+  // While pending, the sort-hull victory has happened but the user hasn't
+  // confirmed the solar-system config yet. The physics loop pauses; the UI
+  // shows a modal. Holds the sun dot that's waiting to become the centre.
+  const solarSystemPending = ref(null)
 
   const isActive = computed(() => halftone.value && mode.value !== 'off')
 
@@ -125,33 +132,58 @@ export function useHalftoneGame({
   // Solar system trigger
   // ───────────────────────────────────────────────────────────────────
 
-  function triggerSolarSystem(sun) {
+  /**
+   * First phase — victory detected. Save the sun and wait for config.
+   * Returns the sun so callers can display it while the modal is open.
+   */
+  function pendingSolarSystem(sun) {
+    solarSystemPending.value = sun
+  }
+
+  /**
+   * User cancelled the solar system — reset the scene to its halftone state.
+   */
+  function cancelSolarSystem() {
+    solarSystemPending.value = null
+    emptyFiredRef.value = false
+    solarSystem.value = false
+    rebuildDots()
+  }
+
+  /**
+   * Second phase — user has chosen a configuration. Build the planetarium.
+   */
+  function startSolarSystem(sun, config = DEFAULT_SOLAR_CONFIG) {
+    const planetCount    = clamp(config.planetCount ?? 10, 2, 20)
+    const moonPlanets    = clamp(config.moonPlanets ?? 3, 0, planetCount)
+    const innerPeriodSec = clamp(config.innerPeriodSec ?? 15, 5, 120)
+    const sunSizePct     = clamp(config.sunSizePct ?? 50, 0, 100)
+
     const cx = svgDims.value.w / 2
     const cy = svgDims.value.h / 2
     const minDim = Math.min(svgDims.value.w, svgDims.value.h)
 
-    // Figure out the SVG's actual on-screen size so we can size the sun in
-    // SCREEN pixels, then convert to viewBox units. Same sun appears similarly
-    // sized on desktop and mobile, regardless of the underlying viewBox.
     const rect = gameSvgRef.value?.getBoundingClientRect?.()
     const elementW = rect?.width || 800
     const elementH = rect?.height || 600
-    // preserveAspectRatio="xMidYMid meet" uses the SMALLER scale on both axes
     const contentScale = Math.min(
       elementW / svgDims.value.w,
       elementH / svgDims.value.h,
     ) || 1
 
-    // Target sun radius on screen: 10% of shortest visible dim, floor 55 px
-    // so it's always prominent even on phone screens.
+    // Sun size — user slider maps 0 → 6%, 100 → 14% of shortest visible dim.
+    // Floor at 45 px so it's always readable.
+    const sunPct = 0.06 + (sunSizePct / 100) * 0.08
     const targetSunScreenRadius = Math.max(
-      55,
-      Math.min(elementW, elementH) * 0.1,
+      45,
+      Math.min(elementW, elementH) * sunPct,
     )
     sun.radius = targetSunScreenRadius / contentScale
 
-    // Planets at 1/8 of the sun (solar-system proportion)
-    const maxPlanetRadius = sun.radius * MAX_PLANET_TO_SUN_RATIO
+    // Planet max radius scales with sun so the "solar system" proportion holds,
+    // but scales less aggressively with big suns to keep planets visible.
+    const planetToSunRatio = sunSizePct > 70 ? 1 / 11 : 1 / 8
+    const maxPlanetRadius = sun.radius * planetToSunRatio
     const minPlanetRadius = maxPlanetRadius * 0.35
 
     // Place the sun at centre and style it yellow
@@ -169,33 +201,26 @@ export function useHalftoneGame({
     const minA = sun.radius * 1.5
     const maxA = minDim * 0.48
 
+    // Kepler's third law: period ∝ a^1.5. Derive base angular speed from the
+    // user's chosen innermost period.
+    const baseSpeed = (2 * Math.PI) / innerPeriodSec
+
     const planets = []
-    for (let i = 0; i < PLANET_COUNT; i++) {
-      // Spread semi-major axes with jitter so orbits don't line up in rings
-      const t = (i + Math.random() * 0.6) / PLANET_COUNT
+    for (let i = 0; i < planetCount; i++) {
+      const t = (i + Math.random() * 0.6) / planetCount
       const a = minA + (maxA - minA) * t
-      // Eccentricity per planet — subtle ovals, never extremely stretched
       const e = 0.05 + Math.random() * 0.18
-      const b = a * Math.sqrt(1 - e * e)  // semi-minor
-      const c = a * e                      // focal offset
-      // Random orientation of the major axis
+      const b = a * Math.sqrt(1 - e * e)
+      const c = a * e
       const orbitRotation = Math.random() * Math.PI * 2
-      // Starting angle around the ellipse
       const angle = Math.random() * Math.PI * 2
-      // Kepler's third law: period ∝ a^1.5 → mean angular velocity ∝ a^(-1.5)
-      const baseSpeed = 0.28 // rad/s at the innermost orbit (slowed down)
       const speed = baseSpeed * Math.pow(minA / a, 1.5)
       const direction = Math.random() > 0.12 ? 1 : -1
-      // Planet radius scales with the canvas (via maxPlanetRadius)
       const planetRadius = minPlanetRadius + Math.random() * (maxPlanetRadius - minPlanetRadius)
-      // Earth-tone colour picked at random from the curated palette
       const color = EARTH_PALETTE[Math.floor(Math.random() * EARTH_PALETTE.length)]
-      // Gravitational struggle — inner planets stick to their orbits more
-      // firmly (stiffer spring, stronger pull) while outer planets wobble
-      // and lag more when the sun is dragged around.
       const orbitT = (a - minA) / (maxA - minA)
-      const springK = 0.04 - 0.028 * orbitT   // 0.04 inner → 0.012 outer
-      const springDamp = 0.86 + 0.06 * orbitT // 0.86 inner → 0.92 outer
+      const springK = 0.04 - 0.028 * orbitT
+      const springDamp = 0.86 + 0.06 * orbitT
 
       planets.push({
         id: nextId++,
@@ -213,45 +238,97 @@ export function useHalftoneGame({
         orbitSpeed: speed * direction,
         springK,
         springDamp,
+        // Snapshot of orbit index (0=innermost) for click-to-shift handling
+        orbitIndex: i,
       })
     }
 
-    // A few planets (the bigger ones) get moons orbiting them
+    // Distribute moons among `moonPlanets` of the larger planets.
     const moons = []
-    const hostThreshold = maxPlanetRadius * 0.6
-    const moonCandidates = planets
-      .filter(p => p.radius >= hostThreshold)
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 2 + Math.floor(Math.random() * 2)) // 2-3 host planets
-    for (const host of moonCandidates) {
-      const numMoons = 1 + (Math.random() > 0.6 ? 1 : 0)
-      for (let m = 0; m < numMoons; m++) {
-        const moonR = host.radius * (2.2 + m * 1.4) + 2
-        const moonAngle = Math.random() * Math.PI * 2
-        const moonSpeed = (0.9 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1)
-        moons.push({
-          id: nextId++,
-          x: host.x + moonR * Math.cos(moonAngle),
-          y: host.y + moonR * Math.sin(moonAngle),
-          ox: 0, oy: 0,
-          radius: 0.8 + Math.random() * 0.6,
-          origRadius: 0.8,
-          color: '#d4d4d8',
-          vx: 0, vy: 0,
-          opacity: 0.9,
-          isMoon: true,
-          parentPlanetId: host.id,
-          moonRadius: moonR,
-          moonAngle,
-          moonSpeed,
-        })
+    if (moonPlanets > 0) {
+      const moonHosts = [...planets]
+        .sort((a, b) => b.radius - a.radius)
+        .slice(0, moonPlanets)
+      for (const host of moonHosts) {
+        const numMoons = 1 + (Math.random() > 0.6 ? 1 : 0)
+        for (let m = 0; m < numMoons; m++) {
+          const moonR = host.radius * (2.2 + m * 1.4) + 2
+          const moonAngle = Math.random() * Math.PI * 2
+          const moonSpeed = (0.9 + Math.random() * 0.5) * (Math.random() > 0.5 ? 1 : -1)
+          moons.push({
+            id: nextId++,
+            x: host.x + moonR * Math.cos(moonAngle),
+            y: host.y + moonR * Math.sin(moonAngle),
+            ox: 0, oy: 0,
+            radius: 0.8 + Math.random() * 0.6,
+            origRadius: 0.8,
+            color: '#d4d4d8',
+            vx: 0, vy: 0,
+            opacity: 0.9,
+            isMoon: true,
+            parentPlanetId: host.id,
+            moonRadius: moonR,
+            moonAngle,
+            moonSpeed,
+          })
+        }
       }
     }
 
     dots.value = [sun, ...planets, ...moons]
     solarSystem.value = true
+    solarSystemPending.value = null
+    // Store derived geometry for click-to-shift handling
+    solarGeom.minA = minA
+    solarGeom.maxA = maxA
+    solarGeom.baseSpeed = baseSpeed
     startLoop()
   }
+
+  /**
+   * Click-to-shift: move a planet one orbit inward (direction=-1) or outward
+   * (direction=+1). Any moons parented to it follow with the host.
+   *
+   * Implementation: we renormalise the planet's semi-major axis to the next
+   * orbit slot, update its period via Kepler, and reset spring constants for
+   * the new distance. Visual continuity is preserved (phase angle unchanged).
+   */
+  function shiftPlanetOrbit(planetId, direction) {
+    if (!solarSystem.value) return
+    const planets = dots.value.filter(d => d.isPlanet)
+    if (planets.length < 2) return
+    const target = planets.find(p => p.id === planetId)
+    if (!target) return
+
+    // Current orbit slot (sorted by semi-major axis, innermost = 0)
+    const byDistance = [...planets].sort((a, b) => a.a - b.a)
+    const currentSlot = byDistance.indexOf(target)
+    const newSlot = clamp(currentSlot + direction, 0, byDistance.length - 1)
+    if (newSlot === currentSlot) return // already at edge
+
+    // Swap semi-major axes with the planet at the destination slot so the
+    // scene stays populated at every orbit — no gap opens up.
+    const other = byDistance[newSlot]
+    swapOrbitParams(target, other)
+  }
+
+  function swapOrbitParams(p1, p2) {
+    const keys = ['a', 'b', 'c', 'orbitRotation', 'springK', 'springDamp']
+    for (const k of keys) {
+      const tmp = p1[k]; p1[k] = p2[k]; p2[k] = tmp
+    }
+    // Recompute orbit speeds via Kepler from the new semi-major axes
+    const { minA, baseSpeed } = solarGeom
+    const dir1 = Math.sign(p1.orbitSpeed) || 1
+    const dir2 = Math.sign(p2.orbitSpeed) || 1
+    p1.orbitSpeed = baseSpeed * Math.pow(minA / p1.a, 1.5) * dir1
+    p2.orbitSpeed = baseSpeed * Math.pow(minA / p2.a, 1.5) * dir2
+  }
+
+  // Cached geometry so shiftPlanetOrbit can recompute Kepler speeds
+  const solarGeom = { minA: 0, maxA: 0, baseSpeed: 0 }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
   // ───────────────────────────────────────────────────────────────────
   // Pointer → SVG coordinate conversion + pick-marked helpers
@@ -481,14 +558,15 @@ export function useHalftoneGame({
         }
       }
 
-      // Win state: Sort hull has absorbed all but one circle → solar system
+      // Win state: Sort hull has absorbed all but one circle → pending solar system
+      // (user confirms config via modal, then startSolarSystem is called)
       if (mode.value === 'eraser' && !emptyFiredRef.value && dots.value.length === 1) {
         const lone = dots.value[0]
         if (lone.radius > lone.origRadius) {
           emptyFiredRef.value = true
-          triggerSolarSystem(lone)
+          pendingSolarSystem(lone)
           onEmpty({ x: lone.x, y: lone.y, radius: lone.radius, id: lone.id })
-          raf = requestAnimationFrame(tick)
+          // Stop the loop while we await user configuration
           return
         }
       }
@@ -507,6 +585,7 @@ export function useHalftoneGame({
 
   function reset() {
     solarSystem.value = false
+    solarSystemPending.value = null
     rebuildDots()
   }
 
@@ -517,10 +596,14 @@ export function useHalftoneGame({
     gameSvgRef,
     isActive,
     solarSystem,
+    solarSystemPending,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     rebuildDots,
     reset,
+    startSolarSystem,
+    cancelSolarSystem,
+    shiftPlanetOrbit,
   }
 }

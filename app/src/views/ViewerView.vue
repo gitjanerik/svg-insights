@@ -11,6 +11,7 @@ import {
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 import { useHalftoneGame } from '../composables/useHalftoneGame.js'
+import SolarSystemSetupModal from '../components/SolarSystemSetupModal.vue'
 
 const router = useRouter()
 
@@ -63,10 +64,41 @@ const gamePointer = game.pointer
 const gameSvgRef = game.gameSvgRef
 const gameActive = game.isActive
 const solarSystem = game.solarSystem
+const solarSystemPending = game.solarSystemPending
 const onGamePointerDown = game.onPointerDown
 const onGamePointerMove = game.onPointerMove
 const onGamePointerUp = game.onPointerUp
 const resetGame = () => game.reset()
+
+// Solar-system setup modal handlers
+function onSolarStart(config) {
+  if (solarSystemPending.value) {
+    game.startSolarSystem(solarSystemPending.value, config)
+  }
+}
+function onSolarCancel() {
+  game.cancelSolarSystem()
+}
+
+// Click on a planet → shift its orbit inward; shift-click (or long-press)
+// shifts outward. On touch we simply toggle direction based on the planet's
+// position: inner half shifts outward, outer half shifts inward, so every
+// tap is a meaningful move.
+function onPlanetTap(planet, event) {
+  if (!solarSystem.value) return
+  event?.stopPropagation()
+  // Use shift/alt modifier on desktop, otherwise decide by current orbit
+  const planets = gameDots.value.filter(d => d.isPlanet)
+  const sorted = [...planets].sort((a, b) => a.a - b.a)
+  const idx = sorted.indexOf(planet)
+  const mid = (sorted.length - 1) / 2
+  const direction = event?.shiftKey
+    ? -1
+    : event?.altKey
+      ? 1
+      : idx > mid ? -1 : 1 // outer planets move in, inner planets move out
+  game.shiftPlanetOrbit(planet.id, direction)
+}
 
 // Live info about the sun (if solar system is active) for halo rendering
 const sunDot = computed(() => gameDots.value.find(d => d.isSun) || null)
@@ -414,7 +446,7 @@ onMounted(() => {
       <div ref="containerRef" class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
         <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle">
           <div class="relative w-full h-full">
-            <div class="absolute inset-0" v-html="svgHtml" />
+            <div class="absolute inset-0" v-show="!solarSystem && !solarSystemPending" v-html="svgHtml" />
             <!-- Interactive halftone game overlay -->
             <svg v-if="gameActive" ref="gameSvgRef"
                  class="absolute inset-0 w-full h-full"
@@ -452,10 +484,12 @@ onMounted(() => {
                 <circle v-for="dot in nonSunDots" :key="dot.id"
                         :cx="dot.x" :cy="dot.y" :r="dot.radius" :fill="dot.color"
                         :opacity="dot.opacity"
-                        :class="{ 'game-dot-marked': dot.id === gamePointer.markedId }" />
+                        :class="{ 'game-dot-marked': dot.id === gamePointer.markedId, 'planet-clickable': dot.isPlanet }"
+                        @click="dot.isPlanet ? onPlanetTap(dot, $event) : null"
+                        :style="dot.isPlanet ? { cursor: 'pointer' } : {}" />
               </g>
               <!-- Sun: always fully opaque and knall gul, rendered OUTSIDE the
-                   halftone opacity group. Corona → disc → formula. -->
+                   halftone opacity group. Corona → disc. -->
               <template v-if="sunDot">
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius * 2.4"
                         :fill="sunDot.color" opacity="0.12" pointer-events="none" />
@@ -466,14 +500,6 @@ onMounted(() => {
                 <circle :cx="sunDot.x" :cy="sunDot.y" :r="sunDot.radius"
                         :fill="sunDot.color" opacity="0.82" />
               </template>
-              <!-- Kepler's 3rd law etched on the sun -->
-              <g v-if="solarSystem && sunDot" pointer-events="none">
-                <text :x="sunDot.x" :y="sunDot.y"
-                      text-anchor="middle" dominant-baseline="central"
-                      :font-size="Math.max(11, sunDot.radius * 0.42)"
-                      font-family="serif" font-style="italic"
-                      fill="#1a1a1a" font-weight="600">ω ∝ r⁻³ᐟ²</text>
-              </g>
             </svg>
           </div>
         </div>
@@ -864,6 +890,11 @@ onMounted(() => {
         </div>
       </Transition>
     </div>
+
+    <!-- Solar-system setup modal — appears when sort-hull victory triggers -->
+    <SolarSystemSetupModal :open="!!solarSystemPending"
+                           @start="onSolarStart"
+                           @cancel="onSolarCancel" />
   </div>
 </template>
 

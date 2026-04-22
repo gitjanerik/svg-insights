@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-04-22 — v4.9.0: Planetarium-oppsett og interaktiv bane-bytting
+
+### Nye funksjoner
+
+Når «Sort hull»-moduset slurper opp alt, dukker det nå opp en konfigureringsmodal før planetariet starter:
+
+- **Antall planeter** (2–20) — standard 10
+- **Planeter med måne** (0–20) — standard 3, begrenset av antall planeter
+- **Indre omløpstid** (10–60 sekunder) — styrer hastigheten på innerste planet; ytre baner følger Keplers 3. lov og beregnes automatisk
+- **Solstørrelse** (0–100%) — fra liten og distinkt til stor halo
+
+### Interaktiv bane-bytting
+
+Når planetariet kjører, kan brukeren **klikke på en planet** for å flytte den én bane innover eller utover:
+- Planeter i ytre halvdel flyttes innover ved klikk
+- Planeter i indre halvdel flyttes utover ved klikk
+- På desktop kan `Shift+klikk` tvinge innover og `Alt+klikk` utover
+- Måner parent'et til en planet følger automatisk med
+- Plassene byttes med nabo-banen, så scenen holdes balansert — ingen hull i rommet
+
+### Visuelle justeringer
+
+- SVG-tegningen skjules når planetariet er aktivt (og når modalen er åpen) for et renere uttrykk
+- Kepler-formelen `ω ∝ r⁻³ᐟ²` etset på sola er fjernet — formelen står fortsatt i modalen som forklaring
+- Sola har fortsatt knall gul fargelegging og halo-effekt
+
+### Teknisk
+
+- `useHalftoneGame.js` splittet `triggerSolarSystem()` i `pendingSolarSystem()` + `startSolarSystem(sun, config)`, med `cancelSolarSystem()` for avbryt
+- Ny `shiftPlanetOrbit(planetId, direction)` bytter orbit-parametere mellom to naboplaneter og rekalkulerer Kepler-hastigheter
+- `DEFAULT_SOLAR_CONFIG` eksportert fra composablen for gjenbruk i modal
+- Ny komponent `SolarSystemSetupModal.vue` i `src/components/`
+
+---
+
 
 ## 2026-04-22 — v4.8.6: Lag webfont — nytt hovedspor i appen
 
