@@ -217,22 +217,6 @@ const drawer = useDraggableDrawer({
   snapThreshold: 1 / 3,   // magnet kicks in past 1/3 travel
 })
 
-// On mobile the floating buttons + stats should hover just above the drawer.
-// We read `visibleHeightPx` and add a small gap. On desktop the drawer doesn't
-// exist in this layout so buttons stay at `bottom-4`.
-const bottomOffsetStyle = computed(() => {
-  if (!isMobileView.value) return {} // desktop: rely on bottom-4 class
-  const gap = 12
-  return { bottom: (drawer.visibleHeightPx.value + gap) + 'px' }
-})
-
-// Height reserved for drawer — SVG canvas uses this to know how much
-// vertical space to give up. When drawer minimises, the canvas expands.
-const canvasReservedSpaceStyle = computed(() => {
-  if (!isMobileView.value) return {}
-  return { paddingBottom: drawer.visibleHeightPx.value + 'px' }
-})
-
 // Reset drawer to expanded whenever the panel re-opens so the user doesn't
 // return to a minimised state they forgot about.
 watch(showPanel, (open) => {
@@ -584,8 +568,7 @@ onMounted(() => {
 
       <!-- SVG canvas -->
       <div ref="containerRef"
-           class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0 transition-[padding] duration-200"
-           :style="canvasReservedSpaceStyle">
+           class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
         <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle">
           <div class="relative w-full h-full">
             <div class="absolute inset-0" v-show="!solarSystem && !solarSystemPending" v-html="svgHtml" />
@@ -646,11 +629,11 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Floating buttons — on mobile they follow the drawer's top so they
-             stay just above it whether it's expanded, dragging or minimized. -->
-        <div class="absolute right-4 flex gap-2 z-10 transition-[bottom] duration-200"
-             :style="bottomOffsetStyle"
-             :class="!isMobileView ? 'bottom-4' : ''">
+        <!-- Floating buttons — absolute-positioned at bottom-4 of the canvas.
+             On mobile the canvas shrinks as the drawer expands (via flex),
+             so these naturally sit just above the drawer. On desktop the
+             drawer is a right-side sidebar, so bottom-4 is the viewport bottom. -->
+        <div class="absolute bottom-4 right-4 flex gap-2 z-10">
           <button @click="rotation = (rotation - 90) % 360"
             class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -670,11 +653,9 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-        <!-- Stats readout: zoom · strokes · coloured regions. Text colour
-             auto-adjusts to the current background. Follows drawer on mobile. -->
-        <p class="absolute left-4 z-10 text-[10px] flex items-center gap-2 transition-[bottom] duration-200"
-           :style="{ color: statsTextColor, ...bottomOffsetStyle }"
-           :class="!isMobileView ? 'bottom-4' : ''">
+        <!-- Stats readout — same bottom-4 as buttons. Text colour adapts to bg. -->
+        <p class="absolute bottom-4 left-4 z-10 text-[10px] flex items-center gap-2"
+           :style="{ color: statsTextColor }">
           <span>{{ (scale * 100).toFixed(0) }}%</span>
           <span :style="{ opacity: 0.5 }">·</span>
           <span>{{ strokeCount.toLocaleString('no-NO') }} streker</span>
@@ -689,16 +670,12 @@ onMounted(() => {
       <Transition name="sidebar">
         <div v-if="showPanel"
           :class="[
-            'bg-[#111118] border-white/5 overflow-hidden flex flex-col',
-            isMobileView
-              ? 'fixed bottom-0 left-0 right-0 z-20 border-t h-[45vh]'
-              : 'shrink-0 border-l w-72 h-auto',
+            'bg-[#111118] border-white/5 overflow-hidden flex flex-col shrink-0',
+            isMobileView ? 'w-full border-t' : 'w-72 h-auto border-l',
           ]"
-          :style="isMobileView ? drawer.drawerStyle.value : {}">
+          :style="isMobileView ? drawer.drawerHeightStyle.value : {}">
 
-          <!-- Drawer handle — only on mobile. Tap or drag to toggle/minimize.
-               Area is tall enough for a comfortable grip; visual handle is
-               the short pill in the middle. -->
+          <!-- Drawer handle — only on mobile. Drag only; tapping does nothing. -->
           <div v-if="isMobileView"
                class="shrink-0 h-7 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing select-none"
                @pointerdown="drawer.onPointerDown"

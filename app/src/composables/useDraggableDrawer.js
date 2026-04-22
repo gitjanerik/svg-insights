@@ -74,12 +74,17 @@ export function useDraggableDrawer({
     return 0.5 + 0.5 * Math.abs(p - 0.5) * 2
   })
 
-  // Inline transform style for the drawer root element. No transition while
-  // dragging (would fight the finger), smooth snap-spring otherwise.
-  const drawerStyle = computed(() => ({
-    transform: `translateY(${translateY.value}px)`,
-    transition: isDragging.value ? 'none' : `transform ${springMs}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
-  }))
+  // Inline style for the drawer root element. We animate `height` instead
+  // of transform so the drawer participates in normal flex-layout: as the
+  // drawer shrinks, the sibling canvas with `flex: 1` expands to fill the
+  // gap automatically. No padding or absolute-positioning hacks required.
+  const drawerHeightStyle = computed(() => {
+    const h = Math.max(minimizedPeek, expandedPx.value - translateY.value)
+    return {
+      height: h + 'px',
+      transition: isDragging.value ? 'none' : `height ${springMs}ms cubic-bezier(0.2, 0.8, 0.2, 1)`,
+    }
+  })
 
   // ── Drag handlers ─────────────────────────────────────────────────────
 
@@ -107,13 +112,14 @@ export function useDraggableDrawer({
     if (!isDragging.value) return
     isDragging.value = false
 
-    // Magnet: did the user move more than `snapThreshold` of the full range
-    // AWAY from their starting snap point? If yes, commit; otherwise snap back.
+    // Drag only — tapping without movement does nothing. Magnet: did the
+    // user move more than `snapThreshold` of the full range AWAY from their
+    // starting snap point? If yes, commit; otherwise snap back.
     const travelled = Math.abs(translateY.value - drag.startTranslate)
-    const TAP_THRESHOLD = 4 // px — below this is a tap, not a drag
+    const TAP_THRESHOLD = 4 // below this is a tap — ignore
     if (travelled < TAP_THRESHOLD) {
-      // Tap without movement → toggle snap state
-      setMinimized(!drag.startedMinimized)
+      // Tap: snap back to starting position, no state change
+      setMinimized(drag.startedMinimized)
       return
     }
     const committed = travelled > dragRangePx.value * snapThreshold
@@ -128,9 +134,6 @@ export function useDraggableDrawer({
     isMinimized.value = min
     translateY.value = min ? dragRangePx.value : 0
   }
-
-  // Convenience toggle — bind to the handle's tap gesture
-  function toggle() { setMinimized(!isMinimized.value) }
 
   // When the drawer is unmounted (panel closed) reset to expanded so the
   // next mount starts in a known state.
@@ -148,13 +151,12 @@ export function useDraggableDrawer({
     dragRangePx,
     expandedPx,
     visibleHeightPx,
-    drawerStyle,
+    drawerHeightStyle,
     handleOpacity,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     setMinimized,
-    toggle,
     reset,
   }
 }

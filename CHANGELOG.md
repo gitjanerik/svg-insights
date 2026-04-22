@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-04-22 — v4.11.1: Flex-basert drawer-layout
+
+### Hvorfor
+
+Forrige forsøk brukte `translateY` + dynamisk padding for å "late som" drawer påvirket canvas-størrelsen. Det fungerte halvveis, men stats-teksten og knappene ble feil plassert i noen tilstander fordi `bottomOffsetStyle` fikk transitions som ikke alltid synket med drawer-animasjonen.
+
+### Løsning
+
+Drawer er tilbake i flex-flyten med **dynamisk `height`** i stedet for `translateY`:
+
+- `useDraggableDrawer.drawerHeightStyle` setter CSS `height = expandedPx - translateY`
+- Drawer er et vanlig flex-item (`shrink-0` med fast høyde)
+- Canvas er `flex-1` og tar automatisk resten av plassen
+- Stats + knapper er `absolute bottom-4` inne i canvas — sitter alltid rett over drawer uten JS-koordinering
+
+### Drag-only
+
+Tapping på handle gjør nå ingenting — kun ekte drag (> 4 px bevegelse) utløser snap-logikken. Dette matcher brukerens forventning: drawer er en fysisk komponent, ikke en knapp.
+
+### Resultat
+
+- Ingen `fixed`-posisjonering
+- Ingen padding-hack
+- Ingen `bottomOffsetStyle` / `canvasReservedSpaceStyle`
+- Færre JavaScript-kalkulerte styles under animasjon
+- Alt som er CSS-drevet animeres glatt via `transition: height`
+
+---
+
 ## 2026-04-22 — v4.11.0: Drawer-forankring og fem nye strek-effekter
 
 ### Drawer-forbedringer
