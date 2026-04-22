@@ -1,8 +1,39 @@
 # Changelog
 
-## 2026-04-22 — v4.12.3: Preset omdøpt
+## 2026-04-22 — v4.12.4: Samling av parallelle commits
+
+Fem parallelle arbeidstråder landet på master med overlappende versjonsnumre (to v4.12.2 og to v4.12.3). Denne releasen samler dem alle på v4.12.4 og bevarer historien nedenfor.
+
+- **Kepler-preset** (var "Rastafari"): omdøpt for å passe astronomi-temaet sammen med Einstein
+- **Avrunding-fiks**: feMorphology-opening erstatter geometri-basert path-omskrivning — synlig effekt uten blur
+- **Chainbare fill-filtre**: flere fill-effekter kan stables via nested `<g filter="url(#X)">`-wrappers
+- **Installer-knapp**: synlig "Installer app"-knapp på forsiden for brukere som ikke ser Chromes automatiske install-prompt
+
+---
+
+## 2026-04-22 — v4.12.3 (a): Preset omdøpt
 
 - "Rastafari" har skiftet navn til **Kepler**. Passer bedre sammen med Einstein i astronomi-temaet.
+
+---
+
+## 2026-04-22 — v4.12.3 (b): Avrunding på ordentlig
+
+### Fiks
+
+Forrige runde påsto at avrunding var fikset, men den geometriske path-omskrivningen produserte teknisk korrekt SVG som likevel ikke ga synlig effekt i praksis.
+
+Erstattet med en **feMorphology-opening** (erode → dilate med samme radius). Dette spiser opp små utstikkende hjørner og gjenoppretter så formens overordnede størrelse — gir synlig mykere hjørner uten blur.
+
+### Chainbare filtre
+
+Flere fill-effekter kan nå stables. Tidligere erstattet hver ny effekt den forrige, slik at Forenkling + Fragmentering ga kun Fragmentering. Nå wrappes hvert filter i en nested `<g filter="url(#...)">` inne i `<g class="fills">`, så SVG evaluerer dem i dokumentrekkefølge.
+
+### Teknisk
+
+- Filter-def for Avrunding: `<feMorphology operator="erode" radius="R"/> <feMorphology operator="dilate" radius="R"/>` med R = 0.3 – 3px
+- Fjernet ubrukt `roundPathCorners` + tilhørende hjelpere (~100 linjer død kode)
+- 143/143 tester passerer
 
 ---
 
@@ -25,7 +56,6 @@ Ny synlig **"Installer app"**-knapp på forsiden:
 - Ny composable `usePwaInstall.js` eksponerer `canInstall`, `isInstalled`, `isIOS`, `isStandalone`, `promptInstall()`
 - Captures `beforeinstallprompt` via `e.preventDefault()` + lagring av `deferredPrompt`
 - Lytter på `appinstalled` for å skjule CTA etter vellykket install
-- CHANGELOG var aldri problemet — PWA fungerte, men install-prompten var usynlig
 
 ### Hvordan teste
 
@@ -34,7 +64,7 @@ Ny synlig **"Installer app"**-knapp på forsiden:
 3. Trykk → nettleserens install-dialog dukker opp
 4. Godta → ikonet havner på hjem-skjermen
 
-Hvis du tidligere har avvist install-prompten, sletter Chrome heuristikken etter ~90 dager. Du kan force-refreshe ved å gå til `chrome://apps` og slette eventuelle rester.
+Hvis du tidligere har avvist install-prompten, sletter Chrome heuristikken etter ~90 dager.
 
 ---
 

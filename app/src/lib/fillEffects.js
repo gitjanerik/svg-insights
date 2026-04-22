@@ -28,25 +28,23 @@ export function applyFillSimplification(svgString, amount = 0.5) {
 }
 
 // ─── 2. Avrunding ─────────────────────────────────────────────────────────
-// Rounds corners geometrically by rewriting each fill-region path: every
-// L-to-L corner becomes L(shorter) → Q(corner,shorter) → L continuation.
-// Deterministic, crisp, and previews identically in every renderer.
+// Softens sharp corners of fills using a morphological opening (erode then
+// dilate by the same radius). Unlike Gaussian blur + threshold hacks, this
+// is crisp, deterministic, and doesn't alter colour. Small concave corners
+// get eaten by the erosion; the dilation restores the overall size.
 //
-// amount ∈ [0, 1]: 0 = no rounding, 1 = corners rounded up to ~40% of edge
+// amount ∈ [0, 1]: 0 = no rounding, 1 = strong corner softening
 export function applyFillRounding(svgString, amount = 0.5) {
   if (amount <= 0) return svgString
-  const frac = Math.min(0.45, amount * 0.45)  // fraction of edge to bevel
+  const radius = Math.max(0.3, amount * 3)
 
-  // Match <path> tags that contain class="...fill-region..." anywhere in
-  // their attribute list, regardless of attribute order. We then rewrite
-  // the `d` attribute inside the matched tag.
-  const tagRe = /<path\b[^>]*\/?>/gi
-  return svgString.replace(tagRe, (tag) => {
-    if (!/class="[^"]*fill-region[^"]*"/i.test(tag)) return tag
-    return tag.replace(/(\bd\s*=\s*")([^"]+)(")/i, (_m, pre, d, post) => {
-      return pre + roundPathCorners(d, frac) + post
-    })
-  })
+  const filterId = 'fill-round'
+  const defs = `<filter id="${filterId}" x="-10%" y="-10%" width="120%" height="120%">
+    <feMorphology operator="erode" radius="${radius.toFixed(2)}"/>
+    <feMorphology operator="dilate" radius="${radius.toFixed(2)}"/>
+  </filter>`
+
+  return injectDefsAndApply(svgString, defs, filterId)
 }
 
 // ─── 3. Gradient ──────────────────────────────────────────────────────────
@@ -117,16 +115,23 @@ export function applyFillFragmentation(svgString, amount = 0.5) {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────
 
-/** Inject `<filter>` defs and apply the filter to the .fills group. */
+/**
+ * Inject a `<filter>` def and wrap the `.fills` group content with a NESTED
+ * group that applies the filter. This lets us chain multiple fill effects
+ * (simplify + round + fragment) — each becomes its own nested <g> with its
+ * own filter attribute, which SVG evaluates in document order.
+ *
+ * First application: wraps .fills' children in <g filter="url(#X)">...</g>.
+ * Subsequent applications: wrap the previously-wrapped content again.
+ */
 function injectDefsAndApply(svgString, defsContent, filterId) {
   let out = injectDefsBlock(svgString, defsContent)
 
-  // Apply the filter to <g class="fills"...>
-  const fillsGRe = /(<g\b[^>]*class="[^"]*fills[^"]*"[^>]*)>/i
-  out = out.replace(fillsGRe, (_m, openTag) => {
-    // Remove any previous fill-* filter attribute to avoid stacking
-    const cleaned = openTag.replace(/\s*filter\s*=\s*"url\(#fill-[^)]+\)"/gi, '')
-    return `${cleaned} filter="url(#${filterId})">`
+  // Wrap the inside of <g class="fills">...</g> with a nested filter-group.
+  // Regex captures: opening tag, inner content, closing tag.
+  const fillsGroupRe = /(<g\b[^>]*class="[^"]*fills[^"]*"[^>]*>)([\s\S]*?)(<\/g>)/i
+  out = out.replace(fillsGroupRe, (_m, openTag, inner, closeTag) => {
+    return `${openTag}<g filter="url(#${filterId})">${inner}</g>${closeTag}`
   })
   return out
 }
@@ -163,120 +168,3 @@ function shiftLightness(r, g, b, amount) {
   return [r * f, g * f, b * f]
 }
 
-/**
- * Rewrite a `d` attribute so every polyline corner is replaced with a Q-curve.
- * For each triplet of consecutive points (A, B, C), the corner at B is
- * replaced by: line from A to (B − t·AB̂), then Q(B, B + t·BĈ), where
- * t = frac · min(|AB|, |BC|). This produces crisp rounded corners that
- * scale with edge length — short edges get less rounding automatically.
- *
- * Only handles M/L/Z subpaths (which is what insertFills produces for
- * flood-filled regions). Leaves anything with C/Q/S/A untouched.
- */
-function roundPathCorners(d, frac) {
-  // Parse into subpaths of points
-  const tokens = d.match(/[MLHVZmlhvz]|-?\d+(?:\.\d+)?/g) || []
-  const subpaths = []
-  let current = null
-  let cx = 0, cy = 0
-
-  let i = 0
-  while (i < tokens.length) {
-    const t = tokens[i]
-    if (t === 'M' || t === 'm') {
-      const x = parseFloat(tokens[i + 1]), y = parseFloat(tokens[i + 2])
-      cx = t === 'm' && current ? cx + x : x
-      cy = t === 'm' && current ? cy + y : y
-      current = { points: [[cx, cy]], closed: false }
-      subpaths.push(current)
-      i += 3
-    } else if (t === 'L' || t === 'l') {
-      const x = parseFloat(tokens[i + 1]), y = parseFloat(tokens[i + 2])
-      cx = t === 'l' ? cx + x : x
-      cy = t === 'l' ? cy + y : y
-      current.points.push([cx, cy])
-      i += 3
-    } else if (t === 'Z' || t === 'z') {
-      if (current) current.closed = true
-      i += 1
-    } else if (t === 'H' || t === 'h') {
-      const x = parseFloat(tokens[i + 1])
-      cx = t === 'h' ? cx + x : x
-      current.points.push([cx, cy])
-      i += 2
-    } else if (t === 'V' || t === 'v') {
-      const y = parseFloat(tokens[i + 1])
-      cy = t === 'v' ? cy + y : y
-      current.points.push([cx, cy])
-      i += 2
-    } else {
-      // Unknown command — bail out, return original d
-      return d
-    }
-  }
-
-  // Build output with rounded corners
-  const parts = []
-  for (const sp of subpaths) {
-    const pts = sp.points
-    const n = pts.length
-    if (n < 3) {
-      // Not enough points to round
-      parts.push(pathFromPoints(pts, sp.closed))
-      continue
-    }
-
-    const out = []
-    const getPrev = (idx) => sp.closed ? pts[(idx - 1 + n) % n] : pts[Math.max(0, idx - 1)]
-    const getNext = (idx) => sp.closed ? pts[(idx + 1) % n] : pts[Math.min(n - 1, idx + 1)]
-
-    for (let k = 0; k < n; k++) {
-      const B = pts[k]
-      const A = getPrev(k)
-      const C = getNext(k)
-      const isEndpoint = !sp.closed && (k === 0 || k === n - 1)
-      if (isEndpoint) {
-        out.push({ type: 'L', pt: B })
-        continue
-      }
-      const ab = [A[0] - B[0], A[1] - B[1]]
-      const bc = [C[0] - B[0], C[1] - B[1]]
-      const lenAB = Math.hypot(ab[0], ab[1])
-      const lenBC = Math.hypot(bc[0], bc[1])
-      const t = frac * Math.min(lenAB, lenBC)
-      if (t < 0.5 || lenAB === 0 || lenBC === 0) {
-        out.push({ type: 'L', pt: B })
-        continue
-      }
-      const p1 = [B[0] + (ab[0] / lenAB) * t, B[1] + (ab[1] / lenAB) * t]
-      const p2 = [B[0] + (bc[0] / lenBC) * t, B[1] + (bc[1] / lenBC) * t]
-      out.push({ type: 'L', pt: p1 })
-      out.push({ type: 'Q', ctrl: B, pt: p2 })
-    }
-
-    // Assemble: start with M, then sequence
-    let s = ''
-    const first = out[0]
-    s += 'M' + fmt(first.pt)
-    for (let k = 1; k < out.length; k++) {
-      const o = out[k]
-      if (o.type === 'L') s += 'L' + fmt(o.pt)
-      else if (o.type === 'Q') s += 'Q' + fmt(o.ctrl) + ' ' + fmt(o.pt)
-    }
-    if (sp.closed) s += 'Z'
-    parts.push(s)
-  }
-  return parts.join('')
-}
-
-function pathFromPoints(pts, closed) {
-  if (!pts.length) return ''
-  let s = 'M' + fmt(pts[0])
-  for (let i = 1; i < pts.length; i++) s += 'L' + fmt(pts[i])
-  if (closed) s += 'Z'
-  return s
-}
-
-function fmt(pt) {
-  return pt[0].toFixed(2) + ',' + pt[1].toFixed(2)
-}

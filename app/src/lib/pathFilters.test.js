@@ -425,8 +425,8 @@ import { applyFillRounding, applyFillSimplification, applyFillGradient } from '.
 describe('applyFillRounding', () => {
   // The fill paths produced by insertFills have attributes in this order:
   //   <path d="..." fill="..." class="fill-region" data-fill-index="..." />
-  // The rounding implementation must match `class="fill-region"` regardless
-  // of where it appears in the tag — this regression test catches that.
+  // Rounding now works as an SVG filter (feMorphology opening) on a nested
+  // group — chainable with other fill effects.
   const realWorldSvg = '<svg><g class="fills">' +
     '<path d="M10,10L90,10L90,90L10,90Z" fill="#ff0000" class="fill-region" data-fill-index="0" />' +
     '</g></svg>'
@@ -434,15 +434,17 @@ describe('applyFillRounding', () => {
   it('is a no-op at 0', () => {
     expect(applyFillRounding(realWorldSvg, 0)).toBe(realWorldSvg)
   })
-  it('rewrites d attribute with Q commands at positive amount', () => {
+  it('injects a feMorphology opening filter at positive amount', () => {
     const out = applyFillRounding(realWorldSvg, 0.5)
     expect(out).not.toBe(realWorldSvg)
-    expect(out).toMatch(/d="[^"]*Q/)
+    expect(out).toContain('feMorphology')
+    expect(out).toMatch(/<filter id="fill-round"/)
   })
-  it('preserves other attributes on the path', () => {
+  it('wraps the fills inside a filter group (preserves path attributes)', () => {
     const out = applyFillRounding(realWorldSvg, 0.5)
     expect(out).toContain('class="fill-region"')
     expect(out).toContain('fill="#ff0000"')
+    expect(out).toContain('filter="url(#fill-round)"')
   })
 })
 

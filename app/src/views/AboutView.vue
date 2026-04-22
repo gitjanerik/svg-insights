@@ -111,17 +111,22 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.12.3 -->
+          <!-- 4.12.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white/80">4.12.3</span>
-                <span class="text-white/40">&mdash; Preset omd&oslash;pt</span>
+                <span class="font-semibold text-white/80">4.12.4</span>
+                <span class="text-white/40">&mdash; Avrunding-fiks, Kepler-rename, Installer-knapp</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Avrunding bruker n&aring; en <strong class="text-white/70">feMorphology-opening</strong> (erode &rarr; dilate) i stedet for path-geometri &mdash; gir synlig og konsistent effekt</li>
+                <li>Fill-effekter kan n&aring; stables (Forenkling + Avrunding + Fragmentering sammen) via nested filter-grupper</li>
                 <li>&laquo;Rastafari&raquo; heter n&aring; <strong class="text-white/70">Kepler</strong> &mdash; passer bedre sammen med Einstein i astronomi-temaet</li>
+                <li>Ny <strong class="text-white/70">Installer app</strong>-knapp p&aring; forsiden som utl&oslash;ser nettleserens install-prompt direkte</li>
+                <li>P&aring; iPhone (Safari st&oslash;tter ikke programmatisk install) viser knappen steg-for-steg-instruksjon med Del-ikonet</li>
+                <li>Ny composable <code>usePwaInstall</code> eksponerer <code>canInstall</code>, <code>isIOS</code>, <code>isStandalone</code> og <code>promptInstall()</code></li>
               </ul>
             </details>
           </div>
@@ -132,10 +137,12 @@ const router = useRouter()
             <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.2</span>
-                <span class="text-white/40">&mdash; Synlig Installer-knapp</span>
+                <span class="text-white/40">&mdash; Synlig Installer-knapp (ble rullet inn i 4.12.4)</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Avrunding bruker n&aring; en <strong class="text-white/70">feMorphology-opening</strong> (erode &rarr; dilate) i stedet for path-geometri &mdash; gir synlig og konsistent effekt</li>
+                <li>Fill-effekter kan n&aring; stables (Forenkling + Avrunding + Fragmentering sammen) via nested filter-grupper</li>
                 <li>Ny <strong class="text-white/70">Installer app</strong>-knapp p&aring; forsiden som utl&oslash;ser nettleserens install-prompt direkte</li>
                 <li>P&aring; iPhone (Safari st&oslash;tter ikke programmatisk install) viser knappen steg-for-steg-instruksjon med Del-ikonet</li>
                 <li>Knappen skjules automatisk n&aring;r appen allerede er installert (standalone-modus)</li>
@@ -154,7 +161,6 @@ const router = useRouter()
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
-                <li>Fiks: avrunding av fargede felt virker n&aring; &mdash; regex krevde tidligere at <code>class</code> kom f&oslash;r <code>d</code> i path-taggen</li>
                 <li>Kamera-fanen heter n&aring; <strong class="text-white/70">"Ta bilde eller last opp"</strong></li>
                 <li>Sentrert shutter-knapp, opplasting til venstre, ny <strong class="text-white/70">flip-knapp</strong> til h&oslash;yre (bytter til selfie-kamera)</li>
                 <li>Ny <strong class="text-white/70">zoom-slider</strong> &mdash; bruker native MediaTrack-zoom n&aring;r tilgjengelig, ellers digital zoom via canvas-crop</li>
