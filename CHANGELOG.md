@@ -1,5 +1,37 @@
 # Changelog
 
+## 2026-04-22 — v4.12.2: Synlig Installer-knapp
+
+### Bakgrunn
+
+Selv om PWA-en har hatt manifest + service worker siden v4.9.1, er install-prompten i Chrome/Android avhengig av browser-heuristikk (user engagement, ingen tidligere avvisning, osv.). Dette gjorde at mange brukere aldri så installer-tilbudet selv om alt teknisk fungerte.
+
+### Løsning
+
+Ny synlig **"Installer app"**-knapp på forsiden:
+
+- På Chrome/Edge/Samsung Internet: lytter på `beforeinstallprompt`, capturer event-en og trigger prompt via knappen
+- På iOS Safari (som ikke støtter programmatisk install): viser steg-for-steg-instruksjon med Del-ikonet
+- Skjules automatisk hvis appen allerede er installert (matchMedia `(display-mode: standalone)`)
+
+### Teknisk
+
+- Ny composable `usePwaInstall.js` eksponerer `canInstall`, `isInstalled`, `isIOS`, `isStandalone`, `promptInstall()`
+- Captures `beforeinstallprompt` via `e.preventDefault()` + lagring av `deferredPrompt`
+- Lytter på `appinstalled` for å skjule CTA etter vellykket install
+- CHANGELOG var aldri problemet — PWA fungerte, men install-prompten var usynlig
+
+### Hvordan teste
+
+1. Åpne appen i Chrome på Android (må være HTTPS — GH Pages er det)
+2. "Installer app"-knapp vises under "Om SVG Insights"-lenken på forsiden
+3. Trykk → nettleserens install-dialog dukker opp
+4. Godta → ikonet havner på hjem-skjermen
+
+Hvis du tidligere har avvist install-prompten, sletter Chrome heuristikken etter ~90 dager. Du kan force-refreshe ved å gå til `chrome://apps` og slette eventuelle rester.
+
+---
+
 ## 2026-04-22 — v4.12.1: Kamera-redesign og planetarium-exit
 
 ### Fikser

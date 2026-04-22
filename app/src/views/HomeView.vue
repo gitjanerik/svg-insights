@@ -1,13 +1,24 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { usePwaInstall } from '../composables/usePwaInstall.js'
 
 const router = useRouter()
 const show = ref(false)
+const { canInstall, isInstalled, isIOS, promptInstall } = usePwaInstall()
+const showIosHint = ref(false)
 
 onMounted(() => {
   requestAnimationFrame(() => (show.value = true))
 })
+
+async function onInstallClick() {
+  if (canInstall.value) {
+    await promptInstall()
+  } else if (isIOS.value) {
+    showIosHint.value = true
+  }
+}
 </script>
 
 <template>
@@ -141,6 +152,41 @@ onMounted(() => {
             <span class="text-[11px] text-white/40">Pinch & zoom</span>
           </div>
         </div>
+
+        <!-- Install CTA — shown when browser allows (Chrome/Edge/Samsung) or
+             iOS (manual share-sheet flow). Hidden entirely if app is already
+             installed (running in standalone mode). -->
+        <button v-if="!isInstalled && (canInstall || isIOS)"
+                @click="onInstallClick"
+                class="mt-6 flex items-center gap-2 px-4 py-2.5 rounded-xl
+                       bg-white/5 border border-white/10 text-[12px] text-white/70
+                       active:bg-white/10 active:scale-[0.98] transition">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-violet-300"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/>
+            <rect x="3" y="17" width="18" height="4" rx="1"/>
+          </svg>
+          Installer app
+        </button>
+
+        <!-- iOS hint sheet — Safari has no programmatic install, so we
+             show step-by-step instructions instead. -->
+        <Transition name="hero">
+          <div v-if="showIosHint"
+               class="mt-4 w-full rounded-xl bg-black/60 border border-white/10 p-4 text-left">
+            <p class="text-[12px] text-white/70 mb-2 font-medium">Slik installerer du p&aring; iPhone:</p>
+            <ol class="text-[12px] text-white/50 space-y-1 list-decimal list-inside leading-relaxed">
+              <li>Trykk p&aring; <strong class="text-white/70">Del</strong>-ikonet nederst (firkant med pil opp)</li>
+              <li>Bla ned og velg <strong class="text-white/70">"Legg til p&aring; Hjem-skjerm"</strong></li>
+              <li>Trykk <strong class="text-white/70">Legg til</strong> &oslash;verst til h&oslash;yre</li>
+            </ol>
+            <button @click="showIosHint = false"
+                    class="mt-3 text-[11px] text-white/40 underline">
+              Lukk
+            </button>
+          </div>
+        </Transition>
 
         <button @click="router.push('/about')"
                 class="mt-8 text-[12px] text-white/30 underline underline-offset-4 decoration-white/10
