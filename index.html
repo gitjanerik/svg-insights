@@ -17,6 +17,31 @@
     <link rel="stylesheet" crossorigin href="/svg-insights/assets/index-DWoActXD.css">
   </head>
   <body class="bg-[#0a0a0f] text-white overscroll-none">
+    <!-- On-screen debug: shows if Vue fails to mount -->
+    <div id="debug-overlay" style="position:fixed;bottom:0;left:0;right:0;max-height:50vh;overflow:auto;background:#400;color:#fff;font:12px/1.4 monospace;padding:8px;z-index:9999;display:none;white-space:pre-wrap;word-break:break-all;"></div>
     <div id="app"></div>
+    <script>
+      (function(){
+        var overlay = document.getElementById('debug-overlay');
+        function show(msg){
+          overlay.style.display = 'block';
+          overlay.textContent += msg + '\n\n';
+        }
+        window.addEventListener('error', function(e){
+          show('ERROR: ' + e.message + '\n  at ' + (e.filename||'?') + ':' + e.lineno + ':' + e.colno);
+          if (e.error && e.error.stack) show('  stack: ' + e.error.stack.split('\n').slice(0,4).join(' | '));
+        });
+        window.addEventListener('unhandledrejection', function(e){
+          show('UNHANDLED PROMISE: ' + (e.reason && e.reason.message || e.reason));
+        });
+        // Status line: did Vue actually mount?
+        setTimeout(function(){
+          var app = document.getElementById('app');
+          if (!app.innerHTML || app.innerHTML.length < 10) {
+            show('DIAGNOSE: #app is empty after 3s. Vue did not mount.\nUA: ' + navigator.userAgent);
+          }
+        }, 3000);
+      })();
+    </script>
   </body>
 </html>
