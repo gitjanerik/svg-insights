@@ -111,10 +111,37 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.10.0 -->
+          <!-- 4.11.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.11.0</span>
+                <span class="text-white/40">&mdash; Drawer-forankring og fem nye strek-effekter</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Mobilt drawer er tilbake til <strong class="text-white/70">45 vh</strong> som standard, og viser kun drawer-leppen n&aring;r den er minimert</li>
+                <li>Knappene (rotering + nullstill) og zoom-statsen <strong class="text-white/70">f&oslash;lger drawer-toppen</strong> &mdash; alltid like over panelet</li>
+                <li>SVG-tegningen utvides til full viewport-h&oslash;yde n&aring;r drawer minimeres, og krymper tilbake n&aring;r den ekspanderes</li>
+                <li>Fem nye effekter i <strong class="text-white/70">Strek</strong>-fanen, hver med av/p&aring;-bryter og reversibel virkning:
+                  <ul class="ml-4 mt-1 space-y-0.5">
+                    <li>&bull; <strong>Trimming</strong> &mdash; fjerner 10 &ndash; 90 % av strekene</li>
+                    <li>&bull; <strong>Forenkling</strong> &mdash; reduserer ankerpunkter per strek</li>
+                    <li>&bull; <strong>Spagettifisering</strong> &mdash; glatter ut snirkler</li>
+                    <li>&bull; <strong>Kalligrafi</strong> &mdash; konkav &harr; konveks strekbredde</li>
+                    <li>&bull; <strong>Kurvatur</strong> &mdash; gj&oslash;r N % av kurver rette (&agrave; la norsk tegneserietradisjon)</li>
+                  </ul>
+                </li>
+                <li>Pluss to alltid-p&aring;-slidere: <strong class="text-white/70">transparens p&aring; strek</strong> og <strong class="text-white/70">transparens p&aring; skravering</strong></li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.10.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.10.0</span>
                 <span class="text-white/40">&mdash; Drag-drawer og live statistikk</span>

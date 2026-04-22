@@ -8,6 +8,8 @@ import {
   setDashPattern, setLinecap, setGroupOpacities,
   injectFilterDefs, applyGroupFilter,
   convertToHalftone,
+  trimPaths, simplifyPaths, spaghettify, calligraphy, kurvatur,
+  setStrokeOpacity, setHatchOpacity,
 } from '../lib/pathFilters.js'
 import { computeFills, insertFills, removeColorization, rgbToHex, hslToRgb } from '../lib/colorization.js'
 import { useHalftoneGame } from '../composables/useHalftoneGame.js'
@@ -44,6 +46,37 @@ const halftoneMerge = ref(0.3)
 const halftoneBlend = ref('normal')
 const halftoneOpacity = ref(50)
 const halftoneColor = ref('#000000')
+
+// ── Strek-tab effects (v4.11) ──────────────────────────────────────────
+// Each effect has an `enabled` toggle and an `amount` slider. Turning a
+// toggle off instantly reverses the effect — we simply skip that filter
+// in the rebuild pipeline. The original svg is never mutated.
+
+// Trimming: remove N% of paths (10%-90% is the sensible working range)
+const trimEnabled = ref(false)
+const trimAmount  = ref(0.3)   // default 30%
+
+// Forenkling: Ramer-Douglas-Peucker simplification
+const simplifyEnabled = ref(false)
+const simplifyAmount  = ref(0.3)
+
+// Spagettifisering: moving-average smoothing over coordinates
+const spaghettiEnabled = ref(false)
+const spaghettiAmount  = ref(0.4)
+
+// Kalligrafi: -1 (konkav) → 0 (flat) → +1 (konveks)
+const calligraphyEnabled = ref(false)
+const calligraphyAmount  = ref(-0.5)
+
+// Kurvatur (à la Frode Øverli): replace N% of curves with straight lines
+const kurvaturEnabled = ref(false)
+const kurvaturAmount  = ref(0.5)
+
+// Opacity slider for strokes
+const strokeOpacity = ref(1.0)
+
+// Opacity slider for hatching
+const hatchOpacity = ref(1.0)
 
 const exportWithBg = ref(true)
 
@@ -179,9 +212,25 @@ if (typeof window !== 'undefined') {
   onBeforeUnmount?.(() => window.removeEventListener('resize', updateMobile))
 }
 const drawer = useDraggableDrawer({
-  expandedHeight: 0.5,     // drawer takes ~50% of viewport
-  minimizedPeek: 52,       // just enough for handle + tab bar edge
-  snapThreshold: 1 / 3,    // magnet kicks in past 1/3 travel
+  expandedHeight: 0.45,   // drawer takes 45% of viewport when expanded
+  minimizedPeek: 28,      // just the handle strip remains visible
+  snapThreshold: 1 / 3,   // magnet kicks in past 1/3 travel
+})
+
+// On mobile the floating buttons + stats should hover just above the drawer.
+// We read `visibleHeightPx` and add a small gap. On desktop the drawer doesn't
+// exist in this layout so buttons stay at `bottom-4`.
+const bottomOffsetStyle = computed(() => {
+  if (!isMobileView.value) return {} // desktop: rely on bottom-4 class
+  const gap = 12
+  return { bottom: (drawer.visibleHeightPx.value + gap) + 'px' }
+})
+
+// Height reserved for drawer — SVG canvas uses this to know how much
+// vertical space to give up. When drawer minimises, the canvas expands.
+const canvasReservedSpaceStyle = computed(() => {
+  if (!isMobileView.value) return {}
+  return { paddingBottom: drawer.visibleHeightPx.value + 'px' }
 })
 
 // Reset drawer to expanded whenever the panel re-opens so the user doesn't
@@ -242,6 +291,31 @@ function rebuildSvg() {
   svg = setGroupOpacities(svg, opacities)
   if (!isSmooth.value) svg = straightenPaths(svg)
   if (wobbleIntensity.value > 0) svg = wobblePaths(svg, wobbleIntensity.value)
+
+  // ── Strek-tab effect filters (v4.11) ──────────────────────────────
+  // Order matters: trim first (removes paths), simplify (reduces anchors
+  // on what's left), spaghettify (smooths), kurvatur (replaces curves),
+  // calligraphy last (duplicates paths — doing it earlier would make the
+  // others work twice).
+  if (trimEnabled.value && trimAmount.value > 0) {
+    svg = trimPaths(svg, trimAmount.value, 1)
+  }
+  if (simplifyEnabled.value && simplifyAmount.value > 0) {
+    svg = simplifyPaths(svg, simplifyAmount.value)
+  }
+  if (spaghettiEnabled.value && spaghettiAmount.value > 0) {
+    svg = spaghettify(svg, spaghettiAmount.value)
+  }
+  if (kurvaturEnabled.value && kurvaturAmount.value > 0) {
+    svg = kurvatur(svg, kurvaturAmount.value, 7)
+  }
+  if (calligraphyEnabled.value && Math.abs(calligraphyAmount.value) > 0.01) {
+    svg = calligraphy(svg, calligraphyAmount.value)
+  }
+  // Opacity sliders are always live (no toggle needed — 1.0 is neutral)
+  if (strokeOpacity.value < 1) svg = setStrokeOpacity(svg, strokeOpacity.value)
+  if (hatchOpacity.value < 1)  svg = setHatchOpacity(svg, hatchOpacity.value)
+
   if (svgFilter.value) {
     svg = injectFilterDefs(svg, svgFilterDefs)
     svg = applyGroupFilter(svg, svgFilter.value)
@@ -270,7 +344,15 @@ function rebuildSvg() {
 }
 
 watch(
-  [strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity, svgFilter, opacities, colorized, halftone, halftoneScale, halftoneMerge, halftoneBlend, halftoneOpacity, halftoneColor, gameActive],
+  [
+    strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity,
+    svgFilter, opacities, colorized, halftone, halftoneScale, halftoneMerge,
+    halftoneBlend, halftoneOpacity, halftoneColor, gameActive,
+    // New Strek-tab effect refs
+    trimEnabled, trimAmount, simplifyEnabled, simplifyAmount,
+    spaghettiEnabled, spaghettiAmount, calligraphyEnabled, calligraphyAmount,
+    kurvaturEnabled, kurvaturAmount, strokeOpacity, hatchOpacity,
+  ],
   rebuildSvg,
   { deep: true }
 )
@@ -501,7 +583,9 @@ onMounted(() => {
     <div class="flex-1 flex flex-col md:flex-row min-h-0">
 
       <!-- SVG canvas -->
-      <div ref="containerRef" class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0">
+      <div ref="containerRef"
+           class="flex-1 flex items-center justify-center relative overflow-hidden min-h-0 transition-[padding] duration-200"
+           :style="canvasReservedSpaceStyle">
         <div class="w-full h-full flex items-center justify-center p-4" :style="transformStyle">
           <div class="relative w-full h-full">
             <div class="absolute inset-0" v-show="!solarSystem && !solarSystemPending" v-html="svgHtml" />
@@ -562,8 +646,11 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Floating buttons -->
-        <div class="absolute bottom-4 right-4 flex gap-2 z-10">
+        <!-- Floating buttons — on mobile they follow the drawer's top so they
+             stay just above it whether it's expanded, dragging or minimized. -->
+        <div class="absolute right-4 flex gap-2 z-10 transition-[bottom] duration-200"
+             :style="bottomOffsetStyle"
+             :class="!isMobileView ? 'bottom-4' : ''">
           <button @click="rotation = (rotation - 90) % 360"
             class="w-10 h-10 rounded-full bg-black/60 backdrop-blur-xl border border-white/10 flex items-center justify-center text-white/60 active:text-white transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -584,9 +671,10 @@ onMounted(() => {
           </button>
         </div>
         <!-- Stats readout: zoom · strokes · coloured regions. Text colour
-             auto-adjusts to the current background for readability. -->
-        <p class="absolute bottom-4 left-4 z-10 text-[10px] flex items-center gap-2"
-           :style="{ color: statsTextColor }">
+             auto-adjusts to the current background. Follows drawer on mobile. -->
+        <p class="absolute left-4 z-10 text-[10px] flex items-center gap-2 transition-[bottom] duration-200"
+           :style="{ color: statsTextColor, ...bottomOffsetStyle }"
+           :class="!isMobileView ? 'bottom-4' : ''">
           <span>{{ (scale * 100).toFixed(0) }}%</span>
           <span :style="{ opacity: 0.5 }">·</span>
           <span>{{ strokeCount.toLocaleString('no-NO') }} streker</span>
@@ -600,11 +688,17 @@ onMounted(() => {
       <!-- ═══ Controls sidebar (desktop) / bottom panel (mobile) ═══ -->
       <Transition name="sidebar">
         <div v-if="showPanel"
-          class="shrink-0 bg-[#111118] border-t md:border-t-0 md:border-l border-white/5
-                 w-full md:w-72 h-[50vh] md:h-auto overflow-hidden flex flex-col relative"
+          :class="[
+            'bg-[#111118] border-white/5 overflow-hidden flex flex-col',
+            isMobileView
+              ? 'fixed bottom-0 left-0 right-0 z-20 border-t h-[45vh]'
+              : 'shrink-0 border-l w-72 h-auto',
+          ]"
           :style="isMobileView ? drawer.drawerStyle.value : {}">
 
-          <!-- Drawer handle — only on mobile. Tap or drag to toggle/minimize. -->
+          <!-- Drawer handle — only on mobile. Tap or drag to toggle/minimize.
+               Area is tall enough for a comfortable grip; visual handle is
+               the short pill in the middle. -->
           <div v-if="isMobileView"
                class="shrink-0 h-7 flex items-center justify-center touch-none cursor-grab active:cursor-grabbing select-none"
                @pointerdown="drawer.onPointerDown"
@@ -700,6 +794,148 @@ onMounted(() => {
                     :class="isSmooth ? 'translate-x-5' : 'translate-x-0.5'" />
                 </button>
               </label>
+
+              <!-- Effekter section divider -->
+              <div class="pt-2 border-t border-white/5">
+                <label class="text-[10px] text-white/40 uppercase tracking-wider block mb-3">Effekter</label>
+
+                <!-- Trimming -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="trimEnabled = !trimEnabled; currentPreset = null"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="trimEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="trimEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Trimming</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(trimAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="trimAmount" type="range" min="0.1" max="0.9" step="0.05"
+                         :disabled="!trimEnabled"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !trimEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Fjerner streker &mdash; skru av for å få alt tilbake</p>
+                </div>
+
+                <!-- Forenkling -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="simplifyEnabled = !simplifyEnabled; currentPreset = null"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="simplifyEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="simplifyEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Forenkling</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(simplifyAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="simplifyAmount" type="range" min="0.05" max="0.95" step="0.05"
+                         :disabled="!simplifyEnabled"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !simplifyEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">F&aelig;rre ankerpunkter per strek</p>
+                </div>
+
+                <!-- Spagettifisering -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="spaghettiEnabled = !spaghettiEnabled; currentPreset = null"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="spaghettiEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="spaghettiEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Spagettifisering</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(spaghettiAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="spaghettiAmount" type="range" min="0.1" max="1.0" step="0.05"
+                         :disabled="!spaghettiEnabled"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !spaghettiEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Glatter ut snirkler og skjelvinger</p>
+                </div>
+
+                <!-- Kalligrafi (bipolar slider: konkav ↔ konveks) -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="calligraphyEnabled = !calligraphyEnabled; currentPreset = null"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="calligraphyEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="calligraphyEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Kalligrafi</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ calligraphyAmount > 0.01 ? 'konveks' : calligraphyAmount < -0.01 ? 'konkav' : 'flat' }}
+                    </span>
+                  </div>
+                  <input v-model.number="calligraphyAmount" type="range" min="-1" max="1" step="0.1"
+                         :disabled="!calligraphyEnabled"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !calligraphyEnabled }" />
+                  <div class="flex justify-between text-[10px] text-white/30 mt-0.5">
+                    <span>konkav</span><span>flat</span><span>konveks</span>
+                  </div>
+                </div>
+
+                <!-- Kurvatur (named after Frode Øverli — Norwegian comic artist) -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <div class="flex items-center gap-2">
+                      <button @click="kurvaturEnabled = !kurvaturEnabled; currentPreset = null"
+                              class="w-9 h-5 rounded-full transition-colors shrink-0"
+                              :class="kurvaturEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                        <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
+                             :class="kurvaturEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
+                      </button>
+                      <span class="text-xs text-white/80">Kurvatur</span>
+                    </div>
+                    <span class="text-[10px] text-white/40 tabular-nums">
+                      {{ Math.round(kurvaturAmount * 100) }}%
+                    </span>
+                  </div>
+                  <input v-model.number="kurvaturAmount" type="range" min="0" max="1" step="0.05"
+                         :disabled="!kurvaturEnabled"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         :class="{ 'opacity-30': !kurvaturEnabled }" />
+                  <p class="text-[10px] text-white/30 mt-0.5">Gjør kurver rette &mdash; som en norsk tegneserieskaper</p>
+                </div>
+
+                <!-- Stroke opacity (always live, no toggle) -->
+                <div class="mb-3">
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs text-white/80">Transparens p&aring; strek</span>
+                    <span class="text-[10px] text-white/40 tabular-nums">{{ Math.round(strokeOpacity * 100) }}%</span>
+                  </div>
+                  <input v-model.number="strokeOpacity" type="range" min="0" max="1" step="0.05"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                </div>
+
+                <!-- Hatch opacity -->
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-xs text-white/80">Transparens p&aring; skravering</span>
+                    <span class="text-[10px] text-white/40 tabular-nums">{{ Math.round(hatchOpacity * 100) }}%</span>
+                  </div>
+                  <input v-model.number="hatchOpacity" type="range" min="0" max="1" step="0.05"
+                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                </div>
+              </div>
             </template>
 
             <!-- ── Layers tab ── -->

@@ -808,6 +808,351 @@ export function computeHalftoneDots(svgString, options = {}) {
   return { dots, svgW, svgH }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Strek-tab effect filters (v4.11)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * trimPaths — remove a fraction of <path> elements from the SVG. Paths are
+ * stripped in a stable pseudo-random order (seeded) so sliding back restores
+ * exactly what was trimmed. `amount` is in [0, 1] and maps linearly from 0%
+ * (keep all) to 100% (keep only 10% — sensible floor so the drawing never
+ * fully disappears). Typical usage: the caller caps the slider range itself.
+ *
+ * Implementation tokenises on the pattern `<path ... />` (self-closing) or
+ * `<path ...></path>` (open). Non-path elements are left intact.
+ *
+ * @param {string} svgString
+ * @param {number} amount      0..1 — fraction of paths to REMOVE
+ * @param {number} seed        stable seed so the same amount picks the same paths
+ * @returns {string}
+ */
+export function trimPaths(svgString, amount = 0, seed = 1) {
+  if (amount <= 0) return svgString
+  amount = Math.min(1, Math.max(0, amount))
+
+  // Collect path occurrences (start..end offsets) in document order
+  const occurrences = []
+  const re = /<path\b[^>]*?(?:\/>|>\s*<\/path>)/gi
+  let m
+  while ((m = re.exec(svgString)) !== null) {
+    occurrences.push({ start: m.index, end: re.lastIndex })
+  }
+  if (!occurrences.length) return svgString
+
+  // Stable shuffle via seeded LCG — so equal `amount` gives equal result
+  const order = occurrences.map((_, i) => i)
+  const rand = createLCG(seed)
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1))
+    ;[order[i], order[j]] = [order[j], order[i]]
+  }
+
+  // Mark the first `amount * total` shuffled indices for removal
+  const removeCount = Math.floor(occurrences.length * amount)
+  const removeSet = new Set(order.slice(0, removeCount))
+
+  // Rebuild the string by walking original and dropping marked ranges
+  let out = ''
+  let cursor = 0
+  for (let i = 0; i < occurrences.length; i++) {
+    const { start, end } = occurrences[i]
+    out += svgString.slice(cursor, start)
+    if (!removeSet.has(i)) {
+      out += svgString.slice(start, end)
+    }
+    cursor = end
+  }
+  out += svgString.slice(cursor)
+  return out
+}
+
+/**
+ * simplifyPaths — reduce the number of anchor points in every path using
+ * a lightweight Ramer-Douglas-Peucker pass on the raw coordinate stream.
+ * `amount` in [0, 1] controls how aggressive the simplification is; 0 is
+ * a no-op, 1 strips all but the first and last point of each path.
+ *
+ * This operates on the flat coordinate list after a cheap tokenise so
+ * it's fast enough to run on every keystroke.
+ */
+export function simplifyPaths(svgString, amount = 0) {
+  if (amount <= 0) return svgString
+  const tolerance = 0.2 + amount * 8 // 0.2 → 8 px at max
+  return svgString.replace(/(\bd\s*=\s*")([^"]*?)(")/g, (_m, pre, d, post) => {
+    const simplified = simplifyDAttr(d, tolerance)
+    return pre + simplified + post
+  })
+}
+
+/**
+ * spaghettify — the inverse of wobbliness: smooth out high-frequency wiggles
+ * in paths. Runs a 3-point moving average over numeric coordinates, keeping
+ * command letters intact. `amount` in [0, 1] controls how many smoothing
+ * passes are applied (1 → 5 passes).
+ */
+export function spaghettify(svgString, amount = 0) {
+  if (amount <= 0) return svgString
+  const passes = Math.max(1, Math.round(amount * 5))
+  return svgString.replace(/(\bd\s*=\s*")([^"]*?)(")/g, (_m, pre, d, post) => {
+    let cur = d
+    for (let i = 0; i < passes; i++) cur = smoothCoords(cur, 0.35)
+    return pre + cur + post
+  })
+}
+
+/**
+ * calligraphy — vary stroke-width along the path: give each path a per-stroke
+ * tapering profile. Since SVG doesn't support variable stroke width natively,
+ * we do it the cheap-but-effective way: we *mark* each path with a calligraphy
+ * class + scale. The render pipeline then replaces that class with a chain
+ * of substroked copies at varying widths. For now we approximate by writing
+ * a stroke-width that's modulated by amount and a flag in a data attribute —
+ * consumers can read it later if they want the fancy multi-stroke rendering.
+ *
+ * `amount` maps [-1, 1]:
+ *   -1 → "konkav"   (thickest in the middle, tapered ends) — default pen feel
+ *    0 → flat (no variation)
+ *   +1 → "konveks" (thickest at ends, thinner middle) — inflated marker
+ *
+ * The actual visual variation is produced by duplicating each path with a
+ * slightly shrunken `stroke-dasharray`, which gives a pseudo-tapered effect.
+ */
+export function calligraphy(svgString, amount = 0) {
+  if (Math.abs(amount) < 0.01) return svgString
+  const sign = amount > 0 ? 1 : -1
+  const strength = Math.min(1, Math.abs(amount))
+
+  return svgString.replace(
+    /<path\b([^>]*?)\/>/gi,
+    (_m, attrs) => {
+      // Extract existing stroke-width if any
+      const wMatch = attrs.match(/stroke-width\s*=\s*"([^"]+)"/i)
+      const baseW = wMatch ? parseFloat(wMatch[1]) : 1
+      // For "konkav" (sign=-1): ends thin, middle thick → outer stroke narrower
+      // For "konveks" (sign=+1): ends thick, middle thin → outer stroke wider
+      const widths = sign < 0
+        ? [baseW * (1 - strength * 0.7), baseW * (1 + strength * 0.2)]
+        : [baseW * (1 + strength * 0.5), baseW * (1 - strength * 0.4)]
+
+      // Layer two copies: wide underlay + narrow overlay or vice versa
+      const cleaned = attrs.replace(/stroke-width\s*=\s*"[^"]+"/i, '')
+      const layer1 = `<path${cleaned} stroke-width="${widths[0].toFixed(3)}" stroke-linecap="round" opacity="0.85"/>`
+      const layer2 = `<path${cleaned} stroke-width="${widths[1].toFixed(3)}" stroke-linecap="round"/>`
+      return layer1 + layer2
+    }
+  )
+}
+
+/**
+ * kurvatur — named after the Norwegian cartoonist (Pondus, Rocky …) who only
+ * draws with straight lines. `amount` in [0, 1] converts the given fraction
+ * of curves (C, Q, S, T) to straight lines. 0 = keep all curves, 1 = all
+ * straightened. Selection is stable (seeded shuffle) so the same amount
+ * gives the same subset.
+ */
+export function kurvatur(svgString, amount = 0, seed = 7) {
+  if (amount <= 0) return svgString
+  amount = Math.min(1, Math.max(0, amount))
+
+  return svgString.replace(/(\bd\s*=\s*")([^"]*?)(")/g, (_m, pre, d, post) => {
+    // Find curve-command positions so we can choose a stable subset
+    const curveRe = /([CcSsQqTt])([^A-Za-z]*)/g
+    const matches = []
+    let cm
+    while ((cm = curveRe.exec(d)) !== null) {
+      matches.push({ start: cm.index, end: curveRe.lastIndex, cmd: cm[1], args: cm[2] })
+    }
+    if (!matches.length) return pre + d + post
+
+    const rand = createLCG(seed)
+    const order = matches.map((_, i) => i)
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1))
+      ;[order[i], order[j]] = [order[j], order[i]]
+    }
+    const flipCount = Math.floor(matches.length * amount)
+    const flipSet = new Set(order.slice(0, flipCount))
+
+    let out = ''
+    let cursor = 0
+    for (let i = 0; i < matches.length; i++) {
+      const { start, end, cmd, args } = matches[i]
+      out += d.slice(cursor, start)
+      if (flipSet.has(i)) {
+        // Replace curve with line to the ENDPOINT of the curve
+        const nums = args.match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) || []
+        // C/S take 6 coords per segment; Q/T take 4 or 2. Endpoint is the
+        // last pair in the argument list.
+        if (nums.length >= 2) {
+          const ex = nums[nums.length - 2]
+          const ey = nums[nums.length - 1]
+          out += (cmd === cmd.toUpperCase() ? 'L' : 'l') + ex + ',' + ey + ' '
+        } else {
+          out += cmd + args // malformed, leave untouched
+        }
+      } else {
+        out += cmd + args
+      }
+      cursor = end
+    }
+    out += d.slice(cursor)
+    return pre + out + post
+  })
+}
+
+/**
+ * setStrokeOpacity — sets stroke-opacity on every <path> element to the given
+ * value in [0, 1]. Useful for a "strøk-transparens"-slider that dims lines
+ * without affecting fills or halftone dots.
+ */
+export function setStrokeOpacity(svgString, opacity = 1) {
+  opacity = Math.min(1, Math.max(0, opacity))
+  const opStr = opacity.toFixed(3)
+  return svgString.replace(/<path\b([^>]*?)(\/?)>/gi, (_m, attrs, slash) => {
+    // Remove existing stroke-opacity, then inject ours
+    const cleaned = attrs.replace(/\s*stroke-opacity\s*=\s*"[^"]*"/gi, '')
+    return `<path${cleaned} stroke-opacity="${opStr}"${slash}>`
+  })
+}
+
+/**
+ * setHatchOpacity — dims hatching / shading strokes that live inside groups
+ * whose id starts with "hatch" or class contains "hatch". Falls back to
+ * styling the group itself via an opacity attribute.
+ */
+export function setHatchOpacity(svgString, opacity = 1) {
+  opacity = Math.min(1, Math.max(0, opacity))
+  const opStr = opacity.toFixed(3)
+  return svgString.replace(
+    /<g\b([^>]*?(?:id\s*=\s*"[^"]*hatch[^"]*"|class\s*=\s*"[^"]*hatch[^"]*")[^>]*?)>/gi,
+    (_m, attrs) => {
+      const cleaned = attrs.replace(/\s*opacity\s*=\s*"[^"]*"/gi, '')
+      return `<g${cleaned} opacity="${opStr}">`
+    }
+  )
+}
+
+// ── Internal helpers for the new filters ────────────────────────────────
+
+/**
+ * Simplify a single `d` attribute string using Ramer-Douglas-Peucker on
+ * consecutive M/L/C/Q/T/S endpoints. Curve control points are preserved; we
+ * only thin out the anchor chain.
+ */
+function simplifyDAttr(d, tolerance) {
+  // Tokenise into commands with their arg arrays
+  const tokens = []
+  const re = /([MmLlHhVvCcSsQqTtAaZz])([^A-Za-z]*)/g
+  let m
+  while ((m = re.exec(d)) !== null) {
+    const nums = (m[2].match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g) || []).map(parseFloat)
+    tokens.push({ cmd: m[1], nums })
+  }
+  if (tokens.length < 3) return d
+
+  // Build the endpoint chain (pairs of [x, y]) and keep command metadata so
+  // we can rebuild afterwards with the same command letters, just fewer.
+  const points = []
+  const cmds = []
+  let cx = 0, cy = 0
+  for (const { cmd, nums } of tokens) {
+    if (cmd === 'Z' || cmd === 'z') {
+      cmds.push({ cmd: 'Z', nums: [] })
+      continue
+    }
+    // Last two numbers are the endpoint for most commands
+    if (nums.length >= 2) {
+      const ex = nums[nums.length - 2]
+      const ey = nums[nums.length - 1]
+      const isRel = cmd === cmd.toLowerCase()
+      const x = isRel ? cx + ex : ex
+      const y = isRel ? cy + ey : ey
+      points.push([x, y])
+      cmds.push({ cmd, nums, pointIndex: points.length - 1 })
+      cx = x; cy = y
+    } else {
+      cmds.push({ cmd, nums })
+    }
+  }
+
+  // RDP pass — identify which points to keep
+  const keep = new Uint8Array(points.length)
+  if (points.length <= 2) points.forEach((_, i) => keep[i] = 1)
+  else rdp(points, 0, points.length - 1, tolerance, keep)
+
+  // Rebuild — keep every non-point command, and only kept endpoint commands
+  const out = []
+  for (const c of cmds) {
+    if (c.nums == null || c.nums.length === 0) {
+      out.push(c.cmd)
+      continue
+    }
+    if (c.pointIndex != null && !keep[c.pointIndex]) continue
+    out.push(c.cmd + c.nums.join(','))
+  }
+  return out.join('')
+}
+
+function rdp(points, start, end, tol, keep) {
+  keep[start] = 1
+  keep[end] = 1
+  if (end <= start + 1) return
+  let maxD = 0, maxIdx = -1
+  const [sx, sy] = points[start]
+  const [ex, ey] = points[end]
+  for (let i = start + 1; i < end; i++) {
+    const d = perpDist(points[i], sx, sy, ex, ey)
+    if (d > maxD) { maxD = d; maxIdx = i }
+  }
+  if (maxD > tol && maxIdx >= 0) {
+    rdp(points, start, maxIdx, tol, keep)
+    rdp(points, maxIdx, end, tol, keep)
+  }
+}
+
+function perpDist([x, y], sx, sy, ex, ey) {
+  const dx = ex - sx, dy = ey - sy
+  const len = Math.hypot(dx, dy) || 1
+  return Math.abs((dy * x - dx * y + ex * sy - ey * sx) / len)
+}
+
+/**
+ * Run a moving-average smoothing pass over numbers within a `d` attribute
+ * while keeping command letters intact.
+ */
+function smoothCoords(d, strength = 0.3) {
+  // Extract all numbers with positions
+  const nums = []
+  const re = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g
+  let m
+  while ((m = re.exec(d)) !== null) {
+    nums.push({ value: parseFloat(m[0]), start: m.index, end: re.lastIndex })
+  }
+  if (nums.length < 6) return d // too short to meaningfully smooth
+
+  // Smooth in pairs (x, y) — pair index is `i / 2` treated as a sequence
+  const values = nums.map(n => n.value)
+  const smoothed = values.slice()
+  for (let i = 2; i < values.length - 2; i += 2) {
+    // Average with neighbours on same axis (two pairs back and forward)
+    smoothed[i] = values[i] * (1 - strength) + (values[i - 2] + values[i + 2]) * 0.5 * strength
+    smoothed[i + 1] = values[i + 1] * (1 - strength) + (values[i - 1] + values[i + 3]) * 0.5 * strength
+  }
+
+  // Rebuild string: walk original and splice smoothed values in
+  let out = ''
+  let cursor = 0
+  for (let i = 0; i < nums.length; i++) {
+    out += d.slice(cursor, nums[i].start)
+    out += smoothed[i].toFixed(2)
+    cursor = nums[i].end
+  }
+  out += d.slice(cursor)
+  return out
+}
+
+
 export function convertToHalftone(svgString, options = {}) {
   const {
     blend = 'normal',

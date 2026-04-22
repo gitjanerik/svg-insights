@@ -321,3 +321,97 @@ describe('applyGroupFilter', () => {
     expect(result).not.toContain('filter="url(#filter-glow)"');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// New Strek-tab effect filters (v4.11)
+// ─────────────────────────────────────────────────────────────────────
+
+import {
+  trimPaths, simplifyPaths, spaghettify, calligraphy, kurvatur,
+  setStrokeOpacity, setHatchOpacity,
+} from './pathFilters.js'
+
+const multiPathSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <g>
+    <path d="M0,0 L10,10" stroke="black" stroke-width="1"/>
+    <path d="M20,20 L30,30" stroke="black" stroke-width="1"/>
+    <path d="M40,40 L50,50" stroke="black" stroke-width="1"/>
+    <path d="M60,60 L70,70" stroke="black" stroke-width="1"/>
+  </g>
+</svg>`
+
+describe('trimPaths', () => {
+  it('leaves svg unchanged when amount is 0', () => {
+    expect(trimPaths(multiPathSvg, 0)).toBe(multiPathSvg)
+  })
+  it('removes roughly the requested fraction of paths', () => {
+    const trimmed = trimPaths(multiPathSvg, 0.5, 1)
+    const remaining = (trimmed.match(/<path/g) || []).length
+    expect(remaining).toBe(2) // 50% of 4
+  })
+  it('is deterministic with the same seed', () => {
+    expect(trimPaths(multiPathSvg, 0.5, 1)).toBe(trimPaths(multiPathSvg, 0.5, 1))
+  })
+})
+
+describe('simplifyPaths', () => {
+  it('is a no-op at amount 0', () => {
+    expect(simplifyPaths(multiPathSvg, 0)).toBe(multiPathSvg)
+  })
+  it('does not throw on real input', () => {
+    expect(() => simplifyPaths(multiPathSvg, 0.5)).not.toThrow()
+  })
+})
+
+describe('spaghettify', () => {
+  it('is a no-op at amount 0', () => {
+    expect(spaghettify(multiPathSvg, 0)).toBe(multiPathSvg)
+  })
+  it('runs without error at max', () => {
+    expect(() => spaghettify(multiPathSvg, 1)).not.toThrow()
+  })
+})
+
+describe('kurvatur', () => {
+  const curvySvg = `<svg><path d="M0,0 C10,10 20,10 30,0 C40,-10 50,-10 60,0" stroke="black"/></svg>`
+  it('is a no-op at 0', () => {
+    expect(kurvatur(curvySvg, 0)).toBe(curvySvg)
+  })
+  it('converts all curves to lines at 100%', () => {
+    const result = kurvatur(curvySvg, 1, 7)
+    expect(result).not.toContain('C10,10')
+    // Should contain line commands
+    expect(result).toMatch(/L\s*\d/i)
+  })
+})
+
+describe('calligraphy', () => {
+  it('is a no-op near 0', () => {
+    expect(calligraphy(multiPathSvg, 0)).toBe(multiPathSvg)
+  })
+  it('doubles up paths with varied widths', () => {
+    const result = calligraphy(multiPathSvg, 0.8)
+    const pathCount = (result.match(/<path/g) || []).length
+    expect(pathCount).toBeGreaterThan(4) // doubled
+  })
+})
+
+describe('setStrokeOpacity', () => {
+  it('injects stroke-opacity on every path', () => {
+    const result = setStrokeOpacity(multiPathSvg, 0.5)
+    const hits = (result.match(/stroke-opacity="0\.500"/g) || []).length
+    expect(hits).toBe(4)
+  })
+  it('clamps out of range values', () => {
+    expect(setStrokeOpacity(multiPathSvg, 2)).toContain('stroke-opacity="1.000"')
+    expect(setStrokeOpacity(multiPathSvg, -1)).toContain('stroke-opacity="0.000"')
+  })
+})
+
+describe('setHatchOpacity', () => {
+  it('applies opacity to hatch groups', () => {
+    const svg = '<svg><g class="hatching"><path d="M0,0 L1,1"/></g></svg>'
+    const result = setHatchOpacity(svg, 0.3)
+    expect(result).toContain('opacity="0.300"')
+  })
+})

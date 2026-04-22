@@ -20,8 +20,8 @@
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 
 export function useDraggableDrawer({
-  expandedHeight = 0.5,   // fraction of viewport height when expanded
-  minimizedPeek = 56,     // px of the handle/tab bar still visible when minimized
+  expandedHeight = 0.45,  // fraction of viewport height when expanded
+  minimizedPeek = 28,     // px of the handle strip still visible when minimized
   snapThreshold = 1 / 3,  // magnet: release < this fraction snaps back
   springMs = 220,         // snap animation duration
 } = {}) {
@@ -32,6 +32,9 @@ export function useDraggableDrawer({
 
   // Current full drag range: from expanded (0) to minimized (expandedPx - peek)
   const dragRangePx = ref(0)
+  // Full expanded drawer height in pixels (for callers that need to know
+  // how much vertical space the drawer occupies right now).
+  const expandedPx = ref(0)
 
   // Drag state
   const drag = reactive({
@@ -43,7 +46,8 @@ export function useDraggableDrawer({
   // Compute the effective drag range based on viewport
   function computeRange() {
     const vh = window.innerHeight || 800
-    dragRangePx.value = Math.max(100, vh * expandedHeight - minimizedPeek)
+    expandedPx.value = Math.max(minimizedPeek + 100, vh * expandedHeight)
+    dragRangePx.value = expandedPx.value - minimizedPeek
   }
   computeRange()
   window.addEventListener('resize', computeRange, { passive: true })
@@ -53,6 +57,13 @@ export function useDraggableDrawer({
   const progress = computed(() => {
     if (dragRangePx.value <= 0) return 0
     return Math.max(0, Math.min(1, translateY.value / dragRangePx.value))
+  })
+
+  // How many px of drawer are currently visible above the bottom of the
+  // viewport. Callers use this to position floating buttons above the drawer
+  // and to expand the SVG canvas when the drawer is (partially) minimized.
+  const visibleHeightPx = computed(() => {
+    return Math.max(0, expandedPx.value - translateY.value)
   })
 
   // Handle opacity fades as the drawer approaches the "other" snap point —
@@ -135,6 +146,8 @@ export function useDraggableDrawer({
     isMinimized,
     isDragging,
     dragRangePx,
+    expandedPx,
+    visibleHeightPx,
     drawerStyle,
     handleOpacity,
     onPointerDown,

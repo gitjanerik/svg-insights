@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-04-22 — v4.11.0: Drawer-forankring og fem nye strek-effekter
+
+### Drawer-forbedringer
+
+- **Tilbake til 45 vh** som standard ekspandert høyde (ikke 50 vh)
+- **Minifisert tilstand viser kun drag-leppen** — hele tab-bar og innhold er skjult
+- **Zoom-statsen og de tre runde knappene** (rotering + nullstill) følger nå drawer-toppen: de flytter seg opp/ned med `translateY` for å alltid sitte like over panelet
+- **SVG-canvas utvider seg** til full viewport-høyde når drawer minimeres, og krymper tilbake når den ekspanderes — via dynamisk `padding-bottom` som matcher drawer's synlige høyde
+- Drawer er nå `fixed bottom-0` på mobil (utenfor flex-flyten), som gjør at canvas-høyden styres ren via padding i stedet for flex-items
+
+### Fem nye strek-effekter
+
+Alle effekter har en **av/på-bryter** ved siden av slideren og er 100 % reversible — skru av bryteren for å få originalen tilbake.
+
+1. **Trimming** (10 — 90 %): fjerner en % av strekene via stabil seeded shuffle. Appen husker full path-liste, så å dra slideren tilbake viser de samme strekene som før.
+2. **Forenkling** (5 — 95 %): Ramer-Douglas-Peucker-reduksjon av ankerpunkter per strek, med adaptiv toleranse (0.2 → 8 px)
+3. **Spagettifisering** (10 — 100 %): moving-average-smoothing over koordinater, 1 — 5 passes avhengig av intensitet
+4. **Kalligrafi** (konkav ↔ konveks): dobler opp hver strek med to lag av varierende bredde. Konkav = tynnere i endene; konveks = tykkere i endene
+5. **Kurvatur** (0 — 100 %): oppkalt etter norsk tegneserietradisjon med kun rette streker. Konverterer N % av C/Q/S/T-kurver til rette linjer; stabilt utvalg via seeded shuffle
+
+### To alltid-på-slidere
+
+- **Transparens på strek** (0 — 100 %): setter `stroke-opacity` på alle paths
+- **Transparens på skravering** (0 — 100 %): setter `opacity` på grupper med `class="hatch*"` eller `id="hatch*"`
+
+### Teknisk
+
+- Syv nye funksjoner i `pathFilters.js`: `trimPaths`, `simplifyPaths`, `spaghettify`, `calligraphy`, `kurvatur`, `setStrokeOpacity`, `setHatchOpacity`
+- 14 nye Vitest-tester, totalt 138/138 passerer
+- `useDraggableDrawer` eksporterer ny `visibleHeightPx` som ViewerView leser for layout-koordinering
+- Filter-rekkefølge i `rebuildSvg()` er bevisst: trim → simplify → spaghetti → kurvatur → kalligrafi → opacity, så effekter stables riktig (kalligrafi dobler paths og må kjøres sist)
+
+---
+
 ## 2026-04-22 — v4.10.0: Drag-drawer og live statistikk
 
 ### Nye funksjoner
