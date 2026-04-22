@@ -10,79 +10,13 @@
     <link rel="icon" type="image/svg+xml" href="/svg-insights/favicon.svg" />
     <title>SVG Insights</title>
     <script type="module" src="/svg-insights/assets/index-Dz-QIaLs.js"></script>
+    <link rel="modulepreload" href="/svg-insights/assets/_plugin-vue_export-helper-S3RvzygF.js">
+    <link rel="modulepreload" href="/svg-insights/assets/preload-helper-B0O6LBGX.js">
+    <link rel="modulepreload" href="/svg-insights/assets/vue-router-Ct3-q22f.js">
+    <link rel="modulepreload" href="/svg-insights/assets/runtime-dom.esm-bundler-CrzEUkW0.js">
     <link rel="stylesheet" href="/svg-insights/assets/index-DWoActXD.css">
   </head>
   <body class="bg-[#0a0a0f] text-white overscroll-none">
-    <!-- On-screen debug: shows if Vue fails to mount -->
-    <div id="debug-overlay" style="position:fixed;bottom:0;left:0;right:0;max-height:60vh;overflow:auto;background:#400;color:#fff;font:11px/1.4 monospace;padding:8px;z-index:9999;display:none;white-space:pre-wrap;word-break:break-all;"></div>
     <div id="app"></div>
-    <script>
-      (function(){
-        window.__debugLog = [];
-        var overlay = document.getElementById('debug-overlay');
-        function show(msg){
-          window.__debugLog.push(msg);
-          overlay.style.display = 'block';
-          overlay.textContent += msg + '\n\n';
-        }
-        window.__show = show;
-
-        show('[1] Inline script ran at ' + new Date().toISOString());
-
-        // Catch ALL errors — including module load failures
-        window.addEventListener('error', function(e){
-          if (e.target && e.target !== window) {
-            // Resource load error (script, link, img)
-            show('RESOURCE FAIL: ' + (e.target.tagName||'?') + ' src=' + (e.target.src||e.target.href||'?'));
-          } else {
-            show('JS ERROR: ' + e.message + '\n  at ' + (e.filename||'?') + ':' + e.lineno + ':' + e.colno);
-            if (e.error && e.error.stack) show('  stack: ' + e.error.stack.split('\n').slice(0,5).join(' | '));
-          }
-        }, true);
-        window.addEventListener('unhandledrejection', function(e){
-          show('PROMISE REJECT: ' + (e.reason && (e.reason.message||e.reason.stack) || e.reason));
-        });
-
-        // Test if we can actually fetch the main script
-        setTimeout(function(){
-          show('[2] At 1s. #app children: ' + document.getElementById('app').children.length);
-
-          // Try fetching the main bundle directly to verify it's reachable
-          fetch('/svg-insights/assets/index-Dz-QIaLs.js')
-            .then(function(r){ show('[fetch] main bundle: ' + r.status + ' ' + r.statusText + ' type=' + r.headers.get('content-type')); })
-            .catch(function(e){ show('[fetch] main bundle FAILED: ' + e.message); });
-
-          // Also try importing it as a module dynamically
-          import('/svg-insights/assets/index-Dz-QIaLs.js')
-            .then(function(m){ show('[import] main bundle loaded as module'); })
-            .catch(function(e){ show('[import] main bundle FAILED: ' + (e.message || e)); });
-
-          // Test a simpler module in isolation
-          import('/svg-insights/assets/vue-router-Ct3-q22f.js')
-            .then(function(m){ show('[import] vue-router loaded'); })
-            .catch(function(e){ show('[import] vue-router FAILED: ' + (e.message || e)); });
-
-          import('/svg-insights/assets/runtime-dom.esm-bundler-CrzEUkW0.js')
-            .then(function(m){ show('[import] runtime-dom loaded'); })
-            .catch(function(e){ show('[import] runtime-dom FAILED: ' + (e.message || e)); });
-
-          import('/svg-insights/assets/_plugin-vue_export-helper-S3RvzygF.js')
-            .then(function(m){ show('[import] _plugin-vue_export-helper loaded'); })
-            .catch(function(e){ show('[import] _plugin-vue_export-helper FAILED: ' + (e.message || e)); });
-
-          import('/svg-insights/assets/preload-helper-B0O6LBGX.js')
-            .then(function(m){ show('[import] preload-helper loaded'); })
-            .catch(function(e){ show('[import] preload-helper FAILED: ' + (e.message || e)); });
-        }, 1000);
-
-        setTimeout(function(){
-          var app = document.getElementById('app');
-          show('[3] At 3s. #app children: ' + app.children.length + ', innerHTML len: ' + app.innerHTML.length);
-          if (!app.innerHTML || app.innerHTML.length < 10) {
-            show('DIAGNOSE: Vue did not mount.\nUA: ' + navigator.userAgent);
-          }
-        }, 3000);
-      })();
-    </script>
   </body>
 </html>
