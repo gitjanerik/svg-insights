@@ -61,6 +61,18 @@
           import('/svg-insights/assets/vue-router-Ct3-q22f.js')
             .then(function(m){ show('[import] vue-router loaded'); })
             .catch(function(e){ show('[import] vue-router FAILED: ' + (e.message || e)); });
+
+          import('/svg-insights/assets/runtime-dom.esm-bundler-CrzEUkW0.js')
+            .then(function(m){ show('[import] runtime-dom loaded'); })
+            .catch(function(e){ show('[import] runtime-dom FAILED: ' + (e.message || e)); });
+
+          import('/svg-insights/assets/_plugin-vue_export-helper-S3RvzygF.js')
+            .then(function(m){ show('[import] _plugin-vue_export-helper loaded'); })
+            .catch(function(e){ show('[import] _plugin-vue_export-helper FAILED: ' + (e.message || e)); });
+
+          import('/svg-insights/assets/preload-helper-B0O6LBGX.js')
+            .then(function(m){ show('[import] preload-helper loaded'); })
+            .catch(function(e){ show('[import] preload-helper FAILED: ' + (e.message || e)); });
         }, 1000);
 
         setTimeout(function(){
