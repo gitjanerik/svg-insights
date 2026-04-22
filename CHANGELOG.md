@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-22 — v4.12.3: Preset omdøpt
+
+- "Rastafari" har skiftet navn til **Kepler**. Passer bedre sammen med Einstein i astronomi-temaet.
+
+---
+
 ## 2026-04-22 — v4.12.2: Synlig Installer-knapp
 
 ### Bakgrunn
@@ -71,7 +77,7 @@ Plassert øverst i Presets-fanen:
 - **Nullstill** (alltid først) — fjerner alle effekter og viser original SVG
 - **Warhol** — pop-art med kraftig rosa bakgrunn, tykke streker, automatisk fargelegging og 25 % trim
 - **Tegneserie** — varm papir-bakgrunn, sort kontur, lett kurvatur
-- **Rastafari** — tette små raster-prikker, multiply-blend, tilfeldig kontrast-bakgrunn, sort-hull-interaktivitet aktivert
+- **Kepler** — tette små raster-prikker, multiply-blend, tilfeldig kontrast-bakgrunn, sort-hull-interaktivitet aktivert
 - **Einstein** — raster med screen-blend og violet prikker, gravitasjon-interaktivitet aktivert
 
 Presets kan nå aktivere halftone, fargelegging, interaktivitet OG Strek-fanens effekter i én handling. Når Nullstill trykkes, går absolutt alt tilbake til originalen.

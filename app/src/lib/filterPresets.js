@@ -85,8 +85,8 @@ export const filterPresets = {
     description: 'Tegnet stil med sort kontur',
   },
 
-  // ─── Rastafari — tette rasterpunkter, multiply, tilfeldig kontrast-bg
-  'rastafari': {
+  // ─── Kepler — tette rasterpunkter, multiply, tilfeldig kontrast-bg ──
+  'kepler': {
     strokeScale: 0.6,
     opacity: { edges: 30, contours: 20, hatching: 0 },
     strokeColor: '#1a1a1a',
@@ -105,7 +105,7 @@ export const filterPresets = {
     halftoneOpacity: 85,
     halftoneColor: '#000000',
     gameMode: 'eraser',       // sort hull
-    label: 'Rastafari',
+    label: 'Kepler',
     description: 'Rastertrykk i multiply',
   },
 

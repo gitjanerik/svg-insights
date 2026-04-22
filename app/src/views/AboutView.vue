@@ -111,10 +111,25 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.12.2 -->
+          <!-- 4.12.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.3</span>
+                <span class="text-white/40">&mdash; Preset omd&oslash;pt</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>&laquo;Rastafari&raquo; heter n&aring; <strong class="text-white/70">Kepler</strong> &mdash; passer bedre sammen med Einstein i astronomi-temaet</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.12.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.2</span>
                 <span class="text-white/40">&mdash; Synlig Installer-knapp</span>
@@ -162,7 +177,7 @@ const router = useRouter()
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">22. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
-                <li>Fem nye presets: <strong class="text-white/70">Nullstill</strong> (&oslash;verst), <strong class="text-white/70">Warhol</strong>, <strong class="text-white/70">Tegneserie</strong>, <strong class="text-white/70">Rastafari</strong> og <strong class="text-white/70">Einstein</strong></li>
+                <li>Fem nye presets: <strong class="text-white/70">Nullstill</strong> (&oslash;verst), <strong class="text-white/70">Warhol</strong>, <strong class="text-white/70">Tegneserie</strong>, <strong class="text-white/70">Kepler</strong> og <strong class="text-white/70">Einstein</strong></li>
                 <li>Presets kan n&aring; aktivere halftone, fargelegging, interaktivitet og Strek-effekter i &eacute;n handling</li>
                 <li>Fire nye felt-effekter i <strong class="text-white/70">Farge</strong>-fanen, hver med av/p&aring;-bryter:
                   <ul class="ml-4 mt-1 space-y-0.5">
