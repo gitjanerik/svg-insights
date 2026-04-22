@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-04-22 — v4.9.1: PWA + fiks av modal-scroll
+
+### PWA-støtte
+
+Appen er nå en **Progressive Web App** — kan installeres på hjemskjerm på mobil og desktop, kjøres i egen stand-alone-modus uten nettleser-UI, og har offline-støtte for grunnleggende funksjonalitet.
+
+- **Manifest** (`manifest.webmanifest`) med app-navn, farger, start-URL og app-snarveier til «Lag SVG-tegning» og «Lag webfont»
+- **Service worker** med versjonert cache som invalideres automatisk ved ny deploy
+- **App-ikoner**: 192×192 og 512×512 for Android, maskable-variant for adaptive ikoner, 180×180 apple-touch-icon for iOS
+- **Cache-strategier** i service worker:
+  - HTML (navigasjon): nettverk først, fallback til cachet index.html
+  - Hashed assets (`/assets/*-HASH.ext`): cache-first — trygt fordi filnavn endres når innhold endres
+  - Ikoner og manifest: stale-while-revalidate
+  - Google Fonts og andre eksterne ressurser: passerer gjennom (håndteres av nettleseren)
+
+### UI-fikser
+
+- Modal for solsystem-oppsett scroller nå ordentlig på små skjermer:
+  - Header (tittel + forklaring) låst øverst
+  - Slidere og oppsummering scroller i midten
+  - Avbryt/Start-knapper låst nederst med `safe-area-inset-bottom`-margin for mobiler med hakk/hjemknapp
+- Egen discreet scrollbar-styling for scroll-området
+
+### Registreringslogikk
+
+Service worker registreres kun i produksjon (ikke i dev-server) for å unngå å cache stale Vite HMR-bundles under utvikling. Når en ny versjon er deployet og brukeren åpner appen, blir siden automatisk refreshet så ny kode tas i bruk.
+
+---
+
 ## 2026-04-22 — v4.9.0: Planetarium-oppsett og interaktiv bane-bytting
 
 ### Nye funksjoner

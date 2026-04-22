@@ -49,14 +49,15 @@ function start() {
 <template>
   <Transition name="fade">
     <div v-if="open"
-         class="fixed inset-0 z-50 flex items-end md:items-center justify-center
-                bg-black/80 backdrop-blur-sm p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-      <div class="w-full max-w-md rounded-2xl border border-amber-400/20
+         class="fixed inset-0 z-50 flex items-stretch md:items-center justify-center
+                bg-black/80 backdrop-blur-sm p-0 md:p-4">
+      <div class="w-full md:max-w-md md:rounded-2xl border border-amber-400/20
                   bg-[#15131a] shadow-[0_0_60px_rgba(250,204,21,0.15)]
-                  overflow-hidden">
+                  overflow-hidden flex flex-col
+                  max-h-[100dvh] md:max-h-[90dvh]">
 
-        <!-- Header / narrative -->
-        <div class="p-5 border-b border-white/5">
+        <!-- Header / narrative — STICKY (does not scroll) -->
+        <div class="shrink-0 p-5 pt-[max(1.25rem,env(safe-area-inset-top))] border-b border-white/5">
           <div class="flex items-center gap-2 mb-2">
             <span class="text-amber-400 text-lg" aria-hidden="true">☀</span>
             <h2 class="text-base font-semibold text-amber-300">Solsystem aktivert</h2>
@@ -70,8 +71,8 @@ function start() {
           </p>
         </div>
 
-        <!-- Sliders -->
-        <div class="p-5 space-y-5">
+        <!-- Sliders — SCROLLABLE middle area -->
+        <div class="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 scrollbar-thin">
 
           <!-- Planet count -->
           <div>
@@ -128,20 +129,22 @@ function start() {
               <span>Liten og distinkt</span><span>Stor (planeter i halo)</span>
             </div>
           </div>
+
+          <!-- Summary -->
+          <div class="px-5 pb-3 text-center">
+            <p class="text-[11px] text-white/50">
+              {{ planetCount }} planeter · {{ moonPlanets }} med måne · indre {{ innerPeriodSec }}s
+            </p>
+            <p class="text-[11px] text-amber-300/80 mt-0.5">
+              Trykk på en planet for å flytte banen inn eller ut
+            </p>
+          </div>
+
         </div>
 
-        <!-- Summary -->
-        <div class="px-5 pb-3 text-center">
-          <p class="text-[11px] text-white/50">
-            {{ planetCount }} planeter · {{ moonPlanets }} med måne · indre {{ innerPeriodSec }}s
-          </p>
-          <p class="text-[11px] text-amber-300/80 mt-0.5">
-            Trykk på en planet for å flytte banen inn eller ut
-          </p>
-        </div>
-
-        <!-- Actions -->
-        <div class="p-4 pt-2 grid grid-cols-2 gap-3">
+        <!-- Actions — STICKY footer with safe-area padding -->
+        <div class="shrink-0 p-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]
+                    grid grid-cols-2 gap-3 border-t border-white/5 bg-[#15131a]">
           <button @click="cancel"
                   class="py-3 rounded-xl border border-white/10 bg-white/5
                          text-sm text-white/70 active:bg-white/10 transition-colors">
@@ -164,6 +167,10 @@ function start() {
 <style scoped>
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+/* Discreet scrollbar for the middle area */
+.scrollbar-thin::-webkit-scrollbar { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+.scrollbar-thin { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
 /* Slightly beefier slider thumb for touch */
 input[type=range]::-webkit-slider-thumb {
   appearance: none;
