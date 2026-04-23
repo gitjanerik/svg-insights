@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-04-23 — v4.14.1: Glattere glyfer
+
+### Diagnose
+
+Glyfer med mye kurvatur (g, o, e, s, f-terminaler) ble tracet som «amøbeformer» med kluntete klynger av ankerpunkter rundt buer. Rotårsak: 1-piksel-trappetrinn langs binariserte kanter produserte falske hjørner som `cornerAwareSimplify` tolket som reelle anker-kandidater. Resultatet: 3–5 ankre på samme smooth bue → korte Bézier-segmenter → håndtak overkorrigerer → synlige bølger.
+
+### Løsning
+
+Ny `smoothContour()` kjøres mellom contour-tracing og anker-deteksjon:
+
+1. **Hjørne-scoring over vidt vindu** (~n/25 punkter hver vei) — robust mot piksel-støy, finner *reelle* retningsendringer
+2. **5-taps Gaussian smoothing** (`[0.06, 0.24, 0.40, 0.24, 0.06]`) anvendes med vekt attenuert nær hjørner: `blend = max(0, 1 - cornerStrength × 1.5)`
+3. **2 pass** standard — nok til å fjerne trappetrinn, lite nok til å bevare bokstavformer
+
+Hjørner (h's kropp, f's stamme, E/L-føtter) bevares siden `blend → 0` der cornerStrength er høy. Glatte buer (g's bukter, o's ring) glattes fullt ut.
+
+Gjelder både `generateGlyphFromSystemFont` og `traceGlyphFromPhoto`. 143/143 tester passerer.
+
+---
+
 ## 2026-04-23 — v4.14.0: Utvidet fontkatalog (+48 Google Fonts)
 
 `googleFontsCatalog.js` tredoblet fra 24 til **72 fonter** (24 per kategori). Utvalget er kuratert for å dekke bredest mulig stilistisk spenn innen hver kategori.
