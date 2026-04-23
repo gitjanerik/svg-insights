@@ -44,6 +44,8 @@ export const fontMetrics = reactive({
 export const fontSettings = reactive({
   tracking: 0,
   skewDeg:  0,
+  weight:   400,  // 100–900, drives variable font weight axis
+  italic:   0,    // 0=normal, 1=italic variant
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -87,5 +89,7 @@ export function resetFontProject() {
   Object.assign(fontSettings, {
     tracking: 0,
     skewDeg:  0,
+    weight:   400,
+    italic:   0,
   })
 }

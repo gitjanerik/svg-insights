@@ -1,25 +1,8 @@
 <script setup>
-// ─────────────────────────────────────────────────────────────────────────
-// GlyphPhotoDialog
-// Fullscreen dialog for capturing a single glyph via camera or upload.
-//
-// Flow:
-//   1. Camera preview (default) OR user taps "Last opp" to pick a file
-//   2. After capture/upload → still-preview with 4×5 crop overlay
-//      - Pinch to zoom (digital, via CSS transform on the image)
-//      - Drag the four corners to resize the crop rectangle
-//      - Guide lines: baseline (1/5 from bottom), x-height (2/5 from bottom)
-//   3. "Bruk utsnitt" → crops to 512×512 and emits @capture(dataUrl)
-//
-// Grid interpretation (5 rows, bottom → top):
-//   Row 1     : descender zone          (y ∈ [4/5, 5/5] in DOM coords)
-//   Row 1|2   : baseline                (y = 4/5)
-//   Row 2     : x-height zone           (y ∈ [3/5, 4/5])
-//   Row 2|3   : x-height line           (y = 3/5)
-//   Row 3+    : ascender / cap zone
-// ─────────────────────────────────────────────────────────────────────────
+// GlyphPhotoDialog — kamera/opplasting + justerbar crop-boks med drabare hjørner
+// Flow: kamera → ta bilde → stil bildet (pan/zoom) + juster crop-boks → "Bruk utsnitt"
 
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -33,7 +16,7 @@ const previewImgRef = ref(null)
 const fileInputRef  = ref(null)
 const stageRef      = ref(null)
 
-// Camera state
+// Kamera-state
 const stream        = ref(null)
 const cameraReady   = ref(false)
 const facingMode    = ref('environment')
@@ -42,33 +25,73 @@ const zoomSupported = ref(false)
 const zoomRange     = ref({ min: 1, max: 3, step: 0.1 })
 
 // Post-capture state
-const capturedImg   = ref(null)     // HTMLImageElement once loaded
-const capturedSrc   = ref(null)     // data-URL source for <img>
-const imgZoom       = ref(1.0)      // digital zoom applied to the still image
-const imgPanX       = ref(0)        // user-drag offset, px
-const imgPanY       = ref(0)
+const capturedImg   = ref(null)   // HTMLImageElement
+const capturedSrc   = ref(null)   // data-URL
 
-// Pan / pinch gesture tracking (for the still image under the fixed crop frame)
-const gesture = ref({
-  panning:   false,
-  panStartX: 0, panStartY: 0,
-  panOrigX:  0, panOrigY:  0,
-  pinching:  false,
-  pinchStartDist: 0,
-  pinchStartZoom: 1,
+// Bildet pannes/zoomes med CSS transform
+const imgZoom = ref(1.0)
+const imgPanX = ref(0)
+const imgPanY = ref(0)
+
+// ── Crop-boks (stage-relative px) ────────────────────────────────────────
+const cropL = ref(0)
+const cropT = ref(0)
+const cropR = ref(0)
+const cropB = ref(0)
+
+function initCropBox() {
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
+  const bH = sr.height * 0.72
+  const bW = bH * (4 / 5)
+  cropL.value = (sr.width  - bW) / 2
+  cropT.value = (sr.height - bH) / 2
+  cropR.value = cropL.value + bW
+  cropB.value = cropT.value + bH
+}
+
+// ── Gestur-tracking ───────────────────────────────────────────────────────
+const dragCorner = ref(null)  // 'tl'|'tr'|'bl'|'br'|null
+const gesture    = ref({
+  panning:        false,
+  panStartX:      0, panStartY:      0,
+  panOrigX:       0, panOrigY:       0,
+  pinching:       false,
+  pinchStartDist: 0, pinchStartZoom: 1,
 })
 
-// ── Lifecycle ────────────────────────────────────────────────────────────
-watch(() => props.open, async (o) => {
-  if (o) {
-    resetAll()
-    await startCamera()
-  } else {
-    stopCamera()
+function distBetween(a, b) {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+}
+
+// Sjekker om (sx,sy) i stage-koordinater er nær et hjørne (innen 40px)
+function nearCorner(sx, sy) {
+  const hits = [
+    ['tl', cropL.value, cropT.value],
+    ['tr', cropR.value, cropT.value],
+    ['bl', cropL.value, cropB.value],
+    ['br', cropR.value, cropB.value],
+  ]
+  for (const [id, cx, cy] of hits) {
+    if (Math.hypot(sx - cx, sy - cy) < 40) return id
   }
-})
+  return null
+}
 
-onMounted(() => { if (props.open) startCamera() })
+function applyCornerDrag(id, sx, sy, stageW, stageH) {
+  const MIN = 80
+  if (id.includes('l')) cropL.value = Math.max(0, Math.min(sx, cropR.value - MIN))
+  if (id.includes('r')) cropR.value = Math.min(stageW, Math.max(sx, cropL.value + MIN))
+  if (id.includes('t')) cropT.value = Math.max(0, Math.min(sy, cropB.value - MIN))
+  if (id.includes('b')) cropB.value = Math.min(stageH, Math.max(sy, cropT.value + MIN))
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────
+watch(() => props.open, async (o) => {
+  if (o) { resetAll(); await startCamera() }
+  else   { stopCamera() }
+})
+onMounted  (() => { if (props.open) startCamera() })
 onUnmounted(() => stopCamera())
 
 function resetAll() {
@@ -77,17 +100,14 @@ function resetAll() {
   imgZoom.value = 1.0
   imgPanX.value = 0
   imgPanY.value = 0
+  dragCorner.value = null
 }
 
-// ── Camera ───────────────────────────────────────────────────────────────
+// ── Kamera ────────────────────────────────────────────────────────────────
 async function startCamera() {
   try {
     const s = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: facingMode.value,
-        width:  { ideal: 1280 },
-        height: { ideal: 1280 },
-      },
+      video: { facingMode: facingMode.value, width: { ideal: 1280 }, height: { ideal: 1280 } },
     })
     stream.value = s
     if (videoRef.value) {
@@ -99,20 +119,14 @@ async function startCamera() {
     const caps  = track.getCapabilities?.() || {}
     if (caps.zoom) {
       zoomSupported.value = true
-      zoomRange.value = {
-        min:  caps.zoom.min  ?? 1,
-        max:  caps.zoom.max  ?? 3,
-        step: caps.zoom.step ?? 0.1,
-      }
+      zoomRange.value = { min: caps.zoom.min ?? 1, max: caps.zoom.max ?? 3, step: caps.zoom.step ?? 0.1 }
       zoom.value = caps.zoom.min ?? 1
     } else {
       zoomSupported.value = false
       zoomRange.value = { min: 1, max: 3, step: 0.1 }
       zoom.value = 1
     }
-  } catch {
-    cameraReady.value = false  // user can still upload
-  }
+  } catch { cameraReady.value = false }
 }
 
 function stopCamera() {
@@ -127,7 +141,6 @@ async function flipCamera() {
   await startCamera()
 }
 
-// Native zoom via MediaTrack when available
 watch(zoom, (z) => {
   if (!stream.value) return
   const track = stream.value.getVideoTracks()[0]
@@ -136,7 +149,7 @@ watch(zoom, (z) => {
   }
 })
 
-// ── Capture from camera ─────────────────────────────────────────────────
+// ── Ta bilde ──────────────────────────────────────────────────────────────
 async function capturePhoto() {
   const v = videoRef.value
   if (!v) return
@@ -148,8 +161,7 @@ async function capturePhoto() {
   if (!zoomSupported.value && zoom.value > 1) {
     const z = zoom.value
     const cw = w / z, ch = h / z
-    const cx = (w - cw) / 2, cy = (h - ch) / 2
-    ctx.drawImage(v, cx, cy, cw, ch, 0, 0, w, h)
+    ctx.drawImage(v, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, w, h)
   } else {
     ctx.drawImage(v, 0, 0)
   }
@@ -157,7 +169,7 @@ async function capturePhoto() {
   await loadCapturedImage(cv.toDataURL('image/jpeg', 0.92))
 }
 
-// ── Upload ───────────────────────────────────────────────────────────────
+// ── Opplasting ────────────────────────────────────────────────────────────
 function triggerFilePick() { fileInputRef.value?.click() }
 
 function onFileSelect(e) {
@@ -174,40 +186,55 @@ async function loadCapturedImage(dataUrl) {
   const img = new Image()
   await new Promise(res => { img.onload = res; img.src = dataUrl })
   capturedImg.value = img
+  await nextTick()
+  initCropBox()
 }
 
-// ── Retake ───────────────────────────────────────────────────────────────
-async function retake() {
-  resetAll()
-  await startCamera()
-}
+async function retake() { resetAll(); await startCamera() }
 
-// ── Pan + pinch on the still image ───────────────────────────────────────
-// The crop frame is fixed and centred. The user positions the letter inside
-// it by dragging (single finger) and pinching (two fingers). A slider in the
-// footer also drives imgZoom.
-function dist(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) }
-
+// ── Touch-gestur (pan/zoom på bilde + hjørne-drag) ────────────────────────
 function onStageTouchStart(e) {
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
+
   if (e.touches.length === 2) {
-    gesture.value.pinching       = true
-    gesture.value.pinchStartDist = dist(e.touches[0], e.touches[1])
+    dragCorner.value         = null
+    gesture.value.panning    = false
+    gesture.value.pinching   = true
+    gesture.value.pinchStartDist = distBetween(e.touches[0], e.touches[1])
     gesture.value.pinchStartZoom = imgZoom.value
-    gesture.value.panning = false
   } else if (e.touches.length === 1) {
-    gesture.value.panning    = true
-    gesture.value.panStartX  = e.touches[0].clientX
-    gesture.value.panStartY  = e.touches[0].clientY
-    gesture.value.panOrigX   = imgPanX.value
-    gesture.value.panOrigY   = imgPanY.value
+    const sx = e.touches[0].clientX - sr.left
+    const sy = e.touches[0].clientY - sr.top
+    const corner = nearCorner(sx, sy)
+    if (corner) {
+      dragCorner.value      = corner
+      gesture.value.panning = false
+    } else {
+      dragCorner.value         = null
+      gesture.value.panning    = true
+      gesture.value.panStartX  = e.touches[0].clientX
+      gesture.value.panStartY  = e.touches[0].clientY
+      gesture.value.panOrigX   = imgPanX.value
+      gesture.value.panOrigY   = imgPanY.value
+    }
   }
 }
 
 function onStageTouchMove(e) {
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
+
   if (gesture.value.pinching && e.touches.length === 2) {
-    const d = dist(e.touches[0], e.touches[1])
-    const ratio = d / gesture.value.pinchStartDist
-    imgZoom.value = Math.max(1, Math.min(6, gesture.value.pinchStartZoom * ratio))
+    const d = distBetween(e.touches[0], e.touches[1])
+    imgZoom.value = Math.max(1, Math.min(8, gesture.value.pinchStartZoom * d / gesture.value.pinchStartDist))
+  } else if (dragCorner.value && e.touches.length === 1) {
+    applyCornerDrag(
+      dragCorner.value,
+      e.touches[0].clientX - sr.left,
+      e.touches[0].clientY - sr.top,
+      sr.width, sr.height,
+    )
   } else if (gesture.value.panning && e.touches.length === 1) {
     imgPanX.value = gesture.value.panOrigX + (e.touches[0].clientX - gesture.value.panStartX)
     imgPanY.value = gesture.value.panOrigY + (e.touches[0].clientY - gesture.value.panStartY)
@@ -217,78 +244,132 @@ function onStageTouchMove(e) {
 function onStageTouchEnd() {
   gesture.value.pinching = false
   gesture.value.panning  = false
+  dragCorner.value        = null
 }
 
-// Pointer/mouse pan — for desktop testing
+// Mus/pointer (desktop-testing)
 function onStagePointerDown(e) {
   if (e.pointerType === 'touch') return
-  gesture.value.panning   = true
-  gesture.value.panStartX = e.clientX
-  gesture.value.panStartY = e.clientY
-  gesture.value.panOrigX  = imgPanX.value
-  gesture.value.panOrigY  = imgPanY.value
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
+  const sx = e.clientX - sr.left
+  const sy = e.clientY - sr.top
+  const corner = nearCorner(sx, sy)
+  if (corner) {
+    dragCorner.value = corner
+  } else {
+    gesture.value.panning    = true
+    gesture.value.panStartX  = e.clientX
+    gesture.value.panStartY  = e.clientY
+    gesture.value.panOrigX   = imgPanX.value
+    gesture.value.panOrigY   = imgPanY.value
+  }
   window.addEventListener('pointermove', onStagePointerMove)
-  window.addEventListener('pointerup',   onStagePointerUp, { once: true })
+  window.addEventListener('pointerup', onStagePointerUp, { once: true })
 }
+
 function onStagePointerMove(e) {
-  if (!gesture.value.panning) return
-  imgPanX.value = gesture.value.panOrigX + (e.clientX - gesture.value.panStartX)
-  imgPanY.value = gesture.value.panOrigY + (e.clientY - gesture.value.panStartY)
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
+  if (dragCorner.value) {
+    applyCornerDrag(dragCorner.value, e.clientX - sr.left, e.clientY - sr.top, sr.width, sr.height)
+  } else if (gesture.value.panning) {
+    imgPanX.value = gesture.value.panOrigX + (e.clientX - gesture.value.panStartX)
+    imgPanY.value = gesture.value.panOrigY + (e.clientY - gesture.value.panStartY)
+  }
 }
+
 function onStagePointerUp() {
+  dragCorner.value = null
   gesture.value.panning = false
   window.removeEventListener('pointermove', onStagePointerMove)
 }
 
-// ── Confirm: render fixed 4:5 crop to 512×512 ────────────────────────────
-// The crop frame is locked to aspect 4:5 and sits centred in the stage. Its
-// actual size depends on stage dimensions (width: min(78vw, 56vh)). We read
-// its bounding rect at confirm-time and project it back into source-image
-// coordinates through the image's displayed rect (which already reflects
-// pan + zoom via CSS transform).
+// ── Bekreft crop → emit dataUrl ────────────────────────────────────────────
+// Korrekt koordinat-mapping:
+//   1. Finn bildet sin "base" display-rect i stage (object-contain letterboxing)
+//   2. Appliser CSS-transform translate(panX,panY) scale(Z) fra center
+//   3. Map crop-boks-koordinater til kilde-piksel-koordinater
 function confirmCrop() {
-  const img   = capturedImg.value
-  const imgEl = previewImgRef.value
-  const frame = document.getElementById('glyph-crop-frame')
-  if (!img || !imgEl || !frame) return
+  const img = capturedImg.value
+  if (!img) return
+  const sr = stageRef.value?.getBoundingClientRect()
+  if (!sr) return
 
-  const iRect = imgEl.getBoundingClientRect()
-  const fRect = frame.getBoundingClientRect()
+  // 1. Base display-rect uten transform (object-contain)
+  const imgAspect = img.naturalWidth / img.naturalHeight
+  const srAspect  = sr.width / sr.height
+  let baseW, baseH, baseX, baseY
+  if (imgAspect > srAspect) {
+    baseW = sr.width;  baseH = sr.width / imgAspect
+    baseX = 0;         baseY = (sr.height - baseH) / 2
+  } else {
+    baseH = sr.height; baseW = sr.height * imgAspect
+    baseX = (sr.width - baseW) / 2; baseY = 0
+  }
 
-  // Map crop-frame viewport pixels → source image pixels
-  const scaleX = img.naturalWidth  / iRect.width
-  const scaleY = img.naturalHeight / iRect.height
-  const sx = (fRect.left - iRect.left) * scaleX
-  const sy = (fRect.top  - iRect.top)  * scaleY
-  const sw = fRect.width  * scaleX
-  const sh = fRect.height * scaleY
+  // 2. CSS transform: translate(panX,panY) scale(Z) fra center
+  const Z  = imgZoom.value
+  const cx = sr.width / 2, cy = sr.height / 2
+  const imgLeft  = (baseX - cx) * Z + cx + imgPanX.value
+  const imgTop   = (baseY - cy) * Z + cy + imgPanY.value
+  const imgDispW = baseW * Z
+  const imgDispH = baseH * Z
 
-  // Output: 512×512 (square), with the 4:5 crop fit inside vertically so
-  // the crop-bottom (baseline) lands on the canvas bottom — this is what
-  // traceGlyphFromPhoto expects (y=size → baseline, y=0 → ascender).
+  // 3. Crop-boks → kilde-piksel
+  const sx = Math.round((cropL.value - imgLeft) / imgDispW * img.naturalWidth)
+  const sy = Math.round((cropT.value - imgTop)  / imgDispH * img.naturalHeight)
+  const sw = Math.round((cropR.value - cropL.value) / imgDispW * img.naturalWidth)
+  const sh = Math.round((cropB.value - cropT.value) / imgDispH * img.naturalHeight)
+
   const size = 512
-  const cv = document.createElement('canvas')
-  cv.width = size; cv.height = size
-  const ctx = cv.getContext('2d')
+  const cv   = document.createElement('canvas')
+  cv.width   = size; cv.height = size
+  const ctx  = cv.getContext('2d')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, size, size)
 
-  // Crop is 4:5 (portrait). Place it full-height in the 512×512 canvas and
-  // pad horizontally with white. Target dims: height=512, width=512*(4/5)=409.6
-  const targetH = size
-  const targetW = Math.round(size * (4 / 5))
-  const tx = Math.round((size - targetW) / 2)
-
-  ctx.drawImage(img, sx, sy, sw, sh, tx, 0, targetW, targetH)
+  // Clamp til gyldig kilde-rect
+  const clSx = Math.max(0, sx)
+  const clSy = Math.max(0, sy)
+  const clSw = Math.min(sw, img.naturalWidth  - clSx)
+  const clSh = Math.min(sh, img.naturalHeight - clSy)
+  if (clSw > 0 && clSh > 0) {
+    ctx.drawImage(img, clSx, clSy, clSw, clSh, 0, 0, size, size)
+  }
   emit('capture', cv.toDataURL('image/jpeg', 0.95))
 }
 
 function cancel() { emit('cancel') }
 
-// ── Image style (pan + zoom transform on still) ─────────────────────────
+// CSS-transform for bildet
 const imgStyle = computed(() => ({
-  transform: `translate(${imgPanX.value}px, ${imgPanY.value}px) scale(${imgZoom.value})`,
+  transform:       `translate(${imgPanX.value}px, ${imgPanY.value}px) scale(${imgZoom.value})`,
   transformOrigin: 'center center',
+}))
+
+// ── Hjørne-handle visuelt ─────────────────────────────────────────────────
+// L-formede SVG-markører; path-data i 44×44 viewBox, sentrum på hjørnet
+const CORNER_PATH = {
+  tl: 'M34,22 L22,22 L22,34',
+  tr: 'M10,22 L22,22 L22,34',
+  bl: 'M34,22 L22,22 L22,10',
+  br: 'M10,22 L22,22 L22,10',
+}
+
+function cornerStyle(id) {
+  const x = id.includes('l') ? cropL.value : cropR.value
+  const y = id.includes('t') ? cropT.value : cropB.value
+  return { position: 'absolute', left: (x - 22) + 'px', top: (y - 22) + 'px',
+           width: '44px', height: '44px', zIndex: 15, touchAction: 'none' }
+}
+
+const cropBoxStyle = computed(() => ({
+  position: 'absolute',
+  left:   cropL.value + 'px',
+  top:    cropT.value + 'px',
+  width:  (cropR.value - cropL.value) + 'px',
+  height: (cropB.value - cropT.value) + 'px',
 }))
 </script>
 
@@ -308,76 +389,85 @@ const imgStyle = computed(() => ({
     <!-- Stage -->
     <div ref="stageRef" class="flex-1 relative overflow-hidden bg-black">
 
-      <!-- Live camera preview -->
+      <!-- Live kamera -->
       <video v-if="!capturedSrc" ref="videoRef" playsinline muted
              class="absolute inset-0 w-full h-full object-cover"
              :class="{ '-scale-x-100': facingMode === 'user' }" />
 
-      <!-- Still image preview (post-capture) -->
+      <!-- Stille bilde (post-capture) -->
       <img v-if="capturedSrc" ref="previewImgRef" :src="capturedSrc"
            :style="imgStyle"
            class="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
            draggable="false" />
 
-      <!-- Gesture capture for pan/pinch on the still image. Only active in
-           crop mode — the touch layer sits above the image but below the
-           fixed crop frame so it catches drags anywhere in the stage. -->
+      <!-- Gestur-layer: fanger pan/zoom og hjørne-drag -->
       <div v-if="capturedSrc"
            class="absolute inset-0"
-           style="touch-action: none;"
-           @touchstart="onStageTouchStart"
+           style="z-index: 10; touch-action: none;"
+           @touchstart.prevent="onStageTouchStart"
            @touchmove.prevent="onStageTouchMove"
            @touchend="onStageTouchEnd"
            @touchcancel="onStageTouchEnd"
            @pointerdown="onStagePointerDown" />
 
-      <!-- Fixed 4:5 crop frame overlay (still mode only).
-           Dark veil outside; 4×5 grid, baseline + x-height guides inside. -->
-      <div v-if="capturedSrc" class="absolute inset-0 pointer-events-none
-                                     flex items-center justify-center">
-        <!-- Wrapper keeps aspect 4:5; size adapts to stage dims -->
-        <div id="glyph-crop-frame"
-             class="relative"
-             style="width: min(78vw, 56vh); aspect-ratio: 4 / 5;
-                    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
-                    border: 2px solid rgba(251,191,36,0.9);">
+      <!-- Crop-overlay: mørk veil + ramme + guider -->
+      <template v-if="capturedSrc">
+        <!-- Veil: fire felter rundt crop-boksen -->
+        <div class="absolute inset-x-0 bg-black/60 pointer-events-none"
+             :style="{ top: 0, height: cropT + 'px', zIndex: 11 }" />
+        <div class="absolute inset-x-0 bg-black/60 pointer-events-none"
+             :style="{ top: cropB + 'px', bottom: 0, zIndex: 11 }" />
+        <div class="absolute bg-black/60 pointer-events-none"
+             :style="{ left: 0, width: cropL + 'px', top: cropT + 'px',
+                       height: (cropB - cropT) + 'px', zIndex: 11 }" />
+        <div class="absolute bg-black/60 pointer-events-none"
+             :style="{ left: cropR + 'px', right: 0, top: cropT + 'px',
+                       height: (cropB - cropT) + 'px', zIndex: 11 }" />
 
-          <!-- 4×5 grid (4 cols × 5 rows) -->
+        <!-- Crop-ramme med guider -->
+        <div class="absolute border border-amber-400/70 pointer-events-none"
+             :style="{ ...cropBoxStyle, zIndex: 12 }">
+          <!-- Grid 4×5 -->
           <div class="absolute inset-0 grid grid-cols-4 grid-rows-5">
-            <div v-for="i in 20" :key="i" class="border border-amber-400/15" />
+            <div v-for="i in 20" :key="i" class="border border-amber-400/10" />
           </div>
-
-          <!-- Baseline: y = 4/5 (1 row up from bottom) — pink solid -->
-          <div class="absolute left-0 right-0 h-px bg-pink-400"
-               style="top: 80%" />
-          <div class="absolute -right-1 translate-x-full whitespace-nowrap
-                      text-[10px] font-semibold tracking-wider text-pink-300"
-               style="top: calc(80% - 6px)">grunnlinje</div>
-
-          <!-- X-height: y = 3/5 (2 rows up) — cyan dashed -->
+          <!-- Grunnlinje (80% fra topp) -->
+          <div class="absolute left-0 right-0 h-px bg-pink-400" style="top: 80%" />
+          <!-- x-høyde (60% fra topp) -->
           <div class="absolute left-0 right-0 h-px border-t border-dashed border-cyan-300"
                style="top: 60%" />
-          <div class="absolute -right-1 translate-x-full whitespace-nowrap
-                      text-[10px] font-semibold tracking-wider text-cyan-200"
-               style="top: calc(60% - 6px)">x-høyde</div>
         </div>
-      </div>
 
-      <!-- Hint -->
-      <div v-if="capturedSrc"
-           class="absolute bottom-3 left-1/2 -translate-x-1/2
-                  text-[11px] text-white/60 text-center px-4 pointer-events-none">
-        Dra for å flytte · klyp for å zoome
-      </div>
-    </div>
+        <!-- Hjørne-handles: L-formede SVG, drabare -->
+        <div v-for="id in ['tl','tr','bl','br']" :key="id"
+             :style="cornerStyle(id)"
+             class="pointer-events-auto cursor-grab active:cursor-grabbing">
+          <svg viewBox="0 0 44 44" fill="none" class="w-full h-full">
+            <!-- Ytre halosirkel for touch-target visualisering -->
+            <circle cx="22" cy="22" r="10" fill="rgba(251,191,36,0.12)" />
+            <polyline :points="CORNER_PATH[id]"
+                      stroke="rgb(251,191,36)" stroke-width="3"
+                      stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </div>
 
-    <!-- Bottom controls -->
+        <!-- Hint -->
+        <div class="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none"
+             style="z-index: 13">
+          <p class="text-[11px] text-white/55 text-center bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
+            Dra hjørnene for å justere · klyp for å zoome
+          </p>
+        </div>
+      </template>
+
+    </div><!-- /stage -->
+
+    <!-- Kontroller -->
     <footer class="shrink-0 bg-black/90 backdrop-blur-xl border-t border-white/5
                    pb-[max(0.75rem,env(safe-area-inset-bottom))]">
 
-      <!-- LIVE CAMERA MODE -->
+      <!-- LIVE KAMERA -->
       <template v-if="!capturedSrc">
-        <!-- Zoom slider -->
         <div class="px-5 pt-3 pb-1 flex items-center gap-3" v-if="cameraReady">
           <span class="text-[11px] text-white/40 w-6">1×</span>
           <input v-model.number="zoom" type="range"
@@ -387,19 +477,16 @@ const imgStyle = computed(() => ({
         </div>
 
         <div class="px-5 py-3 grid grid-cols-3 items-center">
-          <!-- Upload (left) -->
           <button @click="triggerFilePick"
                   class="justify-self-start flex flex-col items-center gap-1 text-white/70 active:text-white">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24"
                  fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
+              <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             <span class="text-[10px]">Last opp</span>
           </button>
 
-          <!-- Shutter (center) -->
           <button @click="capturePhoto" :disabled="!cameraReady"
                   class="justify-self-center w-16 h-16 rounded-full border-4 border-white
                          bg-white/10 active:scale-95 transition-transform disabled:opacity-30
@@ -407,7 +494,6 @@ const imgStyle = computed(() => ({
             <div class="w-11 h-11 rounded-full bg-white" />
           </button>
 
-          <!-- Flip (right) -->
           <button @click="flipCamera"
                   class="justify-self-end flex flex-col items-center gap-1 text-white/70 active:text-white">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24"
@@ -420,15 +506,14 @@ const imgStyle = computed(() => ({
           </button>
         </div>
 
-        <input ref="fileInputRef" type="file" accept="image/*" class="hidden"
-               @change="onFileSelect" />
+        <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileSelect" />
       </template>
 
-      <!-- STILL / CROP MODE -->
+      <!-- CROP-MODUS -->
       <template v-else>
         <div class="px-5 pt-3 pb-1 flex items-center gap-3">
           <span class="text-[11px] text-white/40 w-6">1×</span>
-          <input v-model.number="imgZoom" type="range" min="1" max="4" step="0.1"
+          <input v-model.number="imgZoom" type="range" min="1" max="8" step="0.1"
                  class="flex-1 h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
           <span class="text-[11px] text-amber-300 w-10 text-right">{{ imgZoom.toFixed(1) }}×</span>
         </div>
@@ -451,6 +536,5 @@ const imgStyle = computed(() => ({
 </template>
 
 <style scoped>
-/* Hide default range thumb outline on iOS */
 input[type="range"] { -webkit-appearance: none; }
 </style>

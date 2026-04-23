@@ -46,8 +46,10 @@ function proceedToNaming() {
     style: 'Regular',
     description: `Inspirert av ${selectedFont.value.name}`,
     suggestions: [{
-      name: selectedFont.value.name,
+      name:     selectedFont.value.name,
       googleId: selectedFont.value.id,
+      hasWght:  selectedFont.value.hasWght,
+      hasItal:  selectedFont.value.hasItal,
       reason: 'Bruker valgte denne som utgangspunkt',
     }],
   }

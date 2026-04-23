@@ -40,7 +40,9 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   ctx.fillStyle = '#000000'
-  ctx.font = `${FONT_SIZE}px "${fontFamily}", sans-serif`
+  const weight     = settings?.weight  || 400
+  const useItalic  = (settings?.italic || 0) >= 0.5
+  ctx.font = `${useItalic ? 'italic ' : ''}${weight} ${FONT_SIZE}px "${fontFamily}", sans-serif`
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign    = 'left'
 

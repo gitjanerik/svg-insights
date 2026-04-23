@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ALL_GLYPHS, GLYPH_GROUPS, glyphs, fontMetrics, fontSettings,
@@ -233,43 +233,74 @@ const loadProgress = ref(0)
 const loadTotal    = ref(0)
 const loadingFontFamily = ref('sans-serif')
 
-onMounted(async () => {
-  logStatus(`Start. Valgt font: ${detectedFontInfo.value?.suggestions?.[0]?.name || 'ingen'}`)
+// ── Variable-font settings state ─────────────────────────────────────────
 
-  const sugg = detectedFontInfo.value?.suggestions?.[0]
-  const fontFamily = sugg?.name || 'sans-serif'
-  loadingFontFamily.value = fontFamily
+const settingsDirty = ref(false)   // true after weight/italic changed post-init
+const regenRunning  = ref(false)
 
-  if (sugg?.googleId) {
-    const existing = document.getElementById(`gfont-${sugg.googleId}`)
-    if (!existing) {
-      const link = document.createElement('link')
-      link.id   = `gfont-${sugg.googleId}`
-      link.rel  = 'stylesheet'
-      link.href = `https://fonts.googleapis.com/css2?family=${sugg.googleId}:wght@400&display=swap`
-      document.head.appendChild(link)
-    }
-    logStatus(`Laster ${fontFamily}…`)
-    try {
-      await Promise.race([
-        document.fonts.load(`400 24px "${fontFamily}"`),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('font load timeout')), 6000)),
-      ])
-      logStatus('Font klar')
-    } catch (e) {
-      logStatus(`Font-lasting feilet: ${e.message} — bruker fallback`)
-    }
+watch(() => [fontSettings.weight, fontSettings.italic], () => {
+  if (!loading.value) settingsDirty.value = true
+})
+
+// ── Font loading helper ───────────────────────────────────────────────────
+
+async function ensureFontLoaded(fontFamily, sugg) {
+  if (!sugg?.googleId) return
+  // Build URL that covers all weight + italic variants the font supports
+  const hasWght = sugg.hasWght
+  const hasItal = sugg.hasItal
+  let fontParams = ''
+  if (hasWght && hasItal) {
+    fontParams = ':ital,wght@0,100..900;1,100..900'
+  } else if (hasWght) {
+    fontParams = ':wght@100..900'
+  } else if (hasItal) {
+    fontParams = ':ital@0;1'
   }
 
-  const pending = ALL_GLYPHS.filter(c => !(glyphs[c] && glyphs[c].pathD))
-  loadTotal.value = pending.length
+  const linkId = `gfont-${sugg.googleId}`
+  if (!document.getElementById(linkId)) {
+    const link = document.createElement('link')
+    link.id   = linkId
+    link.rel  = 'stylesheet'
+    link.href = `https://fonts.googleapis.com/css2?family=${sugg.googleId}${fontParams}&display=swap`
+    document.head.appendChild(link)
+  }
+
+  logStatus(`Laster ${fontFamily}…`)
+  const w = fontSettings.weight || 400
+  const styleStr = (fontSettings.italic >= 0.5 ? 'italic ' : '') + w
+  try {
+    await Promise.race([
+      document.fonts.load(`${styleStr} 24px "${fontFamily}"`),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
+    ])
+    logStatus('Font klar')
+  } catch (e) {
+    logStatus(`Font-lasting feilet: ${e.message}`)
+  }
+}
+
+// ── Glyph generation (shared by mount + regen) ────────────────────────────
+
+async function generateAllGlyphs(onlyEmpty = false) {
+  const sugg = detectedFontInfo.value?.suggestions?.[0]
+  const fontFamily = sugg?.name || 'sans-serif'
+
+  await ensureFontLoaded(fontFamily, sugg)
+
+  const pending = ALL_GLYPHS.filter(c => {
+    if (onlyEmpty) return !glyphs[c]?.pathD
+    // on regen: skip glyphs the user hand-edited
+    return !glyphs[c]?.pathD || glyphs[c].status === 'auto'
+  })
+  loadTotal.value    = pending.length
   loadProgress.value = 0
 
   const BATCH = 8
   let captured = 0
   for (let i = 0; i < pending.length; i += BATCH) {
-    const slice = pending.slice(i, i + BATCH)
-    for (const c of slice) {
+    for (const c of pending.slice(i, i + BATCH)) {
       try {
         const r = generateGlyphFromSystemFont(c, fontMetrics, fontFamily, fontSettings)
         if (r?.pathD) {
@@ -281,11 +312,26 @@ onMounted(async () => {
       }
       loadProgress.value++
     }
-    // Yield to browser so it can repaint
     await new Promise(r => setTimeout(r, 0))
   }
-
   logStatus(`Fanget ${captured} glyfer med "${fontFamily}"`)
+}
+
+async function regenGlyphs() {
+  regenRunning.value = true
+  loadTotal.value    = 0
+  loadProgress.value = 0
+  await generateAllGlyphs(false)
+  settingsDirty.value = false
+  regenRunning.value = false
+}
+
+onMounted(async () => {
+  const sugg = detectedFontInfo.value?.suggestions?.[0]
+  loadingFontFamily.value = sugg?.name || 'sans-serif'
+  logStatus(`Start. Valgt font: ${loadingFontFamily.value}`)
+
+  await generateAllGlyphs(true)
   loading.value = false
 })
 
@@ -358,6 +404,53 @@ function backToOverview() {
           <span><span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"/>{{ stats.traced }} fra foto</span>
           <span><span class="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1"/>{{ stats.auto }} auto</span>
           <span><span class="inline-block w-2 h-2 rounded-full bg-white/20 mr-1"/>{{ stats.empty }} tom</span>
+        </div>
+
+        <!-- Variable font settings (weight + italic) -->
+        <div class="mb-4 rounded-xl bg-white/4 border border-white/8 px-4 py-3 space-y-3">
+          <!-- Weight -->
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] text-white/50 w-14 shrink-0">Vekt</span>
+            <input v-model.number="fontSettings.weight" type="range"
+                   min="100" max="900" step="100"
+                   :disabled="!detectedFontInfo?.suggestions?.[0]?.hasWght"
+                   class="flex-1 h-1 accent-amber-400 bg-white/10 rounded-full appearance-none
+                          disabled:opacity-30
+                          [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                          [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-400
+                          [&::-webkit-slider-thumb]:appearance-none" />
+            <span class="text-[11px] text-amber-300 w-8 text-right tabular-nums">{{ fontSettings.weight }}</span>
+          </div>
+
+          <!-- Italic toggle -->
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] text-white/50 w-14 shrink-0">Kursiv</span>
+            <button
+              @click="fontSettings.italic = fontSettings.italic ? 0 : 1"
+              :disabled="!detectedFontInfo?.suggestions?.[0]?.hasItal"
+              :class="['flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors',
+                       'disabled:opacity-30',
+                       fontSettings.italic
+                         ? 'bg-amber-400/15 border-amber-400/40 text-amber-300'
+                         : 'bg-white/5 border-white/10 text-white/50']">
+              {{ fontSettings.italic ? 'Kursiv' : 'Normal' }}
+            </button>
+          </div>
+
+          <!-- Regen banner -->
+          <div v-if="settingsDirty" class="flex items-center gap-2 pt-1">
+            <p class="flex-1 text-[11px] text-amber-300/80">Innstillingene er endret</p>
+            <button @click="regenGlyphs" :disabled="regenRunning"
+                    class="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-[11px] font-semibold
+                           disabled:opacity-50 active:scale-95 transition-transform">
+              {{ regenRunning ? 'Genererer…' : 'Regenerer' }}
+            </button>
+          </div>
+          <!-- Regen progress bar (shown during regen) -->
+          <div v-if="regenRunning && loadTotal > 0" class="h-0.5 rounded-full bg-white/10 overflow-hidden">
+            <div class="h-full bg-amber-400 transition-all"
+                 :style="{ width: (loadProgress / loadTotal * 100) + '%' }" />
+          </div>
         </div>
 
         <div v-for="(chars, groupName) in GLYPH_GROUPS" :key="groupName" class="mb-5">
