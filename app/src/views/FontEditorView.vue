@@ -408,6 +408,23 @@ function backToOverview() {
 
         <!-- Variable font settings (weight + italic) -->
         <div class="mb-4 rounded-xl bg-white/4 border border-white/8 px-4 py-3 space-y-3">
+
+          <!-- Live preview -->
+          <div class="rounded-lg bg-black/30 px-4 py-3 text-center overflow-hidden">
+            <div
+              :style="{
+                fontFamily: `'${detectedFontInfo?.suggestions?.[0]?.name || 'sans-serif'}', sans-serif`,
+                fontWeight: fontSettings.weight,
+                fontStyle:  fontSettings.italic ? 'italic' : 'normal',
+              }"
+              class="text-4xl text-white/90 leading-tight transition-all duration-150 truncate">
+              Hamburgefons
+            </div>
+            <div class="text-[10px] text-white/25 mt-1 tabular-nums">
+              {{ fontSettings.weight }} · {{ fontSettings.italic ? 'kursiv' : 'normal' }}
+            </div>
+          </div>
+
           <!-- Weight -->
           <div class="flex items-center gap-3">
             <span class="text-[11px] text-white/50 w-14 shrink-0">Vekt</span>
