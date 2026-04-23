@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-04-23 — v4.13.1: Crop-hjørner + Outline-modus
+
+### Drabare crop-hjørner aktivert
+
+Hjørne-handles i `GlyphPhotoDialog` var synlige i 4.13.0, men inaktive. Årsak: `pointer-events-auto` på hjørne-divene gjorde at de fanget opp touch-eventen uten å ha en handler selv, slik at gestur-laget under aldri fikk eventen. Fix: `pointer-events-none` på hjørnene — touchen faller gjennom til gestur-laget der `nearCorner()`-sjekken allerede ruter til corner-drag.
+
+Samtidig: startstørrelse redusert til ~2/3 (fra 72% til 48% av stage-høyden), og **Avbryt**-knapp lagt til i crop-footeren.
+
+### Innstillinger i naming-steget
+
+`fontSettings` (vekt, kursiv, outline) er nå tilgjengelig i naming-fasen av `FontChooserView`, slik at brukeren setter dem *før* glyf-genereringen begynner. Sliderne disables automatisk for fonter som ikke støtter `hasWght`/`hasItal`.
+
+### Outline-modus
+
+Ny `outline: false` i `fontSettings`. Når `true` tegner `canvasGlyphRenderer` `ctx.strokeText()` i stedet for `ctx.fillText()` — resultatet er at tracer følger konturlinjen av hvert strek i bokstaven, ikke det fylte glyffet. Gir interessant visuell innsikt i hvordan SVG-outlines oppstår for stroked-shapes.
+
+### Deploy-rydding
+
+`gh-pages` ryddet for akkumulerte chunk-filer fra tidligere deploys. `deploy.sh` bruker nå `mktemp -d` for midlertidig build-staging for å unngå hash-kollisjon mellom gamle og nye asset-hasher.
+
+---
+
 ## 2026-04-23 — v4.13.0: Variabel font + drabare crop-hjørner
 
 ### Variabel font-innstillinger i FontCapture
