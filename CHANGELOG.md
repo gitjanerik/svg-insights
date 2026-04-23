@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-04-23 — v4.13.2: Editor-opprydding + edited-status-fiks
+
+### Fjernet live-preview fra editor
+
+Live-preview-panelet med «Hamburgefons»-sample, vekt-slider og kursiv-toggle er fjernet fra FontEditorView. Disse innstillingene settes nå utelukkende i naming-steget i FontChooserView, slik at editoren kan fokusere på selve glyf-arbeidet uten duplisert UI.
+
+`settingsDirty`/`regenRunning`/`regenGlyphs` er også fjernet — ikke lenger nødvendig siden innstillingene er låst før generering.
+
+### Fikset edited-status-bug
+
+Watcheren som auto-lagret glyf-endringer inneholdt denne logikken:
+```js
+prev.status === 'auto' ? 'auto' : 'edited'
+```
+Det betyr at auto-genererte glyfer *aldri* ble promotert til `edited` etter brukerens redigering. Bruker så dermed aldri den grønne bakgrunnen som indikerer at glyfen er tilpasset. Fix: enhver endring promoterer nå alltid til `edited`.
+
+---
+
 ## 2026-04-23 — v4.13.1: Crop-hjørner + Outline-modus
 
 ### Drabare crop-hjørner aktivert

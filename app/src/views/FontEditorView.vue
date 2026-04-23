@@ -44,15 +44,14 @@ function closeGlyph() {
   selectedChar.value = null
 }
 
-// Auto-save on any point change
+// Auto-save on any point change — any modification promotes glyph to 'edited'
 watch(() => editor.points.value, () => {
   if (!selectedChar.value) return
   if (!editor.points.value.length) return
   const newD = editor.toPathD()
   const prev = glyphs[selectedChar.value]
   if (!prev || prev.pathD === newD) return
-  setGlyphPath(selectedChar.value, newD, prev.advanceWidth,
-    prev.status === 'auto' ? 'auto' : 'edited')
+  setGlyphPath(selectedChar.value, newD, prev.advanceWidth, 'edited')
 }, { deep: true })
 
 // ── Status + colors for the grid ─────────────────────────────────────────
@@ -233,15 +232,6 @@ const loadProgress = ref(0)
 const loadTotal    = ref(0)
 const loadingFontFamily = ref('sans-serif')
 
-// ── Variable-font settings state ─────────────────────────────────────────
-
-const settingsDirty = ref(false)   // true after weight/italic changed post-init
-const regenRunning  = ref(false)
-
-watch(() => [fontSettings.weight, fontSettings.italic], () => {
-  if (!loading.value) settingsDirty.value = true
-})
-
 // ── Font loading helper ───────────────────────────────────────────────────
 
 async function ensureFontLoaded(fontFamily, sugg) {
@@ -315,15 +305,6 @@ async function generateAllGlyphs(onlyEmpty = false) {
     await new Promise(r => setTimeout(r, 0))
   }
   logStatus(`Fanget ${captured} glyfer med "${fontFamily}"`)
-}
-
-async function regenGlyphs() {
-  regenRunning.value = true
-  loadTotal.value    = 0
-  loadProgress.value = 0
-  await generateAllGlyphs(false)
-  settingsDirty.value = false
-  regenRunning.value = false
 }
 
 onMounted(async () => {
@@ -404,70 +385,6 @@ function backToOverview() {
           <span><span class="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1"/>{{ stats.traced }} fra foto</span>
           <span><span class="inline-block w-2 h-2 rounded-full bg-sky-400 mr-1"/>{{ stats.auto }} auto</span>
           <span><span class="inline-block w-2 h-2 rounded-full bg-white/20 mr-1"/>{{ stats.empty }} tom</span>
-        </div>
-
-        <!-- Variable font settings (weight + italic) -->
-        <div class="mb-4 rounded-xl bg-white/4 border border-white/8 px-4 py-3 space-y-3">
-
-          <!-- Live preview -->
-          <div class="rounded-lg bg-black/30 px-4 py-3 text-center overflow-hidden">
-            <div
-              :style="{
-                fontFamily: `'${detectedFontInfo?.suggestions?.[0]?.name || 'sans-serif'}', sans-serif`,
-                fontWeight: fontSettings.weight,
-                fontStyle:  fontSettings.italic ? 'italic' : 'normal',
-              }"
-              class="text-4xl text-white/90 leading-tight transition-all duration-150 truncate">
-              Hamburgefons
-            </div>
-            <div class="text-[10px] text-white/25 mt-1 tabular-nums">
-              {{ fontSettings.weight }} · {{ fontSettings.italic ? 'kursiv' : 'normal' }}
-            </div>
-          </div>
-
-          <!-- Weight -->
-          <div class="flex items-center gap-3">
-            <span class="text-[11px] text-white/50 w-14 shrink-0">Vekt</span>
-            <input v-model.number="fontSettings.weight" type="range"
-                   min="100" max="900" step="100"
-                   :disabled="!detectedFontInfo?.suggestions?.[0]?.hasWght"
-                   class="flex-1 h-1 accent-amber-400 bg-white/10 rounded-full appearance-none
-                          disabled:opacity-30
-                          [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-                          [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-amber-400
-                          [&::-webkit-slider-thumb]:appearance-none" />
-            <span class="text-[11px] text-amber-300 w-8 text-right tabular-nums">{{ fontSettings.weight }}</span>
-          </div>
-
-          <!-- Italic toggle -->
-          <div class="flex items-center gap-3">
-            <span class="text-[11px] text-white/50 w-14 shrink-0">Kursiv</span>
-            <button
-              @click="fontSettings.italic = fontSettings.italic ? 0 : 1"
-              :disabled="!detectedFontInfo?.suggestions?.[0]?.hasItal"
-              :class="['flex-1 py-1.5 rounded-lg text-[11px] font-medium border transition-colors',
-                       'disabled:opacity-30',
-                       fontSettings.italic
-                         ? 'bg-amber-400/15 border-amber-400/40 text-amber-300'
-                         : 'bg-white/5 border-white/10 text-white/50']">
-              {{ fontSettings.italic ? 'Kursiv' : 'Normal' }}
-            </button>
-          </div>
-
-          <!-- Regen banner -->
-          <div v-if="settingsDirty" class="flex items-center gap-2 pt-1">
-            <p class="flex-1 text-[11px] text-amber-300/80">Innstillingene er endret</p>
-            <button @click="regenGlyphs" :disabled="regenRunning"
-                    class="px-3 py-1.5 rounded-lg bg-amber-500 text-black text-[11px] font-semibold
-                           disabled:opacity-50 active:scale-95 transition-transform">
-              {{ regenRunning ? 'Genererer…' : 'Regenerer' }}
-            </button>
-          </div>
-          <!-- Regen progress bar (shown during regen) -->
-          <div v-if="regenRunning && loadTotal > 0" class="h-0.5 rounded-full bg-white/10 overflow-hidden">
-            <div class="h-full bg-amber-400 transition-all"
-                 :style="{ width: (loadProgress / loadTotal * 100) + '%' }" />
-          </div>
         </div>
 
         <div v-for="(chars, groupName) in GLYPH_GROUPS" :key="groupName" class="mb-5">
