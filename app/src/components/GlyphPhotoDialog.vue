@@ -42,7 +42,7 @@ const cropB = ref(0)
 function initCropBox() {
   const sr = stageRef.value?.getBoundingClientRect()
   if (!sr) return
-  const bH = sr.height * 0.72
+  const bH = sr.height * 0.48  // ~2/3 av forrige størrelse
   const bW = bH * (4 / 5)
   cropL.value = (sr.width  - bW) / 2
   cropT.value = (sr.height - bH) / 2
@@ -438,10 +438,10 @@ const cropBoxStyle = computed(() => ({
                style="top: 60%" />
         </div>
 
-        <!-- Hjørne-handles: L-formede SVG, drabare -->
+        <!-- Hjørne-handles: L-formede SVG, rent visuelt — gestur-laget under håndterer touch -->
         <div v-for="id in ['tl','tr','bl','br']" :key="id"
              :style="cornerStyle(id)"
-             class="pointer-events-auto cursor-grab active:cursor-grabbing">
+             class="pointer-events-none">
           <svg viewBox="0 0 44 44" fill="none" class="w-full h-full">
             <!-- Ytre halosirkel for touch-target visualisering -->
             <circle cx="22" cy="22" r="10" fill="rgba(251,191,36,0.12)" />
@@ -519,6 +519,11 @@ const cropBoxStyle = computed(() => ({
         </div>
 
         <div class="px-4 py-3 flex gap-2">
+          <button @click="cancel"
+                  class="px-4 py-3 rounded-xl border border-white/15
+                         text-white/60 text-sm active:bg-white/5">
+            Avbryt
+          </button>
           <button @click="retake"
                   class="flex-1 px-4 py-3 rounded-xl border border-white/15
                          text-white/80 text-sm active:bg-white/5">

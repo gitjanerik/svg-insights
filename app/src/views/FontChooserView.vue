@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { FONT_CATEGORIES } from '../lib/googleFontsCatalog.js'
 import {
-  fontName, detectedFontInfo, resetFontProject,
+  fontName, detectedFontInfo, resetFontProject, fontSettings,
 } from '../composables/useFontProject.js'
 
 const router = useRouter()
@@ -153,6 +153,57 @@ function fontPreviewStyle(f) {
                       text-white text-base focus:outline-none focus:border-amber-400/50" />
         <div class="text-[11px] text-white/40">
           {{ selectedFont?.name ? `Utgangspunkt: ${selectedFont.name}` : '' }}
+        </div>
+
+        <!-- Typografiske innstillinger -->
+        <div class="rounded-xl bg-white/4 border border-white/8 px-4 py-3 space-y-4">
+          <p class="text-[11px] text-white/40 uppercase tracking-wider">Innstillinger</p>
+
+          <!-- Vekt -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-baseline">
+              <span class="text-xs text-white/60">Vekt</span>
+              <span class="text-xs text-amber-300 tabular-nums">{{ fontSettings.weight }}</span>
+            </div>
+            <input v-model.number="fontSettings.weight" type="range"
+                   min="100" max="900" step="100"
+                   :disabled="!selectedFont?.hasWght"
+                   class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none
+                          disabled:opacity-25" />
+            <p v-if="!selectedFont?.hasWght" class="text-[10px] text-white/25">
+              Ikke tilgjengelig for {{ selectedFont?.name }}
+            </p>
+          </div>
+
+          <!-- Kursiv -->
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-white/60">Kursiv</span>
+            <button @click="fontSettings.italic = fontSettings.italic ? 0 : 1"
+                    :disabled="!selectedFont?.hasItal"
+                    :class="['w-12 h-6 rounded-full border transition-colors relative disabled:opacity-25',
+                             fontSettings.italic
+                               ? 'bg-amber-400 border-amber-400'
+                               : 'bg-white/10 border-white/20']">
+              <span :class="['absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
+                             fontSettings.italic ? 'left-6' : 'left-0.5']" />
+            </button>
+          </div>
+
+          <!-- Outline -->
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-xs text-white/60">Outline</span>
+              <p class="text-[10px] text-white/30 mt-0.5">Spor konturlinjen, ikke fyllet</p>
+            </div>
+            <button @click="fontSettings.outline = !fontSettings.outline"
+                    :class="['w-12 h-6 rounded-full border transition-colors relative',
+                             fontSettings.outline
+                               ? 'bg-amber-400 border-amber-400'
+                               : 'bg-white/10 border-white/20']">
+              <span :class="['absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
+                             fontSettings.outline ? 'left-6' : 'left-0.5']" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

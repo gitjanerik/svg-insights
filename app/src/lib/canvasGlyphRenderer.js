@@ -65,7 +65,13 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
   if (glyphW < 1) return null
   const drawX = Math.round((CANVAS_SIZE - glyphW) / 2 + leftPad)
 
-  ctx.fillText(char, drawX, baselineY)
+  if (settings?.outline) {
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = Math.round(FONT_SIZE / 14)
+    ctx.strokeText(char, drawX, baselineY)
+  } else {
+    ctx.fillText(char, drawX, baselineY)
+  }
 
   const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   const binary    = binarize(imageData.data, CANVAS_SIZE, CANVAS_SIZE, BIN_THRESHOLD)
