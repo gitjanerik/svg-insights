@@ -45,15 +45,18 @@ const zoomRange     = ref({ min: 1, max: 3, step: 0.1 })
 const capturedImg   = ref(null)     // HTMLImageElement once loaded
 const capturedSrc   = ref(null)     // data-URL source for <img>
 const imgZoom       = ref(1.0)      // digital zoom applied to the still image
-const imgPanX       = ref(0)        // not currently draggable; reserved for future
+const imgPanX       = ref(0)        // user-drag offset, px
 const imgPanY       = ref(0)
 
-// Crop rectangle in % of stage (0..1). Default = centred square covering
-// most of the stage height, 4:5 aspect (portrait).
-const cropL = ref(0.18)  // left
-const cropT = ref(0.05)  // top
-const cropR = ref(0.82)  // right
-const cropB = ref(0.95)  // bottom
+// Pan / pinch gesture tracking (for the still image under the fixed crop frame)
+const gesture = ref({
+  panning:   false,
+  panStartX: 0, panStartY: 0,
+  panOrigX:  0, panOrigY:  0,
+  pinching:  false,
+  pinchStartDist: 0,
+  pinchStartZoom: 1,
+})
 
 // ── Lifecycle ────────────────────────────────────────────────────────────
 watch(() => props.open, async (o) => {
@@ -74,10 +77,6 @@ function resetAll() {
   imgZoom.value = 1.0
   imgPanX.value = 0
   imgPanY.value = 0
-  cropL.value = 0.18
-  cropT.value = 0.05
-  cropR.value = 0.82
-  cropB.value = 0.95
 }
 
 // ── Camera ───────────────────────────────────────────────────────────────
@@ -183,88 +182,112 @@ async function retake() {
   await startCamera()
 }
 
-// ── Crop corners (drag) ──────────────────────────────────────────────────
-// Each corner updates two of {cropL, cropT, cropR, cropB}.
-// Min crop size = 20% of stage to prevent accidental collapse.
-const MIN_CROP = 0.20
+// ── Pan + pinch on the still image ───────────────────────────────────────
+// The crop frame is fixed and centred. The user positions the letter inside
+// it by dragging (single finger) and pinching (two fingers). A slider in the
+// footer also drives imgZoom.
+function dist(a, b) { return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) }
 
-function onCornerDrag(which, ev) {
-  ev.preventDefault()
-  const stage = stageRef.value
-  if (!stage) return
-  const rect = stage.getBoundingClientRect()
-
-  function move(e) {
-    const t = e.touches?.[0] || e
-    const x = Math.max(0, Math.min(1, (t.clientX - rect.left) / rect.width))
-    const y = Math.max(0, Math.min(1, (t.clientY - rect.top)  / rect.height))
-    if (which === 'tl') { cropL.value = Math.min(x, cropR.value - MIN_CROP); cropT.value = Math.min(y, cropB.value - MIN_CROP) }
-    if (which === 'tr') { cropR.value = Math.max(x, cropL.value + MIN_CROP); cropT.value = Math.min(y, cropB.value - MIN_CROP) }
-    if (which === 'bl') { cropL.value = Math.min(x, cropR.value - MIN_CROP); cropB.value = Math.max(y, cropT.value + MIN_CROP) }
-    if (which === 'br') { cropR.value = Math.max(x, cropL.value + MIN_CROP); cropB.value = Math.max(y, cropT.value + MIN_CROP) }
+function onStageTouchStart(e) {
+  if (e.touches.length === 2) {
+    gesture.value.pinching       = true
+    gesture.value.pinchStartDist = dist(e.touches[0], e.touches[1])
+    gesture.value.pinchStartZoom = imgZoom.value
+    gesture.value.panning = false
+  } else if (e.touches.length === 1) {
+    gesture.value.panning    = true
+    gesture.value.panStartX  = e.touches[0].clientX
+    gesture.value.panStartY  = e.touches[0].clientY
+    gesture.value.panOrigX   = imgPanX.value
+    gesture.value.panOrigY   = imgPanY.value
   }
-  function end() {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', end)
-    window.removeEventListener('pointercancel', end)
-  }
-  window.addEventListener('pointermove', move, { passive: false })
-  window.addEventListener('pointerup', end)
-  window.addEventListener('pointercancel', end)
 }
 
-// ── Derived crop geometry (CSS %) ────────────────────────────────────────
-const cropStyle = computed(() => ({
-  left:   `${cropL.value * 100}%`,
-  top:    `${cropT.value * 100}%`,
-  width:  `${(cropR.value - cropL.value) * 100}%`,
-  height: `${(cropB.value - cropT.value) * 100}%`,
-}))
+function onStageTouchMove(e) {
+  if (gesture.value.pinching && e.touches.length === 2) {
+    const d = dist(e.touches[0], e.touches[1])
+    const ratio = d / gesture.value.pinchStartDist
+    imgZoom.value = Math.max(1, Math.min(6, gesture.value.pinchStartZoom * ratio))
+  } else if (gesture.value.panning && e.touches.length === 1) {
+    imgPanX.value = gesture.value.panOrigX + (e.touches[0].clientX - gesture.value.panStartX)
+    imgPanY.value = gesture.value.panOrigY + (e.touches[0].clientY - gesture.value.panStartY)
+  }
+}
 
-// ── Confirm: render to 512×512 and emit ──────────────────────────────────
+function onStageTouchEnd() {
+  gesture.value.pinching = false
+  gesture.value.panning  = false
+}
+
+// Pointer/mouse pan — for desktop testing
+function onStagePointerDown(e) {
+  if (e.pointerType === 'touch') return
+  gesture.value.panning   = true
+  gesture.value.panStartX = e.clientX
+  gesture.value.panStartY = e.clientY
+  gesture.value.panOrigX  = imgPanX.value
+  gesture.value.panOrigY  = imgPanY.value
+  window.addEventListener('pointermove', onStagePointerMove)
+  window.addEventListener('pointerup',   onStagePointerUp, { once: true })
+}
+function onStagePointerMove(e) {
+  if (!gesture.value.panning) return
+  imgPanX.value = gesture.value.panOrigX + (e.clientX - gesture.value.panStartX)
+  imgPanY.value = gesture.value.panOrigY + (e.clientY - gesture.value.panStartY)
+}
+function onStagePointerUp() {
+  gesture.value.panning = false
+  window.removeEventListener('pointermove', onStagePointerMove)
+}
+
+// ── Confirm: render fixed 4:5 crop to 512×512 ────────────────────────────
+// The crop frame is locked to aspect 4:5 and sits centred in the stage. Its
+// actual size depends on stage dimensions (width: min(78vw, 56vh)). We read
+// its bounding rect at confirm-time and project it back into source-image
+// coordinates through the image's displayed rect (which already reflects
+// pan + zoom via CSS transform).
 function confirmCrop() {
-  const img = capturedImg.value
-  const stage = stageRef.value
-  if (!img || !stage) return
-
-  // Map stage-space crop → image-space pixels, accounting for object-contain
-  // sizing of the img inside the stage, and our digital zoom/pan.
-  const sRect = stage.getBoundingClientRect()
+  const img   = capturedImg.value
   const imgEl = previewImgRef.value
+  const frame = document.getElementById('glyph-crop-frame')
+  if (!img || !imgEl || !frame) return
+
   const iRect = imgEl.getBoundingClientRect()
+  const fRect = frame.getBoundingClientRect()
 
-  // Crop in viewport-px
-  const vx = sRect.left + cropL.value * sRect.width
-  const vy = sRect.top  + cropT.value * sRect.height
-  const vw = (cropR.value - cropL.value) * sRect.width
-  const vh = (cropB.value - cropT.value) * sRect.height
+  // Map crop-frame viewport pixels → source image pixels
+  const scaleX = img.naturalWidth  / iRect.width
+  const scaleY = img.naturalHeight / iRect.height
+  const sx = (fRect.left - iRect.left) * scaleX
+  const sy = (fRect.top  - iRect.top)  * scaleY
+  const sw = fRect.width  * scaleX
+  const sh = fRect.height * scaleY
 
-  // Map to image-source px: image has natural size img.naturalWidth×naturalHeight
-  // and is rendered into iRect (which already reflects zoom transform).
-  const sx = (vx - iRect.left) * (img.naturalWidth  / iRect.width)
-  const sy = (vy - iRect.top)  * (img.naturalHeight / iRect.height)
-  const sw = vw * (img.naturalWidth  / iRect.width)
-  const sh = vh * (img.naturalHeight / iRect.height)
-
+  // Output: 512×512 (square), with the 4:5 crop fit inside vertically so
+  // the crop-bottom (baseline) lands on the canvas bottom — this is what
+  // traceGlyphFromPhoto expects (y=size → baseline, y=0 → ascender).
   const size = 512
   const cv = document.createElement('canvas')
   cv.width = size; cv.height = size
   const ctx = cv.getContext('2d')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, size, size)
-  // Draw the cropped region into the full 512×512 output. Because the user's
-  // crop is always 4:5 by default but can be resized freely, we stretch to
-  // fit. The tracer normalises against baseline/x-height anyway.
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, size, size)
 
+  // Crop is 4:5 (portrait). Place it full-height in the 512×512 canvas and
+  // pad horizontally with white. Target dims: height=512, width=512*(4/5)=409.6
+  const targetH = size
+  const targetW = Math.round(size * (4 / 5))
+  const tx = Math.round((size - targetW) / 2)
+
+  ctx.drawImage(img, sx, sy, sw, sh, tx, 0, targetW, targetH)
   emit('capture', cv.toDataURL('image/jpeg', 0.95))
 }
 
 function cancel() { emit('cancel') }
 
-// ── Image style (zoom transform on still) ────────────────────────────────
+// ── Image style (pan + zoom transform on still) ─────────────────────────
 const imgStyle = computed(() => ({
-  transform: `scale(${imgZoom.value})`,
+  transform: `translate(${imgPanX.value}px, ${imgPanY.value}px) scale(${imgZoom.value})`,
   transformOrigin: 'center center',
 }))
 </script>
@@ -296,60 +319,55 @@ const imgStyle = computed(() => ({
            class="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
            draggable="false" />
 
-      <!-- 4×5 crop overlay — only in still-preview mode -->
-      <div v-if="capturedSrc" class="absolute inset-0 pointer-events-none">
-        <!-- Dark veil OUTSIDE the crop rectangle (uses 4 divs instead of
-             mask-image for broad browser support) -->
-        <div class="absolute bg-black/60"
-             :style="{ left: 0, top: 0, right: 0, height: cropStyle.top }" />
-        <div class="absolute bg-black/60"
-             :style="{ left: 0, bottom: 0, right: 0,
-                       top: `calc(${cropStyle.top} + ${cropStyle.height})` }" />
-        <div class="absolute bg-black/60"
-             :style="{ left: 0, top: cropStyle.top, width: cropStyle.left,
-                       height: cropStyle.height }" />
-        <div class="absolute bg-black/60"
-             :style="{ top: cropStyle.top, height: cropStyle.height,
-                       left: `calc(${cropStyle.left} + ${cropStyle.width})`,
-                       right: 0 }" />
+      <!-- Gesture capture for pan/pinch on the still image. Only active in
+           crop mode — the touch layer sits above the image but below the
+           fixed crop frame so it catches drags anywhere in the stage. -->
+      <div v-if="capturedSrc"
+           class="absolute inset-0"
+           style="touch-action: none;"
+           @touchstart="onStageTouchStart"
+           @touchmove.prevent="onStageTouchMove"
+           @touchend="onStageTouchEnd"
+           @touchcancel="onStageTouchEnd"
+           @pointerdown="onStagePointerDown" />
 
-        <!-- Crop rectangle -->
-        <div class="absolute border-2 border-amber-400/90"
-             :style="cropStyle">
+      <!-- Fixed 4:5 crop frame overlay (still mode only).
+           Dark veil outside; 4×5 grid, baseline + x-height guides inside. -->
+      <div v-if="capturedSrc" class="absolute inset-0 pointer-events-none
+                                     flex items-center justify-center">
+        <!-- Wrapper keeps aspect 4:5; size adapts to stage dims -->
+        <div id="glyph-crop-frame"
+             class="relative"
+             style="width: min(78vw, 56vh); aspect-ratio: 4 / 5;
+                    box-shadow: 0 0 0 9999px rgba(0,0,0,0.55);
+                    border: 2px solid rgba(251,191,36,0.9);">
+
           <!-- 4×5 grid (4 cols × 5 rows) -->
           <div class="absolute inset-0 grid grid-cols-4 grid-rows-5">
-            <div v-for="i in 20" :key="i" class="border border-amber-400/20" />
+            <div v-for="i in 20" :key="i" class="border border-amber-400/15" />
           </div>
 
-          <!-- Baseline guide: y = 4/5 (1 row up from bottom) — pink solid -->
+          <!-- Baseline: y = 4/5 (1 row up from bottom) — pink solid -->
           <div class="absolute left-0 right-0 h-px bg-pink-400"
                style="top: 80%" />
-          <div class="absolute right-1 text-[9px] text-pink-300 font-semibold tracking-wider"
-               style="top: calc(80% - 12px)">grunnlinje</div>
+          <div class="absolute -right-1 translate-x-full whitespace-nowrap
+                      text-[10px] font-semibold tracking-wider text-pink-300"
+               style="top: calc(80% - 6px)">grunnlinje</div>
 
-          <!-- X-height guide: y = 3/5 (2 rows up) — cyan dashed -->
+          <!-- X-height: y = 3/5 (2 rows up) — cyan dashed -->
           <div class="absolute left-0 right-0 h-px border-t border-dashed border-cyan-300"
                style="top: 60%" />
-          <div class="absolute right-1 text-[9px] text-cyan-200 font-semibold tracking-wider"
-               style="top: calc(60% - 12px)">x-høyde</div>
+          <div class="absolute -right-1 translate-x-full whitespace-nowrap
+                      text-[10px] font-semibold tracking-wider text-cyan-200"
+               style="top: calc(60% - 6px)">x-høyde</div>
         </div>
+      </div>
 
-        <!-- Corner handles (pointer-events enabled only on these) -->
-        <template v-for="c in ['tl','tr','bl','br']" :key="c">
-          <div class="absolute w-11 h-11 flex items-center justify-center pointer-events-auto"
-               :style="{
-                 left:   (c === 'tl' || c === 'bl') ? `calc(${cropStyle.left} - 22px)`  : `calc(${cropStyle.left} + ${cropStyle.width} - 22px)`,
-                 top:    (c === 'tl' || c === 'tr') ? `calc(${cropStyle.top} - 22px)`   : `calc(${cropStyle.top} + ${cropStyle.height} - 22px)`,
-                 touchAction: 'none',
-                 cursor:       c === 'tl' || c === 'br' ? 'nwse-resize' : 'nesw-resize',
-               }"
-               @pointerdown="onCornerDrag(c, $event)">
-            <svg width="22" height="22" viewBox="0 0 22 22" class="text-amber-400 drop-shadow">
-              <path :d="c === 'tl' ? 'M2 10 V2 H10' : c === 'tr' ? 'M12 2 H20 V10' : c === 'bl' ? 'M2 12 V20 H10' : 'M12 20 H20 V12'"
-                    stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round"/>
-            </svg>
-          </div>
-        </template>
+      <!-- Hint -->
+      <div v-if="capturedSrc"
+           class="absolute bottom-3 left-1/2 -translate-x-1/2
+                  text-[11px] text-white/60 text-center px-4 pointer-events-none">
+        Dra for å flytte · klyp for å zoome
       </div>
     </div>
 

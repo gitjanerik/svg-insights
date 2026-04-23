@@ -356,6 +356,25 @@ function backToOverview() {
              are now configured in the naming step before the editor opens.
              The old accordion here was removed in v4.12.7. -->
       </div>
+
+      <!-- Always-visible footer CTA — preview the font in typographic contexts.
+           Disabled until at least one glyph exists (canExportFont()). -->
+      <footer class="shrink-0 border-t border-white/10 bg-black/80 backdrop-blur-xl
+                     px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <button @click="goToPreview" :disabled="!canExportFont()"
+                class="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400
+                       text-black text-sm font-semibold disabled:opacity-30
+                       active:scale-[0.98] transition-transform
+                       flex items-center justify-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          Forhåndsvis font
+        </button>
+      </footer>
     </template>
 
     <!-- Per-glyph editor -->

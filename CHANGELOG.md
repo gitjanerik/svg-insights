@@ -1,46 +1,32 @@
 # Changelog
 
-## 2026-04-23 — v4.12.7: MinFont — typografi i naming-steget + ny foto-dialog
+## 2026-04-23 — v4.12.7: MinFont — forhåndsvisning + ny foto-dialog
 
-### Typografiske innstillinger flyttet
+### Ny forhåndsvisning-side med typografi-kontroller
 
-Tidligere lå x-høyde, cap-høyde, kerning og skew i en accordion nederst på editor-oversikten, etter at glyfene allerede var generert fra system-fonten. Problemet: metrics påvirker auto-genereringen, så å endre dem etterpå ville vært inkonsistent med allerede auto-genererte glyfer.
+Etter at glyfene er satt sammen vil man naturlig ønske å se fonten i bruk. Derfor er `FontPreviewView` omskrevet til en skikkelig typografi-sandkasse med levende kontroller:
 
-Nå ligger alle fire sliderne på **"Navngi din font"**-siden sammen med navnefeltet, rett før `/font-editor` lastes og 97 glyfer genereres. Da er metrics satt når generatoren kjører.
+- **Fontstørrelse** (12–160 px), **linjehøyde** (0.8–2.5), **sperring** (−5 til +20 px), **ordavstand** (−10 til +40 px)
+- **Tekstjustering** (venstre / midtstilt / høyre) og **bokstavform** (normal / VERSALER / gemen / *kursiv*)
+- Presets for rask utforsking: Display, Overskrift, Brødtekst, Nullstill
+- "Hello World 123!" som standard preview-tekst, med editerbar textarea for egen tekst
 
-- `fontMetrics.xHeight` — 300–700, steg 10 (default 500)
-- `fontMetrics.capHeight` — 500–900, steg 10 (default 700)
-- `fontSettings.tracking` — −50 til +100, steg 5 (default 0)
-- `fontSettings.skewDeg` — −20° til +20°, steg 1 (default 0)
+### Alltid synlig "Forhåndsvis font"-CTA
 
-Den gamle `<details>Fontinnstillinger</details>` er fjernet fra `FontEditorView`.
+Gul gradient-knapp festet til bunnen av glyf-oversikten i editoren. Blir disabled hvis ingen glyfer er satt ennå. Brukeren trenger ikke lete etter en `.otf`-knapp i headeren for å teste fonten.
 
-### Ny `GlyphPhotoDialog`-komponent
+### Ny foto-dialog med fast 4×5 crop
 
-Erstatter den enkle `<input type="file" capture>`-placeholderen med en fullverdig kamera-dialog i samme stil som `CaptureView`:
+`GlyphPhotoDialog` er omskrevet: **fast 4×5 crop-ramme** sentrert i stagen, med pan (enfinger) + pinch-zoom + slider-zoom på bildet under. Erstatter forrige variant med draggable corners (uforutsigbar for brukere).
 
-- **Live-preview** via `getUserMedia` med zoom-slider (native `MediaTrack.zoom` om støttet, ellers CSS-scale fallback)
-- **Tre knapper nederst**: Last opp (galleri) — Shutter — Bytt kamera (front/bak)
-- Facingmode-preview speiles (`-scale-x-100`) i selfie-modus, og `drawImage` speiler tilsvarende slik at resultatet matcher det brukeren så
-
-### 4×5 crop-rektangel med typografi-guider
-
-Etter bildet er tatt/lastet opp vises en kroppet-utsnitt-visning:
-
-- **Grid-tolkning** (fra bunn): rad 1 = descender, rad 2 = x-høyde-sone, rad 3+ = ascender/cap-sone
-- **Grunnlinje** (magenta, heltrukket) ved y = 4/5 — grensa rad 1/2
-- **X-høyde** (cyan, stiplet) ved y = 3/5 — grensa rad 2/3
-- Fire dra-hjørner (L-ikoner) med 44px touch-target, 20% minimum crop-størrelse
-- Mørkt veil utenfor crop-rektangelet (4 divs, for bred nettleserstøtte i stedet for `mask-image`)
-- Digital zoom 1× til 4× på still-bildet for finjustering
-
-Ved `Bruk utsnitt` → rendres crop til 512×512 canvas via `ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 512, 512)` og emit'es til `handlePhotoCapture`, som kaller `traceGlyphFromPhoto` som før.
+- Hjelpestreker: **grunnlinje** (rosa, 1/5 fra bunn) og **x-høyde** (cyan dashed, 2/5 fra bunn)
+- Bruker plasserer bokstaven slik at den sitter mellom disse to linjene (eller overskrider oppover for ascendere/majuskler)
+- Ved confirm mappes crop-rektangelet til 512×512 canvas der baseline lander på canvas-bunnen
 
 ### Teknisk
 
-- Ny fil: `src/components/GlyphPhotoDialog.vue` (~330 linjer)
-- Koordinat-konvertering: stage-% → viewport-px → natural-image-px (via `getBoundingClientRect` for å ta høyde for CSS zoom-transform på `<img>`)
 - 143/143 tester passerer
+- FontFace-navnet rebygges med timestamp-suffiks så nettleserens font-cache ikke blokkerer updates
 
 ---
 

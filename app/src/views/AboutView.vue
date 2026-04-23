@@ -117,15 +117,15 @@ const router = useRouter()
             <details class="group" open>
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.7</span>
-                <span class="text-white/40">&mdash; MinFont: typografi i naming-steget + bedre foto-dialog</span>
+                <span class="text-white/40">&mdash; MinFont: forh&aring;ndsvisning + foto-dialog</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">23. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
-                <li>Typografiske innstillinger (x-h&oslash;yde, cap-h&oslash;yde, kerning, skew) flyttet til <strong class="text-white/70">Navngi din font</strong>-steget &mdash; settes f&oslash;r glyfer genereres</li>
-                <li>Fontinnstillinger-panelet nederst i editor-oversikten er fjernet (redundant)</li>
-                <li>Ny <strong class="text-white/70">GlyphPhotoDialog</strong> med CaptureView-stil: Last opp / Shutter / Bytt kamera, MediaTrack-zoom eller digital fallback</li>
-                <li>4&times;5 crop-rektangel med dra-hjørner &mdash; hjelpestreker for <strong class="text-white/70">grunnlinje</strong> (1/5 fra bunn) og <strong class="text-white/70">x-h&oslash;yde</strong> (2/5 fra bunn)</li>
-                <li>Digital zoom p&aring; still-bilde for &aring; plassere glyf-en n&oslash;yaktig mot linjene f&oslash;r tracing</li>
+                <li>Ny <strong class="text-white/70">Forh&aring;ndsvis font</strong>-side med levende typografi-kontroller: fontst&oslash;rrelse, linjeh&oslash;yde, sperring, ordavstand, justering og bokstavform</li>
+                <li>Rask utforsking via presets: Display, Overskrift, Br&oslash;dtekst, Nullstill</li>
+                <li>Alltid synlig gul <strong class="text-white/70">Forh&aring;ndsvis font</strong>-knapp nederst p&aring; glyf-oversikten</li>
+                <li>GlyphPhotoDialog: fast 4&times;5 crop-ramme + dra/klyp for &aring; plassere bildet under (erstattet draghj&oslash;rner)</li>
+                <li>Hjelpestreker for <strong class="text-white/70">grunnlinje</strong> (1/5 fra bunn) og <strong class="text-white/70">x-h&oslash;yde</strong> (2/5 fra bunn) som guide for plassering</li>
               </ul>
             </details>
           </div>
