@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-04-23 — v4.13.3: Hamburgefons som standard-preview
+
+Standard-tekst i `FontPreviewView` endret fra «Hello World 123!» til **«Hamburgefons»** — det klassiske type-designer-utvalget som inneholder de mest karakteristiske bokstavformene (runde `o`/`e`, stammer `m`/`n`, asymmetriske `a`/`g`, blanding av høye og lave letterformer).
+
+---
+
 ## 2026-04-23 — v4.13.2: Editor-opprydding + edited-status-fiks
 
 ### Fjernet live-preview fra editor

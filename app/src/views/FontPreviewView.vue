@@ -1,5 +1,5 @@
 <script setup>
-// Forhåndsvisningsside med "Hello World 123!"-tekst og levende typografi-
+// Forhåndsvisningsside med "Hamburgefons"-tekst og levende typografi-
 // kontroller: fontstørrelse, linjehøyde, bokstavavstand (sperring), ord-
 // avstand, tekstjustering, og bokstavform (normal/versal/gemen/kursiv).
 //
@@ -17,7 +17,7 @@ import { buildFont, downloadBuffer } from '../lib/fontBuilder.js'
 const router = useRouter()
 
 // ── Preview-tekst og typografi-kontroller ────────────────────────────────
-const previewText = ref('Hello World 123!')
+const previewText = ref('Hamburgefons')
 
 // Typografi-innstillinger brukeren kan justere live
 const fontSize    = ref(64)
