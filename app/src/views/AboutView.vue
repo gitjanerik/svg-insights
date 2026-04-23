@@ -111,10 +111,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.12.7 -->
+          <!-- 4.12.8 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.8</span>
+                <span class="text-white/40">&mdash; MinFont: glyf-tracing og proporsjoner</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">23. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Ny contour-tracer skiller n&aring; ytre form fra hull &mdash; <strong class="text-white/70">A, B, D, O, P, R, 0, 4, 6, 8, 9, a, b, d, e, g, o, p, q</strong> f&aring;r riktige &aring;pninger</li>
+                <li>Winding-retning korrigert: TrueType-konvensjon med CCW ytre og CW hull</li>
+                <li>Kryssende streker eliminert: hver contour traseres kun &eacute;n gang</li>
+                <li>Felles <strong class="text-white/70">cap-height referanse</strong>: alle glyfer skaleres mot samme baseline og cap-h&oslash;yde, s&aring; proporsjonene mellom bokstavene er harmoniske (et 'i' er smalt, et 'M' er bredt)</li>
+                <li>Advance width kommer fra glyfens egen bredde, ikke fra padded boks</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.12.7 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.7</span>
                 <span class="text-white/40">&mdash; MinFont: forh&aring;ndsvisning + foto-dialog</span>

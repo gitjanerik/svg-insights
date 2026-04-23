@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-04-23 — v4.12.8: MinFont — glyf-tracing og harmoniske proporsjoner
+
+### Hull i bokstaver
+
+Bokstaver som A, B, D, O, P, R, 0, 4, 6, 8, 9, a, b, d, e, g, o, p, q har indre åpninger (hull). Tidligere ble både ytre og indre kontur tegnet som separate lukkede kurver, men med samme vinding — OpenType regner da hullet som enda en fyll, og glyfen ble rendret uten åpning.
+
+Ny tracer gjør:
+1. Flood-fill av eksteriør-bakgrunnen fra kantene — alt annet bakgrunn-område er per definisjon hull
+2. Ytre contour startes fra ink-pixels som grenser til eksteriør
+3. Hull-contour startes fra ink-pixels som grenser til hull-bakgrunn
+4. Hver pixel markeres som besøkt kun én gang — ingen duplikater
+5. Winding: ytre CW i canvas-space, hull CCW. Etter y-flip + reverse blir det TrueType-konvensjon (CCW ytre, CW hull) som opentype.js / CFF forventer
+
+### Kryssende streker
+
+Rot-årsaken var samme som for hull-problemet: pass 1 traset samtlige ink-pixels med ledig venstre-nabo, uten å skille ytre fra hull. For en B ga dette overlappende kurver. Nå traseres hver contour kun én gang og startpunktet velges deterministisk som top-left pixel på contour-en, noe som garanterer CW-retning fra Moore-neighbor tracing.
+
+### Harmoniske proporsjoner
+
+Tidligere ble hver glyf padded-to-fit i sin egen 512×512 boks. En smal i og en bred M fylte begge boksen, så de ble samme visuelle størrelse. Nå:
+
+- Cap-height måles én gang per font-family via en H-probe
+- Alle glyfer tegnes på samme baseline (y = canvas-høyde − 60 px)
+- Skala bestemmes av cap-height referansen — M reaches cap-height, x reaches x-height, p descends below baseline
+- Advance width tas fra `measureText(char).width`, ikke fra padded boks
+
+### Teknisk
+
+- `canvasGlyphRenderer.js`: omskrevet generateGlyphFromSystemFont + traceAllContours + traceGlyphFromPhoto
+- Calibration-cache per (fontFamily, FONT_SIZE) for å unngå H-måling på hver glyf
+- 143/143 tester passerer
+
+---
+
+
 ## 2026-04-23 — v4.12.7: MinFont — forhåndsvisning + ny foto-dialog
 
 ### Ny forhåndsvisning-side med typografi-kontroller

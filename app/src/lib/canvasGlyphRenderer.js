@@ -44,42 +44,43 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign    = 'left'
 
+  // Calibrate once per (font-family, size): measure a capital 'H' to anchor
+  // the baseline and cap-height consistently across all glyphs in the font.
+  // Without this, every glyph was being padded-to-fit individually, so an 'i'
+  // and a 'M' ended up the same on-screen size.
+  const cal = calibrate(ctx, fontFamily)
+
+  // Fixed layout: all glyphs share the same baseline and the same cap-height
+  // pixel reference, so proportions between letters are preserved.
+  const baselineY = CANVAS_SIZE - 60               // pixels from top
+  const capPxRef  = cal.capAscent                  // pixels from baseline
+
   const m = ctx.measureText(char)
-  const ascent  = m.actualBoundingBoxAscent  || FONT_SIZE * 0.7
-  const descent = m.actualBoundingBoxDescent || FONT_SIZE * 0.15
-  const left    = m.actualBoundingBoxLeft    || 0
-  const right   = m.actualBoundingBoxRight   || m.width
+  const leftPad = m.actualBoundingBoxLeft || 0
+  // Horizontally centre each glyph in the 512-wide canvas for tracing; the
+  // actual advance width is recorded separately and used in the OTF.
+  const glyphW  = (m.actualBoundingBoxRight || m.width) + leftPad
+  if (glyphW < 1) return null
+  const drawX = Math.round((CANVAS_SIZE - glyphW) / 2 + leftPad)
 
-  const glyphW = right + left
-  const glyphH = ascent + descent
-  if (glyphW < 2 || glyphH < 2) return null
-
-  const padding = 30
-  const scale = Math.min(
-    (CANVAS_SIZE - padding * 2) / glyphW,
-    (CANVAS_SIZE - padding * 2) / glyphH
-  )
-  const drawX = padding + left * scale
-  const drawY = padding + ascent * scale
-
-  ctx.save()
-  ctx.translate(drawX, drawY)
-  ctx.scale(scale, scale)
-  ctx.fillText(char, -left, 0)
-  ctx.restore()
+  ctx.fillText(char, drawX, baselineY)
 
   const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   const binary    = binarize(imageData.data, CANVAS_SIZE, CANVAS_SIZE, BIN_THRESHOLD)
   const contours  = traceAllContours(binary, CANVAS_SIZE, CANVAS_SIZE)
   if (!contours.length) return null
 
-  const upm     = metrics.unitsPerEm || 1000
-  const asc     = metrics.ascender   ||  800
-  const fScale  = asc / (CANVAS_SIZE * 0.7)
-  const skewTan = Math.tan(((settings?.skewDeg || 0) * Math.PI) / 180)
+  // Project canvas pixels → font-units so one pixel above the baseline maps
+  // to capHeight/capPxRef font-units. This makes 'M' reach capHeight, 'x'
+  // reach xHeight, 'p' descend below baseline — naturally and consistently.
+  const upm       = metrics.unitsPerEm || 1000
+  const capHeight = metrics.capHeight  ||  700
+  const fScale    = capHeight / capPxRef
+  const skewTan   = Math.tan(((settings?.skewDeg || 0) * Math.PI) / 180)
   const toFont = p => {
-    const fx = p.x * fScale
-    const fy = (CANVAS_SIZE - p.y) * fScale
+    // y in canvas grows downward; flip around baselineY, then scale.
+    const fy = (baselineY - p.y) * fScale
+    const fx = (p.x - drawX)     * fScale
     return { x: Math.round(fx + fy * skewTan), y: Math.round(fy) }
   }
 
@@ -88,14 +89,35 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
     if (pts.length < 10) continue
     const anchorIdxs = cornerAwareSimplify(pts)
     if (anchorIdxs.length < 4) continue
-    const denseFont = pts.map(toFont)
-    const bezierPts = fitBezierThrough(denseFont, anchorIdxs)
+    // Flip winding: pixel-space CW → font-space CCW after y-mirror. opentype.js
+    // expects TrueType convention (CCW outer, CW holes), so we reverse here.
+    const reversed = pts.slice().reverse()
+    const reversedIdxs = anchorIdxs.map(i => pts.length - 1 - i).reverse()
+    const denseFont = reversed.map(toFont)
+    const bezierPts = fitBezierThrough(denseFont, reversedIdxs)
     parts.push(subpathToD(bezierPts))
   }
   if (!parts.length) return null
 
-  const advanceWidth = Math.round(glyphW * scale * fScale * 1.05 + (settings?.tracking || 0))
+  // advanceWidth from the glyph's own metrics — not from the shared reference —
+  // so narrow letters (i, l, .) remain narrow and wide ones (M, W) remain wide.
+  const advanceWidth = Math.round(m.width * fScale + (settings?.tracking || 0))
   return { pathD: parts.join(' '), advanceWidth }
+}
+
+// ── Calibration cache ────────────────────────────────────────────────────
+// Measuring 'H' on every call is wasteful; cache per (fontFamily, FONT_SIZE).
+const _calCache = new Map()
+function calibrate(ctx, fontFamily) {
+  const key = `${fontFamily}@${FONT_SIZE}`
+  const cached = _calCache.get(key)
+  if (cached) return cached
+  const probe = ctx.measureText('H')
+  const cal = {
+    capAscent: probe.actualBoundingBoxAscent || FONT_SIZE * 0.7,
+  }
+  _calCache.set(key, cal)
+  return cal
 }
 
 /**
@@ -136,7 +158,10 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
         if (pts.length < 10) continue
         const idxs = cornerAwareSimplify(pts)
         if (idxs.length < 4) continue
-        const bezier = fitBezierThrough(pts.map(toFont), idxs)
+        // Same reversal as system-font tracer — opentype.js expects CCW outer
+        const reversed = pts.slice().reverse()
+        const reversedIdxs = idxs.map(i => pts.length - 1 - i).reverse()
+        const bezier = fitBezierThrough(reversed.map(toFont), reversedIdxs)
         parts.push(subpathToD(bezier))
       }
       if (!parts.length) return resolve(null)
@@ -228,65 +253,91 @@ function ensureOrientation(pts, clockwise) {
 }
 
 /**
- * Two-pass contour tracer:
- *   Pass 1: outer contours (clockwise) — ink pixels whose left neighbor is background
- *   Pass 2: hole contours (counter-clockwise) — ink pixels that border a non-exterior
- *           background region, identified via exterior flood-fill from image edges.
+ * Contour tracer that correctly separates outer contours from holes.
  *
- * This correctly handles letters with holes like B, O, A, P, D, 0, 6, 8, 9.
+ * Algorithm:
+ *   1. Flood-fill the exterior background from all image edges → `exterior`.
+ *      Any background pixel not in `exterior` is inside a hole.
+ *   2. For every unvisited ink pixel that is adjacent to an exterior-
+ *      background pixel, trace the contour → it's an OUTER boundary.
+ *   3. For every unvisited ink pixel adjacent to a hole-background pixel
+ *      (background that is NOT exterior), trace the contour → it's a HOLE.
+ *
+ * A single pixel can only be on one boundary at a time thanks to `visited`,
+ * so we never emit a letter's outer and inner boundary as the same path.
+ * Orientation: outer is CW in canvas space (before y-flip), hole is CCW.
+ * After the y-flip in the caller these swap, and we reverse in the caller
+ * to get TrueType convention.
  */
 export function traceAllContours(bin, w, h) {
   const contours = []
+  const visited  = new Uint8Array(w * h)
 
-  // Pass 1: outer
-  const visitedOuter = new Uint8Array(w * h)
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!bin[y * w + x] || visitedOuter[y * w + x]) continue
-      if (x > 0 && bin[y * w + (x - 1)]) continue
-      const pts = traceFromPixel(bin, w, h, visitedOuter, x, y)
-      if (pts.length >= 10) contours.push(ensureOrientation(pts, true))
-    }
-  }
-
-  // Pass 2: flood-fill exterior background from edges
+  // Step 1: flood-fill exterior background
   const exterior = new Uint8Array(w * h)
   const stack = []
-  for (let x = 0; x < w; x++) {
-    if (!bin[x]) { exterior[x] = 1; stack.push(x) }
-    const bi = (h - 1) * w + x
-    if (!bin[bi]) { exterior[bi] = 1; stack.push(bi) }
-  }
-  for (let y = 0; y < h; y++) {
-    if (!bin[y * w]) { exterior[y * w] = 1; stack.push(y * w) }
-    const ri = y * w + (w - 1)
-    if (!bin[ri]) { exterior[ri] = 1; stack.push(ri) }
-  }
+  const pushEdge = (i) => { if (!bin[i]) { exterior[i] = 1; stack.push(i) } }
+  for (let x = 0; x < w; x++) { pushEdge(x); pushEdge((h - 1) * w + x) }
+  for (let y = 0; y < h; y++) { pushEdge(y * w); pushEdge(y * w + w - 1) }
   while (stack.length) {
     const idx = stack.pop()
     const x = idx % w, y = (idx - x) / w
-    const ns = [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]
-    for (const [nx, ny] of ns) {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
       const ni = ny * w + nx
       if (!bin[ni] && !exterior[ni]) { exterior[ni] = 1; stack.push(ni) }
     }
   }
 
-  // Pass 2: hole contours — ink pixels adjacent to non-exterior background
-  const visitedHole = new Uint8Array(w * h)
+  // Helper: pixel is on an OUTER boundary if any orthogonal neighbor is
+  // an exterior-background pixel (or off-canvas). Equivalent: there's a
+  // path to infinity right next to it.
+  const onOuter = (x, y) => {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) return true
+      const ni = ny * w + nx
+      if (!bin[ni] && exterior[ni]) return true
+    }
+    return false
+  }
+  const onHole = (x, y) => {
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy
+      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
+      const ni = ny * w + nx
+      if (!bin[ni] && !exterior[ni]) return true
+    }
+    return false
+  }
+
+  // Step 2: outer contours — scan top-to-bottom, left-to-right so we always
+  // start at the TOP-LEFT-most pixel of each outer contour. That guarantees
+  // Moore-neighbor tracing produces clockwise orientation.
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      if (!bin[y * w + x] || visitedHole[y * w + x]) continue
-      let onHoleBoundary = false
-      const ns = [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]
-      for (const [nx, ny] of ns) {
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue
-        const ni = ny * w + nx
-        if (!bin[ni] && !exterior[ni]) { onHoleBoundary = true; break }
-      }
-      if (!onHoleBoundary) continue
-      const pts = traceFromPixel(bin, w, h, visitedHole, x, y)
+      const i = y * w + x
+      if (!bin[i] || visited[i]) continue
+      if (!onOuter(x, y)) continue
+      // Ensure leftmost on its row for this contour — if the pixel directly
+      // to the left is also ink and already visited via this contour, this
+      // isn't the true start, skip.
+      if (x > 0 && bin[i - 1]) continue
+      const pts = traceFromPixel(bin, w, h, visited, x, y)
+      if (pts.length >= 10) contours.push(ensureOrientation(pts, true))
+    }
+  }
+
+  // Step 3: hole contours — same scan, but now starting pixels are on hole
+  // boundaries. traceFromPixel walks along the ink-hole interface.
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x
+      if (!bin[i] || visited[i]) continue
+      if (!onHole(x, y)) continue
+      const pts = traceFromPixel(bin, w, h, visited, x, y)
+      // Holes are CCW in canvas space (opposite of outer)
       if (pts.length >= 10) contours.push(ensureOrientation(pts, false))
     }
   }
