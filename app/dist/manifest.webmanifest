@@ -1,0 +1,56 @@
+{
+  "name": "SVG Insights",
+  "short_name": "SVG Insights",
+  "description": "Konverter bilder til interaktive SVG-tegninger og lag egne webfonter",
+  "lang": "no",
+  "dir": "ltr",
+  "start_url": "/svg-insights/",
+  "scope": "/svg-insights/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "categories": ["graphics", "design", "productivity"],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Lag SVG-tegning",
+      "short_name": "SVG",
+      "description": "Ta bilde og gjør det til interaktiv SVG",
+      "url": "/svg-insights/capture",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Lag webfont",
+      "short_name": "Font",
+      "description": "Ta bilde av tekst og generer en webfont",
+      "url": "/svg-insights/font-chooser",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
