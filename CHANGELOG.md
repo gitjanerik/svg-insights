@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-04-23 — v4.12.7: MinFont — typografi i naming-steget + ny foto-dialog
+
+### Typografiske innstillinger flyttet
+
+Tidligere lå x-høyde, cap-høyde, kerning og skew i en accordion nederst på editor-oversikten, etter at glyfene allerede var generert fra system-fonten. Problemet: metrics påvirker auto-genereringen, så å endre dem etterpå ville vært inkonsistent med allerede auto-genererte glyfer.
+
+Nå ligger alle fire sliderne på **"Navngi din font"**-siden sammen med navnefeltet, rett før `/font-editor` lastes og 97 glyfer genereres. Da er metrics satt når generatoren kjører.
+
+- `fontMetrics.xHeight` — 300–700, steg 10 (default 500)
+- `fontMetrics.capHeight` — 500–900, steg 10 (default 700)
+- `fontSettings.tracking` — −50 til +100, steg 5 (default 0)
+- `fontSettings.skewDeg` — −20° til +20°, steg 1 (default 0)
+
+Den gamle `<details>Fontinnstillinger</details>` er fjernet fra `FontEditorView`.
+
+### Ny `GlyphPhotoDialog`-komponent
+
+Erstatter den enkle `<input type="file" capture>`-placeholderen med en fullverdig kamera-dialog i samme stil som `CaptureView`:
+
+- **Live-preview** via `getUserMedia` med zoom-slider (native `MediaTrack.zoom` om støttet, ellers CSS-scale fallback)
+- **Tre knapper nederst**: Last opp (galleri) — Shutter — Bytt kamera (front/bak)
+- Facingmode-preview speiles (`-scale-x-100`) i selfie-modus, og `drawImage` speiler tilsvarende slik at resultatet matcher det brukeren så
+
+### 4×5 crop-rektangel med typografi-guider
+
+Etter bildet er tatt/lastet opp vises en kroppet-utsnitt-visning:
+
+- **Grid-tolkning** (fra bunn): rad 1 = descender, rad 2 = x-høyde-sone, rad 3+ = ascender/cap-sone
+- **Grunnlinje** (magenta, heltrukket) ved y = 4/5 — grensa rad 1/2
+- **X-høyde** (cyan, stiplet) ved y = 3/5 — grensa rad 2/3
+- Fire dra-hjørner (L-ikoner) med 44px touch-target, 20% minimum crop-størrelse
+- Mørkt veil utenfor crop-rektangelet (4 divs, for bred nettleserstøtte i stedet for `mask-image`)
+- Digital zoom 1× til 4× på still-bildet for finjustering
+
+Ved `Bruk utsnitt` → rendres crop til 512×512 canvas via `ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 512, 512)` og emit'es til `handlePhotoCapture`, som kaller `traceGlyphFromPhoto` som før.
+
+### Teknisk
+
+- Ny fil: `src/components/GlyphPhotoDialog.vue` (~330 linjer)
+- Koordinat-konvertering: stage-% → viewport-px → natural-image-px (via `getBoundingClientRect` for å ta høyde for CSS zoom-transform på `<img>`)
+- 143/143 tester passerer
+
+---
+
 ## 2026-04-22 — v4.12.6: Planetarium-UX
 
 - **Konfigurer-knapp** nederst til høyre i planetarium-modus (tannhjul-ikon). Åpner oppsett-modalen med gjeldende sol, så du kan endre planetantall/periode/størrelse og regenerere direkte uten å måtte spise scenen på nytt.

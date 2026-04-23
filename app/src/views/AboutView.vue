@@ -111,10 +111,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.12.6 -->
+          <!-- 4.12.7 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">4.12.7</span>
+                <span class="text-white/40">&mdash; MinFont: typografi i naming-steget + bedre foto-dialog</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">23. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Typografiske innstillinger (x-h&oslash;yde, cap-h&oslash;yde, kerning, skew) flyttet til <strong class="text-white/70">Navngi din font</strong>-steget &mdash; settes f&oslash;r glyfer genereres</li>
+                <li>Fontinnstillinger-panelet nederst i editor-oversikten er fjernet (redundant)</li>
+                <li>Ny <strong class="text-white/70">GlyphPhotoDialog</strong> med CaptureView-stil: Last opp / Shutter / Bytt kamera, MediaTrack-zoom eller digital fallback</li>
+                <li>4&times;5 crop-rektangel med dra-hjørner &mdash; hjelpestreker for <strong class="text-white/70">grunnlinje</strong> (1/5 fra bunn) og <strong class="text-white/70">x-h&oslash;yde</strong> (2/5 fra bunn)</li>
+                <li>Digital zoom p&aring; still-bilde for &aring; plassere glyf-en n&oslash;yaktig mot linjene f&oslash;r tracing</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.12.6 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.12.6</span>
                 <span class="text-white/40">&mdash; Planetarium-UX</span>

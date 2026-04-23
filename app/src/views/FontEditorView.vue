@@ -8,6 +8,7 @@ import {
 import { useGlyphEditor } from '../composables/useGlyphEditor.js'
 import { generateGlyphFromSystemFont, traceGlyphFromPhoto } from '../lib/canvasGlyphRenderer.js'
 import { polygonToBezier } from '../lib/bezierSmoothing.js'
+import GlyphPhotoDialog from '../components/GlyphPhotoDialog.vue'
 
 const router = useRouter()
 const editor = useGlyphEditor()
@@ -351,34 +352,9 @@ function backToOverview() {
           </div>
         </div>
 
-        <!-- Font-settings accordion -->
-        <details class="mt-6 rounded-xl border border-white/10 bg-white/5">
-          <summary class="px-4 py-3 text-sm text-white/70 cursor-pointer list-none flex items-center justify-between">
-            <span>Fontinnstillinger</span>
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white/40" viewBox="0 0 24 24"
-                 fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-          </summary>
-          <div class="px-4 pb-4 pt-2 space-y-3">
-            <div>
-              <div class="flex items-center justify-between text-[11px] text-white/50 mb-1">
-                <label>Sporing (tracking)</label>
-                <span class="text-amber-300">{{ fontSettings.tracking }}</span>
-              </div>
-              <input v-model.number="fontSettings.tracking" type="range" min="-50" max="100" step="5"
-                     class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
-            </div>
-            <div>
-              <div class="flex items-center justify-between text-[11px] text-white/50 mb-1">
-                <label>Skråstilling</label>
-                <span class="text-amber-300">{{ fontSettings.skewDeg }}°</span>
-              </div>
-              <input v-model.number="fontSettings.skewDeg" type="range" min="-20" max="20" step="1"
-                     class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
-            </div>
-          </div>
-        </details>
+        <!-- NB: typography settings (x-height, cap-height, tracking, skew)
+             are now configured in the naming step before the editor opens.
+             The old accordion here was removed in v4.12.7. -->
       </div>
     </template>
 
@@ -581,25 +557,13 @@ function backToOverview() {
       </footer>
     </template>
 
-    <!-- Photo dialog placeholder (simplified — real version has draggable crop corners) -->
-    <div v-if="photoDialogOpen"
-         class="fixed inset-0 z-40 bg-black/90 flex flex-col items-center justify-center p-4">
-      <div class="text-white/70 text-sm mb-4">
-        Ta bilde av bokstaven «{{ selectedChar }}» med kameraet
-      </div>
-      <input type="file" accept="image/*" capture="environment"
-             @change="e => {
-               const f = e.target.files[0]; if (!f) return;
-               const r = new FileReader();
-               r.onload = ev => handlePhotoCapture(ev.target.result);
-               r.readAsDataURL(f);
-             }"
-             class="mb-3" />
-      <button @click="photoDialogOpen = false"
-              class="px-4 py-2 text-white/60 text-sm active:text-white">
-        Avbryt
-      </button>
-    </div>
+    <!-- Glyph photo capture: camera preview, 4×5 crop overlay with
+         baseline + x-height guides, and a digital-zoom still-preview. -->
+    <GlyphPhotoDialog
+      :open="photoDialogOpen"
+      :char="selectedChar || ''"
+      @capture="dataUrl => { photoDialogOpen = false; handlePhotoCapture(dataUrl) }"
+      @cancel="photoDialogOpen = false" />
   </div>
 </template>
 
