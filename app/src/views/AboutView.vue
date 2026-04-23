@@ -111,21 +111,34 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 4.14.1 -->
+          <!-- 4.14.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
             <details class="group" open>
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white/80">4.14.1</span>
-                <span class="text-white/40">&mdash; Glattere glyfer — hjørne-bevarende kontur-smoothing</span>
+                <span class="font-semibold text-white/80">4.14.2</span>
+                <span class="text-white/40">&mdash; Rull tilbake kontur-smoothing</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">23. apr 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
-                <li>Buede glyfer som g, o, e, s ble «am&oslash;beformet» pga. piksel-trappetrinn fra binariseringen — falske hjørner detektert p&aring; glatte buer → ankerpunkt-klynger → Bézier-h&aring;ndtak overkorrigerer</li>
-                <li>Ny <code>smoothContour()</code>-funksjon glatter dense-konturen med 5-taps Gaussian f&oslash;r anker-deteksjon</li>
-                <li>Reelle hjørner (h, f stem, bokstavs&oslash;rer) beholdes — smoothing-vekten attenueres n&aelig;r hjørner (detektert over et vidt vindu, robust mot pikselst&oslash;y)</li>
-                <li>2 smoothing-pass standard — nok til &aring; fjerne trappetrinn, lite nok til &aring; bevare detaljer</li>
-                <li>Gjelder b&aring;de system-font-rendering og foto-trace</li>
+                <li>Gaussian-smoothingen fra 4.14.1 gjorde faktisk glyfene verre — rundet av bokstavformene og tapte karakter</li>
+                <li>Tilbake til 4.14.0-tracing: skarpere, mer tro mot originalfonten</li>
+                <li>Am&oslash;befenomenet i g/o/e f&aring;r vi angripe p&aring; en annen m&aring;te senere</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 4.14.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-500/70" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80 line-through">4.14.1</span>
+                <span class="text-white/40">&mdash; Rullet tilbake i 4.14.2</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">23. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Fors&oslash;kte hjørne-bevarende kontur-smoothing — men tapte for mye form</li>
               </ul>
             </details>
           </div>

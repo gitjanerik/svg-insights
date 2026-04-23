@@ -93,10 +93,8 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
   }
 
   const parts = []
-  for (const rawPts of contours) {
-    if (rawPts.length < 10) continue
-    // Glatt ut piksel-trappetrinn før anker-deteksjon
-    const pts = smoothContour(rawPts, 2)
+  for (const pts of contours) {
+    if (pts.length < 10) continue
     const anchorIdxs = cornerAwareSimplify(pts)
     if (anchorIdxs.length < 4) continue
     // Flip winding: pixel-space CW → font-space CCW after y-mirror. opentype.js
@@ -164,9 +162,8 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
       }
 
       const parts = []
-      for (const rawPts of contours) {
-        if (rawPts.length < 10) continue
-        const pts = smoothContour(rawPts, 2)
+      for (const pts of contours) {
+        if (pts.length < 10) continue
         const idxs = cornerAwareSimplify(pts)
         if (idxs.length < 4) continue
         // Same reversal as system-font tracer — opentype.js expects CCW outer
@@ -212,59 +209,6 @@ export function binarize(imageData, w, h, threshold = BIN_THRESHOLD) {
     bin[i] = imageData[i * 4] < threshold ? 1 : 0
   }
   return bin
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Corner-preserving contour smoothing
-// ────────────────────────────────────────────────────────────────────────────
-// Binariserte canvas-konturer har 1-piksel-trappetrinn som produserer falske
-// hjørner i glatte buer. Uten glatting detekterer cornerAwareSimplify disse
-// som reelle hjørner → ankerpunkter klynges → Bézier-håndtak overkorrigerer
-// → amøbeform. Løsningen: glatter ut trinnene med 5-taps Gaussian, men
-// attenuerer smoothing-vekten nær reelle hjørner (detektert over et vidt
-// vindu) slik at skarpe overganger bevares.
-export function smoothContour(pts, passes = 2) {
-  const n = pts.length
-  if (n < 10) return pts
-
-  // Detekter hjørnestyrke over vidt vindu (robust mot pikseltrinn)
-  const WIN = Math.max(5, Math.floor(n / 25))
-  const cornerStrength = new Float32Array(n)
-  for (let i = 0; i < n; i++) {
-    const a = pts[(i - WIN + n) % n]
-    const b = pts[i]
-    const c = pts[(i + WIN) % n]
-    const v1x = b.x - a.x, v1y = b.y - a.y
-    const v2x = c.x - b.x, v2y = c.y - b.y
-    const cross = v1x * v2y - v1y * v2x
-    const dot   = v1x * v2x + v1y * v2y
-    // Normalisert [0,1] — >0.6 = reelt hjørne
-    cornerStrength[i] = Math.min(1, Math.abs(Math.atan2(cross, dot)) / (Math.PI * 0.5))
-  }
-
-  let result = pts
-  for (let p = 0; p < passes; p++) {
-    const smoothed = new Array(n)
-    for (let i = 0; i < n; i++) {
-      const cs = cornerStrength[i]
-      const blend = Math.max(0, 1 - cs * 1.5)  // bevar hjørner (blend→0)
-      if (blend < 0.05) { smoothed[i] = { x: result[i].x, y: result[i].y }; continue }
-      const p2 = result[(i - 2 + n) % n]
-      const p1 = result[(i - 1 + n) % n]
-      const p0 = result[i]
-      const q1 = result[(i + 1) % n]
-      const q2 = result[(i + 2) % n]
-      // 5-taps Gaussian [0.06, 0.24, 0.40, 0.24, 0.06]
-      const sx = p2.x * 0.06 + p1.x * 0.24 + p0.x * 0.40 + q1.x * 0.24 + q2.x * 0.06
-      const sy = p2.y * 0.06 + p1.y * 0.24 + p0.y * 0.40 + q1.y * 0.24 + q2.y * 0.06
-      smoothed[i] = {
-        x: p0.x * (1 - blend) + sx * blend,
-        y: p0.y * (1 - blend) + sy * blend,
-      }
-    }
-    result = smoothed
-  }
-  return result
 }
 
 // Moore neighbor order (clockwise from east):

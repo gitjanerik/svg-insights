@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-04-23 — v4.14.2: Rull tilbake 4.14.1
+
+Gaussian-smoothingen introdusert i 4.14.1 rundet faktisk av bokstavformene for mye — mistet den typografiske karakteren som gjorde originalfontene gjenkjennelige. `canvasGlyphRenderer.js` er rullet tilbake til tilstanden før 4.14.1.
+
+Amøbefenomenet i g, o, e og andre buede glyfer står dermed fortsatt igjen som et åpent problem — må angripes fra en annen vinkel senere (kanskje adaptiv anker-scoring, eller minimum chord-lengde i `fitBezierThrough`, snarere enn å glatte konturen i seg selv).
+
+---
+
 ## 2026-04-23 — v4.14.1: Glattere glyfer
 
 ### Diagnose
