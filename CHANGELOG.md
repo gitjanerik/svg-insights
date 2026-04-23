@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-04-23 — v4.12.9: Glyf-editor dra-fiks
+
+To relaterte bugs i glyf-editoren som gjorde punktredigering vanskelig:
+
+### Punkt hoppet ved markering
+Ved `pointerdown` på et punkt ble punktet umiddelbart teleportert til finger-posisjonen, fordi den første move-eventen plasserte punktet der fingeren var. Nå lagres et grab-offset (avstand fra finger til punkt ved berøring), og vi trekker det fra under drag — slik at punktet beholder sin relative posisjon til fingeren. 
+
+### Opp-ned respons
+Koordinattransformasjonen brukte CTM fra SVG-roten, men selve punktene lever inni en `<g transform="scale(1,-1)">`-gruppe (siden font-koordinater har y oppover). Konsekvensen: y-bevegelser ble invertert. Fiksen var å kalle `getScreenCTM()` på gruppen selv, slik at koordinatene vi får tilbake allerede er i samme system som punkt-dataene.
+
+- Begge fiksene i `src/views/FontEditorView.vue` (screenToSvg + ptDown + onMove)
+- 143/143 tester passerer
+
+---
+
+
 ## 2026-04-23 — v4.12.8: MinFont — glyf-tracing og harmoniske proporsjoner
 
 ### Hull i bokstaver

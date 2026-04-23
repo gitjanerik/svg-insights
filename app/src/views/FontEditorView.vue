@@ -130,18 +130,26 @@ function onSvgTouchEnd() { pinchStart.value = null; panStart.value = null }
 
 // ── Anchor/handle dragging ───────────────────────────────────────────────
 
-const dragging = ref(null)   // { kind: 'anchor'|'cp1'|'cp2', index }
-const svgRoot  = ref(null)
+// dragging: { kind, index, offX, offY } — offX/offY is the grab offset from
+// the finger to the anchor at pointerdown-time, so the point doesn't jump
+// to the finger on first contact.
+const dragging   = ref(null)
+const svgRoot    = ref(null)
+const glyphGroup = ref(null)   // the <g transform="scale(1,-1)"> — its CTM
+                               // matches the coord system our points live in
 
+// Convert a client (screen) point into the coordinate system of the glyph
+// group — this is where the anchor coordinates (p.x, p.y) live. Using
+// svgRoot's CTM instead would give us y-flipped values because of the
+// scale(1,-1) wrapper, which produced the "upside-down drag" bug.
 function screenToSvg(clientX, clientY) {
-  const svg = svgRoot.value
-  if (!svg) return { x: 0, y: 0 }
-  const pt = svg.createSVGPoint()
+  const target = glyphGroup.value || svgRoot.value
+  if (!target) return { x: 0, y: 0 }
+  const pt = svgRoot.value.createSVGPoint()
   pt.x = clientX; pt.y = clientY
-  const ctm = svg.getScreenCTM()
+  const ctm = target.getScreenCTM()
   if (!ctm) return { x: 0, y: 0 }
-  const inv = ctm.inverse()
-  const out = pt.matrixTransform(inv)
+  const out = pt.matrixTransform(ctm.inverse())
   return { x: Math.round(out.x), y: Math.round(out.y) }
 }
 
@@ -150,7 +158,20 @@ function ptDown(e, index, which = 'anchor') {
   e.preventDefault()
   editor.startDrag()
   if (which === 'anchor') editor.selectAnchor(index)
-  dragging.value = { kind: which, index }
+  const { clientX, clientY } = e.touches ? e.touches[0] : e
+  const svgPt = screenToSvg(clientX, clientY)
+  const p = editor.points.value[index]
+  // Record how far the finger is from the target point — subtract this on
+  // every move so the point tracks the finger instead of snapping to it.
+  let px, py
+  if (which === 'anchor')   { px = p.x;   py = p.y   }
+  else if (which === 'cp1') { px = p.cp1x; py = p.cp1y }
+  else                      { px = p.cp2x; py = p.cp2y }
+  dragging.value = {
+    kind: which, index,
+    offX: svgPt.x - px,
+    offY: svgPt.y - py,
+  }
 }
 
 function onMove(e) {
@@ -158,10 +179,12 @@ function onMove(e) {
   e.preventDefault()
   const { clientX, clientY } = e.touches ? e.touches[0] : e
   const svgPt = screenToSvg(clientX, clientY)
-  const { kind, index } = dragging.value
-  if (kind === 'anchor') editor.dragAnchor(index, svgPt.x, svgPt.y)
-  else if (kind === 'cp1') editor.dragCp1(index, svgPt.x, svgPt.y)
-  else if (kind === 'cp2') editor.dragCp2(index, svgPt.x, svgPt.y)
+  const { kind, index, offX, offY } = dragging.value
+  const x = svgPt.x - offX
+  const y = svgPt.y - offY
+  if (kind === 'anchor')   editor.dragAnchor(index, x, y)
+  else if (kind === 'cp1') editor.dragCp1(index, x, y)
+  else if (kind === 'cp2') editor.dragCp2(index, x, y)
 }
 function onUp() { dragging.value = null }
 
@@ -429,7 +452,7 @@ function backToOverview() {
              @touchend="onSvgTouchEnd"
              @click="canvasTap"
              class="w-full h-full touch-none">
-          <g :transform="`scale(1, -1)`">
+          <g ref="glyphGroup" :transform="`scale(1, -1)`">
             <!-- Metric guides -->
             <line :x1="VIEW.xMin" :x2="VIEW.xMin + VIEW.w" :y1="fontMetrics.capHeight" :y2="fontMetrics.capHeight"
                   stroke="#ffffff15" stroke-dasharray="4 4" />
