@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-04-23 — v4.14.0: Utvidet fontkatalog (+48 Google Fonts)
+
+`googleFontsCatalog.js` tredoblet fra 24 til **72 fonter** (24 per kategori). Utvalget er kuratert for å dekke bredest mulig stilistisk spenn innen hver kategori.
+
+### Serif (+16)
+Cormorant Garamond, Crimson Pro, Cardo, Zilla Slab, Abril Fatface, Alegreya, Spectral, DM Serif Display, Fraunces, Noto Serif, PT Serif, Cinzel, Libre Caslon Text, Josefin Slab, Old Standard TT, Rozha One.
+
+Spenner fra elegant Garamond og akademiske tekstskrifter, via dramatiske display-serifer og høykontrast Didone-lignende, til geometriske slabs og klassiske romerske kapitaler.
+
+### Sans-serif (+16)
+Oswald, Raleway, Bebas Neue, Archivo, Barlow, Fira Sans, DM Sans, Space Grotesk, Manrope, Karla, Rubik, Josefin Sans, Archivo Narrow, PT Sans, Exo 2, Quicksand.
+
+Dekker humanistiske (Fira, Karla), geometriske (DM Sans, Josefin Sans, Quicksand), kondenserte (Oswald, Bebas Neue, Archivo Narrow, Barlow), tekniske/futuristiske (Space Grotesk, Exo 2) og utilitarian modern (Manrope, Archivo).
+
+### Håndskrift (+16)
+Great Vibes, Sacramento, Permanent Marker, Kaushan Script, Homemade Apple, Yellowtail, Cookie, Allura, Parisienne, Lobster, Marck Script, Patrick Hand, Rock Salt, Architects Daughter, Special Elite, Courgette.
+
+Varierer fra elegant kalligrafi (Great Vibes, Allura, Parisienne) og signatur-skript (Sacramento, Cookie), via pensel/tusj (Kaushan, Permanent Marker, Yellowtail), til ruter-print (Architects Daughter, Patrick Hand), skrivemaskin (Special Elite), og chunky retro (Lobster).
+
+---
+
 ## 2026-04-23 — v4.13.3: Hamburgefons som standard-preview
 
 Standard-tekst i `FontPreviewView` endret fra «Hello World 123!» til **«Hamburgefons»** — det klassiske type-designer-utvalget som inneholder de mest karakteristiske bokstavformene (runde `o`/`e`, stammer `m`/`n`, asymmetriske `a`/`g`, blanding av høye og lave letterformer).
