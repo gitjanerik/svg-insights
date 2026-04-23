@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-04-23 — v4.13.0: Variabel font + drabare crop-hjørner
+
+### Variabel font-innstillinger i FontCapture
+
+`fontSettings` har fått to nye egenskaper: `weight` (100–900) og `italic` (0/1).
+
+**Vekt-slider** vises i FontEditorView over glyph-grid. For fonter med `hasWght: true` laster appen nå hele vekt-range fra Google Fonts (`ital,wght@0,100..900;1,100..900`). Canvas-rendering bruker `ctx.font = "700 400px 'Inter'"` e.l., slik at browseren faktisk henter riktig variabel-font-instans.
+
+**Kursiv-toggle** aktiverer `italic`-varianten der `hasItal: true`. Canvas bruker `italic 400 400px "Font"`.
+
+**Regenerer-knapp** dukker opp når innstillingene endres etter første generering. Klikk regenererer alle `auto`-glyfer (redigerte bevares). Progress-bar vises under regenerering.
+
+Google Fonts-URL bygges dynamisk basert på `hasWght`/`hasItal`-flaggene i `googleFontsCatalog.js` (lagres nå via `FontChooserView` i `detectedFontInfo.suggestions`).
+
+### Drabare crop-hjørner i GlyphPhotoDialog
+
+`GlyphPhotoDialog` er skrevet om med `cropL/T/R/B` som state (stage-relative px). Crop-boksen er nå fritt justerbar:
+
+- **L-formede SVG-håndtak** i hvert hjørne med 44 px touch-target og gul halo
+- `nearCorner()` sjekker innen 40 px – touch nær hjørne → hjørne-drag; ellers → pan
+- Hint-tekst oppdatert: «Dra hjørnene for å justere · klyp for å zoome»
+
+### Fikset `confirmCrop()`
+
+Den gamle implementasjonen brukte `getBoundingClientRect()` direkte på `<img>`-elementet, som returnerer element-boksen (hele stage) – ikke det faktiske bildeinnholdet med `object-contain`-letterboxing. Koordinatene ble dermed feil, og vektoren ble generert fra feil del av bildet.
+
+Ny logikk:
+1. Beregner base display-rect i stage (letterboxing korrigert for aspect-ratio)
+2. Appliserer CSS-transform `translate(panX,panY) scale(Z)` fra senter
+3. Mapper `cropL/T/R/B` til kilde-piksel-koordinater
+
+---
+
 ## 2026-04-23 — v4.12.9: Glyf-editor dra-fiks
 
 To relaterte bugs i glyf-editoren som gjorde punktredigering vanskelig:
