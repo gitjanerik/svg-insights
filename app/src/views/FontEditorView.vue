@@ -45,14 +45,16 @@ function closeGlyph() {
   selectedChar.value = null
 }
 
-// Auto-save on any point change — any modification promotes glyph to 'edited'
+// Auto-save on any point change — any modification promotes glyph to 'edited',
+// or back to 'empty' when Tøm clears the path. Persisting the empty state is
+// what stops a fresh brush stroke from re-resurrecting the cleared vectors.
 watch(() => editor.points.value, () => {
   if (!selectedChar.value) return
-  if (!editor.points.value.length) return
   const newD = editor.toPathD()
   const prev = glyphs[selectedChar.value]
-  if (!prev || prev.pathD === newD) return
-  setGlyphPath(selectedChar.value, newD, prev.advanceWidth, 'edited')
+  if (prev?.pathD === newD) return
+  const status = newD ? 'edited' : 'empty'
+  setGlyphPath(selectedChar.value, newD, prev?.advanceWidth, status)
 }, { deep: true })
 
 // ── Status + colors for the grid ─────────────────────────────────────────
