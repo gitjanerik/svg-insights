@@ -79,12 +79,17 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
   const capHeight = metrics.capHeight  ||  700
   const fScale    = capHeight / capPxRef
   const skewTan   = Math.tan(((settings?.skewDeg || 0) * Math.PI) / 180)
+  const widthMul  = (settings?.widthScale ?? 100) / 100
   const toFont = p => {
     // y in canvas grows downward; flip around baselineY, then scale.
     const fy = (baselineY - p.y) * fScale
-    const fx = (p.x - drawX)     * fScale
+    const fx = (p.x - drawX)     * fScale * widthMul
     return { x: Math.round(fx + fy * skewTan), y: Math.round(fy) }
   }
+
+  const rough  = settings?.roughness    || 0
+  const wOff   = settings?.weightOffset || 0
+  const rand   = seedRand(charCodeSeed(char))
 
   const parts = []
   for (const pts of contours) {
@@ -96,14 +101,16 @@ export function generateGlyphFromSystemFont(char, metrics, fontFamily = 'sans-se
     const reversed = pts.slice().reverse()
     const reversedIdxs = anchorIdxs.map(i => pts.length - 1 - i).reverse()
     const denseFont = reversed.map(toFont)
-    const bezierPts = fitBezierThrough(denseFont, reversedIdxs)
+    let bezierPts = fitBezierThrough(denseFont, reversedIdxs)
+    if (wOff)  bezierPts = applyWeightOffset(bezierPts, wOff)
+    if (rough) bezierPts = applyRoughness(bezierPts, rand, rough * 4)
     parts.push(subpathToD(bezierPts))
   }
   if (!parts.length) return null
 
   // advanceWidth from the glyph's own metrics — not from the shared reference —
   // so narrow letters (i, l, .) remain narrow and wide ones (M, W) remain wide.
-  const advanceWidth = Math.round(m.width * fScale + (settings?.tracking || 0))
+  const advanceWidth = Math.round(m.width * fScale * widthMul + (settings?.tracking || 0))
   return { pathD: parts.join(' '), advanceWidth }
 }
 
@@ -149,11 +156,16 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
       const asc     = metrics.ascender   ||  800
       const scale   = asc / size
       const skewTan = Math.tan(((settings?.skewDeg || 0) * Math.PI) / 180)
+      const widthMul = (settings?.widthScale ?? 100) / 100
       const toFont  = p => {
-        const fx = p.x * scale
+        const fx = p.x * scale * widthMul
         const fy = (size - p.y) * scale
         return { x: Math.round(fx + fy * skewTan), y: Math.round(fy) }
       }
+
+      const rough = settings?.roughness    || 0
+      const wOff  = settings?.weightOffset || 0
+      const rand  = seedRand(0xBEEF)
 
       const parts = []
       for (const pts of contours) {
@@ -163,18 +175,99 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
         // Same reversal as system-font tracer — opentype.js expects CCW outer
         const reversed = pts.slice().reverse()
         const reversedIdxs = idxs.map(i => pts.length - 1 - i).reverse()
-        const bezier = fitBezierThrough(reversed.map(toFont), reversedIdxs)
+        let bezier = fitBezierThrough(reversed.map(toFont), reversedIdxs)
+        if (wOff)  bezier = applyWeightOffset(bezier, wOff)
+        if (rough) bezier = applyRoughness(bezier, rand, rough * 4)
         parts.push(subpathToD(bezier))
       }
       if (!parts.length) return resolve(null)
       resolve({
         pathD: parts.join(' '),
-        advanceWidth: Math.round(upm * 0.6 + (settings?.tracking || 0)),
+        advanceWidth: Math.round(upm * 0.6 * widthMul + (settings?.tracking || 0)),
       })
     }
     img.onerror = () => resolve(null)
     img.src = imageDataUrl
   })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Variable-settings helpers (roughness, weight offset)
+// ────────────────────────────────────────────────────────────────────────────
+
+// Mulberry32 — small deterministic PRNG so the same glyph + roughness always
+// produces the same jitter. Without this, reactive re-renders would shimmer.
+function seedRand(seed) {
+  let s = seed >>> 0
+  return function () {
+    s = (s + 0x6D2B79F5) | 0
+    let t = s
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function charCodeSeed(char) {
+  let h = 2166136261
+  for (let i = 0; i < char.length; i++) {
+    h ^= char.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h
+}
+
+// Perturb each anchor (and its handles) by a deterministic random offset.
+// Amplitude is in font-units; control points move with their anchor so the
+// curve smoothness is preserved locally.
+function applyRoughness(points, rand, amplitude) {
+  for (const p of points) {
+    const dx = (rand() * 2 - 1) * amplitude
+    const dy = (rand() * 2 - 1) * amplitude
+    p.x = Math.round(p.x + dx)
+    p.y = Math.round(p.y + dy)
+    if (p.type === 'C') {
+      p.cp1x = Math.round(p.cp1x + dx)
+      p.cp1y = Math.round(p.cp1y + dy)
+      p.cp2x = Math.round(p.cp2x + dx)
+      p.cp2y = Math.round(p.cp2y + dy)
+    }
+  }
+  return points
+}
+
+// Offset a closed contour along its left-normal by `delta` font-units. CCW
+// outer contours grow outward (thicker), CW holes shrink inward (also makes
+// the glyph look thicker, since holes get smaller). Each anchor's normal is
+// approximated from the chord between its two neighbors. cp1 of point i is
+// near the previous anchor geometrically, so it's offset using that anchor's
+// normal — this keeps the offset consistent across the whole curve.
+function applyWeightOffset(points, delta) {
+  const n = points.length
+  if (n < 3) return points
+  const offsets = new Array(n)
+  for (let i = 0; i < n; i++) {
+    const prev = points[(i - 1 + n) % n]
+    const next = points[(i + 1) % n]
+    const tx = next.x - prev.x
+    const ty = next.y - prev.y
+    const len = Math.hypot(tx, ty) || 1
+    offsets[i] = { dx: (-ty / len) * delta, dy: (tx / len) * delta }
+  }
+  for (let i = 0; i < n; i++) {
+    const p   = points[i]
+    const o   = offsets[i]
+    const oPrev = offsets[(i - 1 + n) % n]
+    p.x = Math.round(p.x + o.dx)
+    p.y = Math.round(p.y + o.dy)
+    if (p.type === 'C') {
+      p.cp1x = Math.round(p.cp1x + oPrev.dx)
+      p.cp1y = Math.round(p.cp1y + oPrev.dy)
+      p.cp2x = Math.round(p.cp2x + o.dx)
+      p.cp2y = Math.round(p.cp2y + o.dy)
+    }
+  }
+  return points
 }
 
 // ────────────────────────────────────────────────────────────────────────────
