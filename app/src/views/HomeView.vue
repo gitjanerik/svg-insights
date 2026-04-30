@@ -102,7 +102,6 @@ async function onInstallClick() {
             <div class="flex-1">
               <div class="flex items-center gap-2">
                 <span class="text-white font-semibold">Lag webfont</span>
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-400 text-black">NY</span>
               </div>
               <div class="text-[11px] text-white/50 mt-0.5">Ta bilde av tekst og generer en .otf-font</div>
             </div>

@@ -42,11 +42,13 @@ export const fontMetrics = reactive({
 })
 
 export const fontSettings = reactive({
-  tracking: 0,
-  skewDeg:  0,
-  weight:   400,  // 100–900
-  italic:   0,    // 0=normal, 1=italic
-  outline:  false, // true=strokeText (kontur), false=fillText (fylt)
+  tracking:     0,
+  skewDeg:      0,
+  weight:       400,  // 100–900
+  italic:       0,    // 0=normal, 1=italic
+  widthScale:   100,  // 70–130 (%): kondensert til strakt
+  roughness:    0,    // 0–10: deterministisk jitter på ankerpunkter
+  weightOffset: 0,    // ±20: post-tracing offset langs normalen (tykkere/tynnere)
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -88,10 +90,12 @@ export function resetFontProject() {
     defaultAdvanceWidth: 600,
   })
   Object.assign(fontSettings, {
-    tracking: 0,
-    skewDeg:  0,
-    weight:   400,
-    italic:   0,
-    outline:  false,
+    tracking:     0,
+    skewDeg:      0,
+    weight:       400,
+    italic:       0,
+    widthScale:   100,
+    roughness:    0,
+    weightOffset: 0,
   })
 }

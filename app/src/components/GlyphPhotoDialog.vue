@@ -1,12 +1,16 @@
 <script setup>
 // GlyphPhotoDialog — kamera/opplasting + justerbar crop-boks med drabare hjørner
-// Flow: kamera → ta bilde → stil bildet (pan/zoom) + juster crop-boks → "Bruk utsnitt"
+// Flow: kamera → ta bilde → stil bildet (pan/zoom) + juster crop-boks
+//       → forhåndsvis sporet glyf → "Bruk denne"
 
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { traceGlyphFromPhoto } from '../lib/canvasGlyphRenderer.js'
 
 const props = defineProps({
-  open: { type: Boolean, default: false },
-  char: { type: String, default: '' },
+  open:    { type: Boolean, default: false },
+  char:    { type: String,  default: '' },
+  metrics: { type: Object,  default: () => ({}) },
+  settings:{ type: Object,  default: () => ({}) },
 })
 const emit = defineEmits(['capture', 'cancel'])
 
@@ -27,6 +31,12 @@ const zoomRange     = ref({ min: 1, max: 3, step: 0.1 })
 // Post-capture state
 const capturedImg   = ref(null)   // HTMLImageElement
 const capturedSrc   = ref(null)   // data-URL
+
+// Preview state (third phase — after crop, before commit)
+const previewMode    = ref(false)
+const previewLoading = ref(false)
+const previewSrc     = ref(null)   // square cropped data-URL
+const previewResult  = ref(null)   // { pathD, advanceWidth, meta }
 
 // Bildet pannes/zoomes med CSS transform
 const imgZoom = ref(1.0)
@@ -101,6 +111,10 @@ function resetAll() {
   imgPanX.value = 0
   imgPanY.value = 0
   dragCorner.value = null
+  previewMode.value = false
+  previewLoading.value = false
+  previewSrc.value = null
+  previewResult.value = null
 }
 
 // ── Kamera ────────────────────────────────────────────────────────────────
@@ -285,16 +299,16 @@ function onStagePointerUp() {
   window.removeEventListener('pointermove', onStagePointerMove)
 }
 
-// ── Bekreft crop → emit dataUrl ────────────────────────────────────────────
+// ── Bekreft crop → bygg preview ────────────────────────────────────────────
 // Korrekt koordinat-mapping:
 //   1. Finn bildet sin "base" display-rect i stage (object-contain letterboxing)
 //   2. Appliser CSS-transform translate(panX,panY) scale(Z) fra center
 //   3. Map crop-boks-koordinater til kilde-piksel-koordinater
-function confirmCrop() {
+function buildCroppedDataUrl() {
   const img = capturedImg.value
-  if (!img) return
+  if (!img) return null
   const sr = stageRef.value?.getBoundingClientRect()
-  if (!sr) return
+  if (!sr) return null
 
   // 1. Base display-rect uten transform (object-contain)
   const imgAspect = img.naturalWidth / img.naturalHeight
@@ -337,8 +351,64 @@ function confirmCrop() {
   if (clSw > 0 && clSh > 0) {
     ctx.drawImage(img, clSx, clSy, clSw, clSh, 0, 0, size, size)
   }
-  emit('capture', cv.toDataURL('image/jpeg', 0.95))
+  return cv.toDataURL('image/jpeg', 0.95)
 }
+
+async function confirmCrop() {
+  const dataUrl = buildCroppedDataUrl()
+  if (!dataUrl) return
+  previewSrc.value = dataUrl
+  previewResult.value = null
+  previewMode.value = true
+  previewLoading.value = true
+  // Tracing kan ta noen hundre ms — la UI rendre først, så kjør tracingen.
+  await nextTick()
+  const result = await traceGlyphFromPhoto(dataUrl, props.metrics, props.settings)
+  previewResult.value = result || { pathD: '', advanceWidth: 0, meta: { warnings: ['Klarte ikke spore bildet'] } }
+  previewLoading.value = false
+}
+
+function backToCrop() {
+  previewMode.value = false
+  previewLoading.value = false
+  previewSrc.value = null
+  previewResult.value = null
+}
+
+function commitPreview() {
+  if (!previewSrc.value) return
+  emit('capture', previewSrc.value)
+}
+
+// SVG viewBox for preview — matcher fontens metrics
+const previewViewBox = computed(() => {
+  const m = props.metrics || {}
+  const asc = m.ascender   ?? 800
+  const dsc = m.descender  ?? -200
+  const adv = (previewResult.value?.advanceWidth) || (m.defaultAdvanceWidth ?? 600)
+  const padX = 60
+  return `${-padX} ${-asc - 30} ${adv + padX * 2} ${asc - dsc + 60}`
+})
+
+const previewStatus = computed(() => {
+  if (previewLoading.value) return { tone: 'loading', text: 'Sporer glyf …' }
+  const r = previewResult.value
+  if (!r) return null
+  const w = r.meta?.warnings || []
+  if (!r.pathD) {
+    return { tone: 'error', text: w[0] || 'Ingen tydelig glyf funnet' }
+  }
+  if (w.length) return { tone: 'warn', text: w[0] }
+  const cov = r.meta?.mainCoverage
+  return {
+    tone: 'ok',
+    text: cov != null
+      ? `Glyf funnet — dekker ${Math.round(cov * 100)}% av rammen`
+      : 'Glyf funnet',
+  }
+})
+
+const canCommitPreview = computed(() => !!(previewResult.value && previewResult.value.pathD))
 
 function cancel() { emit('cancel') }
 
@@ -394,14 +464,14 @@ const cropBoxStyle = computed(() => ({
              class="absolute inset-0 w-full h-full object-cover"
              :class="{ '-scale-x-100': facingMode === 'user' }" />
 
-      <!-- Stille bilde (post-capture) -->
-      <img v-if="capturedSrc" ref="previewImgRef" :src="capturedSrc"
+      <!-- Stille bilde (post-capture) — skjules under preview -->
+      <img v-if="capturedSrc && !previewMode" ref="previewImgRef" :src="capturedSrc"
            :style="imgStyle"
            class="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
            draggable="false" />
 
-      <!-- Gestur-layer: fanger pan/zoom og hjørne-drag -->
-      <div v-if="capturedSrc"
+      <!-- Gestur-layer: fanger pan/zoom og hjørne-drag (kun i crop-fasen) -->
+      <div v-if="capturedSrc && !previewMode"
            class="absolute inset-0"
            style="z-index: 10; touch-action: none;"
            @touchstart.prevent="onStageTouchStart"
@@ -411,7 +481,7 @@ const cropBoxStyle = computed(() => ({
            @pointerdown="onStagePointerDown" />
 
       <!-- Crop-overlay: mørk veil + ramme + guider -->
-      <template v-if="capturedSrc">
+      <template v-if="capturedSrc && !previewMode">
         <!-- Veil: fire felter rundt crop-boksen -->
         <div class="absolute inset-x-0 bg-black/60 pointer-events-none"
              :style="{ top: 0, height: cropT + 'px', zIndex: 11 }" />
@@ -459,6 +529,71 @@ const cropBoxStyle = computed(() => ({
           </p>
         </div>
       </template>
+
+      <!-- PREVIEW: original crop + sporet glyf side ved side -->
+      <div v-if="previewMode" class="absolute inset-0 flex flex-col bg-black"
+           style="z-index: 20">
+        <div class="flex-1 grid grid-cols-2 gap-2 p-3 overflow-hidden">
+          <!-- Original crop -->
+          <div class="relative rounded-lg overflow-hidden bg-white/5 border border-white/10">
+            <img v-if="previewSrc" :src="previewSrc" alt="Crop"
+                 class="absolute inset-0 w-full h-full object-contain" />
+            <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px]
+                        bg-black/60 text-white/70">Bilde</div>
+          </div>
+          <!-- Sporet glyf -->
+          <div class="relative rounded-lg overflow-hidden bg-white/5 border border-white/10
+                      flex items-center justify-center">
+            <div v-if="previewLoading" class="text-xs text-white/50">Sporer …</div>
+            <svg v-else-if="previewResult?.pathD" :viewBox="previewViewBox"
+                 class="w-full h-full">
+              <g transform="scale(1, -1)">
+                <line :x1="-1000" :x2="2000" y1="0" y2="0" stroke="#ffffff15" stroke-dasharray="4 4" />
+                <line :x1="-1000" :x2="2000"
+                      :y1="metrics.xHeight || 500" :y2="metrics.xHeight || 500"
+                      stroke="#ffffff10" stroke-dasharray="2 4" />
+                <line :x1="-1000" :x2="2000"
+                      :y1="metrics.capHeight || 700" :y2="metrics.capHeight || 700"
+                      stroke="#ffffff10" stroke-dasharray="2 4" />
+                <path :d="previewResult.pathD" fill="#fbbf24" stroke="#fbbf24" stroke-width="2"
+                      vector-effect="non-scaling-stroke" fill-rule="evenodd" />
+              </g>
+            </svg>
+            <div v-else class="text-xs text-rose-400 px-3 text-center">
+              Ingen tydelig glyf
+            </div>
+            <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10px]
+                        bg-black/60 text-amber-300">Glyf</div>
+          </div>
+        </div>
+
+        <!-- Statusmelding -->
+        <div v-if="previewStatus" class="px-4 pb-2">
+          <div :class="['text-xs px-3 py-2 rounded-lg border flex items-start gap-2',
+                        previewStatus.tone === 'ok'      && 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+                        previewStatus.tone === 'warn'    && 'border-amber-400/40 bg-amber-500/10 text-amber-200',
+                        previewStatus.tone === 'error'   && 'border-rose-400/40 bg-rose-500/10 text-rose-200',
+                        previewStatus.tone === 'loading' && 'border-white/10 bg-white/5 text-white/60']">
+            <svg v-if="previewStatus.tone === 'ok'" xmlns="http://www.w3.org/2000/svg"
+                 class="w-4 h-4 shrink-0 mt-px" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <svg v-else-if="previewStatus.tone === 'warn'" xmlns="http://www.w3.org/2000/svg"
+                 class="w-4 h-4 shrink-0 mt-px" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <svg v-else-if="previewStatus.tone === 'error'" xmlns="http://www.w3.org/2000/svg"
+                 class="w-4 h-4 shrink-0 mt-px" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <span>{{ previewStatus.text }}</span>
+          </div>
+        </div>
+      </div>
 
     </div><!-- /stage -->
 
@@ -510,7 +645,7 @@ const cropBoxStyle = computed(() => ({
       </template>
 
       <!-- CROP-MODUS -->
-      <template v-else>
+      <template v-else-if="!previewMode">
         <div class="px-5 pt-3 pb-1 flex items-center gap-3">
           <span class="text-[11px] text-white/40 w-6">1×</span>
           <input v-model.number="imgZoom" type="range" min="1" max="8" step="0.1"
@@ -532,7 +667,29 @@ const cropBoxStyle = computed(() => ({
           <button @click="confirmCrop"
                   class="flex-[2] px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400
                          text-black text-sm font-semibold active:scale-[0.98] transition-transform">
-            Bruk utsnitt
+            Forhåndsvis glyf
+          </button>
+        </div>
+      </template>
+
+      <!-- PREVIEW-MODUS -->
+      <template v-else>
+        <div class="px-4 py-3 flex gap-2">
+          <button @click="backToCrop"
+                  class="px-4 py-3 rounded-xl border border-white/15
+                         text-white/70 text-sm active:bg-white/5">
+            ← Juster crop
+          </button>
+          <button @click="retake"
+                  class="flex-1 px-4 py-3 rounded-xl border border-white/15
+                         text-white/80 text-sm active:bg-white/5">
+            Ta nytt bilde
+          </button>
+          <button @click="commitPreview" :disabled="!canCommitPreview"
+                  class="flex-[2] px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400
+                         text-black text-sm font-semibold disabled:opacity-30
+                         active:scale-[0.98] transition-transform">
+            Bruk denne
           </button>
         </div>
       </template>

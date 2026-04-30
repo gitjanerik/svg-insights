@@ -189,21 +189,42 @@ function fontPreviewStyle(f) {
             </button>
           </div>
 
-          <!-- Outline -->
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-xs text-white/60">Outline</span>
-              <p class="text-[10px] text-white/30 mt-0.5">Spor konturlinjen, ikke fyllet</p>
+          <!-- Bredde / kondensering -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-baseline">
+              <span class="text-xs text-white/60">Bredde</span>
+              <span class="text-xs text-amber-300 tabular-nums">{{ fontSettings.widthScale }}%</span>
             </div>
-            <button @click="fontSettings.outline = !fontSettings.outline"
-                    :class="['w-12 h-6 rounded-full border transition-colors relative',
-                             fontSettings.outline
-                               ? 'bg-amber-400 border-amber-400'
-                               : 'bg-white/10 border-white/20']">
-              <span :class="['absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
-                             fontSettings.outline ? 'left-6' : 'left-0.5']" />
-            </button>
+            <input v-model.number="fontSettings.widthScale" type="range"
+                   min="70" max="130" step="2"
+                   class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
+            <p class="text-[10px] text-white/30">Kondensert under 100%, strekt over</p>
           </div>
+
+          <!-- Roughness / håndlaget -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-baseline">
+              <span class="text-xs text-white/60">Håndlaget</span>
+              <span class="text-xs text-amber-300 tabular-nums">{{ fontSettings.roughness }}</span>
+            </div>
+            <input v-model.number="fontSettings.roughness" type="range"
+                   min="0" max="10" step="1"
+                   class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
+            <p class="text-[10px] text-white/30">Skjev jitter på ankerpunktene — gir skissete preg</p>
+          </div>
+
+          <!-- Vekt-finjustering / optisk vekt -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-baseline">
+              <span class="text-xs text-white/60">Vekt-finjustering</span>
+              <span class="text-xs text-amber-300 tabular-nums">{{ fontSettings.weightOffset > 0 ? '+' : '' }}{{ fontSettings.weightOffset }}</span>
+            </div>
+            <input v-model.number="fontSettings.weightOffset" type="range"
+                   min="-20" max="20" step="1"
+                   class="w-full h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
+            <p class="text-[10px] text-white/30">Justerer tykkelsen post-tracing — uavhengig av Google-fontens vekt</p>
+          </div>
+
         </div>
       </div>
     </div>

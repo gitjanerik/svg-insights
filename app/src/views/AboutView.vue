@@ -111,10 +111,32 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 5.0.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">5.0.1</span>
+                <span class="text-white/40">&mdash; Webfont-pakken: tegne-modus, variable innstillinger og smartere editor</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">30. apr 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Ny tegne-modus</strong> i glyf-editoren med kalligrafisk pensel — slidere for tykkelse og rundhet (klassisk 35°-vinkel ved lav rundhet), lukket-deteksjon (slutt nær start lager en ring), &laquo;Angre strek&raquo; og bezier-glatting ved lagring</li>
+                <li><strong class="text-white/60">Boolean-union</strong> ved lagring — overlappende strøk og eksisterende vektorer slås sammen til én sammenhengende form med riktig håndtering av hull</li>
+                <li><strong class="text-white/60">Tre nye variable innstillinger</strong> i naming-steget: Bredde (kondensert/strakt 70&ndash;130%), Håndlaget (deterministisk jitter for skissete preg) og Vekt-finjustering (post-tracing offset uavhengig av Google-fontens egne vekter)</li>
+                <li><strong class="text-white/60">Glyf-funnet-forhåndsvisning</strong> ved foto-tracing — bilde og sporet glyf vises side ved side med statusmelding før du bekrefter, og støy/rammer filtreres bort på forhånd</li>
+                <li><strong class="text-white/60">Smartere seleksjon i editoren</strong>: sletting velger nærmeste gjenværende punkt, tillegg velger nye punktet — slipper å re-tappe</li>
+                <li><strong class="text-white/60">Ny Tøm-knapp</strong> i quick-actions sletter alle vektorer i glyfen (angrebar)</li>
+                <li><strong class="text-white/60">Tykkere/Tynnere skrevet om</strong> &mdash; bruker nå left-normal-offset per subpath i stedet for sentroid-skalering. Endrer faktisk vekt på formene istedenfor å skalere hele glyfen</li>
+                <li>Outline-toggle fjernet fra naming-steget &mdash; for komplisert til å forsvare plassen</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 4.14.2 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-500" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">4.14.2</span>
                 <span class="text-white/40">&mdash; Rull tilbake kontur-smoothing</span>
