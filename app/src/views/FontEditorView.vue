@@ -9,6 +9,7 @@ import { useGlyphEditor } from '../composables/useGlyphEditor.js'
 import { generateGlyphFromSystemFont, traceGlyphFromPhoto } from '../lib/canvasGlyphRenderer.js'
 import { polygonToBezier } from '../lib/bezierSmoothing.js'
 import { strokeToPolygons, polygonsToPathD, polygonsToBezierPathD } from '../lib/brushStroke.js'
+import { unionAndSmoothGlyph } from '../lib/glyphUnion.js'
 import GlyphPhotoDialog from '../components/GlyphPhotoDialog.vue'
 
 const router = useRouter()
@@ -272,25 +273,29 @@ function undoBrushStroke() {
 
 function commitBrushStrokes() {
   if (!selectedChar.value) return
-  const allPolys = []
-  for (const s of brushStrokes.value) {
-    for (const poly of s.polygons) {
-      if (poly.length >= 3) allPolys.push(poly)
-    }
-  }
-  if (!allPolys.length) {
+  const validStrokes = brushStrokes.value.filter(
+    s => s.polygons.some(p => p && p.length >= 3),
+  )
+  if (!validStrokes.length) {
     drawMode.value = false
     return
   }
-  // Smooth + Bézier-fy at commit time so the saved glyph carries cubic
-  // curves rather than dense polylines (huge anchor count → laggy editor).
-  const newD = polygonsToBezierPathD(allPolys, polygonToBezier, 1)
   const prev = glyphs[selectedChar.value]
-  // Append to existing path so the brush can refine, not erase, prior work.
-  // fill-rule="evenodd" cleans up any overlap between strokes/glyph.
-  const combined = prev?.pathD ? `${prev.pathD} ${newD}` : newD
-  setGlyphPath(selectedChar.value, combined, prev?.advanceWidth, 'edited')
-  editor.loadPath(selectedChar.value, combined)
+  // Boolean-union the existing glyph + every brush stroke into one clean
+  // shape — overlapping ribbons become a single connected contour, holes
+  // are preserved, and the result is re-smoothed to cubic Béziers.
+  let unionedD = unionAndSmoothGlyph(editor.points.value, validStrokes)
+  if (!unionedD) {
+    // Library bailed (rare — degenerate input). Fall back to raw concat so
+    // the user keeps their work, even if overlap stays visible.
+    const newD = polygonsToBezierPathD(
+      validStrokes.flatMap(s => s.polygons.filter(p => p.length >= 3)),
+      polygonToBezier, 1,
+    )
+    unionedD = prev?.pathD ? `${prev.pathD} ${newD}` : newD
+  }
+  setGlyphPath(selectedChar.value, unionedD, prev?.advanceWidth, 'edited')
+  editor.loadPath(selectedChar.value, unionedD)
   brushStrokes.value = []
   currentStroke.value = null
   drawMode.value = false
