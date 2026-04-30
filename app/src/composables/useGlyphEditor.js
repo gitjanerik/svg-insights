@@ -147,6 +147,19 @@ export function useGlyphEditor() {
       if (next) next.type = 'M'
     }
     points.value.splice(idx, 1)
+    // Select the closest remaining anchor: the next one slid into this slot,
+    // unless we removed the last index — then fall back to the previous.
+    const newLen = points.value.length
+    if (!newLen)              selectedIdx.value = null
+    else if (idx >= newLen)   selectedIdx.value = newLen - 1
+    else                      selectedIdx.value = idx
+  }
+
+  /** Wipe every anchor in the glyph. Undoable. */
+  function clearAll() {
+    if (!points.value.length) return
+    pushUndo()
+    points.value = []
     selectedIdx.value = null
   }
 
@@ -191,24 +204,50 @@ export function useGlyphEditor() {
     }))
   }
 
-  /** Offset the contour outward (thicker) or inward (thinner). */
+  /** Offset every contour along its left-normal — outer (CCW) grows outward,
+   *  holes (CW) shrink inward — so the glyph reads like a heavier (thicker) or
+   *  lighter (thinner) font weight rather than a uniformly scaled silhouette.
+   *  Each subpath is processed independently so an "8" with two holes works. */
   function thicken(delta) {
     if (points.value.length < 3) return
     pushUndo()
-    const n = points.value.length
-    const cx = points.value.reduce((s, p) => s + p.x, 0) / n
-    const cy = points.value.reduce((s, p) => s + p.y, 0) / n
-    for (let i = 0; i < n; i++) {
-      const p = points.value[i]
-      const dx = p.x - cx, dy = p.y - cy
-      const len = Math.hypot(dx, dy) || 1
-      p.x = Math.round(p.x + (dx / len) * delta)
-      p.y = Math.round(p.y + (dy / len) * delta)
-      if (p.type === 'C') {
-        p.cp1x = Math.round(p.cp1x + (dx / len) * delta)
-        p.cp1y = Math.round(p.cp1y + (dy / len) * delta)
-        p.cp2x = Math.round(p.cp2x + (dx / len) * delta)
-        p.cp2y = Math.round(p.cp2y + (dy / len) * delta)
+
+    // Find subpath spans (each begins with an M-typed anchor).
+    const spans = []
+    let cur = 0
+    for (let i = 1; i < points.value.length; i++) {
+      if (points.value[i].type === 'M') { spans.push([cur, i]); cur = i }
+    }
+    spans.push([cur, points.value.length])
+
+    for (const [start, end] of spans) {
+      const n = end - start
+      if (n < 3) continue
+      const offsets = new Array(n)
+      // Tangent at each anchor from cyclic neighbors within the subpath →
+      // left normal × delta. CCW outers move outward, CW holes move inward.
+      for (let k = 0; k < n; k++) {
+        const prev = points.value[start + ((k - 1 + n) % n)]
+        const next = points.value[start + ((k + 1) % n)]
+        const tx = next.x - prev.x
+        const ty = next.y - prev.y
+        const len = Math.hypot(tx, ty) || 1
+        offsets[k] = { dx: (-ty / len) * delta, dy: (tx / len) * delta }
+      }
+      for (let k = 0; k < n; k++) {
+        const p     = points.value[start + k]
+        const o     = offsets[k]
+        const oPrev = offsets[(k - 1 + n) % n]
+        p.x = Math.round(p.x + o.dx)
+        p.y = Math.round(p.y + o.dy)
+        if (p.type === 'C') {
+          // cp1 lies near the previous anchor, so it follows that anchor's
+          // offset — keeps the curve uniformly thickened along its length.
+          p.cp1x = Math.round(p.cp1x + oPrev.dx)
+          p.cp1y = Math.round(p.cp1y + oPrev.dy)
+          p.cp2x = Math.round(p.cp2x + o.dx)
+          p.cp2y = Math.round(p.cp2y + o.dy)
+        }
       }
     }
   }
@@ -258,7 +297,7 @@ export function useGlyphEditor() {
     loadPath, toPathD,
     selectAnchor, clearSelection,
     startDrag, dragAnchor, dragCp1, dragCp2,
-    addPointAfterSelected, removeSelected,
+    addPointAfterSelected, removeSelected, clearAll,
     canAddPoint, canRemovePoint,
     undo, redo, canUndo, canRedo,
     makeSmooth, makeStraight, simplify, thicken,

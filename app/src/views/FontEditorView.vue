@@ -740,6 +740,20 @@ function backToOverview() {
                          disabled:opacity-30">
             Tynnere
           </button>
+          <button @click="editor.clearAll"
+                  :disabled="drawMode || !editor.points.value.length"
+                  class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg
+                         border border-rose-400/40 text-rose-300 text-xs active:bg-rose-500/10
+                         disabled:opacity-30">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Tøm
+          </button>
         </div>
       </div>
 
