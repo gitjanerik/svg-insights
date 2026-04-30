@@ -4,7 +4,7 @@
  * Composable that provides a Bézier path editor state machine per glyph.
  * Handles parsing/building path-D, anchor selection, drag, add/remove,
  * undo/redo, and quick-shape operations (smooth, straighten, simplify,
- * thicker/thinner outline offset).
+ * thicker/thinner contour offset).
  *
  * Returns a factory function; call `useGlyphEditor()` once per editor instance
  * (typically in FontEditorView).
@@ -191,7 +191,7 @@ export function useGlyphEditor() {
     }))
   }
 
-  /** Offset the outline outward (thicker) or inward (thinner). */
+  /** Offset the contour outward (thicker) or inward (thinner). */
   function thicken(delta) {
     if (points.value.length < 3) return
     pushUndo()

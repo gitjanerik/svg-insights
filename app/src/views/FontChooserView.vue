@@ -189,21 +189,6 @@ function fontPreviewStyle(f) {
             </button>
           </div>
 
-          <!-- Outline -->
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-xs text-white/60">Outline</span>
-              <p class="text-[10px] text-white/30 mt-0.5">Spor konturlinjen, ikke fyllet</p>
-            </div>
-            <button @click="fontSettings.outline = !fontSettings.outline"
-                    :class="['w-12 h-6 rounded-full border transition-colors relative',
-                             fontSettings.outline
-                               ? 'bg-amber-400 border-amber-400'
-                               : 'bg-white/10 border-white/20']">
-              <span :class="['absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all',
-                             fontSettings.outline ? 'left-6' : 'left-0.5']" />
-            </button>
-          </div>
         </div>
       </div>
     </div>

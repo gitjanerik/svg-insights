@@ -46,7 +46,6 @@ export const fontSettings = reactive({
   skewDeg:  0,
   weight:   400,  // 100–900
   italic:   0,    // 0=normal, 1=italic
-  outline:  false, // true=strokeText (kontur), false=fillText (fylt)
 })
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -92,6 +91,5 @@ export function resetFontProject() {
     skewDeg:  0,
     weight:   400,
     italic:   0,
-    outline:  false,
   })
 }
