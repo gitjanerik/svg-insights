@@ -7,7 +7,7 @@ SVG Insights er en Vue 3-mobilapp med to hovedfunksjoner:
 1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 
-Gjeldende versjon: **4.8.6** (release 22. april 2026).
+Gjeldende versjon: **5.0.1** (release 30. april 2026).
 
 ## Viktige kommandoer
 
@@ -32,13 +32,16 @@ npm run build       # Produksjonsbygg
 ### Lag webfont (MinFont-sporet)
 
 - **Anker-algoritme** i `app/src/lib/curveFit.js` — `cornerAwareSimplify` oppdager hjørner, anti-støy-filter for glatte kurver, smoothstep-blending mellom tangent og chord
-- **Contour-tracing** i `app/src/lib/canvasGlyphRenderer.js` — 2-pass Moore-naboer med flood-fill for hull-deteksjon
+- **Contour-tracing** i `app/src/lib/canvasGlyphRenderer.js` — 2-pass Moore-naboer med flood-fill for hull-deteksjon. `pickGlyphContours` filtrerer foto-tracing-output (drop støy <0.5%, drop ramme >70%, behold største outer som overlapper sentrum + kontorets hull)
 - **Catmull-Rom-smoothing** i `app/src/lib/bezierSmoothing.js`
 - **OTF-eksport** i `app/src/lib/fontBuilder.js` (opentype.js, dynamisk import)
 - **Font-katalog** i `app/src/lib/googleFontsCatalog.js` (24 kuraterte fonter, 3 kategorier)
-- **Delt tilstand** i `app/src/composables/useFontProject.js` (glyphs, fontMetrics, fontSettings)
-- **Editor-logikk** i `app/src/composables/useGlyphEditor.js` (path-parsing, drag, undo/redo, quick-actions)
+- **Delt tilstand** i `app/src/composables/useFontProject.js` (glyphs, fontMetrics, fontSettings — sistnevnte inkluderer `widthScale`, `roughness`, `weightOffset` som påvirkes ved generering)
+- **Editor-logikk** i `app/src/composables/useGlyphEditor.js` (path-parsing, drag, undo/redo, quick-actions — `thicken` bruker normal-offset per subpath, ikke sentroid-skalering, så outer vokser utover og hull krymper innover for ekte font-weight-effekt)
+- **Brush / tegne-modus** i `app/src/lib/brushStroke.js` — `strokeToPolygons` med DP-forenkling (epsilon = 15% av tykkelse), lukket-deteksjon (start/slutt innenfor 1.5× tykkelse → outer + inner annulus), elliptisk pensel rotert 35° for kalligrafi
+- **Boolean-union** i `app/src/lib/glyphUnion.js` — bruker `polygon-clipping`-biblioteket. `editorPointsToRings` flatener M/L/C-segmenter (12 samples pr cubic), `ringsToPolygons` klassifiserer outer/hole via signed area i y-up font-units, `orientPolygonRings` sorterer brush-strøkenes ringer etter abs(area) så største alltid er outer (kritisk — ellers blir CW-tegnede lukkede former invertert)
 - Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
+- **Glyf-fra-foto-flyt**: `GlyphPhotoDialog.vue` har tre faser — kamera, crop, preview. I preview-fasen kjører tracingen internt, viser cropet bilde + sporet glyf side ved side med statusmelding fra `meta.warnings`, så bekreftelse
 
 ### Delte komponenter
 
@@ -92,7 +95,8 @@ npm run build       # Produksjonsbygg
 - Tailwind CSS 4 for styling (ingen separat config-fil, bruker `@import "tailwindcss"`)
 - Alle bildealgoritmer er eksportert individuelt slik at de kan enhetstestes
 - Tester ligger ved siden av kildekoden (`*.test.js`)
-- 124 tester totalt (pathFilters, imageToSvg, colorization)
+- 143 tester totalt (pathFilters, imageToSvg, colorization)
+- `polygon-clipping` (^0.15.7) brukt for boolean-union ved brush-commit — eneste 3.-parts geometri-bibliotek i prosjektet
 
 ## Versjonshåndtering
 
@@ -103,3 +107,12 @@ Release notes i AboutView.vue er **hovedkanalen** for brukernes oversikt over en
 ## Påskeegg (ikke del av release notes)
 
 Når Sort hull-modus har absorbert alle sirkler til én eneste stor sirkel som har vokst, aktiveres solsystem-modus som beskrevet i arkitektur-seksjonen. Dette er en bonus for brukere som leker nok med effekten. **Dokumenter ikke dette i release notes** — det er meningen å være en oppdagelse.
+
+## Lærdommer fra 5.0-pakken (30. april 2026)
+
+Sesjonen som ga oss versjon 5.0.1, alt fokusert på webfont-sporet:
+
+- **Auto-save-watcher må håndtere tom-tilstand.** Tøm-knappen virket ikke fordi watcheren bailet ut på tom `points`-array, så `glyphs[char].pathD` beholdt opprinnelig path. Brush-commit konkatenerte `prev.pathD + newD` og resurrected gamle vektorer. Fix: persister `pathD = ''` med `status = 'empty'` også.
+- **CW-tegnede lukkede sirkler inverterte union-resultatet.** `strokeToPolygons` returnerte alltid `[outer, inner]` i samme array-rekkefølge, men når brukeren tegnet med klokken byttet de geometriske rollene plass. Fix: `orientPolygonRings` sorterer etter abs(signedArea) descending, så største er alltid outer uavhengig av tegne-retning.
+- **PWA-cache med service worker** kan vise gammel kode etter deploy. Sjekk `dist/sw.js` og bump versjon for å trigge re-fetch.
+- **Worktree-deploy med signed commits.** Sesjonens signing-server returnerte 400 "missing source" når commits ble laget i `/tmp`-worktree. Eksisterende gh-pages-commits er usignerte (`Deploy <deploy@svg-insights>`), så vi følger samme mønster med `git -c commit.gpgsign=false`.

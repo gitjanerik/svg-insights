@@ -133,17 +133,30 @@ function closeRing(ring) {
   return arr
 }
 
-/** Ensure ring orientation: index 0 is CCW (outer), rest are CW (holes).
- *  Reverses the {x,y}-array in place when needed. */
+/** Build a polygon-clipping-style Polygon: rings sorted so the largest area
+ *  is the outer (index 0, CCW), and any remaining rings are holes (CW).
+ *
+ *  Sorting by area is important — the brush emits two rings for a closed
+ *  stroke, but their order in the array depends on which direction the user
+ *  drew the centerline. Without this sort, a clockwise-drawn loop puts the
+ *  inner ring at index 0 and confuses polygon-clipping into treating the
+ *  small ring as outer and the big one as hole, producing broken unions. */
 function orientPolygonRings(rings) {
-  const out = []
-  for (let i = 0; i < rings.length; i++) {
-    const r = rings[i]
+  const enriched = []
+  for (const r of rings) {
     if (!r || r.length < 3) continue
-    const a = signedArea(r)
+    const sa = signedArea(r)
+    enriched.push({ ring: r, signed: sa, abs: Math.abs(sa) })
+  }
+  enriched.sort((a, b) => b.abs - a.abs)
+
+  const out = []
+  for (let i = 0; i < enriched.length; i++) {
     const wantOuter = i === 0
-    const isOuter   = a >= 0
-    const oriented  = wantOuter === isOuter ? r : r.slice().reverse()
+    const isOuter   = enriched[i].signed >= 0
+    const oriented  = wantOuter === isOuter
+      ? enriched[i].ring
+      : enriched[i].ring.slice().reverse()
     out.push(closeRing(oriented))
   }
   return out
