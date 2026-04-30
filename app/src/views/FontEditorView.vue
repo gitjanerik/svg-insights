@@ -631,6 +631,8 @@ function backToOverview() {
     <GlyphPhotoDialog
       :open="photoDialogOpen"
       :char="selectedChar || ''"
+      :metrics="fontMetrics"
+      :settings="fontSettings"
       @capture="dataUrl => { photoDialogOpen = false; handlePhotoCapture(dataUrl) }"
       @cancel="photoDialogOpen = false" />
   </div>

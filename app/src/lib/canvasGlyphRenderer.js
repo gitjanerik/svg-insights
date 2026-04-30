@@ -149,8 +149,15 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
 
       const imageData = ctx.getImageData(0, 0, size, size)
       const binary    = binarize(imageData.data, size, size, BIN_THRESHOLD)
-      const contours  = traceAllContours(binary, size, size)
-      if (!contours.length) return resolve(null)
+      const allContours = traceAllContours(binary, size, size)
+      if (!allContours.length) {
+        return resolve({ pathD: '', advanceWidth: 0, meta: { reason: 'empty', warnings: ['Ingen kontur funnet — er bokstaven mørk nok?'] } })
+      }
+      const picked = pickGlyphContours(allContours, size, size)
+      const contours = picked.kept
+      if (!contours.length) {
+        return resolve({ pathD: '', advanceWidth: 0, meta: { ...picked.meta, warnings: ['Ingen tydelig glyf funnet i bildet'] } })
+      }
 
       const upm     = metrics.unitsPerEm || 1000
       const asc     = metrics.ascender   ||  800
@@ -180,13 +187,26 @@ export function traceGlyphFromPhoto(imageDataUrl, metrics, settings = {}) {
         if (rough) bezier = applyRoughness(bezier, rand, rough * 4)
         parts.push(subpathToD(bezier))
       }
-      if (!parts.length) return resolve(null)
+      if (!parts.length) {
+        return resolve({ pathD: '', advanceWidth: 0, meta: { ...picked.meta, warnings: ['Konturen er for kort til å bli en glyf'] } })
+      }
+      const warnings = []
+      if (picked.meta.otherOuterCount > 0) {
+        warnings.push(`${picked.meta.otherOuterCount} annet objekt funnet — bare det største brukes`)
+      }
+      if (!picked.meta.mainContainsCenter) {
+        warnings.push('Hovedformen ligger utenfor midten — sjekk at bokstaven er sentrert')
+      }
+      if (picked.meta.mainCoverage < 0.05) {
+        warnings.push('Bokstaven er ganske liten i bildet — beskjær tettere for bedre detaljer')
+      }
       resolve({
         pathD: parts.join(' '),
         advanceWidth: Math.round(upm * 0.6 * widthMul + (settings?.tracking || 0)),
+        meta: { ...picked.meta, warnings },
       })
     }
-    img.onerror = () => resolve(null)
+    img.onerror = () => resolve({ pathD: '', advanceWidth: 0, meta: { warnings: ['Klarte ikke lese bildet'] } })
     img.src = imageDataUrl
   })
 }
@@ -345,6 +365,82 @@ function ensureOrientation(pts, clockwise) {
     return pts.slice().reverse()
   }
   return pts
+}
+
+/**
+ * Filter raw contours to the most likely glyph + its holes. Drops noise specks,
+ * picture-frames, and stray ink the user accidentally captured. Returns both
+ * the kept contours (in tracing order: main outer first, then holes) and meta
+ * the UI can show as a "glyph found" pre-warning.
+ *
+ *   - signedArea > 0 in image space (y-down) means the path winds CW visually,
+ *     which traceAllContours produces for OUTER boundaries → that's our marker.
+ *   - Drop anything < 0.5% of the image (noise) or > 70% (likely the bezel).
+ *   - Pick the largest outer that overlaps the image center; warn if there
+ *     are sibling outers (multiple objects in frame).
+ *   - Holes are kept only when their bbox sits inside the chosen outer.
+ */
+export function pickGlyphContours(contours, w, h) {
+  const imgArea = w * h
+  const cx = w / 2, cy = h / 2
+  const tagged = contours.map(pts => {
+    const a    = Math.abs(signedArea(pts))
+    const bb   = bboxOf(pts)
+    const isOuter = signedArea(pts) > 0   // ensureOrientation made outers CW visually
+    const containsCenter = bb.minX <= cx && bb.maxX >= cx && bb.minY <= cy && bb.maxY >= cy
+    return { pts, area: a, bbox: bb, isOuter, containsCenter }
+  })
+
+  const filtered = tagged.filter(c => {
+    const ratio = c.area / imgArea
+    return ratio >= 0.005 && ratio <= 0.7
+  })
+  if (!filtered.length) {
+    return { kept: [], meta: { reason: 'empty', contourCount: tagged.length, droppedCount: tagged.length, warnings: [] } }
+  }
+
+  const outers = filtered.filter(c => c.isOuter)
+  if (!outers.length) {
+    return { kept: [], meta: { reason: 'no-outer', contourCount: tagged.length, droppedCount: tagged.length - filtered.length, warnings: [] } }
+  }
+
+  const centerOuters = outers.filter(c => c.containsCenter)
+  const main = (centerOuters.length ? centerOuters : outers)
+    .slice()
+    .sort((a, b) => b.area - a.area)[0]
+
+  const holes = filtered.filter(c => !c.isOuter && bboxInside(c.bbox, main.bbox))
+
+  return {
+    kept: [main, ...holes].map(c => c.pts),
+    meta: {
+      contourCount:       tagged.length,
+      keptCount:          1 + holes.length,
+      droppedCount:       tagged.length - (1 + holes.length),
+      otherOuterCount:    outers.length - 1,
+      mainArea:           main.area,
+      mainCoverage:       main.area / imgArea,
+      mainContainsCenter: main.containsCenter,
+      holeCount:          holes.length,
+      warnings:           [],
+    },
+  }
+}
+
+function bboxOf(pts) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+function bboxInside(inner, outer) {
+  return inner.minX >= outer.minX && inner.maxX <= outer.maxX
+      && inner.minY >= outer.minY && inner.maxY <= outer.maxY
 }
 
 /**
