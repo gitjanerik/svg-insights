@@ -8,6 +8,7 @@ import {
 import { useGlyphEditor } from '../composables/useGlyphEditor.js'
 import { generateGlyphFromSystemFont, traceGlyphFromPhoto } from '../lib/canvasGlyphRenderer.js'
 import { polygonToBezier } from '../lib/bezierSmoothing.js'
+import { strokeToPolygon, polygonsToPathD } from '../lib/brushStroke.js'
 import GlyphPhotoDialog from '../components/GlyphPhotoDialog.vue'
 
 const router = useRouter()
@@ -105,6 +106,7 @@ function zoomOut()   { zoom.value = Math.max(0.3, zoom.value / 1.3) }
 function zoomReset() { zoom.value = 1; panX.value = 0; panY.value = 0 }
 
 function onSvgTouchStart(e) {
+  if (drawMode.value) return
   if (e.touches.length === 2) {
     const dx = e.touches[0].clientX - e.touches[1].clientX
     const dy = e.touches[0].clientY - e.touches[1].clientY
@@ -114,6 +116,7 @@ function onSvgTouchStart(e) {
   }
 }
 function onSvgTouchMove(e) {
+  if (drawMode.value) return
   if (e.touches.length === 2 && pinchStart.value) {
     const dx = e.touches[0].clientX - e.touches[1].clientX
     const dy = e.touches[0].clientY - e.touches[1].clientY
@@ -189,10 +192,104 @@ function onUp() { dragging.value = null }
 
 /** Deselect when user taps empty canvas (not on an anchor/handle). */
 function canvasTap(e) {
+  if (drawMode.value) return
   if (e.target.tagName === 'svg' || e.target.tagName === 'path') {
     editor.clearSelection()
   }
 }
+
+// ── Brush / draw mode ────────────────────────────────────────────────────
+
+const drawMode        = ref(false)
+const brushThickness  = ref(40)    // font-units along the major axis
+const brushRoundness  = ref(1.0)   // 0.2 = sharp calligraphy, 1.0 = round
+const brushAngleDeg   = 35
+const brushStrokes    = ref([])    // Array<{ points:[{x,y}], polygon:[{x,y}] }>
+const currentStroke   = ref(null)  // { points, polygon } while drawing
+
+function toggleDrawMode() {
+  drawMode.value = !drawMode.value
+  if (!drawMode.value) {
+    // Discard unfinished work if user just toggles off via the button
+    brushStrokes.value = []
+    currentStroke.value = null
+  }
+}
+
+function brushPointFromEvent(e) {
+  const { clientX, clientY } = e.touches ? (e.touches[0] || e.changedTouches[0]) : e
+  return screenToSvg(clientX, clientY)
+}
+
+function rebuildStrokePolygon(stroke) {
+  stroke.polygon = strokeToPolygon(
+    stroke.points,
+    brushThickness.value,
+    brushRoundness.value,
+    brushAngleDeg,
+  )
+}
+
+function onBrushDown(e) {
+  if (!drawMode.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  const p = brushPointFromEvent(e)
+  currentStroke.value = { points: [p], polygon: [] }
+}
+
+function onBrushMove(e) {
+  if (!drawMode.value || !currentStroke.value) return
+  e.preventDefault()
+  const p = brushPointFromEvent(e)
+  const last = currentStroke.value.points[currentStroke.value.points.length - 1]
+  // Skip near-duplicate samples to keep the polyline manageable
+  if (last && Math.hypot(p.x - last.x, p.y - last.y) < 4) return
+  currentStroke.value.points.push(p)
+  rebuildStrokePolygon(currentStroke.value)
+}
+
+function onBrushUp() {
+  if (!drawMode.value || !currentStroke.value) return
+  if (currentStroke.value.points.length >= 2) {
+    rebuildStrokePolygon(currentStroke.value)
+    brushStrokes.value.push(currentStroke.value)
+  }
+  currentStroke.value = null
+}
+
+function undoBrushStroke() {
+  if (currentStroke.value) {
+    currentStroke.value = null
+    return
+  }
+  brushStrokes.value.pop()
+}
+
+function commitBrushStrokes() {
+  if (!selectedChar.value) return
+  const polys = brushStrokes.value.map(s => s.polygon).filter(p => p.length >= 3)
+  if (!polys.length) {
+    drawMode.value = false
+    return
+  }
+  const newD = polygonsToPathD(polys)
+  const prev = glyphs[selectedChar.value]
+  // Append to the existing path so the user can refine via brush instead of
+  // replacing edited work. fill-rule="evenodd" handles overlaps cleanly.
+  const combined = prev?.pathD ? `${prev.pathD} ${newD}` : newD
+  setGlyphPath(selectedChar.value, combined, prev?.advanceWidth, 'edited')
+  editor.loadPath(selectedChar.value, combined)
+  brushStrokes.value = []
+  currentStroke.value = null
+  drawMode.value = false
+}
+
+const brushPathPreview = computed(() => {
+  const polys = brushStrokes.value.map(s => s.polygon).filter(p => p.length >= 3)
+  if (currentStroke.value?.polygon?.length >= 3) polys.push(currentStroke.value.polygon)
+  return polygonsToPathD(polys)
+})
 
 // ── Smooth-path helper for auto-traced polygons ──────────────────────────
 
@@ -471,12 +568,18 @@ function backToOverview() {
 
       <!-- Canvas -->
       <div class="flex-1 relative overflow-hidden"
-           @mousemove="onMove" @mouseup="onUp" @mouseleave="onUp"
-           @touchmove="onMove" @touchend="onUp" @touchcancel="onUp">
+           @mousemove="drawMode ? onBrushMove($event) : onMove($event)"
+           @mouseup="drawMode ? onBrushUp() : onUp()"
+           @mouseleave="drawMode ? onBrushUp() : onUp()"
+           @touchmove="drawMode ? onBrushMove($event) : onMove($event)"
+           @touchend="drawMode ? onBrushUp() : onUp()"
+           @touchcancel="drawMode ? onBrushUp() : onUp()">
         <svg ref="svgRoot" :viewBox="viewBox"
              @touchstart.passive="onSvgTouchStart"
              @touchmove.passive="onSvgTouchMove"
              @touchend="onSvgTouchEnd"
+             @mousedown="drawMode ? onBrushDown($event) : null"
+             @touchstart="drawMode ? onBrushDown($event) : null"
              @click="canvasTap"
              class="w-full h-full touch-none">
           <g ref="glyphGroup" :transform="`scale(1, -1)`">
@@ -495,15 +598,22 @@ function backToOverview() {
 
             <!-- Filled path preview -->
             <path v-if="editor.points.value.length"
-                  :d="editor.toPathD()" fill="#a78bfa30" stroke="none" fill-rule="evenodd" />
+                  :d="editor.toPathD()"
+                  :fill="drawMode ? '#a78bfa20' : '#a78bfa30'"
+                  stroke="none" fill-rule="evenodd" />
 
             <!-- Outline -->
-            <path v-if="editor.points.value.length"
+            <path v-if="editor.points.value.length && !drawMode"
                   :d="editor.toPathD()" fill="none" stroke="#c4b5fd" stroke-width="3"
                   vector-effect="non-scaling-stroke" />
 
+            <!-- Brush strokes preview (only in draw mode) -->
+            <path v-if="drawMode && brushPathPreview"
+                  :d="brushPathPreview" fill="#fbbf24" stroke="#f59e0b" stroke-width="2"
+                  vector-effect="non-scaling-stroke" fill-rule="evenodd" />
+
             <!-- Handle lines (for C curves) -->
-            <g v-for="(p, i) in editor.points.value" :key="'h'+i">
+            <g v-if="!drawMode" v-for="(p, i) in editor.points.value" :key="'h'+i">
               <template v-if="p.type === 'C'">
                 <line :x1="editor.points.value[(i-1+editor.points.value.length) % editor.points.value.length].x"
                       :y1="editor.points.value[(i-1+editor.points.value.length) % editor.points.value.length].y"
@@ -514,7 +624,7 @@ function backToOverview() {
             </g>
 
             <!-- Handle points -->
-            <g v-for="(p, i) in editor.points.value" :key="'cp'+i">
+            <g v-if="!drawMode" v-for="(p, i) in editor.points.value" :key="'cp'+i">
               <circle v-if="p.type === 'C'"
                       :cx="p.cp1x" :cy="p.cp1y" r="6" fill="transparent"
                       stroke="#c4b5fd80" stroke-width="1" vector-effect="non-scaling-stroke"
@@ -528,7 +638,7 @@ function backToOverview() {
             </g>
 
             <!-- Anchor points -->
-            <g v-for="(p, i) in editor.points.value" :key="'a'+i">
+            <g v-if="!drawMode" v-for="(p, i) in editor.points.value" :key="'a'+i">
               <circle :cx="p.x" :cy="p.y" r="10"
                       :fill="editor.selectedIdx.value === i ? '#fbbf24' : '#e5e7eb'"
                       :stroke="editor.selectedIdx.value === i ? '#f59e0b' : '#ffffff'"
@@ -552,9 +662,21 @@ function backToOverview() {
       <!-- Quick actions row -->
       <div class="shrink-0 overflow-x-auto scrollbar-none border-t border-white/10 bg-black/40">
         <div class="flex gap-2 px-3 py-2 w-max">
-          <button @click="photoDialogOpen = true"
+          <button @click="toggleDrawMode"
+                  :class="['shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs',
+                           drawMode
+                             ? 'border border-amber-400 bg-amber-400/20 text-amber-200'
+                             : 'border border-amber-400/40 text-amber-300 active:bg-amber-400/10']">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>
+            </svg>
+            {{ drawMode ? 'Avslutt tegning' : 'Tegn' }}
+          </button>
+          <button @click="photoDialogOpen = true" :disabled="drawMode"
                   class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg
-                         border border-amber-400/40 text-amber-300 text-xs active:bg-amber-400/10">
+                         border border-amber-400/40 text-amber-300 text-xs active:bg-amber-400/10
+                         disabled:opacity-30">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
@@ -592,15 +714,57 @@ function backToOverview() {
                   class="shrink-0 px-3 py-2 rounded-lg border border-white/10 text-white/70 text-xs active:bg-white/10">
             Tykkere
           </button>
-          <button @click="editor.thicken(-8)"
-                  class="shrink-0 px-3 py-2 rounded-lg border border-white/10 text-white/70 text-xs active:bg-white/10">
+          <button @click="editor.thicken(-8)" :disabled="drawMode"
+                  class="shrink-0 px-3 py-2 rounded-lg border border-white/10 text-white/70 text-xs active:bg-white/10
+                         disabled:opacity-30">
             Tynnere
           </button>
         </div>
       </div>
 
+      <!-- Brush panel — only in draw mode -->
+      <div v-if="drawMode"
+           class="shrink-0 border-t border-amber-400/30 bg-amber-500/5 px-4 py-3 space-y-2">
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] text-amber-300/80 w-20 shrink-0">Tykkelse</span>
+          <input v-model.number="brushThickness" type="range" min="8" max="120" step="2"
+                 class="flex-1 h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
+          <span class="text-[11px] text-amber-300 tabular-nums w-10 text-right">{{ brushThickness }}</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] text-amber-300/80 w-20 shrink-0">Rundhet</span>
+          <input v-model.number="brushRoundness" type="range" min="0.2" max="1.0" step="0.05"
+                 class="flex-1 h-1 accent-amber-400 bg-white/10 rounded-full appearance-none" />
+          <span class="text-[11px] text-amber-300 tabular-nums w-10 text-right">{{ brushRoundness.toFixed(2) }}</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 pt-1">
+          <button @click="undoBrushStroke"
+                  :disabled="!brushStrokes.length && !currentStroke"
+                  class="px-3 py-2.5 rounded-lg border border-white/15 text-xs text-white/80
+                         disabled:opacity-30 active:bg-white/10">
+            Angre strek
+          </button>
+          <button @click="toggleDrawMode"
+                  class="px-3 py-2.5 rounded-lg border border-white/10 text-xs text-white/60
+                         active:bg-white/10">
+            Avbryt
+          </button>
+          <button @click="commitBrushStrokes"
+                  :disabled="!brushStrokes.length"
+                  class="px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-400
+                         text-black text-xs font-semibold disabled:opacity-30
+                         active:scale-95 transition-transform">
+            Lagre {{ brushStrokes.length }} strek{{ brushStrokes.length === 1 ? '' : 'er' }}
+          </button>
+        </div>
+        <p class="text-[10px] text-white/40 text-center pt-0.5">
+          Tegn ved å dra fingeren over canvasen — pensel-vinkel 35° gir kalligrafisk preg ved lav rundhet
+        </p>
+      </div>
+
       <!-- Sticky bottom actions -->
-      <footer class="shrink-0 border-t border-white/10 bg-black/70 backdrop-blur-xl
+      <footer v-if="!drawMode"
+              class="shrink-0 border-t border-white/10 bg-black/70 backdrop-blur-xl
                      px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]
                      grid grid-cols-4 gap-2">
         <button @click="editor.addPointAfterSelected" :disabled="!editor.canAddPoint.value"
