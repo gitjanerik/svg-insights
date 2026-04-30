@@ -8,7 +8,7 @@ import {
 import { useGlyphEditor } from '../composables/useGlyphEditor.js'
 import { generateGlyphFromSystemFont, traceGlyphFromPhoto } from '../lib/canvasGlyphRenderer.js'
 import { polygonToBezier } from '../lib/bezierSmoothing.js'
-import { strokeToPolygon, polygonsToPathD } from '../lib/brushStroke.js'
+import { strokeToPolygons, polygonsToPathD, polygonsToBezierPathD } from '../lib/brushStroke.js'
 import GlyphPhotoDialog from '../components/GlyphPhotoDialog.vue'
 
 const router = useRouter()
@@ -204,13 +204,13 @@ const drawMode        = ref(false)
 const brushThickness  = ref(40)    // font-units along the major axis
 const brushRoundness  = ref(1.0)   // 0.2 = sharp calligraphy, 1.0 = round
 const brushAngleDeg   = 35
-const brushStrokes    = ref([])    // Array<{ points:[{x,y}], polygon:[{x,y}] }>
-const currentStroke   = ref(null)  // { points, polygon } while drawing
+// Stroke shape: { points:[{x,y}], polygons:Polygon[], isClosed:boolean }
+const brushStrokes    = ref([])
+const currentStroke   = ref(null)
 
 function toggleDrawMode() {
   drawMode.value = !drawMode.value
   if (!drawMode.value) {
-    // Discard unfinished work if user just toggles off via the button
     brushStrokes.value = []
     currentStroke.value = null
   }
@@ -221,13 +221,15 @@ function brushPointFromEvent(e) {
   return screenToSvg(clientX, clientY)
 }
 
-function rebuildStrokePolygon(stroke) {
-  stroke.polygon = strokeToPolygon(
+function rebuildStroke(stroke) {
+  const r = strokeToPolygons(
     stroke.points,
     brushThickness.value,
     brushRoundness.value,
     brushAngleDeg,
   )
+  stroke.polygons = r.polygons
+  stroke.isClosed = r.isClosed
 }
 
 function onBrushDown(e) {
@@ -235,7 +237,7 @@ function onBrushDown(e) {
   e.preventDefault()
   e.stopPropagation()
   const p = brushPointFromEvent(e)
-  currentStroke.value = { points: [p], polygon: [] }
+  currentStroke.value = { points: [p], polygons: [], isClosed: false }
 }
 
 function onBrushMove(e) {
@@ -246,13 +248,13 @@ function onBrushMove(e) {
   // Skip near-duplicate samples to keep the polyline manageable
   if (last && Math.hypot(p.x - last.x, p.y - last.y) < 4) return
   currentStroke.value.points.push(p)
-  rebuildStrokePolygon(currentStroke.value)
+  rebuildStroke(currentStroke.value)
 }
 
 function onBrushUp() {
   if (!drawMode.value || !currentStroke.value) return
   if (currentStroke.value.points.length >= 2) {
-    rebuildStrokePolygon(currentStroke.value)
+    rebuildStroke(currentStroke.value)
     brushStrokes.value.push(currentStroke.value)
   }
   currentStroke.value = null
@@ -268,15 +270,22 @@ function undoBrushStroke() {
 
 function commitBrushStrokes() {
   if (!selectedChar.value) return
-  const polys = brushStrokes.value.map(s => s.polygon).filter(p => p.length >= 3)
-  if (!polys.length) {
+  const allPolys = []
+  for (const s of brushStrokes.value) {
+    for (const poly of s.polygons) {
+      if (poly.length >= 3) allPolys.push(poly)
+    }
+  }
+  if (!allPolys.length) {
     drawMode.value = false
     return
   }
-  const newD = polygonsToPathD(polys)
+  // Smooth + Bézier-fy at commit time so the saved glyph carries cubic
+  // curves rather than dense polylines (huge anchor count → laggy editor).
+  const newD = polygonsToBezierPathD(allPolys, polygonToBezier, 1)
   const prev = glyphs[selectedChar.value]
-  // Append to the existing path so the user can refine via brush instead of
-  // replacing edited work. fill-rule="evenodd" handles overlaps cleanly.
+  // Append to existing path so the brush can refine, not erase, prior work.
+  // fill-rule="evenodd" cleans up any overlap between strokes/glyph.
   const combined = prev?.pathD ? `${prev.pathD} ${newD}` : newD
   setGlyphPath(selectedChar.value, combined, prev?.advanceWidth, 'edited')
   editor.loadPath(selectedChar.value, combined)
@@ -286,9 +295,21 @@ function commitBrushStrokes() {
 }
 
 const brushPathPreview = computed(() => {
-  const polys = brushStrokes.value.map(s => s.polygon).filter(p => p.length >= 3)
-  if (currentStroke.value?.polygon?.length >= 3) polys.push(currentStroke.value.polygon)
+  const polys = []
+  for (const s of brushStrokes.value) {
+    for (const p of s.polygons) if (p.length >= 3) polys.push(p)
+  }
+  if (currentStroke.value?.polygons) {
+    for (const p of currentStroke.value.polygons) if (p.length >= 3) polys.push(p)
+  }
   return polygonsToPathD(polys)
+})
+
+const closedHintCount = computed(() => {
+  let n = 0
+  for (const s of brushStrokes.value) if (s.isClosed) n++
+  if (currentStroke.value?.isClosed) n++
+  return n
 })
 
 // ── Smooth-path helper for auto-traced polygons ──────────────────────────
@@ -758,7 +779,14 @@ function backToOverview() {
           </button>
         </div>
         <p class="text-[10px] text-white/40 text-center pt-0.5">
-          Tegn ved å dra fingeren over canvasen — pensel-vinkel 35° gir kalligrafisk preg ved lav rundhet
+          <template v-if="closedHintCount > 0">
+            <span class="text-emerald-300">●</span>
+            {{ closedHintCount }} lukket form{{ closedHintCount === 1 ? '' : 'er' }}
+            funnet — slutt nær start for å lage en ring
+          </template>
+          <template v-else>
+            Slutt nær startpunktet for å lage en lukket form (eks. en O)
+          </template>
         </p>
       </div>
 
