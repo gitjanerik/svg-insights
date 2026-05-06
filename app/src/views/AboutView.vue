@@ -112,6 +112,26 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 5.1.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">5.1.0</span>
+                <span class="text-white/40">&mdash; Turkart-sporet: Vardåsen i Asker som SVG med GPS og kompass</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Nytt turkart-spor: 4 × 4 km utsnitt rundt Vardåsen i Asker, hentet fra OpenStreetMap og reprojisert til UTM 32N (1 SVG-enhet = 1 m)</li>
+                <li>Pinch-zoom og pan, lag-toggling (skog, vann, vei, sti, bygninger m.fl.), mørk modus med eget fargetema</li>
+                <li>GPS-posisjon via <code>watchPosition</code> med nøyaktighetsring og retningskile når du beveger deg</li>
+                <li>Kompass-rose med valgfri pek mot ekte nord (DeviceOrientation, krever brukersamtykke på iOS)</li>
+                <li>Skala-bar (auto-tilpasser 100 m / 200 m / 500 m / 1 km) og ekvidistanse-indikator</li>
+                <li>SVG-en bygges av en GitHub Action — kart-data oppdateres automatisk ved endringer i kildescriptet</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 5.0.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-white/40" />

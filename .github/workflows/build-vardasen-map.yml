@@ -1,39 +1,70 @@
-name: Build Vardåsen map SVG
+name: Build map and deploy
 
 on:
   workflow_dispatch:
   push:
     branches:
       - claude/svg-map-investigation-kY7NE
-    paths:
-      - 'app/scripts/build-vardasen-svg.js'
-      - '.github/workflows/build-vardasen-map.yml'
 
 permissions:
   contents: write
 
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Build SVG from Overpass
+      - name: Install deps
+        working-directory: app
+        run: npm ci
+
+      - name: Generate Vardåsen SVG from OSM
         working-directory: app
         run: node scripts/build-vardasen-svg.js
 
-      - name: Commit SVG if changed
+      - name: Commit SVG to feature branch if changed
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/public/maps/vardasen.svg
-          if git diff --staged --quiet; then
-            echo "Ingen endringer i vardasen.svg"
-          else
+          if ! git diff --staged --quiet; then
             git commit -m "kart: oppdater vardasen.svg fra OSM (auto)"
-            git push
+            git push origin HEAD:claude/svg-map-investigation-kY7NE
+          fi
+
+      - name: Build app
+        working-directory: app
+        run: npm run build
+
+      - name: Deploy to gh-pages
+        run: |
+          set -e
+          git fetch origin gh-pages || true
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/ghp gh-pages
+          else
+            git worktree add --orphan -b gh-pages /tmp/ghp
+          fi
+          find /tmp/ghp -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -r app/dist/. /tmp/ghp/
+          touch /tmp/ghp/.nojekyll
+          cp /tmp/ghp/index.html /tmp/ghp/404.html
+          cd /tmp/ghp
+          git add -A
+          if ! git diff --staged --quiet; then
+            git -c commit.gpgsign=false commit \
+              --author="Deploy <deploy@svg-insights>" \
+              -m "deploy: v5.1.0 turkart-spor"
+            git push -u origin gh-pages
           fi

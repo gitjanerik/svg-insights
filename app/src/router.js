@@ -9,6 +9,7 @@ const routes = [
   { path: '/font-chooser',  name: 'font-chooser', component: () => import('./views/FontChooserView.vue') },
   { path: '/font-editor',   name: 'font-editor',  component: () => import('./views/FontEditorView.vue') },
   { path: '/font-preview',  name: 'font-preview', component: () => import('./views/FontPreviewView.vue') },
+  { path: '/kart',          name: 'kart',         component: () => import('./views/MapView.vue') },
 ]
 
 export default createRouter({

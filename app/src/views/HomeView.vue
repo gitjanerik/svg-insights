@@ -90,6 +90,35 @@ async function onInstallClick() {
             </svg>
           </button>
 
+          <button @click="router.push('/kart')"
+                  class="group relative w-full rounded-2xl p-4 flex items-center gap-4
+                         bg-gradient-to-br from-emerald-900/40 via-teal-900/20 to-transparent
+                         border border-emerald-400/25
+                         active:scale-[0.98] transition-all duration-200 text-left">
+            <div class="shrink-0 w-14 h-14 rounded-xl bg-emerald-500/15 border border-emerald-400/25
+                        flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-emerald-300"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+                <path d="M9 4 V18 M15 6 V20"/>
+              </svg>
+            </div>
+            <div class="flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-white font-semibold">Vis turkart</span>
+                <span class="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded
+                             bg-emerald-400/20 text-emerald-200 font-medium">Nytt</span>
+              </div>
+              <div class="text-[11px] text-white/50 mt-0.5">Vardåsen i Asker — pinch, zoom, GPS</div>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white/30"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+
           <button @click="router.push('/font-chooser')"
                   class="group relative w-full rounded-2xl p-4 flex items-center gap-4
                          bg-gradient-to-br from-amber-900/40 via-yellow-900/20 to-transparent
