@@ -36,8 +36,9 @@ const router = useRouter()
           SVG Insights utforsker hva man kan gjøre med vektorgrafikk. Tre spor:
           <strong class="text-white/70">SVG-tegning</strong> fra bilde,
           <strong class="text-white/70">webfont</strong> fra inspirasjons-Google-fonter, og
-          <strong class="text-white/70">3D-skann</strong> av et rom fra et kort videoopptak.
-          Alt prosesseres i nettleseren med ren JavaScript over typed arrays.
+          <strong class="text-white/70">digitalt selvbilde</strong> &mdash; 3D-selfie sveipet til
+          stilisert pop-art-portrett. Alt prosesseres i nettleseren med ren JavaScript over
+          typed arrays.
         </p>
         <p class="text-sm text-white/40 mt-2">Lansert 8. april 2026</p>
       </section>
@@ -113,10 +114,38 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.1.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.1.0</span>
+                <span class="text-white/40">&mdash; Digitalt selvbilde: 3D-selfie i Simpsons/Warhol-stil</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Tredje hovedfunksjon omdøpt og refaktorert</strong> &mdash; «Skann rommet» blir til «Digitalt selvbilde» med 3D-selfie-undertekst. Selfie-kamera + sveip fra venstre til høyre øre genererer et stilisert SVG-portrett i pop-art-stil</li>
+                <li><strong class="text-white/60">Ansiktsregion-deteksjon</strong> via YCbCr hudtone-segmentering + connected-components labeling. Finner største plausible ansiktsregion i øvre del av frame, robust på tvers av hudtoner</li>
+                <li><strong class="text-white/60">6-punkts landemerker</strong> via deterministisk lokal-min/maks-søk innenfor face bbox: øyne (mørkest i øvre 50%), nese (lysest sentralt), munn (mørkeste rad nedre 1/3), panne og hake fra bbox-grenser</li>
+                <li><strong class="text-white/60">2-frame DLT-triangulering</strong> med IMU-sveip-vinkel — kameraposene konstrueres direkte fra rotasjons-buen, så vi unngår hele essential-matrix-dekomposisjonen som plaget romskan-versjonen</li>
+                <li><strong class="text-white/60">Skala-invariante proporsjoner</strong> normalisert mot intra-okulær avstand &mdash; modellen blir uavhengig av hvor stort ansiktet var i bildet</li>
+                <li><strong class="text-white/60">Aksessoir-deteksjon</strong> for hår, briller og skjegg som boolske observasjoner. Ingen forsøk på fargesampling — vi bruker kuratert palett uansett</li>
+                <li><strong class="text-white/60">Parametrisk 3D-hodemodell</strong> med 30 vertices i 5 horisontale skiver (panne, øyne, nese, munn, hake), pluss separate lag for øyenbryn, øyne, nese, munn, hår, briller, skjegg. Alt definert i 3D for senere STL-eksport</li>
+                <li><strong class="text-white/60">Simpsons/Warhol-stilisert SVG-render</strong> med 10 kuraterte fargepaletter: Klassisk, Homer, Lisa, Marge, Krusty, Marilyn, Pop, Mint, Banan, Neon. Knall fyll, sorte konturer, ingen forsøk på realisme</li>
+                <li><strong class="text-white/60">Tilfeldig-knapp</strong> som veksler palett &mdash; samme prinsipp som fargeleggings-funksjonen i SVG-sporet</li>
+                <li><strong class="text-white/60">Drag-rotasjon</strong> rundt vertikalaksen med idle-auto-rotasjon etter 4 sek inaktivitet</li>
+                <li><strong class="text-white/60">Live ansikts-deteksjon</strong> under preview &mdash; opptaksknappen er disabled til ansiktet er sentrert i ovalen, så bruker får øyeblikkelig feedback før opptak starter</li>
+                <li>Den gamle generelle SfM-pipelinen (Harris, Lucas-Kanade, k-NN-trådramme) er beholdt som lib-filer for framtidig «ekspert-modus», men ikke koblet inn lenger &mdash; for ustabil på tilfeldige motiv</li>
+                <li>Ruten <code>/skann-rommet</code> redirecter til <code>/digitalt-selvbilde</code> så eksisterende lenker fortsatt fungerer</li>
+                <li>55 nye tester for ansiktsdeteksjon, landemerker, triangulering, aksessoirer, modell-bygging, SVG-rendering og palett-system &mdash; 246 tester totalt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.0.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.0.1</span>
                 <span class="text-white/40">&mdash; Skann rommet: pipeline-diagnose og median-relativt dybde-filter</span>

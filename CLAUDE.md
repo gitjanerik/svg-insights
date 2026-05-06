@@ -6,9 +6,9 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 
 1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
-3. **Skann rommet** — konverterer 3 sek videoopptak + IMU-data til en interaktiv 3D-trådramme i SVG, via Harris-features + Lucas-Kanade-tracking + DLT-triangulering
+3. **Digitalt selvbilde** — 3D-selfie: brukeren sveiper telefonen fra venstre til høyre øre over 3 sek, og får tilbake et stilisert SVG-portrett i Simpsons/Warhol-stil. Pipeline: hudtone-segmentering for face bbox → 6-punkts landemerke-deteksjon (deterministisk min/max-søk) → 2-frame DLT-triangulering med IMU-sveip-vinkel → parametrisk hodemodell → palett-stilisert SVG-render
 
-Gjeldende versjon: **6.0.0** (release 6. mai 2026).
+Gjeldende versjon: **6.1.0** (release 6. mai 2026).
 
 ## Viktige kommandoer
 
@@ -44,16 +44,18 @@ npm run build       # Produksjonsbygg
 - Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
 - **Glyf-fra-foto-flyt**: `GlyphPhotoDialog.vue` har tre faser — kamera, crop, preview. I preview-fasen kjører tracingen internt, viser cropet bilde + sporet glyf side ved side med statusmelding fra `meta.warnings`, så bekreftelse
 
-### Skann rommet (Romskan-sporet)
+### Digitalt selvbilde (3D-selfie-sporet)
 
-- **Datapipeline** i `app/src/lib/videoFrameCapture.js` — `recordFrames` henter 15 fps luma-frames (Float32, Rec. 709) over 3 sek via en offscreen-canvas. `useMotionRecorder.js` logger `devicemotion`/`deviceorientation` med felles tids-basis (`performance.now()`) og iOS-permission-flyt
-- **Feature-deteksjon** i `app/src/lib/featureDetection.js` — sentral-differanser → Harris-respons (`R = det(M) - k·trace(M)²`, k=0.04) → non-max-suppression i (2r+1)²-nabolag → top-N med adaptiv terskel (`qualityLevel · maxR`)
-- **Optical flow** i `app/src/lib/opticalFlow.js` — Lucas-Kanade med iterativ refinement og bilineær sampling. `buildTracks` propagerer features gjennom alle frames og dropper ved residual > 0.3 eller dårlig konditionert struktur-matrise. Per-feature kun ett `trackFeature`-kall per frame
-- **Pose-fusjon** i `app/src/lib/motionFusion.js` — `rotationMatrixFromEuler` med ZXY-konvensjon (W3C: alpha/beta/gamma → Rz·Rx·Ry). `buildFramePoses` returnerer relativ rotasjon fra frame 0 (`R_0^T · R_i`). Translasjon estimert fra gjennomsnitts-flow-retning, lineært økende fra frame 0 til frame N
-- **Triangulering** i `app/src/lib/triangulation.js` — DLT med 4×4 Jacobi-eigenvalue på `A^T·A`. `triangulatePoint` tar [{P, u, v}]-observasjoner og finner egenvektor til minste egenverdi. Intrinsics estimeres fra antatt 65° horisontal-FOV. Outliers droppes på dybde og median-avstand fra senter
-- **Trådramme** i `app/src/lib/wireframeBuilder.js` — k-NN i 3D (k=5), dedup via `min*N+max`-nøkkel i Map, median-filtrering med `maxEdgeFactor: 1.8` for å fjerne edderkopp-nett-kanter
-- **SVG-eksport** i `app/src/lib/wireframeToSvg.js` — ortografisk projeksjon fra valgt rotY, kun `viewBox` (samme konvensjon som `imageToSvg`). Animert variant injiserer `<animateTransform>` for kontinuerlig rotasjon
-- Visning: `RoomScanView.vue` orkestrerer hele flyten (idle → recording → processing-stadier → result) med drag-rotasjon, idle-auto-rotasjon etter 5 sek, skala-kalibrering ved tapp av to punkter
+- **Datapipeline** i `app/src/lib/videoFrameCapture.js` — `recordFrames` henter 15 fps frames over 3 sek; lagrer luma (Float32, Rec. 709) for alle, men kun RGBA for første og siste frame (de vi gjør hudtone-deteksjon på). `useMotionRecorder.js` logger IMU med felles tids-basis (`performance.now()`) og iOS-permission-flyt
+- **Ansiktsregion-deteksjon** i `app/src/lib/faceLandmarks.js` — YCbCr hudtone-segmentering (77 ≤ Cb ≤ 127, 133 ≤ Cr ≤ 173, 60 ≤ Y ≤ 240) → 4-connected components → største kandidat med ansikts-aspect-ratio (0.5-1.6) i øvre 75% av frame
+- **6-punkts landemerker** i samme fil — `findLandmarks` søker innenfor face bbox med deterministisk min/max-søk: øyne (mørkest i øvre 50% delt midt), nese-tipp (lysest sentralt), munn (mørkeste rad nedre 1/3), panne og hake fra bbox-grenser
+- **Triangulering** i `app/src/lib/landmarkTriangulation.js` — `buildSweepPose` konstruerer kameraposer for sveip rundt origo (Y-akse-rotasjon), `triangulateLandmarks` bruker DLT mellom første og siste frame. `deriveProportions` normaliserer alt mot intra-okulær avstand så modellen blir skala-invariant
+- **Aksessoir-deteksjon** i `app/src/lib/accessoryDetection.js` — kun PRESENS, ikke farger: `detectHair` (ikke-hud over panne), `detectGlasses` (mørkt bånd på øye-høyde), `detectBeard` (ikke-hud + mørk i nedre ansikt). Fargesampling droppet bevisst — palett brukes uansett
+- **Parametrisk 3D-hodemodell** i `app/src/lib/portraitModel.js` — 30 vertices i 5 horisontale skiver (panne, øye-nivå, nese, munn, hake) skalert mot målte proporsjoner. Separate lag for øyenbryn, øyne, nese, munn, hår, briller, skjegg. Alle som 3D-vertices for senere STL-eksport
+- **Palett-system** i `app/src/lib/portraitPalettes.js` — 10 kuraterte Simpsons/Warhol-paletter (Klassisk, Homer, Lisa, Marge, Krusty, Marilyn, Pop, Mint, Banan, Neon). `pickRandomPalette` ekskluderer nåværende
+- **SVG-render** i `app/src/lib/portraitToSvg.js` — convex hull av roterte hodevertices → glatt lukket bane via mid-point-tangenter, alle indre features projisert direkte. Ingen forsøk på realisme — knall fyll, sorte konturer, kun viewBox
+- Visning: `PortraitView.vue` (rute `/digitalt-selvbilde`, gammel `/skann-rommet` redirecter dit). Front-kamera-preview med ansikts-oval-overlay, opptaksknapp disabled til ansikt detektert. Drag-rotasjon med idle-auto-rotasjon etter 4 sek, palett-bytte via Tilfeldig-knapp.
+- **Den gamle generelle SfM-pipelinen** (`featureDetection.js`, `opticalFlow.js`, `motionFusion.js`, `triangulation.js`, `wireframeBuilder.js`, `wireframeToSvg.js`) er beholdt som lib-filer for framtidig «ekspert-modus», men ikke koblet inn — for ustabil på tilfeldige motiv
 
 ### Delte komponenter
 

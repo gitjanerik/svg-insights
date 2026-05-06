@@ -112,7 +112,7 @@ async function onInstallClick() {
             </svg>
           </button>
 
-          <button @click="router.push('/skann-rommet')"
+          <button @click="router.push('/digitalt-selvbilde')"
                   class="group relative w-full rounded-2xl p-4 flex items-center gap-4
                          bg-gradient-to-br from-emerald-900/40 via-teal-900/25 to-transparent
                          border border-emerald-400/25
@@ -122,17 +122,16 @@ async function onInstallClick() {
               <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-emerald-300"
                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
                    stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 7l9-4 9 4-9 4-9-4z"/>
-                <path d="M3 12l9 4 9-4"/>
-                <path d="M3 17l9 4 9-4"/>
+                <circle cx="12" cy="9" r="4"/>
+                <path d="M5 21c0-3.866 3.134-7 7-7s7 3.134 7 7"/>
               </svg>
             </div>
             <div class="flex-1">
               <div class="flex items-center gap-2">
-                <span class="text-white font-semibold">Skann rommet</span>
+                <span class="text-white font-semibold">Digitalt selvbilde</span>
                 <span class="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">Ny</span>
               </div>
-              <div class="text-[11px] text-white/50 mt-0.5">Kort video → 3D-trådramme i SVG</div>
+              <div class="text-[11px] text-white/50 mt-0.5">3D-selfie: sveip ansiktet og få et stilisert SVG-portrett</div>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white/30"
                  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

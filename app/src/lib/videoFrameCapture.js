@@ -8,11 +8,16 @@ export function createFrameGrabber(videoEl, { width = 320, height = 240 } = {}) 
   canvas.height = height
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
 
-  function grab(timestamp) {
+  function grab(timestamp, { includeRgba = false } = {}) {
     ctx.drawImage(videoEl, 0, 0, width, height)
     const imageData = ctx.getImageData(0, 0, width, height)
     const luma = rgbaToLuminance(imageData.data, width, height)
-    return { timestamp, width, height, luma }
+    const out = { timestamp, width, height, luma }
+    if (includeRgba) {
+      // Kopier RGBA — uten kopi vil senere grabs overskrive samme buffer
+      out.rgba = new Uint8ClampedArray(imageData.data)
+    }
+    return out
   }
 
   return { grab, width, height }
@@ -29,11 +34,19 @@ export function rgbaToLuminance(rgba, width, height) {
 
 // Spiller av et opptak: kaller onFrame med jevne mellomrom over duration ms,
 // returnerer Promise som resolver med array av frames.
-export function recordFrames({ grabber, durationMs = 3000, fps = 15, onProgress }) {
+//
+// rgbaFrames: array av frame-indekser (0-basert) hvor vi også bør lagre RGBA.
+// Default er kun første og siste frame, slik at vi kan kjøre RGBA-baserte
+// algoritmer på dem uten at hele opptaket okkuperer dobbel mengde minne.
+export function recordFrames({ grabber, durationMs = 3000, fps = 15, onProgress, rgbaFrames = null }) {
   return new Promise((resolve) => {
     const frames = []
     const intervalMs = 1000 / fps
     const start = performance.now()
+    const expectedTotal = Math.floor((durationMs / 1000) * fps)
+    const rgbaSet = rgbaFrames === null
+      ? new Set([0, expectedTotal - 1])
+      : new Set(rgbaFrames)
     let raf = null
 
     function tick() {
@@ -43,7 +56,8 @@ export function recordFrames({ grabber, durationMs = 3000, fps = 15, onProgress 
 
       if (expected > frames.length && elapsed < durationMs) {
         const t = now - start
-        frames.push(grabber.grab(t))
+        const includeRgba = rgbaSet.has(frames.length)
+        frames.push(grabber.grab(t, { includeRgba }))
         if (onProgress) onProgress(elapsed / durationMs, frames.length)
       }
 
