@@ -106,15 +106,32 @@ const router = useRouter()
         </p>
       </section>
 
-      <!-- Changelog -->
-      <section>
+      <!-- Changelog (skjult inntil videre — beholdes i kilden for fortsatt
+           oppdatering pr release. Versjonsnummer vises uansett øverst på siden) -->
+      <section v-if="false">
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 5.0.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-white/40" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">5.0.2</span>
+                <span class="text-white/40">&mdash; Endringslogg skjult fra About-siden</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Endringsloggen er ikke lenger synlig på <code>/about</code> — versjonsnummer vises fortsatt øverst på siden</li>
+                <li>Endringene oppdateres fortsatt i kildekoden ved hver release for ettertid</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 5.0.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">5.0.1</span>
                 <span class="text-white/40">&mdash; Webfont-pakken: tegne-modus, variable innstillinger og smartere editor</span>
