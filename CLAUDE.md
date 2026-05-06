@@ -2,12 +2,13 @@
 
 ## Hva er dette?
 
-SVG Insights er en Vue 3-mobilapp med to hovedfunksjoner:
+SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 
 1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
+3. **Skann rommet** — konverterer 3 sek videoopptak + IMU-data til en interaktiv 3D-trådramme i SVG, via Harris-features + Lucas-Kanade-tracking + DLT-triangulering
 
-Gjeldende versjon: **5.0.1** (release 30. april 2026).
+Gjeldende versjon: **6.0.0** (release 6. mai 2026).
 
 ## Viktige kommandoer
 
@@ -43,13 +44,25 @@ npm run build       # Produksjonsbygg
 - Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
 - **Glyf-fra-foto-flyt**: `GlyphPhotoDialog.vue` har tre faser — kamera, crop, preview. I preview-fasen kjører tracingen internt, viser cropet bilde + sporet glyf side ved side med statusmelding fra `meta.warnings`, så bekreftelse
 
+### Skann rommet (Romskan-sporet)
+
+- **Datapipeline** i `app/src/lib/videoFrameCapture.js` — `recordFrames` henter 15 fps luma-frames (Float32, Rec. 709) over 3 sek via en offscreen-canvas. `useMotionRecorder.js` logger `devicemotion`/`deviceorientation` med felles tids-basis (`performance.now()`) og iOS-permission-flyt
+- **Feature-deteksjon** i `app/src/lib/featureDetection.js` — sentral-differanser → Harris-respons (`R = det(M) - k·trace(M)²`, k=0.04) → non-max-suppression i (2r+1)²-nabolag → top-N med adaptiv terskel (`qualityLevel · maxR`)
+- **Optical flow** i `app/src/lib/opticalFlow.js` — Lucas-Kanade med iterativ refinement og bilineær sampling. `buildTracks` propagerer features gjennom alle frames og dropper ved residual > 0.3 eller dårlig konditionert struktur-matrise. Per-feature kun ett `trackFeature`-kall per frame
+- **Pose-fusjon** i `app/src/lib/motionFusion.js` — `rotationMatrixFromEuler` med ZXY-konvensjon (W3C: alpha/beta/gamma → Rz·Rx·Ry). `buildFramePoses` returnerer relativ rotasjon fra frame 0 (`R_0^T · R_i`). Translasjon estimert fra gjennomsnitts-flow-retning, lineært økende fra frame 0 til frame N
+- **Triangulering** i `app/src/lib/triangulation.js` — DLT med 4×4 Jacobi-eigenvalue på `A^T·A`. `triangulatePoint` tar [{P, u, v}]-observasjoner og finner egenvektor til minste egenverdi. Intrinsics estimeres fra antatt 65° horisontal-FOV. Outliers droppes på dybde og median-avstand fra senter
+- **Trådramme** i `app/src/lib/wireframeBuilder.js` — k-NN i 3D (k=5), dedup via `min*N+max`-nøkkel i Map, median-filtrering med `maxEdgeFactor: 1.8` for å fjerne edderkopp-nett-kanter
+- **SVG-eksport** i `app/src/lib/wireframeToSvg.js` — ortografisk projeksjon fra valgt rotY, kun `viewBox` (samme konvensjon som `imageToSvg`). Animert variant injiserer `<animateTransform>` for kontinuerlig rotasjon
+- Visning: `RoomScanView.vue` orkestrerer hele flyten (idle → recording → processing-stadier → result) med drag-rotasjon, idle-auto-rotasjon etter 5 sek, skala-kalibrering ved tapp av to punkter
+
 ### Delte komponenter
 
 - Vue-komposisjonsfunksjoner i `app/src/composables/`
   - `usePinchZoom.js` — pinch-to-zoom i vieweren
-  - `useDeviceMotion.js` — gyroskop (per nå ubrukt etter v2.1)
+  - `useDeviceMotion.js` — gyroskop til parallax-effekter (live-tilt)
+  - `useMotionRecorder.js` — tidsstemplet IMU-logging for romskan-sporet
   - `useHalftoneGame.js` — interaktivt rasterlag + solsystem-modus (se under)
-- Visninger: `HomeView.vue` (portal med to kort), `AboutView.vue` (felles med endringslogg)
+- Visninger: `HomeView.vue` (portal med tre kort: SVG, webfont, romskan), `AboutView.vue` (felles med endringslogg)
 
 ### Test-harness for font-kvalitet
 

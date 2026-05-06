@@ -3,6 +3,12 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { createFrameGrabber, recordFrames } from '../lib/videoFrameCapture.js'
 import { useMotionRecorder } from '../composables/useMotionRecorder.js'
+import { detectFeatures } from '../lib/featureDetection.js'
+import { buildTracks } from '../lib/opticalFlow.js'
+import { buildFramePoses, estimateTranslationDirection } from '../lib/motionFusion.js'
+import { defaultIntrinsics, triangulateTracks } from '../lib/triangulation.js'
+import { buildWireframe, distance3D } from '../lib/wireframeBuilder.js'
+import { wireframeToSvg } from '../lib/wireframeToSvg.js'
 
 const router = useRouter()
 
@@ -15,12 +21,30 @@ const phase = ref('idle')
 const progress = ref(0)
 const frameCount = ref(0)
 const errorMessage = ref('')
+const processingStage = ref('') // 'features' | 'tracking' | 'reconstructing' | 'done'
 
 const motion = useMotionRecorder()
 
-// Etter opptak (Fase 1 viser bare miniatyrer som bevis på at pipelinen funker):
+// Etter opptak:
 const capturedFrames = ref([])
 const motionSampleCount = ref(0)
+
+// Fase 2-output:
+const initialFeatures = ref([])
+const tracks = ref([])  // [{ id, points: [{frame, x, y}], alive }]
+
+// Fase 3-output:
+const points3D = ref([])  // [{ trackId, point: {X, Y, Z}, depth }]
+const sceneCenter = ref({ X: 0, Y: 0, Z: 0 })
+const sceneScale = ref(1)
+
+// Fase 4: trådramme + interaktivitet
+const edges = ref([])  // [{ a, b, length }]
+const calibrationMode = ref(false)
+const calibrationPicks = ref([])  // indekser i points3D
+const scaleFactor = ref(null)  // meter pr enhet (null = ukalibrert)
+const showCalibrationDialog = ref(false)
+const calibrationInput = ref('')
 
 // Live tilt-overlay basert på sensorenes siste sample (gjenbruker
 // motion-recorder-logikken for samplemønster, men her bruker vi en lett
@@ -106,52 +130,290 @@ async function handleStart() {
 
   phase.value = 'processing'
 
-  // Fase 1: ingen prosessering ennå. Vis et kort "fullført"-statusbilde og gå
-  // direkte til result. Senere faser plugger inn feature-tracking + 3D her.
-  await new Promise(r => setTimeout(r, 400))
+  // La UI få male før vi kjører tunge ops
+  await nextTick()
+
+  // 1) Feature-deteksjon i frame 0
+  processingStage.value = 'features'
+  await yieldFrame()
+  const f0 = frames[0]
+  initialFeatures.value = detectFeatures(f0.luma, f0.width, f0.height, {
+    maxFeatures: 200,
+    nmsRadius: 6,
+    margin: 8,
+  })
+
+  // 2) Track gjennom alle frames
+  processingStage.value = 'tracking'
+  await yieldFrame()
+  tracks.value = buildTracks(frames, initialFeatures.value, {
+    patchRadius: 5,
+    maxIter: 4,
+  })
+
+  // 3) Pose-rekonstruksjon + triangulering
+  processingStage.value = 'reconstructing'
+  await yieldFrame()
+
+  const poses = buildFramePoses(frames, motionSamples)
+  const tDir = estimateTranslationDirection(tracks.value)
+
+  // Lineært økende translasjon over frames (i unit-skala)
+  const N = frames.length
+  poses.forEach((p, i) => {
+    const s = N > 1 ? i / (N - 1) : 0
+    p.t = [tDir.x * s, tDir.y * s, tDir.z * s]
+  })
+
+  const K = defaultIntrinsics(frames[0].width, frames[0].height)
+  const triangulated = triangulateTracks(tracks.value, poses, K, { minObservations: 5 })
+
+  // Filtrer outliers og normaliser scenen for visning
+  const valid = triangulated.filter(r =>
+    r.point.Z > 0.3 && r.point.Z < 60 &&
+    isFinite(r.point.X) && isFinite(r.point.Y)
+  )
+
+  if (valid.length > 0) {
+    const cx = valid.reduce((s, r) => s + r.point.X, 0) / valid.length
+    const cy = valid.reduce((s, r) => s + r.point.Y, 0) / valid.length
+    const cz = valid.reduce((s, r) => s + r.point.Z, 0) / valid.length
+    sceneCenter.value = { X: cx, Y: cy, Z: cz }
+
+    // Skalering: median avstand fra senter
+    const distances = valid.map(r =>
+      Math.hypot(r.point.X - cx, r.point.Y - cy, r.point.Z - cz)
+    ).sort((a, b) => a - b)
+    const median = distances[Math.floor(distances.length / 2)]
+    sceneScale.value = median > 0.001 ? 1 / median : 1
+  }
+
+  points3D.value = valid
+
+  // Bygg trådramme (k-NN-kanter mellom 3D-punkter)
+  edges.value = buildWireframe(valid.map(v => v.point), {
+    k: 5,
+    maxEdgeFactor: 1.8,
+  })
+
+  processingStage.value = 'done'
+  await yieldFrame()
   phase.value = 'result'
+  startAutoRotate()
+}
+
+function yieldFrame() {
+  return new Promise(r => requestAnimationFrame(() => r()))
+}
+
+function nextTick() {
+  return new Promise(r => requestAnimationFrame(() => r()))
 }
 
 function reset() {
+  stopAutoRotate()
   phase.value = 'idle'
   progress.value = 0
   frameCount.value = 0
   capturedFrames.value = []
   motionSampleCount.value = 0
+  initialFeatures.value = []
+  tracks.value = []
+  points3D.value = []
+  edges.value = []
+  calibrationMode.value = false
+  calibrationPicks.value = []
+  scaleFactor.value = null
+  showCalibrationDialog.value = false
+  calibrationInput.value = ''
+  processingStage.value = ''
   errorMessage.value = ''
+  rotY.value = 0
 }
+
+// 3D-rotasjon for visning — drag overstyrer auto-rotasjon, idle-resume etter 5 sek
+const rotY = ref(0)
+let rotRaf = null
+let lastInteraction = 0
+const IDLE_RESUME_MS = 5000
+
+function startAutoRotate() {
+  stopAutoRotate()
+  let last = performance.now()
+  lastInteraction = 0
+  function loop(now) {
+    const dt = (now - last) / 1000
+    last = now
+    if (!isDragging.value && (lastInteraction === 0 || now - lastInteraction > IDLE_RESUME_MS)) {
+      rotY.value += dt * 0.35
+    }
+    rotRaf = requestAnimationFrame(loop)
+  }
+  rotRaf = requestAnimationFrame(loop)
+}
+function stopAutoRotate() {
+  if (rotRaf !== null) cancelAnimationFrame(rotRaf)
+  rotRaf = null
+}
+
+// Drag-rotasjon
+const isDragging = ref(false)
+let dragStartX = 0
+let dragStartRot = 0
+function onPointerDown(e) {
+  if (calibrationMode.value) return // tap-håndtering tar over
+  isDragging.value = true
+  dragStartX = e.clientX
+  dragStartRot = rotY.value
+  e.target.setPointerCapture?.(e.pointerId)
+}
+function onPointerMove(e) {
+  if (!isDragging.value) return
+  const dx = e.clientX - dragStartX
+  rotY.value = dragStartRot + dx * 0.012
+}
+function onPointerUp(e) {
+  if (!isDragging.value) return
+  isDragging.value = false
+  lastInteraction = performance.now()
+  e.target.releasePointerCapture?.(e.pointerId)
+}
+
+// Projiser 3D-punkter til 2D for SVG-rendering.
+// Y-akse-rotasjon (rundt vertikalen) gir hologram-effekten.
+const VIEWBOX_SIZE = 200
+const projectedPoints = computed(() => {
+  if (!points3D.value.length) return []
+  const cx = sceneCenter.value.X
+  const cy = sceneCenter.value.Y
+  const cz = sceneCenter.value.Z
+  const scale = sceneScale.value
+  const c = Math.cos(rotY.value)
+  const s = Math.sin(rotY.value)
+
+  const HALF = VIEWBOX_SIZE / 2
+  const DISPLAY = 70
+
+  return points3D.value.map((r, i) => {
+    const dx = (r.point.X - cx) * scale
+    const dy = (r.point.Y - cy) * scale
+    const dz = (r.point.Z - cz) * scale
+    const xr = dx * c - dz * s
+    const zr = dx * s + dz * c
+    return {
+      id: r.trackId,
+      index: i,
+      x: HALF + xr * DISPLAY,
+      y: HALF + dy * DISPLAY,
+      depth: zr,
+    }
+  })
+})
+
+// Kanter projiserts ved hjelp av punkt-indekser
+const projectedEdges = computed(() => {
+  if (!edges.value.length || !projectedPoints.value.length) return []
+  const pts = projectedPoints.value
+  return edges.value.map(e => ({
+    a: pts[e.a],
+    b: pts[e.b],
+    avgDepth: (pts[e.a].depth + pts[e.b].depth) / 2,
+  })).filter(e => e.a && e.b)
+})
+
+// Skala-kalibrering: bruker tapper to punkter, oppgir fysisk avstand
+function pickPoint(p) {
+  if (!calibrationMode.value) return
+  if (calibrationPicks.value.includes(p.index)) return
+  calibrationPicks.value.push(p.index)
+  if (calibrationPicks.value.length === 2) {
+    showCalibrationDialog.value = true
+    calibrationInput.value = ''
+  }
+}
+
+function applyCalibration() {
+  const meters = parseFloat(calibrationInput.value.replace(',', '.'))
+  if (!isFinite(meters) || meters <= 0) {
+    showCalibrationDialog.value = false
+    calibrationPicks.value = []
+    calibrationMode.value = false
+    return
+  }
+  const [iA, iB] = calibrationPicks.value
+  const pA = points3D.value[iA].point
+  const pB = points3D.value[iB].point
+  const sceneDist = distance3D(pA, pB)
+  if (sceneDist > 0) {
+    scaleFactor.value = meters / sceneDist
+  }
+  showCalibrationDialog.value = false
+  calibrationPicks.value = []
+  calibrationMode.value = false
+}
+
+function cancelCalibration() {
+  showCalibrationDialog.value = false
+  calibrationPicks.value = []
+  calibrationMode.value = false
+}
+
+const sceneExtent = computed(() => {
+  if (!points3D.value.length) return { x: 0, y: 0, z: 0 }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity
+  for (const r of points3D.value) {
+    const p = r.point
+    if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X
+    if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y
+    if (p.Z < minZ) minZ = p.Z; if (p.Z > maxZ) maxZ = p.Z
+  }
+  const f = scaleFactor.value ?? 1
+  return {
+    x: (maxX - minX) * f,
+    y: (maxY - minY) * f,
+    z: (maxZ - minZ) * f,
+  }
+})
+
+// SVG-eksport: bygg trådramme-SVG fra nåværende rotasjon og last ned
+function exportSvg(animated = false) {
+  const svgString = wireframeToSvg({
+    points: points3D.value.map(r => r.point),
+    edges: edges.value,
+    rotY: rotY.value,
+    background: '#0a0f0d',
+    pointColor: '#10b981',
+    edgeColor: '#34d399',
+    animateRotation: animated,
+    scaleCalibration: scaleFactor.value ? { factorMeters: scaleFactor.value } : null,
+  })
+  if (!svgString) return
+  const blob = new Blob([svgString], { type: 'image/svg+xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = animated ? 'romskan-roterende.svg' : 'romskan.svg'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+const trackingStats = computed(() => {
+  const total = initialFeatures.value.length
+  const alive = tracks.value.filter(t => t.alive).length
+  const fullLength = tracks.value.length
+    ? Math.max(...tracks.value.map(t => t.points.length))
+    : 0
+  const avgLength = tracks.value.length
+    ? tracks.value.reduce((s, t) => s + t.points.length, 0) / tracks.value.length
+    : 0
+  return { total, alive, fullLength, avgLength: avgLength.toFixed(1) }
+})
 
 const recordingLabel = computed(() => {
   const remaining = Math.max(0, 3 - progress.value * 3)
   return remaining.toFixed(1) + ' s'
-})
-
-// Tegn en miniatyr som datakilde for bevis i UI: lagres som dataURL via canvas.
-function frameToDataUrl(frame) {
-  const c = document.createElement('canvas')
-  c.width = frame.width
-  c.height = frame.height
-  const ctx = c.getContext('2d')
-  const img = ctx.createImageData(frame.width, frame.height)
-  for (let i = 0, j = 0; i < frame.luma.length; i++, j += 4) {
-    const v = Math.round(frame.luma[i] * 255)
-    img.data[j] = v
-    img.data[j + 1] = v
-    img.data[j + 2] = v
-    img.data[j + 3] = 255
-  }
-  ctx.putImageData(img, 0, 0)
-  return c.toDataURL('image/jpeg', 0.6)
-}
-
-const thumbnails = computed(() => {
-  // Vis hvert 3. frame for å begrense rendering
-  const step = 3
-  const out = []
-  for (let i = 0; i < capturedFrames.value.length; i += step) {
-    out.push(frameToDataUrl(capturedFrames.value[i]))
-  }
-  return out
 })
 
 onMounted(() => {
@@ -161,6 +423,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   stopCamera()
   detachLiveOrientation()
+  stopAutoRotate()
 })
 </script>
 
@@ -251,46 +514,197 @@ onBeforeUnmount(() => {
       <div class="text-[11px] text-white/50">{{ frameCount }} frames fanget</div>
     </div>
 
-    <!-- Processing: enkel statustekst (vil utvides i Fase 2/3) -->
+    <!-- Processing: stadie-statustekst -->
     <div
       v-if="phase === 'processing'"
-      class="absolute inset-0 z-30 bg-black/80 flex flex-col items-center justify-center gap-4"
+      class="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center gap-6 px-8"
     >
       <div class="w-12 h-12 rounded-full border-2 border-violet-400/40 border-t-violet-400 animate-spin" />
-      <p class="text-white/70 text-sm">Klargjør data...</p>
+      <div class="space-y-2 text-center">
+        <div
+          class="flex items-center gap-2 text-sm"
+          :class="processingStage === 'features' ? 'text-white' : 'text-white/40'"
+        >
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="
+              processingStage === 'features' ? 'bg-violet-400 animate-pulse' :
+              processingStage === 'tracking' || processingStage === 'reconstructing' || processingStage === 'done' ? 'bg-emerald-400' :
+              'bg-white/20'
+            "
+          ></span>
+          Sporer punkter…
+        </div>
+        <div
+          class="flex items-center gap-2 text-sm"
+          :class="processingStage === 'tracking' ? 'text-white' : 'text-white/40'"
+        >
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="
+              processingStage === 'tracking' ? 'bg-violet-400 animate-pulse' :
+              processingStage === 'reconstructing' || processingStage === 'done' ? 'bg-emerald-400' :
+              'bg-white/20'
+            "
+          ></span>
+          Følger bevegelse mellom frames…
+        </div>
+        <div
+          class="flex items-center gap-2 text-sm"
+          :class="processingStage === 'reconstructing' ? 'text-white' : 'text-white/40'"
+        >
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="
+              processingStage === 'reconstructing' ? 'bg-violet-400 animate-pulse' :
+              processingStage === 'done' ? 'bg-emerald-400' :
+              'bg-white/20'
+            "
+          ></span>
+          Trianguler 3D-punkter…
+        </div>
+      </div>
     </div>
 
-    <!-- Result (Fase 1: bevis at pipelinen virker — viser thumbnails + sample-count) -->
+    <!-- Result: 3D-trådramme med interaktiv rotasjon -->
     <div
       v-if="phase === 'result'"
       class="absolute inset-0 z-30 bg-black overflow-y-auto"
     >
-      <div class="p-6 pt-20 max-w-md mx-auto space-y-6">
+      <div class="p-6 pt-20 max-w-md mx-auto space-y-5">
         <div class="text-center">
-          <h2 class="text-xl font-semibold mb-2">Opptak fullført</h2>
+          <h2 class="text-xl font-semibold mb-1">3D-trådramme</h2>
           <p class="text-sm text-white/60">
-            {{ capturedFrames.length }} frames · {{ motionSampleCount }} sensor-samples
+            {{ points3D.length }} punkter · {{ edges.length }} kanter
           </p>
         </div>
 
-        <!-- Frame-strip -->
-        <div>
-          <div class="text-[11px] text-white/40 mb-2 uppercase tracking-wide">Frame-strip (luma)</div>
-          <div class="flex gap-1 overflow-x-auto pb-2 -mx-2 px-2">
-            <img
-              v-for="(src, i) in thumbnails"
-              :key="i"
-              :src="src"
-              class="h-20 rounded border border-white/10 shrink-0"
+        <!-- 3D-viewer (interaktiv) -->
+        <div
+          class="rounded-xl overflow-hidden border border-emerald-400/20 bg-gradient-to-b from-emerald-950/40 to-black aspect-square relative touch-none select-none"
+          @pointerdown="onPointerDown"
+          @pointermove="onPointerMove"
+          @pointerup="onPointerUp"
+          @pointercancel="onPointerUp"
+        >
+          <svg :viewBox="`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`" class="w-full h-full">
+            <defs>
+              <radialGradient id="hologram-glow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#10b981" stop-opacity="0.18" />
+                <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+            <rect x="0" y="0" :width="VIEWBOX_SIZE" :height="VIEWBOX_SIZE" fill="url(#hologram-glow)" />
+
+            <!-- Senterkryss -->
+            <line x1="100" y1="96" x2="100" y2="104" stroke="rgba(255,255,255,0.12)" stroke-width="0.4" />
+            <line x1="96" y1="100" x2="104" y2="100" stroke="rgba(255,255,255,0.12)" stroke-width="0.4" />
+
+            <!-- Kanter -->
+            <line
+              v-for="(e, i) in projectedEdges"
+              :key="`e${i}`"
+              :x1="e.a.x" :y1="e.a.y"
+              :x2="e.b.x" :y2="e.b.y"
+              stroke="#34d399"
+              stroke-width="0.5"
+              :opacity="(0.3 + Math.max(0, 0.5 + e.avgDepth * 0.5) * 0.5).toFixed(2)"
             />
+
+            <!-- Punkter -->
+            <circle
+              v-for="p in projectedPoints"
+              :key="p.id"
+              :cx="p.x" :cy="p.y"
+              :r="calibrationPicks.includes(p.index) ? 3 : 0.9 + Math.max(0, 0.5 + p.depth * 0.5) * 1.3"
+              :fill="calibrationPicks.includes(p.index) ? '#fbbf24' : '#10b981'"
+              :opacity="calibrationPicks.includes(p.index) ? 1 : 0.5 + Math.max(0, 0.5 + p.depth * 0.5) * 0.5"
+              @click.stop="pickPoint(p)"
+              :class="calibrationMode ? 'cursor-pointer' : ''"
+              :style="calibrationMode ? 'r: 4' : ''"
+            />
+
+            <!-- Kalibrerings-linje -->
+            <line
+              v-if="calibrationPicks.length === 1"
+              :x1="projectedPoints[calibrationPicks[0]]?.x"
+              :y1="projectedPoints[calibrationPicks[0]]?.y"
+              :x2="projectedPoints[calibrationPicks[0]]?.x"
+              :y2="projectedPoints[calibrationPicks[0]]?.y"
+              stroke="#fbbf24"
+              stroke-width="0.8"
+              stroke-dasharray="2 1"
+            />
+            <line
+              v-if="calibrationPicks.length === 2"
+              :x1="projectedPoints[calibrationPicks[0]]?.x"
+              :y1="projectedPoints[calibrationPicks[0]]?.y"
+              :x2="projectedPoints[calibrationPicks[1]]?.x"
+              :y2="projectedPoints[calibrationPicks[1]]?.y"
+              stroke="#fbbf24"
+              stroke-width="0.8"
+              stroke-dasharray="2 1"
+            />
+          </svg>
+
+          <div class="absolute top-2 right-2 text-[10px] text-emerald-300/60 font-mono">
+            {{ Math.round(rotY * 180 / Math.PI) % 360 }}°
+          </div>
+          <div class="absolute bottom-2 left-2 text-[10px] text-white/40">
+            <span v-if="calibrationMode">Tapp to punkter for å måle</span>
+            <span v-else>Dra for å rotere</span>
           </div>
         </div>
 
-        <!-- Status / neste fase -->
-        <div class="rounded-xl bg-violet-900/30 border border-violet-400/20 p-4 text-sm text-white/70 leading-relaxed">
-          <strong class="text-white">Fase 1 OK.</strong>
-          Datapipelinen leverer luma-frames og synkroniserte IMU-samples.
-          Neste fase legger til feature-tracking og 3D-rekonstruksjon.
+        <!-- Stats -->
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
+            <div class="text-[10px] text-white/40 uppercase">Bredde</div>
+            <div class="text-sm font-mono text-white">
+              {{ scaleFactor ? sceneExtent.x.toFixed(2) + ' m' : sceneExtent.x.toFixed(2) }}
+            </div>
+          </div>
+          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
+            <div class="text-[10px] text-white/40 uppercase">Høyde</div>
+            <div class="text-sm font-mono text-white">
+              {{ scaleFactor ? sceneExtent.y.toFixed(2) + ' m' : sceneExtent.y.toFixed(2) }}
+            </div>
+          </div>
+          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
+            <div class="text-[10px] text-white/40 uppercase">Dybde</div>
+            <div class="text-sm font-mono text-white">
+              {{ scaleFactor ? sceneExtent.z.toFixed(2) + ' m' : sceneExtent.z.toFixed(2) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Verktøyrad -->
+        <div class="grid grid-cols-3 gap-2">
+          <button
+            @click="calibrationMode = !calibrationMode; calibrationPicks = []"
+            class="py-2.5 rounded-xl border text-sm transition active:scale-[0.98]"
+            :class="calibrationMode
+              ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
+              : 'bg-white/5 border-white/10 text-white/70'"
+          >
+            {{ calibrationMode ? 'Avbryt' : 'Mål' }}
+          </button>
+          <button
+            @click="exportSvg(false)"
+            class="py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-200 text-sm active:scale-[0.98] transition"
+          >
+            Last ned SVG
+          </button>
+          <button
+            @click="exportSvg(true)"
+            class="py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-400/20 text-emerald-300/80 text-sm active:scale-[0.98] transition"
+          >
+            Animert
+          </button>
+        </div>
+
+        <div v-if="scaleFactor" class="rounded-xl bg-emerald-900/20 border border-emerald-400/20 p-3 text-xs text-emerald-200 text-center">
+          Skala kalibrert: 1 enhet ≈ {{ scaleFactor.toFixed(3) }} m
         </div>
 
         <div class="flex gap-3">
@@ -308,6 +722,44 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+
+      <!-- Kalibrerings-dialog -->
+      <Transition name="hero">
+        <div
+          v-if="showCalibrationDialog"
+          class="fixed inset-0 z-40 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm"
+        >
+          <div class="rounded-2xl bg-zinc-900 border border-amber-400/30 p-6 max-w-sm w-full space-y-4">
+            <h3 class="text-lg font-semibold text-amber-200">Skala-kalibrering</h3>
+            <p class="text-sm text-white/70">
+              Hvor lang er avstanden mellom de to gule punktene i meter?
+            </p>
+            <input
+              v-model="calibrationInput"
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="f.eks. 1.5"
+              class="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 text-white text-lg font-mono text-center focus:border-amber-400/50 outline-none"
+              @keyup.enter="applyCalibration"
+            />
+            <div class="flex gap-2">
+              <button
+                @click="cancelCalibration"
+                class="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white/70"
+              >
+                Avbryt
+              </button>
+              <button
+                @click="applyCalibration"
+                class="flex-1 py-2.5 rounded-xl bg-amber-500/20 border border-amber-400/40 text-amber-200"
+              >
+                Bruk
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
     </div>
 
     <!-- Error -->

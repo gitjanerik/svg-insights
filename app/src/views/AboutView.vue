@@ -33,9 +33,11 @@ const router = useRouter()
       <section>
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Om appen</h3>
         <p class="text-sm text-white/50 leading-relaxed">
-          SVG Insights konverterer bilder til interaktive strektegninger i SVG-format. Ta et bilde med mobilen
-          eller last opp fra galleriet, og appen gjør det om til en detaljert vektortegning du kan utforske
-          med fingre, gyroskop og zoom.
+          SVG Insights utforsker hva man kan gjøre med vektorgrafikk. Tre spor:
+          <strong class="text-white/70">SVG-tegning</strong> fra bilde,
+          <strong class="text-white/70">webfont</strong> fra inspirasjons-Google-fonter, og
+          <strong class="text-white/70">3D-skann</strong> av et rom fra et kort videoopptak.
+          Alt prosesseres i nettleseren med ren JavaScript over typed arrays.
         </p>
         <p class="text-sm text-white/40 mt-2">Lansert 8. april 2026</p>
       </section>
@@ -111,10 +113,35 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.0.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.0.0</span>
+                <span class="text-white/40">&mdash; Skann rommet: tredje hovedfunksjon, 3D-trådramme fra kort video</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Helt ny tredje hovedfunksjon</strong> &mdash; «Skann rommet» konverterer 3 sekunders videoopptak til en interaktiv 3D-trådramme i SVG. På linje med SVG-tegning og webfont som egen retning</li>
+                <li><strong class="text-white/60">Datapipeline</strong>: 15 fps frame-grabbing til 320×240 luma (Float32, Rec. 709) + tidsstemplet logging av DeviceMotion/DeviceOrientation med iOS-permission-flyt</li>
+                <li><strong class="text-white/60">Harris-corner-deteksjon</strong> over gradient-felter med non-max-suppression i (2r+1)²-nabolag og adaptiv terskel basert på maks-respons. Top 200 hjørner pr opptak</li>
+                <li><strong class="text-white/60">Lucas-Kanade optical flow</strong> med iterativ refinement og bilineær sampling for sub-pixel-presisjon. Streaks gjennom hele opptaket bygger «tracks» som dropper når residual eller determinant svekkes</li>
+                <li><strong class="text-white/60">IMU-fusjon</strong>: per-frame rotasjonsmatriser fra alpha/beta/gamma (ZXY-euler) relativt til frame 0, kombinert med flow-basert translasjons-retning &mdash; trianguleringen blir lineær fordi posen er kjent</li>
+                <li><strong class="text-white/60">DLT-triangulering</strong> med Jacobi-eigenvalue-dekomposisjon på A^T·A (4×4) for hver track med ≥5 observasjoner. Outliers filtreres på dybde og median-avstand</li>
+                <li><strong class="text-white/60">Trådramme</strong> bygges via k-NN i 3D (k=5) med median-filtrering for å fjerne edderkopp-nett-kanter på tvers av scenen</li>
+                <li><strong class="text-white/60">Interaktiv hologram-viewer</strong>: dra for å rotere, idle-auto-rotasjon etter 5 sek inaktivitet, dybde-baserte opacity-gradienter</li>
+                <li><strong class="text-white/60">Skala-kalibrering</strong>: tapp to punkter, oppgi fysisk avstand &mdash; scenen får da meter-mål for bredde, høyde og dybde</li>
+                <li><strong class="text-white/60">SVG-eksport</strong> i to varianter: statisk fra valgt synsvinkel, eller animert med <code>&lt;animateTransform&gt;</code> som roterer kontinuerlig &mdash; alltid bare viewBox, samme konvensjon som imageToSvg</li>
+                <li>50 nye tester for feature-deteksjon, optical flow, motion-fusjon, triangulering, k-NN-trådramme og SVG-generering &mdash; 191 tester totalt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 5.0.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">5.0.1</span>
                 <span class="text-white/40">&mdash; Webfont-pakken: tegne-modus, variable innstillinger og smartere editor</span>
