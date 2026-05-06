@@ -113,10 +113,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.0.0 -->
+          <!-- 6.0.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.0.1</span>
+                <span class="text-white/40">&mdash; Skann rommet: pipeline-diagnose og median-relativt dybde-filter</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Synlig pipeline-diagnose</strong> i resultatet &mdash; stadie-for-stadie-tellinger (features → tracks → triangulert → filtrert) som viser hvor flyten eventuelt stoppet, alltid expandable og ekspanderes automatisk når 0 punkter ble rekonstruert</li>
+                <li><strong class="text-white/60">Median-relativt dybde-filter</strong> erstatter den absolutte 0,3 m–60 m-grensen. Beholder punkter mellom 0,2× og 5× medianen, så terskelen tilpasser seg faktisk scene-skala uavhengig av unit-translasjonen</li>
+                <li><strong class="text-white/60">Tom-tilstand med diagnostisk hint</strong> &mdash; når 0 punkter ble triangulert vises en gul varselboks med konkret forklaring basert på hvor pipelinen knakk («for lite parallakse», «scenen er for ensfarget», «bevegelsen var dominert av rotasjon», osv.)</li>
+                <li>Verktøyrad (Mål / Last ned SVG / Animert) skjules nå når det ikke er punkter, så du ikke får en SVG-eksport av en tom hologram</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.0.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.0.0</span>
                 <span class="text-white/40">&mdash; Skann rommet: tredje hovedfunksjon, 3D-trådramme fra kort video</span>

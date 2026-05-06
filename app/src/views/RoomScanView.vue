@@ -46,6 +46,18 @@ const scaleFactor = ref(null)  // meter pr enhet (null = ukalibrert)
 const showCalibrationDialog = ref(false)
 const calibrationInput = ref('')
 
+// Pipeline-diagnostikk: tellinger pr stadium, slik at vi kan se hvor det
+// stoppet hvis 0 punkter blir igjen.
+const diagnostics = ref({
+  featuresDetected: 0,
+  tracksAlive: 0,
+  tracksWithEnoughObs: 0,
+  triangulatedRaw: 0,
+  finitePoints: 0,
+  pointsAfterFilter: 0,
+  flowMagnitude: 0,
+})
+
 // Live tilt-overlay basert på sensorenes siste sample (gjenbruker
 // motion-recorder-logikken for samplemønster, men her bruker vi en lett
 // orientation-listener kun for visuell feedback under opptak)
@@ -142,6 +154,7 @@ async function handleStart() {
     nmsRadius: 6,
     margin: 8,
   })
+  diagnostics.value.featuresDetected = initialFeatures.value.length
 
   // 2) Track gjennom alle frames
   processingStage.value = 'tracking'
@@ -150,6 +163,8 @@ async function handleStart() {
     patchRadius: 5,
     maxIter: 4,
   })
+  diagnostics.value.tracksAlive = tracks.value.filter(t => t.alive).length
+  diagnostics.value.tracksWithEnoughObs = tracks.value.filter(t => t.points.length >= 5).length
 
   // 3) Pose-rekonstruksjon + triangulering
   processingStage.value = 'reconstructing'
@@ -157,6 +172,7 @@ async function handleStart() {
 
   const poses = buildFramePoses(frames, motionSamples)
   const tDir = estimateTranslationDirection(tracks.value)
+  diagnostics.value.flowMagnitude = tDir.magnitude
 
   // Lineært økende translasjon over frames (i unit-skala)
   const N = frames.length
@@ -167,12 +183,25 @@ async function handleStart() {
 
   const K = defaultIntrinsics(frames[0].width, frames[0].height)
   const triangulated = triangulateTracks(tracks.value, poses, K, { minObservations: 5 })
+  diagnostics.value.triangulatedRaw = triangulated.length
 
-  // Filtrer outliers og normaliser scenen for visning
-  const valid = triangulated.filter(r =>
-    r.point.Z > 0.3 && r.point.Z < 60 &&
-    isFinite(r.point.X) && isFinite(r.point.Y)
+  // Filtrer ut ikke-finite og bak-kamera-punkter først
+  const finite = triangulated.filter(r =>
+    isFinite(r.point.X) && isFinite(r.point.Y) && isFinite(r.point.Z) && r.point.Z > 0
   )
+  diagnostics.value.finitePoints = finite.length
+
+  // Median-relativt dybde-filter — adapterer seg til faktisk skala uansett
+  // hvilken unit-translasjon vi brukte. Beholder punkter mellom 0.2× og 5× medianen.
+  let valid = finite
+  if (finite.length >= 4) {
+    const zs = finite.map(r => r.point.Z).sort((a, b) => a - b)
+    const medZ = zs[Math.floor(zs.length / 2)]
+    if (medZ > 0) {
+      valid = finite.filter(r => r.point.Z >= medZ * 0.2 && r.point.Z <= medZ * 5)
+    }
+  }
+  diagnostics.value.pointsAfterFilter = valid.length
 
   if (valid.length > 0) {
     const cx = valid.reduce((s, r) => s + r.point.X, 0) / valid.length
@@ -229,7 +258,37 @@ function reset() {
   processingStage.value = ''
   errorMessage.value = ''
   rotY.value = 0
+  diagnostics.value = {
+    featuresDetected: 0,
+    tracksAlive: 0,
+    tracksWithEnoughObs: 0,
+    triangulatedRaw: 0,
+    finitePoints: 0,
+    pointsAfterFilter: 0,
+    flowMagnitude: 0,
+  }
 }
+
+// Heuristisk diagnose-melding når 0 punkter ble rekonstruert
+const diagnosticHint = computed(() => {
+  const d = diagnostics.value
+  if (d.featuresDetected === 0) {
+    return 'Ingen features funnet i første frame. Pek mot et område med tydelige detaljer (mønster, bokhylle, vindu) i stedet for en blank vegg.'
+  }
+  if (d.tracksAlive < 10) {
+    return 'For få spor overlevde gjennom opptaket. Telefonen beveget seg trolig for raskt eller scenen er for ensfarget.'
+  }
+  if (d.tracksWithEnoughObs < 5) {
+    return 'Sporene var for korte. Hold telefonen mer stabilt — sakte sidelengs-bevegelse, ikke rykk.'
+  }
+  if (d.flowMagnitude < 5) {
+    return 'For lite parallakse — gå minst 0,5–1 m sidelengs mens du peker mot scenen. Bare å rotere håndleddet er ikke nok.'
+  }
+  if (d.triangulatedRaw === 0) {
+    return 'Triangulering feilet. Bevegelsen var sannsynligvis dominert av rotasjon i stedet for translasjon.'
+  }
+  return 'Punktene havnet utenfor gyldig dybde-område. Prøv en ny sekvens med klarere parallakse.'
+})
 
 // 3D-rotasjon for visning — drag overstyrer auto-rotasjon, idle-resume etter 5 sek
 const rotY = ref(0)
@@ -579,8 +638,29 @@ onBeforeUnmount(() => {
           </p>
         </div>
 
-        <!-- 3D-viewer (interaktiv) -->
+        <!-- Tom-tilstand: vis diagnose-hint i stedet for tom hologram -->
         <div
+          v-if="!points3D.length"
+          class="rounded-xl border border-amber-400/30 bg-amber-950/20 p-5 space-y-3"
+        >
+          <div class="flex items-start gap-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-amber-400 shrink-0 mt-0.5"
+                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div class="flex-1">
+              <div class="text-amber-200 font-semibold text-sm">Ingen 3D-punkter rekonstruert</div>
+              <div class="text-xs text-amber-100/80 mt-1 leading-relaxed">{{ diagnosticHint }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3D-viewer (interaktiv) — kun når vi har punkter -->
+        <div
+          v-if="points3D.length"
           class="rounded-xl overflow-hidden border border-emerald-400/20 bg-gradient-to-b from-emerald-950/40 to-black aspect-square relative touch-none select-none"
           @pointerdown="onPointerDown"
           @pointermove="onPointerMove"
@@ -656,8 +736,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Stats -->
-        <div class="grid grid-cols-3 gap-2 text-center">
+        <!-- Stats — kun relevant når vi har punkter -->
+        <div v-if="points3D.length" class="grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg bg-white/5 border border-white/10 p-2">
             <div class="text-[10px] text-white/40 uppercase">Bredde</div>
             <div class="text-sm font-mono text-white">
@@ -678,8 +758,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Verktøyrad -->
-        <div class="grid grid-cols-3 gap-2">
+        <!-- Verktøyrad — kun når vi har punkter -->
+        <div v-if="points3D.length" class="grid grid-cols-3 gap-2">
           <button
             @click="calibrationMode = !calibrationMode; calibrationPicks = []"
             class="py-2.5 rounded-xl border text-sm transition active:scale-[0.98]"
@@ -702,6 +782,50 @@ onBeforeUnmount(() => {
             Animert
           </button>
         </div>
+
+        <!-- Pipeline-diagnose: alltid synlig som expandable så man kan se hvor flyten stoppet -->
+        <details class="rounded-xl bg-white/5 border border-white/10 overflow-hidden" :open="!points3D.length">
+          <summary class="px-4 py-3 text-sm text-white/70 cursor-pointer flex items-center justify-between list-none">
+            <span>Pipeline-diagnose</span>
+            <svg class="w-4 h-4 text-white/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </summary>
+          <div class="px-4 pb-4 pt-1 space-y-1.5 text-xs font-mono text-white/60">
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Frames fanget</span>
+              <span class="text-white">{{ capturedFrames.length }}</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>IMU-samples</span>
+              <span :class="motionSampleCount > 0 ? 'text-white' : 'text-amber-400'">{{ motionSampleCount }}</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Features oppdaget</span>
+              <span :class="diagnostics.featuresDetected > 50 ? 'text-white' : 'text-amber-400'">{{ diagnostics.featuresDetected }}</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Tracks som overlevde</span>
+              <span :class="diagnostics.tracksAlive > 20 ? 'text-white' : 'text-amber-400'">{{ diagnostics.tracksAlive }}</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Tracks med ≥ 5 obs.</span>
+              <span :class="diagnostics.tracksWithEnoughObs > 10 ? 'text-white' : 'text-amber-400'">{{ diagnostics.tracksWithEnoughObs }}</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Flow-magnitude</span>
+              <span :class="diagnostics.flowMagnitude > 5 ? 'text-white' : 'text-amber-400'">{{ diagnostics.flowMagnitude.toFixed(1) }} px</span>
+            </div>
+            <div class="flex justify-between border-b border-white/5 pb-1">
+              <span>Triangulert (raw)</span>
+              <span :class="diagnostics.triangulatedRaw > 0 ? 'text-white' : 'text-amber-400'">{{ diagnostics.triangulatedRaw }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>Endelige 3D-punkter</span>
+              <span :class="diagnostics.pointsAfterFilter > 0 ? 'text-emerald-300 font-semibold' : 'text-red-400 font-semibold'">{{ diagnostics.pointsAfterFilter }}</span>
+            </div>
+          </div>
+        </details>
 
         <div v-if="scaleFactor" class="rounded-xl bg-emerald-900/20 border border-emerald-400/20 p-3 text-xs text-emerald-200 text-center">
           Skala kalibrert: 1 enhet ≈ {{ scaleFactor.toFixed(3) }} m
