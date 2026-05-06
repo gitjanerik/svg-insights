@@ -3,12 +3,9 @@ import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { createFrameGrabber, recordFrames } from '../lib/videoFrameCapture.js'
 import { useMotionRecorder } from '../composables/useMotionRecorder.js'
-import { detectFaceRegion, findLandmarks } from '../lib/faceLandmarks.js'
-import { proportionsFrom2D, medianLandmarks } from '../lib/landmarkTriangulation.js'
-import { detectAccessories } from '../lib/accessoryDetection.js'
-import { detectExpression } from '../lib/expressionDetection.js'
-import { buildHeadMesh, buildHairMesh } from '../lib/headMesh.js'
-import { meshToSvg } from '../lib/meshToSvg.js'
+import { detectFaceRegion } from '../lib/faceLandmarks.js'
+import { generateStipplePoints } from '../lib/voronoiStippling.js'
+import { stipplingToSvg } from '../lib/stipplingToSvg.js'
 import { defaultPalette, pickRandomPalette } from '../lib/portraitPalettes.js'
 
 const router = useRouter()
@@ -36,30 +33,26 @@ const cropContainerRef = ref(null)
 const motion = useMotionRecorder()
 const motionSampleCount = ref(0)
 
-const headMesh = ref(null)
-const hairMesh = ref(null)
-const accessoriesData = ref(null)
+// Stipple-output
+const stipplePoints = ref(null)
+const stipplePortraitDims = ref({ width: 160, height: 200 })
 const palette = ref(defaultPalette())
-const capturedThumbnail = ref(null)
 
-// Render-modus: 'wireframe' | 'shaded' | 'both'
-const renderMode = ref('both')
-const RENDER_MODES = ['wireframe', 'shaded', 'both']
+// Render-modus: 'stippling' | 'halftone' | 'hybrid'
+const renderMode = ref('halftone')
+const RENDER_MODES = ['stippling', 'halftone', 'hybrid']
 const RENDER_MODE_LABELS = {
-  wireframe: 'Trådramme',
-  shaded: 'Skyggelagt',
-  both: 'Begge',
-}
-function cycleRenderMode() {
-  const idx = RENDER_MODES.indexOf(renderMode.value)
-  renderMode.value = RENDER_MODES[(idx + 1) % RENDER_MODES.length]
+  stippling: 'Stippling',
+  halftone: 'Halftone',
+  hybrid: 'Hybrid',
 }
 
 const diagnostics = ref({
   framesCaptured: 0,
   framesWithFace: 0,
-  framesWithLandmarks: 0,
   bestFrameIndex: -1,
+  stippleCount: 0,
+  stippleProgress: 0,
 })
 
 let liveDetectRaf = null
@@ -69,15 +62,6 @@ const liveFaceBox = ref(null)
 const AUTO_TRIGGER_MS = 1500
 let faceStableSince = 0
 let autoTriggerCheckRaf = null
-
-// Drag-rotasjon
-const rotY = ref(0)
-const isDragging = ref(false)
-let dragStartX = 0
-let dragStartRot = 0
-let rotRaf = null
-let lastInteraction = 0
-const IDLE_RESUME_MS = 4000
 
 async function startCamera() {
   try {
@@ -106,7 +90,6 @@ async function startCamera() {
 function stopCamera() {
   stopLiveFaceDetection()
   stopAutoTriggerCheck()
-  stopAutoRotate()
   stream.value?.getTracks().forEach(t => t.stop())
   stream.value = null
   cameraReady.value = false
@@ -220,18 +203,16 @@ async function handleStart() {
   await runPipeline(frames)
 
   phase.value = 'result'
-  startAutoRotate()
 }
 
 async function runPipeline(frames) {
-  // Stadium 1: ansikts-deteksjon på alle frames
+  // Stadium 1: ansikts-deteksjon — finner ansiktet for skala/sentrering
   processingStage.value = 'detecting'
   await yieldFrame()
 
   const detections = frames.map(f => f.rgba ? detectFaceRegion(f.rgba, f.width, f.height) : null)
   diagnostics.value.framesWithFace = detections.filter(r => r !== null).length
 
-  // Velg beste frame: største ansikts-areal
   let bestIdx = -1
   let bestArea = 0
   for (let i = 0; i < detections.length; i++) {
@@ -243,62 +224,68 @@ async function runPipeline(frames) {
   diagnostics.value.bestFrameIndex = bestIdx
   if (bestIdx === -1) return
 
-  // Stadium 2: landemerker på alle frames der ansikt ble detektert
-  processingStage.value = 'measuring'
-  await yieldFrame()
-
-  const landmarksPerFrame = frames.map((f, i) => {
-    if (!detections[i] || !f.rgba) return null
-    return findLandmarks(f.rgba, f.width, f.height, detections[i])
-  })
-  diagnostics.value.framesWithLandmarks = landmarksPerFrame.filter(l => l !== null).length
-
-  // Median av landemerke-posisjoner reduserer støy fra én-frames mis-deteksjon
-  const landmarks = medianLandmarks(landmarksPerFrame)
-  if (!landmarks) return
-
-  // Stadium 3: 2D-proporsjoner med mal-Z (ingen triangulering)
-  const proportions = proportionsFrom2D(landmarks)
-  if (!proportions) return
-
-  // Stadium 4: aksessoir-deteksjon på beste frame
-  processingStage.value = 'composing'
-  await yieldFrame()
-
   const bestFrame = frames[bestIdx]
-  const accessories = detectAccessories(
-    bestFrame.rgba, bestFrame.width, bestFrame.height,
-    detections[bestIdx], landmarks
-  )
-  accessoriesData.value = accessories
+  const region = detections[bestIdx]
 
-  // Mimikk-deteksjon på beste frame
-  const expression = detectExpression(
-    bestFrame.rgba, bestFrame.width, bestFrame.height,
-    detections[bestIdx], landmarks
-  )
+  // Stadium 2: crop ansiktet med litt margin og kjør Voronoi-stippling.
+  // Vi bruker hele cropet (ikke bare landemerker) — algoritmen lar pixel-
+  // informasjonen styre fordelingen av prikker direkte.
+  processingStage.value = 'stippling'
+  await yieldFrame()
 
-  // Lagre thumbnail av brukt frame
-  capturedThumbnail.value = frameRgbaToDataUrl(bestFrame)
+  const cropped = cropFaceFromFrame(bestFrame, region)
+  stipplePortraitDims.value = { width: cropped.width, height: cropped.height }
 
-  // Stadium 5: bygg 3D-mesh deformert av proporsjoner + faceAspect + mimikk
-  const bestBbox = detections[bestIdx].bbox
-  const faceAspect = bestBbox.w / bestBbox.h
-  headMesh.value = buildHeadMesh(proportions, { faceAspect, expression })
-  hairMesh.value = buildHairMesh(headMesh.value, accessories.hair)
+  const points = generateStipplePoints(cropped.rgba, cropped.width, cropped.height, {
+    numPoints: 1500,
+    iterations: 5,
+    seed: Math.floor(Math.random() * 1e9),
+    onProgress: p => { diagnostics.value.stippleProgress = p },
+  })
+  stipplePoints.value = points
+  diagnostics.value.stippleCount = points.length
+
   processingStage.value = 'done'
   await yieldFrame()
 }
 
-function frameRgbaToDataUrl(frame) {
-  const c = document.createElement('canvas')
-  c.width = frame.width
-  c.height = frame.height
-  const ctx = c.getContext('2d')
-  const img = ctx.createImageData(frame.width, frame.height)
-  img.data.set(frame.rgba)
-  ctx.putImageData(img, 0, 0)
-  return c.toDataURL('image/jpeg', 0.7)
+// Croper ut ansiktsregionen med ~30% margin slik at hår og hake også kommer med.
+// Returnerer RGBA-buffer + dimensjoner (skalert til ~200px høy for ytelse).
+function cropFaceFromFrame(frame, region) {
+  const { bbox } = region
+  const margin = 0.35
+  const cx = bbox.x + bbox.w / 2
+  const cy = bbox.y + bbox.h / 2
+  const w = bbox.w * (1 + margin * 2)
+  const h = bbox.h * (1 + margin * 2)
+  const cropX = Math.max(0, cx - w / 2)
+  const cropY = Math.max(0, cy - h / 2)
+  const cropW = Math.min(frame.width - cropX, w)
+  const cropH = Math.min(frame.height - cropY, h)
+
+  // Skaler til ~180-200px høyde for god balanse mellom detalj og ytelse
+  const targetH = 200
+  const scale = targetH / cropH
+  const outW = Math.round(cropW * scale)
+  const outH = targetH
+
+  // Ekstraher fra source RGBA
+  const srcRgba = frame.rgba
+  const srcW = frame.width
+  const out = new Uint8ClampedArray(outW * outH * 4)
+  for (let y = 0; y < outH; y++) {
+    const srcY = Math.min(frame.height - 1, Math.floor(cropY + y / scale))
+    for (let x = 0; x < outW; x++) {
+      const srcX = Math.min(frame.width - 1, Math.floor(cropX + x / scale))
+      const sIdx = (srcY * srcW + srcX) * 4
+      const dIdx = (y * outW + x) * 4
+      out[dIdx] = srcRgba[sIdx]
+      out[dIdx + 1] = srcRgba[sIdx + 1]
+      out[dIdx + 2] = srcRgba[sIdx + 2]
+      out[dIdx + 3] = 255
+    }
+  }
+  return { rgba: out, width: outW, height: outH }
 }
 
 // === UPLOAD + CROP =========================================================
@@ -494,7 +481,6 @@ async function confirmCrop() {
   await yieldFrame()
   await runPipeline([frame])
   phase.value = 'result'
-  startAutoRotate()
 }
 
 function pickNewPalette() {
@@ -506,7 +492,6 @@ function yieldFrame() {
 }
 
 function reset() {
-  stopAutoRotate()
   stopCropDetection()
   if (uploadedImg.value?.src?.startsWith('blob:')) {
     URL.revokeObjectURL(uploadedImg.value.src)
@@ -517,88 +502,48 @@ function reset() {
   autoTriggerProgress.value = 0
   frameCount.value = 0
   motionSampleCount.value = 0
-  headMesh.value = null
-  hairMesh.value = null
-  accessoriesData.value = null
-  capturedThumbnail.value = null
+  stipplePoints.value = null
   palette.value = defaultPalette()
-  renderMode.value = 'both'
+  renderMode.value = 'halftone'
   processingStage.value = ''
   errorMessage.value = ''
-  rotY.value = 0
   faceStableSince = 0
   diagnostics.value = {
     framesCaptured: 0,
     framesWithFace: 0,
-    framesWithLandmarks: 0,
     bestFrameIndex: -1,
+    stippleCount: 0,
+    stippleProgress: 0,
   }
 }
 
 const diagnosticHint = computed(() => {
   const d = diagnostics.value
   if (d.framesWithFace === 0) {
-    return 'Fant ikke ansiktet i noen frames. Pek mot mer lys, eller hold telefonen så ansiktet sentreres i ovalen.'
+    return 'Fant ikke ansiktet. Pek mot mer lys, eller sentrer ansiktet i ovalen før capture.'
   }
-  if (d.framesWithLandmarks === 0) {
-    return 'Fant ansiktet, men ikke landemerker. Sørg for at hele ansiktet er synlig (ikke skjult av hånd e.l.).'
+  if (d.stippleCount === 0) {
+    return 'Klarte ikke generere stipple-portrettet. Prøv en ny capture med jevnere belysning.'
   }
-  return 'Selvbildet ditt er klart!'
+  return 'Stipple-portrettet ditt er klart!'
 })
 
-const hasResult = computed(() => headMesh.value !== null)
+const hasResult = computed(() => stipplePoints.value !== null && stipplePoints.value.length > 0)
 
-const rotatedSvg = computed(() => {
-  if (!headMesh.value) return null
-  return meshToSvg({
-    mesh: headMesh.value,
-    hair: hairMesh.value,
-    rotY: rotY.value,
-    viewBoxSize: 400,
+const portraitSvg = computed(() => {
+  if (!stipplePoints.value) return null
+  return stipplingToSvg({
+    points: stipplePoints.value,
+    width: stipplePortraitDims.value.width,
+    height: stipplePortraitDims.value.height,
     palette: palette.value,
     mode: renderMode.value,
   })
 })
 
-function startAutoRotate() {
-  stopAutoRotate()
-  let last = performance.now()
-  lastInteraction = 0
-  function loop(now) {
-    const dt = (now - last) / 1000
-    last = now
-    if (!isDragging.value && (lastInteraction === 0 || now - lastInteraction > IDLE_RESUME_MS)) {
-      rotY.value += dt * 0.25
-    }
-    rotRaf = requestAnimationFrame(loop)
-  }
-  rotRaf = requestAnimationFrame(loop)
-}
-function stopAutoRotate() {
-  if (rotRaf !== null) cancelAnimationFrame(rotRaf)
-  rotRaf = null
-}
-
-function onPointerDown(e) {
-  isDragging.value = true
-  dragStartX = e.clientX
-  dragStartRot = rotY.value
-  e.target.setPointerCapture?.(e.pointerId)
-}
-function onPointerMove(e) {
-  if (!isDragging.value) return
-  rotY.value = dragStartRot + (e.clientX - dragStartX) * 0.012
-}
-function onPointerUp(e) {
-  if (!isDragging.value) return
-  isDragging.value = false
-  lastInteraction = performance.now()
-  e.target.releasePointerCapture?.(e.pointerId)
-}
-
 function downloadSvg() {
-  if (!rotatedSvg.value) return
-  const blob = new Blob([rotatedSvg.value], { type: 'image/svg+xml' })
+  if (!portraitSvg.value) return
+  const blob = new Blob([portraitSvg.value], { type: 'image/svg+xml' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -867,17 +812,13 @@ onBeforeUnmount(() => {
     >
       <div class="w-12 h-12 rounded-full border-2 border-emerald-400/40 border-t-emerald-400 animate-spin" />
       <div class="space-y-2 text-center">
-        <div class="flex items-center gap-2 text-sm" :class="processingStage === 'detecting' ? 'text-white' : (processingStage === 'measuring' || processingStage === 'composing' || processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
-          <span class="w-2 h-2 rounded-full" :class="processingStage === 'detecting' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'measuring' || processingStage === 'composing' || processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
+        <div class="flex items-center gap-2 text-sm" :class="processingStage === 'detecting' ? 'text-white' : (processingStage === 'stippling' || processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
+          <span class="w-2 h-2 rounded-full" :class="processingStage === 'detecting' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'stippling' || processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
           Finner ansiktet…
         </div>
-        <div class="flex items-center gap-2 text-sm" :class="processingStage === 'measuring' ? 'text-white' : (processingStage === 'composing' || processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
-          <span class="w-2 h-2 rounded-full" :class="processingStage === 'measuring' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'composing' || processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
-          Måler proporsjoner…
-        </div>
-        <div class="flex items-center gap-2 text-sm" :class="processingStage === 'composing' ? 'text-white' : (processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
-          <span class="w-2 h-2 rounded-full" :class="processingStage === 'composing' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
-          Bygger selvbildet…
+        <div class="flex items-center gap-2 text-sm" :class="processingStage === 'stippling' ? 'text-white' : (processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
+          <span class="w-2 h-2 rounded-full" :class="processingStage === 'stippling' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
+          Stippler punktene… <span v-if="diagnostics.stippleProgress > 0" class="text-[10px] text-white/40 ml-1">{{ Math.round(diagnostics.stippleProgress * 100) }}%</span>
         </div>
       </div>
     </div>
@@ -893,21 +834,11 @@ onBeforeUnmount(() => {
           <p class="text-sm text-white/60">{{ diagnosticHint }}</p>
         </div>
 
-        <div v-if="hasResult" class="space-y-2">
-          <div
-            class="rounded-xl overflow-hidden border border-emerald-400/20 aspect-square relative touch-none select-none"
-            @pointerdown="onPointerDown"
-            @pointermove="onPointerMove"
-            @pointerup="onPointerUp"
-            @pointercancel="onPointerUp"
-            v-html="rotatedSvg"
-          />
-          <!-- Foto-thumbnail: viser at capturen faktisk brukes -->
-          <div v-if="capturedThumbnail" class="flex items-center gap-2 text-[10px] text-white/40">
-            <img :src="capturedThumbnail" class="w-12 h-9 object-cover rounded border border-white/10" style="transform: scaleX(-1);" />
-            <span>Bygd fra denne framen — proporsjonene dine deformerer meshen</span>
-          </div>
-        </div>
+        <div
+          v-if="hasResult"
+          class="rounded-xl overflow-hidden border border-emerald-400/20 select-none"
+          v-html="portraitSvg"
+        />
 
         <div
           v-else
@@ -986,16 +917,12 @@ onBeforeUnmount(() => {
               <span :class="diagnostics.framesWithFace > 0 ? 'text-white' : 'text-amber-400'">{{ diagnostics.framesWithFace }}/{{ diagnostics.framesCaptured }}</span>
             </div>
             <div class="flex justify-between border-b border-white/5 pb-1">
-              <span>Landemerker</span>
-              <span :class="diagnostics.framesWithLandmarks > 0 ? 'text-white' : 'text-amber-400'">{{ diagnostics.framesWithLandmarks }}/{{ diagnostics.framesCaptured }}</span>
-            </div>
-            <div class="flex justify-between border-b border-white/5 pb-1">
               <span>Beste frame</span>
               <span :class="diagnostics.bestFrameIndex >= 0 ? 'text-white' : 'text-amber-400'">#{{ diagnostics.bestFrameIndex >= 0 ? diagnostics.bestFrameIndex + 1 : '–' }}</span>
             </div>
             <div class="flex justify-between">
-              <span>IMU-samples</span>
-              <span :class="motionSampleCount > 0 ? 'text-white' : 'text-white/40'">{{ motionSampleCount }}</span>
+              <span>Stipple-prikker</span>
+              <span :class="diagnostics.stippleCount > 0 ? 'text-emerald-300' : 'text-amber-400'">{{ diagnostics.stippleCount }}</span>
             </div>
           </div>
         </details>

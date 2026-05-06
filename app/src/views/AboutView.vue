@@ -114,10 +114,33 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.3.0 -->
+          <!-- 6.4.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.4.0</span>
+                <span class="text-white/40">&mdash; Pivot: Voronoi-stippling-portrett (vekk fra parametrisk mesh)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Hele render-laget byttet ut</strong>. Den parametriske 3D-meshen leverte aldri "deg" &mdash; den parodierer en mal med 6 målte punkter. Etter forskningssøk valgte vi pivot til Adrian Secords <em>Weighted Voronoi Stippling</em> (2002): rejection sampling vektet av pixel-tetthet → Lloyd's relaxation mot vektede Voronoi-centroider → stipple-portrett der prikkene faktisk ER deg, fordi de reproduserer pixelinformasjonen direkte</li>
+                <li><strong class="text-white/60">Ny <code>voronoiStippling.js</code></strong> implementerer hele algoritmen i ren JS (~200 linjer). Brute-force nærmeste-punkt-søk er ok på 200×200 px med 1500 prikker over 5 iterasjoner &mdash; ~1-2 sek på mobil</li>
+                <li><strong class="text-white/60">Tre render-modi</strong> i <code>stipplingToSvg.js</code>: <em>Stippling</em> (uniform liten radius, klassisk pen-and-ink), <em>Halftone</em> (radius varierer med lokal tetthet), <em>Hybrid</em> (fin base + større prikker i mørke områder)</li>
+                <li><strong class="text-white/60">Ansiktsdeteksjonen beholdes</strong> &mdash; brukes nå kun til å crope ansiktsregionen (med 35% margin slik at hår og hake kommer med) og finne beste frame fra 5-frame-bursten. Selve portrettet er stipplingen av cropet</li>
+                <li><strong class="text-white/60">Palett-systemet bevart</strong>: Klassisk gir svarte prikker på pink bakgrunn, Marilyn rosa-på-rød, Mint mørke prikker på navy, osv. «Tilfeldig»-knappen veksler palett uten ny capture &mdash; live-render via reaktiv computed</li>
+                <li><strong class="text-white/60">Droppet</strong>: 3D-mesh-rendering, drag-rotasjon, hår-mesh, briller, eyeballs, mimikk-deformasjon, foto-thumbnail. Lib-filene (<code>headMesh</code>, <code>meshToSvg</code>, <code>portraitModel</code>, <code>expressionDetection</code> osv.) beholdes som referanse for fremtidig "ekspert-modus"</li>
+                <li><strong class="text-white/60">Beholdt</strong>: capture- og upload-flyten med crop-UI og auto-trigger, palett-systemet, diagnose-panelet (oppdatert med stipple-prikker-teller)</li>
+                <li>14 nye tester for <code>voronoiStippling</code> og <code>stipplingToSvg</code> &mdash; 293 totalt</li>
+                <li>PortraitView-bundle redusert fra 32.77 KB til 28.82 KB (gzip 11.94 → 9.78)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.3.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.3.0</span>
                 <span class="text-white/40">&mdash; Bilde-opplasting + mimikk-deteksjon + ekte 3D-øyne</span>
