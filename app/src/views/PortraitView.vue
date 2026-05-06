@@ -5,7 +5,7 @@ import { createFrameGrabber, recordFrames } from '../lib/videoFrameCapture.js'
 import { useMotionRecorder } from '../composables/useMotionRecorder.js'
 import { detectFaceRegion } from '../lib/faceLandmarks.js'
 import { generateStipplePoints } from '../lib/voronoiStippling.js'
-import { stipplingToSvg } from '../lib/stipplingToSvg.js'
+import { stipplingToSvg, BLEND_MODES } from '../lib/stipplingToSvg.js'
 import { defaultPalette, pickRandomPalette } from '../lib/portraitPalettes.js'
 
 const router = useRouter()
@@ -46,6 +46,9 @@ const RENDER_MODE_LABELS = {
   halftone: 'Halftone',
   hybrid: 'Hybrid',
 }
+
+// Blend-modus på prikkene (samme som halftone i SVG-sporet)
+const blendMode = ref('normal')
 
 const diagnostics = ref({
   framesCaptured: 0,
@@ -399,30 +402,105 @@ function extractCropRgba(width, height) {
   return { data: data.data, width, height }
 }
 
-let cropDragStart = null
+// Touch-gestures: enfinger pan, tofinger pinch-zoom (mer smidig enn +/- knapper)
+let cropGesture = null
+
+function distBetween(t1, t2) {
+  return Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+}
+function midpoint(t1, t2) {
+  return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }
+}
+
+function onCropTouchStart(e) {
+  if (e.touches.length === 2) {
+    e.preventDefault()
+    cropGesture = {
+      kind: 'pinch',
+      startDist: distBetween(e.touches[0], e.touches[1]),
+      startScale: cropTransform.value.scale,
+      startTx: cropTransform.value.x,
+      startTy: cropTransform.value.y,
+      mid: midpoint(e.touches[0], e.touches[1]),
+    }
+  } else if (e.touches.length === 1) {
+    cropGesture = {
+      kind: 'pan',
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      tx: cropTransform.value.x,
+      ty: cropTransform.value.y,
+    }
+  }
+}
+
+function onCropTouchMove(e) {
+  if (!cropGesture) return
+  if (cropGesture.kind === 'pinch' && e.touches.length === 2) {
+    e.preventDefault()
+    const d = distBetween(e.touches[0], e.touches[1])
+    const newScale = Math.max(0.2, Math.min(8, cropGesture.startScale * d / cropGesture.startDist))
+    // Zoom rundt pinch-midten — beholder fokus på hva fingrene zoomer mot
+    const container = cropContainerRef.value
+    if (container) {
+      const rect = container.getBoundingClientRect()
+      const mx = cropGesture.mid.x - rect.left
+      const my = cropGesture.mid.y - rect.top
+      const factor = newScale / cropGesture.startScale
+      cropTransform.value = {
+        x: mx - (mx - cropGesture.startTx) * factor,
+        y: my - (my - cropGesture.startTy) * factor,
+        scale: newScale,
+      }
+    } else {
+      cropTransform.value = { ...cropTransform.value, scale: newScale }
+    }
+  } else if (cropGesture.kind === 'pan' && e.touches.length === 1) {
+    cropTransform.value = {
+      ...cropTransform.value,
+      x: cropGesture.tx + (e.touches[0].clientX - cropGesture.startX),
+      y: cropGesture.ty + (e.touches[0].clientY - cropGesture.startY),
+    }
+  }
+}
+
+function onCropTouchEnd() {
+  cropGesture = null
+}
+
+// Mus-fallback for desktop-testing (pointer events for ikke-touch)
+let cropMouseDrag = null
 function onCropPointerDown(e) {
-  cropDragStart = {
+  if (e.pointerType === 'touch') return
+  cropMouseDrag = {
     x: e.clientX, y: e.clientY,
     tx: cropTransform.value.x, ty: cropTransform.value.y,
   }
   e.target.setPointerCapture?.(e.pointerId)
 }
 function onCropPointerMove(e) {
-  if (!cropDragStart) return
+  if (!cropMouseDrag || e.pointerType === 'touch') return
   cropTransform.value = {
     ...cropTransform.value,
-    x: cropDragStart.tx + (e.clientX - cropDragStart.x),
-    y: cropDragStart.ty + (e.clientY - cropDragStart.y),
+    x: cropMouseDrag.tx + (e.clientX - cropMouseDrag.x),
+    y: cropMouseDrag.ty + (e.clientY - cropMouseDrag.y),
   }
 }
 function onCropPointerUp(e) {
-  cropDragStart = null
+  cropMouseDrag = null
   e.target.releasePointerCapture?.(e.pointerId)
+}
+function onCropWheel(e) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  zoomCrop(delta)
 }
 
 function zoomCrop(delta) {
-  const newScale = Math.max(0.2, Math.min(5, cropTransform.value.scale * (1 + delta)))
-  // Behold midt-punkt under zoom
+  setCropScale(cropTransform.value.scale * (1 + delta))
+}
+function setCropScale(target) {
+  const newScale = Math.max(0.2, Math.min(8, target))
   const container = cropContainerRef.value
   if (container) {
     const cw = container.clientWidth
@@ -505,6 +583,7 @@ function reset() {
   stipplePoints.value = null
   palette.value = defaultPalette()
   renderMode.value = 'halftone'
+  blendMode.value = 'normal'
   processingStage.value = ''
   errorMessage.value = ''
   faceStableSince = 0
@@ -538,8 +617,13 @@ const portraitSvg = computed(() => {
     height: stipplePortraitDims.value.height,
     palette: palette.value,
     mode: renderMode.value,
+    blendMode: blendMode.value,
   })
 })
+
+const portraitAspectStyle = computed(() => ({
+  aspectRatio: `${stipplePortraitDims.value.width} / ${stipplePortraitDims.value.height}`,
+}))
 
 function downloadSvg() {
   if (!portraitSvg.value) return
@@ -708,10 +792,15 @@ onBeforeUnmount(() => {
         ref="cropContainerRef"
         class="absolute inset-0 overflow-hidden"
         style="touch-action: none"
+        @touchstart.passive="onCropTouchStart"
+        @touchmove.prevent="onCropTouchMove"
+        @touchend="onCropTouchEnd"
+        @touchcancel="onCropTouchEnd"
         @pointerdown="onCropPointerDown"
         @pointermove="onCropPointerMove"
         @pointerup="onCropPointerUp"
         @pointercancel="onCropPointerUp"
+        @wheel="onCropWheel"
       >
         <img
           v-if="uploadedImg"
@@ -769,18 +858,30 @@ onBeforeUnmount(() => {
 
       <!-- Bunn: zoom + Bruk -->
       <div class="absolute bottom-0 inset-x-0 p-6 z-10 flex flex-col items-center gap-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-        <div class="flex gap-3">
+        <!-- Zoom: pinch på touch, eller slider/knapper for finjustering -->
+        <div class="flex items-center gap-3 w-full max-w-xs">
           <button
-            @click="zoomCrop(-0.20)"
-            class="w-10 h-10 rounded-full bg-white/10 border border-white/20 text-white text-lg active:scale-95 transition"
+            @click="zoomCrop(-0.15)"
+            class="w-9 h-9 rounded-full bg-white/10 border border-white/20 text-white text-lg active:scale-95 transition shrink-0"
             aria-label="Zoom ut"
           >−</button>
+          <input
+            type="range"
+            min="0.2"
+            max="6"
+            step="0.05"
+            :value="cropTransform.scale"
+            @input="setCropScale(parseFloat($event.target.value))"
+            class="flex-1 accent-emerald-400"
+            aria-label="Zoom"
+          />
           <button
-            @click="zoomCrop(0.20)"
-            class="w-10 h-10 rounded-full bg-white/10 border border-white/20 text-white text-lg active:scale-95 transition"
+            @click="zoomCrop(0.15)"
+            class="w-9 h-9 rounded-full bg-white/10 border border-white/20 text-white text-lg active:scale-95 transition shrink-0"
             aria-label="Zoom inn"
           >+</button>
         </div>
+        <div class="text-[10px] text-white/40 -mt-2">Tofinger-pinch eller scroll for å zoome</div>
         <div class="flex gap-3 w-full max-w-xs">
           <button
             @click="cancelCrop"
@@ -836,7 +937,8 @@ onBeforeUnmount(() => {
 
         <div
           v-if="hasResult"
-          class="rounded-xl overflow-hidden border border-emerald-400/20 select-none"
+          class="rounded-xl overflow-hidden border border-emerald-400/20 select-none w-full"
+          :style="portraitAspectStyle"
           v-html="portraitSvg"
         />
 
@@ -872,6 +974,24 @@ onBeforeUnmount(() => {
           >
             {{ RENDER_MODE_LABELS[m] }}
           </button>
+        </div>
+
+        <!-- Blend-modus (samme som halftone i SVG-sporet) -->
+        <div v-if="hasResult">
+          <div class="text-[10px] text-white/40 uppercase tracking-wider mb-2">Blend-modus</div>
+          <div class="grid grid-cols-4 gap-1.5">
+            <button
+              v-for="b in BLEND_MODES"
+              :key="b.value"
+              @click="blendMode = b.value"
+              class="py-2 text-[11px] rounded-lg border transition active:scale-[0.98]"
+              :class="blendMode === b.value
+                ? 'bg-sky-600/40 border-sky-400/60 text-white'
+                : 'bg-white/5 border-white/10 text-white/60'"
+            >
+              {{ b.label }}
+            </button>
+          </div>
         </div>
 
         <!-- Palett-rad -->

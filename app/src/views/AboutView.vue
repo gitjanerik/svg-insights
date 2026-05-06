@@ -114,10 +114,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.4.0 -->
+          <!-- 6.4.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.4.1</span>
+                <span class="text-white/40">&mdash; Riktig aspect, blend-modi på prikkene, pinch-zoom + slider</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Aspect-ratio fikset</strong> &mdash; resultat-containeren henger nå CSS <code>aspect-ratio</code> til faktisk crop-dimensjon, så portrettet er ikke lenger trykt sammen vertikalt</li>
+                <li><strong class="text-white/60">Blend-modi på prikkene</strong> (samme valg som halftone i SVG-sporet): Normal, Luminositet, Multiply, Difference. Wraps via <code>mix-blend-mode</code> CSS på prikke-gruppen — ekte SVG-blending mot bakgrunnsfargen</li>
+                <li><strong class="text-white/60">Pinch-zoom i crop-UI</strong> erstatter +/- som primærkontroll. Tofinger-pinch zoomer rundt fingrenes midtpunkt (samme mønster som GlyphPhotoDialog), enfinger-pan fortsatt aktivt, scroll-wheel som desktop-fallback</li>
+                <li><strong class="text-white/60">Zoom-slider</strong> for finjustering — input range 0.2× til 6×, kombinert med +/- knapper for steg-zoom</li>
+                <li>HomeView-undertittel oppdatert: «Stipple-portrett av deg i pop-art-stil» (var «Polygonalt 3D-portrett — wireframe + skygger»)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.4.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.4.0</span>
                 <span class="text-white/40">&mdash; Pivot: Voronoi-stippling-portrett (vekk fra parametrisk mesh)</span>
