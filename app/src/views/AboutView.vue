@@ -114,10 +114,32 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.2.2 -->
+          <!-- 6.3.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.3.0</span>
+                <span class="text-white/40">&mdash; Bilde-opplasting + mimikk-deteksjon + ekte 3D-øyne</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Bilde-opplasting</strong> som alternativ til kamera-capture &mdash; en liten foto-knapp ved siden av opptaksknappen åpner filvelger. Bildet vises i en pan/zoom-flate med samme oval-overlay, og «Bruk»-knappen er disabled inntil et ansikt er detektert i ovalen</li>
+                <li><strong class="text-white/60">Live ansikts-validering</strong> i crop-fasen kjører hver 250 ms på det aktuelle utsnittet &mdash; status-pille viser «Ansikt detektert i ovalen» eller «Sentrer ansiktet i ovalen», og blokkerer «Bruk» med advarsel hvis ingen ansikt</li>
+                <li><strong class="text-white/60">Mimikk-deteksjon</strong> i ny <code>expressionDetection.js</code>: <code>mouthOpen</code> via vertikal mørk-region-utstrekning, <code>eyesOpen</code> via luma-varians rundt øye-landemerkene, <code>smile</code> via Y-posisjon av munnviker vs senter</li>
+                <li><strong class="text-white/60">Mesh deformeres av mimikken</strong>: åpen munn → større vertikal leppe-åpning, lukkede øyne → grunne flate øyehuler, smil → munnvikene løftes oppover i lippe-mesh</li>
+                <li><strong class="text-white/60">Realistiske 3D-øyne</strong> &mdash; når <code>eyesOpen &gt; 0.4</code> legges hvite eyeball-fan-meshes med svart pupill-skive på toppen av øyehulene. Lukkede øyne gir bare den flate skygge-konkaviteten</li>
+                <li>Eyeball-størrelse skalerer med <code>eyesOpen</code> (vidåpne øyne = større, høyere eyeballs)</li>
+                <li>Painter's-prioritet: pupil over eyeball over socket over skin &mdash; sikrer riktig lagrekkefølge selv ved Z-kollisjoner</li>
+                <li>15 nye tester for mimikk-deteksjon &mdash; 279 totalt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.2.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.2.2</span>
                 <span class="text-white/40">&mdash; Features inn i meshen: konkave øyehuler, konveks nese, konvekse lepper</span>

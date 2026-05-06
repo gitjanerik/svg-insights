@@ -43,6 +43,8 @@ export function meshToSvg({
   const regionColor = {
     skin: palette.skin,
     eyeSocket: shadeColor(palette.skin, 0.12),  // mørk skygge for konkav effekt
+    eyeball: palette.eyeWhite,                  // hvit øyeeple
+    pupil: palette.pupil,                       // svart pupill
     nose: palette.skin,
     lips: palette.mouth,
     hair: palette.hair,
@@ -104,7 +106,15 @@ export function meshToSvg({
   // Painter's: bak-til-front. Trekanter med høyere Z er nære kameraet → tegn sist.
   // Mesh-features (eyeSocket, nose, lips) skal alltid være OVER underliggende skin
   // selv om Z-verdiene tilfeldigvis er like — bump dem litt frem ved sortering.
-  const FEATURE_PRIORITY = { skin: 0, hair: 0, nose: 0.05, lips: 0.05, eyeSocket: 0.05 }
+  const FEATURE_PRIORITY = {
+    skin: 0,
+    hair: 0,
+    nose: 0.05,
+    lips: 0.05,
+    eyeSocket: 0.05,
+    eyeball: 0.10,   // over socket
+    pupil: 0.15,     // over eyeball
+  }
   const allTris = [...headTris, ...hairTris]
   allTris.sort((a, b) => {
     const za = a.avgZ + (FEATURE_PRIORITY[a.region] || 0)

@@ -29,7 +29,10 @@ function tri(indices, region = 'skin') {
 }
 
 export function buildHeadMesh(proportions = {}, opts = {}) {
-  const { faceAspect = 0.72 } = opts
+  const {
+    faceAspect = 0.72,
+    expression = { mouthOpen: 0, eyesOpen: 0.7, smile: 0 },
+  } = opts
 
   const measuredHeight = (proportions.faceHeight ?? 4.0) * 0.55
   const headHeight = Math.max(2.0, measuredHeight)
@@ -84,10 +87,12 @@ export function buildHeadMesh(proportions = {}, opts = {}) {
     triangles.push(tri([bottomApex, last + i, last + ni]))
   }
 
-  // Anatomiske mesh-features
-  addEyeSockets(vertices, triangles, headWidth, headHeight, headDepth)
+  // Anatomiske mesh-features (modifiseres av expression)
+  addEyeSockets(vertices, triangles, headWidth, headHeight, headDepth, expression)
+  // Realistiske 3D-øyne legges på TOPP av sockene når øynene er åpne
+  addEyeballs(vertices, triangles, headWidth, headHeight, headDepth, expression)
   addNose(vertices, triangles, headWidth, headHeight, headDepth)
-  addLips(vertices, triangles, headWidth, headHeight, headDepth)
+  addLips(vertices, triangles, headWidth, headHeight, headDepth, expression)
 
   // 2D-features for evt. overlay (øyenbryn beholdes som vektorer per nå)
   const eyeY = 0
@@ -131,20 +136,23 @@ function applyDeformations(vertices, sliceStart, hw, hh, hd) {
   vertices[jawBase + (SEGMENTS - 4)].X *= 0.95
 }
 
-// EYE SOCKETS: konkave groper. Ring av punkter på/foran hode-overflaten,
-// og et senter-punkt presset BAKOVER → Lambertian-shading gir mørk dybde-følelse.
-function addEyeSockets(verts, tris, hw, hh, hd) {
+// EYE SOCKETS: konkave groper. eyesOpen påvirker:
+//   - dybden (lukkede øyne = grunne, åpne = dype)
+//   - vertikal høyde på ringen (lukket = smal, åpen = høy)
+function addEyeSockets(verts, tris, hw, hh, hd, expression) {
+  const eyesOpen = Math.max(0, Math.min(1, expression?.eyesOpen ?? 0.7))
   const eyeY = -0.05
   const eyeXOffset = hw * 0.42
   const sockRingR = 0.22
-  const sockRingRY = 0.16
+  // Lukkede øyne = flatere ring (smal vertikal akse)
+  const sockRingRY = 0.06 + 0.14 * eyesOpen  // 0.06 lukket → 0.20 åpen
   const segs = 10
 
-  // Beregn approksimativ overflate-Z ved øye-X (ellipsoidisk)
   const xRel = (eyeXOffset / hw)
   const surfaceZ = hd * Math.sqrt(Math.max(0.0, 1 - xRel * xRel))
-  const ringForward = 0.06   // litt foran hode-overflaten
-  const centerBack = 0.10    // senter er ringForward - 0.10 (relativt konkav)
+  const ringForward = 0.06
+  // Lukkede øyne = grunne (centerBack ~ 0.02), åpne = dype (centerBack ~ 0.14)
+  const centerBack = 0.02 + 0.13 * eyesOpen
 
   for (const sign of [-1, 1]) {
     const cx = sign * eyeXOffset
@@ -168,6 +176,68 @@ function addEyeSockets(verts, tris, hw, hh, hd) {
       tris.push(tri([centerIdx, ringStart + ni, ringStart + i], 'eyeSocket'))
     }
   }
+}
+
+// EYEBALLS: hvite halvkuler med svart pupill — kun når øynene er åpne nok
+function addEyeballs(verts, tris, hw, hh, hd, expression) {
+  const eyesOpen = Math.max(0, Math.min(1, expression?.eyesOpen ?? 0.7))
+  if (eyesOpen < 0.4) return  // lukkede øyne — bare socket-shadow
+
+  const eyeY = -0.05
+  const eyeXOffset = hw * 0.42
+  const xRel = eyeXOffset / hw
+  const surfaceZ = hd * Math.sqrt(Math.max(0.0, 1 - xRel * xRel))
+
+  // Eyeball-størrelse skalerer litt med eyesOpen (vid → større eye)
+  const ballRX = 0.16 * (0.7 + 0.4 * eyesOpen)
+  const ballRY = ballRX * (0.55 + 0.30 * eyesOpen)  // høyere når mer åpen
+  const ballForward = 0.09
+  const segs = 12
+
+  for (const sign of [-1, 1]) {
+    const cx = sign * eyeXOffset
+
+    // Hvit eyeball: senter + ring (fan)
+    const ballCenter = verts.length
+    verts.push({ X: cx, Y: eyeY, Z: surfaceZ + ballForward })
+    const ballRing = verts.length
+    for (let i = 0; i < segs; i++) {
+      const angle = (i / segs) * Math.PI * 2
+      verts.push({
+        X: cx + Math.cos(angle) * ballRX,
+        Y: eyeY + Math.sin(angle) * ballRY,
+        Z: surfaceZ + ballForward * 0.4,
+      })
+    }
+    for (let i = 0; i < segs; i++) {
+      const ni = (i + 1) % segs
+      tris.push(tri([ballCenter, ringIdx(ballRing, ni), ringIdx(ballRing, i)], 'eyeball'))
+    }
+
+    // Svart pupill: liten skive over eyeball-senter
+    const pupilR = ballRX * 0.30
+    const pupilForward = ballForward + 0.025
+    const pupilCenter = verts.length
+    verts.push({ X: cx, Y: eyeY, Z: surfaceZ + pupilForward })
+    const pupilRing = verts.length
+    const pSegs = 8
+    for (let i = 0; i < pSegs; i++) {
+      const angle = (i / pSegs) * Math.PI * 2
+      verts.push({
+        X: cx + Math.cos(angle) * pupilR,
+        Y: eyeY + Math.sin(angle) * pupilR,
+        Z: surfaceZ + pupilForward - 0.005,
+      })
+    }
+    for (let i = 0; i < pSegs; i++) {
+      const ni = (i + 1) % pSegs
+      tris.push(tri([pupilCenter, ringIdx(pupilRing, ni), ringIdx(pupilRing, i)], 'pupil'))
+    }
+  }
+}
+
+function ringIdx(start, offset) {
+  return start + offset
 }
 
 // NESE: konveks 4-sidig kile som stikker ut fra ansiktet
@@ -196,30 +266,41 @@ function addNose(verts, tris, hw, hh, hd) {
   tris.push(tri([tip, baseL, topL], 'nose'))
 }
 
-// LEPPER: to konvekse "patches", øvre og nedre, i palettens munn-farge
-function addLips(verts, tris, hw, hh, hd) {
+// LEPPER: to konvekse "patches". Modifiseres av:
+//   - mouthOpen: øker vertikal avstand mellom øvre og nedre leppe (åpning)
+//   - smile: hever munnvikene (positivt) eller senker dem (negativt)
+function addLips(verts, tris, hw, hh, hd, expression) {
+  const mouthOpen = Math.max(0, Math.min(1, expression?.mouthOpen ?? 0))
+  const smile = Math.max(-1, Math.min(1, expression?.smile ?? 0))
   const mouthY = hh * 0.50
   const mouthZ = hd * 0.86
   const halfW = hw * 0.20
+  const baseGap = 0.06
+  const extraGap = mouthOpen * 0.18  // åpen munn → lepper langt fra hverandre
   const lipH = 0.08
 
-  // Øvre leppe (litt smalere, høyere)
-  buildLipFan(verts, tris, 0, mouthY - lipH * 0.7, mouthZ, halfW * 0.95, lipH * 0.9)
-  // Nedre leppe (litt bredere, lavere)
-  buildLipFan(verts, tris, 0, mouthY + lipH * 0.7, mouthZ, halfW * 1.0, lipH * 1.0)
+  // Smile-Y-offset: lepper sentrum/munnviker. Negativ smile = nedover, positiv = oppover
+  const cornerLift = smile * 0.05
+
+  // Øvre leppe — smile lifter munnvikene relativt til senter
+  buildLipFan(verts, tris, 0, mouthY - baseGap - extraGap, mouthZ, halfW * 0.95, lipH * 0.9, cornerLift)
+  // Nedre leppe
+  buildLipFan(verts, tris, 0, mouthY + baseGap + extraGap, mouthZ, halfW * 1.0, lipH * 1.0, cornerLift)
 }
 
-function buildLipFan(verts, tris, cx, cy, cz, halfW, halfH) {
+function buildLipFan(verts, tris, cx, cy, cz, halfW, halfH, cornerLift = 0) {
   const segs = 10
   const centerIdx = verts.length
-  // Center pushed forward → konveks bump
   verts.push({ X: cx, Y: cy, Z: cz + 0.07 })
   const ringStart = verts.length
   for (let i = 0; i < segs; i++) {
     const angle = (i / segs) * Math.PI * 2
+    // Munnviker (angle ≈ 0 og angle ≈ π) løftes opp/ned av smile
+    // cos(angle) er ±1 ved munnvikene, 0 ved topp/bunn
+    const cornerFactor = Math.abs(Math.cos(angle))
     verts.push({
       X: cx + Math.cos(angle) * halfW,
-      Y: cy + Math.sin(angle) * halfH,
+      Y: cy + Math.sin(angle) * halfH - cornerLift * cornerFactor,
       Z: cz,
     })
   }
