@@ -1,20 +1,24 @@
-import { ref, onUnmounted } from 'vue'
+import { reactive, onUnmounted } from 'vue'
 import { wgs84ToSvg } from '../lib/utm.js'
 
 /**
  * GPS-posisjon konvertert til SVG-koordinater. Tar en getter for meta
  * slik at composablen kan kalles på toppnivå før kartet er lastet.
+ * Returnerer et reactive objekt slik at properties auto-unwrappes i template.
+ *
  * @param {() => ({minE, minN, widthM, heightM} | null)} getMeta
  */
 export function useUserPosition(getMeta) {
-  const svgX = ref(null)
-  const svgY = ref(null)
-  const accuracyM = ref(null)
-  const headingDeg = ref(null)
-  const speedMs = ref(null)
-  const error = ref(null)
-  const isWatching = ref(false)
-  const isOutsideMap = ref(false)
+  const state = reactive({
+    svgX: null,
+    svgY: null,
+    accuracyM: null,
+    headingDeg: null,
+    speedMs: null,
+    error: null,
+    isWatching: false,
+    isOutsideMap: false,
+  })
 
   let watchId = null
   let lastCoords = null
@@ -24,29 +28,29 @@ export function useUserPosition(getMeta) {
     const meta = getMeta()
     if (!meta) return
     const p = wgs84ToSvg(lastCoords.latitude, lastCoords.longitude, meta)
-    svgX.value = p.x
-    svgY.value = p.y
-    isOutsideMap.value =
+    state.svgX = p.x
+    state.svgY = p.y
+    state.isOutsideMap =
       p.x < 0 || p.x > meta.widthM || p.y < 0 || p.y > meta.heightM
   }
 
   function start() {
     if (!navigator.geolocation) {
-      error.value = 'Nettleseren støtter ikke GPS'
+      state.error = 'Nettleseren støtter ikke GPS'
       return
     }
     if (watchId !== null) return
-    isWatching.value = true
-    error.value = null
+    state.isWatching = true
+    state.error = null
 
     watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const c = pos.coords
         lastCoords = { latitude: c.latitude, longitude: c.longitude }
-        accuracyM.value = c.accuracy ?? null
-        headingDeg.value = Number.isFinite(c.heading) ? c.heading : null
-        speedMs.value = Number.isFinite(c.speed) ? c.speed : null
-        error.value = null
+        state.accuracyM = c.accuracy ?? null
+        state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
+        state.speedMs = Number.isFinite(c.speed) ? c.speed : null
+        state.error = null
         recompute()
       },
       (err) => {
@@ -55,7 +59,7 @@ export function useUserPosition(getMeta) {
           2: 'GPS-posisjon ikke tilgjengelig',
           3: 'GPS-forespørsel tok for lang tid',
         }
-        error.value = map[err.code] ?? 'GPS-feil'
+        state.error = map[err.code] ?? 'GPS-feil'
       },
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
     )
@@ -66,14 +70,10 @@ export function useUserPosition(getMeta) {
       navigator.geolocation.clearWatch(watchId)
       watchId = null
     }
-    isWatching.value = false
+    state.isWatching = false
   }
 
   onUnmounted(stop)
 
-  return {
-    svgX, svgY, accuracyM, headingDeg, speedMs,
-    error, isWatching, isOutsideMap,
-    start, stop, recompute,
-  }
+  return Object.assign(state, { start, stop, recompute })
 }

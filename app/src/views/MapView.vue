@@ -118,7 +118,7 @@ function setupHostSvg(sourceRoot) {
 }
 
 watch(
-  () => [userPos.svgX.value, userPos.svgY.value, userPos.accuracyM.value, userPos.headingDeg.value],
+  () => [userPos.svgX, userPos.svgY, userPos.accuracyM, userPos.headingDeg],
   () => updateUserDot()
 )
 
@@ -126,10 +126,10 @@ function updateUserDot() {
   const svg = svgHostRef.value?.querySelector('svg')
   const layer = svg?.querySelector('#user-layer')
   if (!layer) return
-  const x = userPos.svgX.value
-  const y = userPos.svgY.value
-  const acc = userPos.accuracyM.value ?? 30
-  const heading = userPos.headingDeg.value
+  const x = userPos.svgX
+  const y = userPos.svgY
+  const acc = userPos.accuracyM ?? 30
+  const heading = userPos.headingDeg
   layer.replaceChildren()
   if (x == null || y == null) return
   const ns = 'http://www.w3.org/2000/svg'
