@@ -2,18 +2,16 @@ import { describe, it, expect } from 'vitest'
 import { buildHeadMesh, buildHairMesh } from './headMesh.js'
 
 describe('buildHeadMesh', () => {
-  it('genererer rimelig antall vertices og trekanter', () => {
+  it('genererer rimelig antall vertices og trekanter (inkl. features)', () => {
     const mesh = buildHeadMesh()
-    expect(mesh.vertices.length).toBeGreaterThan(150)
-    expect(mesh.vertices.length).toBeLessThan(220)
-    // 11 skiver à 16 punkter = 176 + 2 apex = 178 forventet
-    expect(mesh.triangles.length).toBeGreaterThan(300)
-    expect(mesh.triangles.length).toBeLessThan(400)
+    expect(mesh.vertices.length).toBeGreaterThan(180) // 178 hode + features
+    expect(mesh.triangles.length).toBeGreaterThan(350)
   })
 
   it('alle trekant-indekser er innenfor vertices.length', () => {
     const mesh = buildHeadMesh()
-    for (const [a, b, c] of mesh.triangles) {
+    for (const t of mesh.triangles) {
+      const [a, b, c] = t.indices
       expect(a).toBeGreaterThanOrEqual(0)
       expect(a).toBeLessThan(mesh.vertices.length)
       expect(b).toBeLessThan(mesh.vertices.length)
@@ -23,15 +21,19 @@ describe('buildHeadMesh', () => {
     }
   })
 
-  it('inneholder feature-posisjoner for øyne, bryn, nese, munn', () => {
+  it('inneholder alle region-tags', () => {
     const mesh = buildHeadMesh()
-    expect(mesh.features.leftEye).toBeDefined()
-    expect(mesh.features.rightEye).toBeDefined()
+    const regions = new Set(mesh.triangles.map(t => t.region))
+    expect(regions.has('skin')).toBe(true)
+    expect(regions.has('eyeSocket')).toBe(true)
+    expect(regions.has('nose')).toBe(true)
+    expect(regions.has('lips')).toBe(true)
+  })
+
+  it('har øyenbryn-buer for 2D-overlay', () => {
+    const mesh = buildHeadMesh()
     expect(mesh.features.leftBrow.length).toBe(5)
     expect(mesh.features.rightBrow.length).toBe(5)
-    expect(mesh.features.noseTip).toBeDefined()
-    expect(mesh.features.mouthLeft).toBeDefined()
-    expect(mesh.features.mouthRight).toBeDefined()
   })
 
   it('skalerer headHeight med proporsjonene', () => {
@@ -40,9 +42,10 @@ describe('buildHeadMesh', () => {
     expect(big.bounds.headHeight).toBeGreaterThan(small.bounds.headHeight)
   })
 
-  it('nesa stikker fram (Z større ved nese-tipp enn hode-bredde)', () => {
-    const mesh = buildHeadMesh()
-    expect(mesh.features.noseTip.Z).toBeGreaterThan(mesh.bounds.headDepth)
+  it('headWidth følger faceAspect', () => {
+    const narrow = buildHeadMesh({ faceHeight: 4 }, { faceAspect: 0.6 })
+    const wide = buildHeadMesh({ faceHeight: 4 }, { faceAspect: 0.95 })
+    expect(wide.bounds.headWidth).toBeGreaterThan(narrow.bounds.headWidth)
   })
 })
 

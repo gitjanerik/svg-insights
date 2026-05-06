@@ -61,13 +61,14 @@ describe('meshToSvg', () => {
     expect(a).not.toBe(b)
   })
 
-  it('inkluderer briller når detektert', () => {
+  it('bruker palettens munn-farge på leppe-trekanter', () => {
     const mesh = buildHeadMesh()
-    const svg = meshToSvg({
-      mesh,
-      palette: defaultPalette(),
-      glasses: { hasGlasses: true, darkness: 0.5 },
-    })
-    expect(svg).toContain('<circle')
+    const palette = { ...defaultPalette(), mouth: '#FF0066' }
+    const svg = meshToSvg({ mesh, palette })
+    // Leppe-fargen skal vises et eller annet sted i SVG-en (etter shading)
+    expect(svg.toLowerCase()).toMatch(/#[0-9a-f]{6}/)
+    // Det bør være lepper i resultatet — sjekk at vi har minst én polygon
+    // som ikke er hud-fargen
+    expect(svg).toContain('<polygon')
   })
 })

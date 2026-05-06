@@ -336,8 +336,6 @@ const rotatedSvg = computed(() => {
   return meshToSvg({
     mesh: headMesh.value,
     hair: hairMesh.value,
-    glasses: accessoriesData.value?.glasses,
-    beard: accessoriesData.value?.beard,
     rotY: rotY.value,
     viewBoxSize: 400,
     palette: palette.value,

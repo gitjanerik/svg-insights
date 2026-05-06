@@ -1,22 +1,23 @@
 // Renderer en triangulær mesh som SVG. Tre moduser:
-//   'wireframe' — kun trekant-konturer, ingen fyll
-//   'shaded'    — fylte trekanter med Lambertian shading, ingen kant
-//   'both'      — fyll + tynn kant (klassisk lavpoly-look)
+//   'wireframe' — kun trekant-konturer
+//   'shaded'    — fylte trekanter med Lambertian + cell-shading + silhuett
+//   'both'      — fyll + tynn kant + silhuett
 //
-// Bruker painter's algorithm: trekanter sorteres bak-til-front før tegning.
-// Backface culling: trekanter som peker bort fra kameraet droppes.
+// Hver trekant har { indices: [a,b,c], region } der region bestemmer base-farge:
+//   skin → palette.skin
+//   eyeSocket → veldig mørk variant av skin (gir konkav-effekt)
+//   nose → palette.skin (definisjon kommer fra Lambertian)
+//   lips → palette.mouth (rød)
+//   hair → palette.hair
 
 import { shadeColor } from './portraitPalettes.js'
 
-// Lys-retning: oppe-venstre-foran, normalisert (kameraet ser inn i +Z)
 const LIGHT = (() => {
   const v = [-0.45, -0.55, 0.70]
   const m = Math.hypot(...v)
   return [v[0] / m, v[1] / m, v[2] / m]
 })()
 
-// Cell-shading: kvantiser kontinuerlig brightness (0..1) til diskrete nivåer.
-// Gir poster-art-look i stedet for jevn 3D-CG-gradient.
 function quantizeBrightness(b, levels = 4) {
   const step = 1 / levels
   return Math.floor(b * levels) / levels + step / 2
@@ -30,8 +31,6 @@ export function rotateY(v, angleRad) {
 export function meshToSvg({
   mesh,
   hair = null,
-  glasses = null,
-  beard = null,
   rotY = 0,
   viewBoxSize = 400,
   padding = 30,
@@ -40,11 +39,17 @@ export function meshToSvg({
 } = {}) {
   if (!mesh) return null
 
-  // Roter alle vertices rundt Y-aksen
+  // Region → base-farge
+  const regionColor = {
+    skin: palette.skin,
+    eyeSocket: shadeColor(palette.skin, 0.12),  // mørk skygge for konkav effekt
+    nose: palette.skin,
+    lips: palette.mouth,
+    hair: palette.hair,
+  }
+
   const headVerts = mesh.vertices.map(v => rotateY(v, rotY))
   const hairVerts = hair ? hair.vertices.map(v => rotateY(v, rotY)) : []
-
-  // Beregn bbox av alle vertices (inkl. hår) for skalering
   const allVerts = [...headVerts, ...hairVerts]
   const bounds = computeBounds(allVerts)
   const sceneW = bounds.maxX - bounds.minX
@@ -61,14 +66,13 @@ export function meshToSvg({
   const headProj = headVerts.map(project)
   const hairProj = hairVerts.map(project)
 
-  // Bygg trekant-data: brightness, gjennomsnittsdybde, om synlig
-  function processTriangles(triangles, vertsRotated, vertsProj, baseColor, isHair = false) {
+  function processTriangles(triangles, vertsRotated, vertsProj) {
     const out = []
     for (const tri of triangles) {
-      const a = vertsRotated[tri[0]]
-      const b = vertsRotated[tri[1]]
-      const c = vertsRotated[tri[2]]
-      // Normal via kryssprodukt (e1 × e2)
+      const [iA, iB, iC] = tri.indices
+      const a = vertsRotated[iA]
+      const b = vertsRotated[iB]
+      const c = vertsRotated[iC]
       const e1x = b.X - a.X, e1y = b.Y - a.Y, e1z = b.Z - a.Z
       const e2x = c.X - a.X, e2y = c.Y - a.Y, e2z = c.Z - a.Z
       const nx = e1y * e2z - e1z * e2y
@@ -77,45 +81,40 @@ export function meshToSvg({
       const nlen = Math.hypot(nx, ny, nz)
       if (nlen < 1e-9) continue
       const nXn = nx / nlen, nYn = ny / nlen, nZn = nz / nlen
-
-      // Backface culling: kameraet ser fra -Z mot +Z, så normale med Z>0
-      // peker fremover (mot oss). Behold de trekantene.
-      // Med litt margin slik at trekanter på kanten ikke flimrer.
       if (nZn < -0.05) continue
 
-      // Lambertian — flat shading
       const lit = Math.max(0, nXn * LIGHT[0] + nYn * LIGHT[1] + nZn * LIGHT[2])
-      // Ambient + cell-shading (4 nivåer) gir posterized comic-look
       const continuous = 0.30 + 0.70 * lit
       const brightness = quantizeBrightness(continuous, 4)
 
-      const pa = vertsProj[tri[0]]
-      const pb = vertsProj[tri[1]]
-      const pc = vertsProj[tri[2]]
+      const pa = vertsProj[iA]
+      const pb = vertsProj[iB]
+      const pc = vertsProj[iC]
       const avgZ = (pa.z + pb.z + pc.z) / 3
 
-      out.push({ pa, pb, pc, brightness, avgZ, baseColor, isHair })
+      const baseColor = regionColor[tri.region] || palette.skin
+      out.push({ pa, pb, pc, brightness, avgZ, baseColor, region: tri.region })
     }
     return out
   }
 
-  const headColor = palette.skin
-  const hairColor = palette.hair
-  const headTris = processTriangles(mesh.triangles, headVerts, headProj, headColor)
-  const hairTris = hair ? processTriangles(hair.triangles, hairVerts, hairProj, hairColor, true) : []
+  const headTris = processTriangles(mesh.triangles, headVerts, headProj)
+  const hairTris = hair ? processTriangles(hair.triangles, hairVerts, hairProj) : []
 
-  // Painter's: bak-til-front. Større Z = lengre fra kameraet (siden +Z er forover
-  // og kameraet er på +Z-side eller ser fra -Z, vi har +Z mot kameraet).
-  // Trekanter med høy Z er nære kameraet → tegn sist (på toppen).
-  // Lav Z = bak → tegn først.
+  // Painter's: bak-til-front. Trekanter med høyere Z er nære kameraet → tegn sist.
+  // Mesh-features (eyeSocket, nose, lips) skal alltid være OVER underliggende skin
+  // selv om Z-verdiene tilfeldigvis er like — bump dem litt frem ved sortering.
+  const FEATURE_PRIORITY = { skin: 0, hair: 0, nose: 0.05, lips: 0.05, eyeSocket: 0.05 }
   const allTris = [...headTris, ...hairTris]
-  allTris.sort((a, b) => a.avgZ - b.avgZ)
+  allTris.sort((a, b) => {
+    const za = a.avgZ + (FEATURE_PRIORITY[a.region] || 0)
+    const zb = b.avgZ + (FEATURE_PRIORITY[b.region] || 0)
+    return za - zb
+  })
 
   const showFill = mode !== 'wireframe'
-  // Wireframe: tegn kant pr trekant. Both: tegn kant pr trekant tynnt.
-  // Shaded: ingen kant pr trekant (kun silhuett).
   const showTriangleStrokes = mode === 'wireframe' || mode === 'both'
-  const showSilhouette = mode !== 'wireframe' // poster-look har silhuett
+  const showSilhouette = mode !== 'wireframe'
 
   const parts = []
   parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" class="w-full h-full">`)
@@ -129,15 +128,10 @@ export function meshToSvg({
     parts.push(`<polygon points="${points}" fill="${fill}"${strokeAttr}/>`)
   }
 
-  // Silhuett-outline: tjukk svart kant rundt convex hull av synlige hode-vertices.
-  // Gir cartoon/poster-look som kompletterer cell-shadingen.
+  // Silhuett — tjukk svart kontur rundt hodet+hår (kun shaded-modi)
   if (showSilhouette) {
-    const silhouettePoints = headProj.filter((_, i) => {
-      // Filtrer ut apex-vertices og hår — vi vil ha hode-omrisset
-      return i < mesh.vertices.length - 2
-    })
-    const hairPts = hairProj
-    const allHullPts = [...silhouettePoints, ...hairPts]
+    const silhouettePoints = headProj.filter((_, i) => i < mesh.vertices.length - 2)
+    const allHullPts = [...silhouettePoints, ...hairProj]
     const hull = convexHull(allHullPts)
     if (hull.length >= 3) {
       const path = closedPolygonPath(hull)
@@ -145,12 +139,9 @@ export function meshToSvg({
     }
   }
 
-  // Features (kun hvis ikke wireframe-modus, ellers konkurrerer de visuelt med rutenettet)
-  if (mode !== 'wireframe' && mesh.features) {
-    const f = mesh.features
+  // Øyenbryn beholdes som 2D-overlay (vurderes flyttet til mesh senere)
+  if (mode !== 'wireframe' && mesh.features?.leftBrow && mesh.features?.rightBrow) {
     function projF(v) { return project(rotateY(v, rotY)) }
-
-    // Brynkam — to buer
     function browPath(arr) {
       const pts = arr.map(p => projF(p))
       const segs = [`M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`]
@@ -165,79 +156,10 @@ export function meshToSvg({
       segs.push(`L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`)
       return segs.join(' ')
     }
-    if (f.leftBrow && f.rightBrow) {
-      // Bare tegn bryn som er foran (Z > 0 etter rotasjon)
-      const lbz = rotateY(f.leftBrow[2], rotY).Z
-      const rbz = rotateY(f.rightBrow[2], rotY).Z
-      if (lbz > -0.1) parts.push(`<path d="${browPath(f.leftBrow)}" fill="none" stroke="${palette.outline}" stroke-width="2.5" stroke-linecap="round"/>`)
-      if (rbz > -0.1) parts.push(`<path d="${browPath(f.rightBrow)}" fill="none" stroke="${palette.outline}" stroke-width="2.5" stroke-linecap="round"/>`)
-    }
-
-    // Øyne — store, buetypiske Simpsons-øyne (hvit oval + sort pupill)
-    if (f.leftEye && f.rightEye) {
-      const lez = rotateY(f.leftEye, rotY).Z
-      const rez = rotateY(f.rightEye, rotY).Z
-      const eyeRx = 13
-      const eyeRy = 9
-      if (lez > -0.1) {
-        const p = projF(f.leftEye)
-        parts.push(`<ellipse cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" rx="${eyeRx}" ry="${eyeRy}" fill="${palette.eyeWhite}" stroke="${palette.outline}" stroke-width="2.5"/>`)
-        parts.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="${palette.pupil}"/>`)
-      }
-      if (rez > -0.1) {
-        const p = projF(f.rightEye)
-        parts.push(`<ellipse cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" rx="${eyeRx}" ry="${eyeRy}" fill="${palette.eyeWhite}" stroke="${palette.outline}" stroke-width="2.5"/>`)
-        parts.push(`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="${palette.pupil}"/>`)
-      }
-    }
-
-    // Munn — bredere Simpsons-stilisert smil (fylt med palette.mouth)
-    if (f.mouthLeft && f.mouthRight && f.mouthCenter) {
-      const cz = rotateY(f.mouthCenter, rotY).Z
-      if (cz > -0.1) {
-        const l = projF(f.mouthLeft)
-        const c = projF(f.mouthCenter)
-        const r = projF(f.mouthRight)
-        // Munn som bue — øvre linje rett, nedre linje krummer ned
-        const path = `M ${l.x.toFixed(1)} ${l.y.toFixed(1)} L ${r.x.toFixed(1)} ${r.y.toFixed(1)} Q ${c.x.toFixed(1)} ${(c.y + 8).toFixed(1)}, ${l.x.toFixed(1)} ${l.y.toFixed(1)} Z`
-        parts.push(`<path d="${path}" fill="${palette.mouth}" stroke="${palette.outline}" stroke-width="2.5" stroke-linejoin="round"/>`)
-      }
-    }
-
-    // Briller — to ringer ved øyne hvis detektert
-    if (glasses && f.leftEye && f.rightEye) {
-      const lez = rotateY(f.leftEye, rotY).Z
-      const rez = rotateY(f.rightEye, rotY).Z
-      const lp = projF(f.leftEye)
-      const rp = projF(f.rightEye)
-      const lensR = Math.max(10, Math.min(18, Math.hypot(rp.x - lp.x, rp.y - lp.y) * 0.42))
-      if (lez > -0.1) {
-        parts.push(`<circle cx="${lp.x.toFixed(1)}" cy="${lp.y.toFixed(1)}" r="${lensR.toFixed(1)}" fill="none" stroke="${palette.glasses}" stroke-width="2.5"/>`)
-      }
-      if (rez > -0.1) {
-        parts.push(`<circle cx="${rp.x.toFixed(1)}" cy="${rp.y.toFixed(1)}" r="${lensR.toFixed(1)}" fill="none" stroke="${palette.glasses}" stroke-width="2.5"/>`)
-      }
-      // Bro
-      if (lez > -0.1 && rez > -0.1) {
-        parts.push(`<line x1="${(lp.x + lensR).toFixed(1)}" y1="${lp.y.toFixed(1)}" x2="${(rp.x - lensR).toFixed(1)}" y2="${rp.y.toFixed(1)}" stroke="${palette.glasses}" stroke-width="2.5" stroke-linecap="round"/>`)
-      }
-    }
-  }
-
-  // Skjegg som halvgjennomsiktig overlay på nedre ansikt
-  if (beard?.hasBeard && mesh.features && mode !== 'wireframe') {
-    const f = mesh.features
-    const ml = project(rotateY(f.mouthLeft, rotY))
-    const mr = project(rotateY(f.mouthRight, rotY))
-    const cz = rotateY(f.mouthCenter, rotY).Z
-    if (cz > -0.1) {
-      // Enkel skjegg-form: trapes fra munnvikene til hake
-      const chinY = ml.y + 35
-      const chinW = (mr.x - ml.x) * 0.65
-      const cx = (ml.x + mr.x) / 2
-      const path = `M ${ml.x.toFixed(1)} ${ml.y.toFixed(1)} L ${(cx - chinW / 2).toFixed(1)} ${chinY.toFixed(1)} Q ${cx.toFixed(1)} ${(chinY + 5).toFixed(1)}, ${(cx + chinW / 2).toFixed(1)} ${chinY.toFixed(1)} L ${mr.x.toFixed(1)} ${mr.y.toFixed(1)} Z`
-      parts.push(`<path d="${path}" fill="${palette.beard}" fill-opacity="0.85" stroke="${palette.outline}" stroke-width="1.5"/>`)
-    }
+    const lbz = rotateY(mesh.features.leftBrow[2], rotY).Z
+    const rbz = rotateY(mesh.features.rightBrow[2], rotY).Z
+    if (lbz > -0.1) parts.push(`<path d="${browPath(mesh.features.leftBrow)}" fill="none" stroke="${palette.outline}" stroke-width="3" stroke-linecap="round"/>`)
+    if (rbz > -0.1) parts.push(`<path d="${browPath(mesh.features.rightBrow)}" fill="none" stroke="${palette.outline}" stroke-width="3" stroke-linecap="round"/>`)
   }
 
   parts.push('</svg>')
@@ -256,7 +178,6 @@ function computeBounds(verts) {
   return { minX, maxX, minY, maxY }
 }
 
-// Andrew's monotone chain — convex hull i CCW
 function convexHull(points) {
   if (points.length < 3) return points.slice()
   const pts = [...points].sort((a, b) => a.x - b.x || a.y - b.y)

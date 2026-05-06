@@ -114,10 +114,31 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.2.1 -->
+          <!-- 6.2.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.2.2</span>
+                <span class="text-white/40">&mdash; Features inn i meshen: konkave øyehuler, konveks nese, konvekse lepper</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Trekant-strukturen er refaktorert</strong> til <code>{indices, region}</code> så hver trekant kan ha sin egen base-farge. Skin-trekanter fortsatt majoriteten, men hode har nå også eyeSocket, nose og lips-regioner</li>
+                <li><strong class="text-white/60">Konkave øyehuler i meshen</strong> &mdash; ring av 10 punkter foran ansiktet og et senter-punkt presset bakover, fyller med en mørk variant av skin-fargen via <code>shadeColor(skin, 0.12)</code>. Lambertian-shading gir naturlig dybde-følelse</li>
+                <li><strong class="text-white/60">Konveks nese-pyramide</strong> erstatter slice-deformasjonen &mdash; 4 trekanter forming en pyramide som stikker ut fra ansiktet, samme farge som skin men formen kommer tydelig frem via shading</li>
+                <li><strong class="text-white/60">Konvekse lepper</strong> som to fan-meshes (øvre og nedre) i palettens munn-farge. Senter pushed forward → konveks bump som tegner seg som røde lepper</li>
+                <li><strong class="text-white/60">2D-overlays droppet</strong> for øyne og munn — disse er nå ekte 3D-features. Briller droppet helt for nå (kommer tilbake senere som mesh-eller-vektor-toggle)</li>
+                <li><strong class="text-white/60">Øyenbryn beholdes som vektor-overlay</strong> &mdash; svarte buer over øyehulene (vurderes flyttet inn i meshen senere)</li>
+                <li><strong class="text-white/60">Painter's-prioritet for features</strong>: features (lips, nose, eyeSocket) får +0.05 i Z-sortering så de alltid tegnes over underliggende skin-trekanter selv ved tilfeldige sorterings-kollisjoner</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.2.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.2.1</span>
                 <span class="text-white/40">&mdash; Capture-til-mesh kobling + cell-shading + silhuett-outline</span>
