@@ -8,7 +8,8 @@
 import { isSkinPixel } from './faceLandmarks.js'
 
 // HÅR: undersøk regionen rett over panne-landemerket.
-// Returnerer { hasHair, length, fillRatio } — length=0..1 estimat fra fillRatio.
+// Krever MØRKE ikke-hud-piksler — utelukker lyse vegger og himmel som
+// ofte ble klassifisert som hår i tidligere versjoner.
 export function detectHair(rgba, w, h, faceRegion, landmarks) {
   if (!faceRegion || !landmarks) return { hasHair: false, length: 0, fillRatio: 0 }
 
@@ -25,21 +26,22 @@ export function detectHair(rgba, w, h, faceRegion, landmarks) {
       const i = (y * w + x) * 4
       const cr = rgba[i], cg = rgba[i + 1], cb = rgba[i + 2]
       totalCount++
-      // Hår = ikke-hud + ikke ekstrem-bakgrunn (luma > 8 og < 240)
       if (!isSkinPixel(cr, cg, cb)) {
         const luma = 0.299 * cr + 0.587 * cg + 0.114 * cb
-        if (luma > 8 && luma < 240) hairCount++
+        // Strammere terskel: hår må være tydelig mørkere enn typisk vegg/lys
+        if (luma > 8 && luma < 140) hairCount++
       }
     }
   }
 
   const fillRatio = totalCount > 0 ? hairCount / totalCount : 0
-  if (hairCount < totalCount * 0.05 || hairCount < 30) {
+  // Krever 18% fill for å unngå falske positive
+  if (fillRatio < 0.18 || hairCount < 60) {
     return { hasHair: false, length: 0, fillRatio }
   }
   return {
     hasHair: true,
-    length: Math.min(1, fillRatio * 1.5),
+    length: Math.min(1, fillRatio * 1.4),
     fillRatio,
   }
 }
@@ -105,7 +107,8 @@ export function detectBeard(rgba, w, h, faceRegion, landmarks) {
   }
   if (total === 0) return { hasBeard: false, density: 0 }
   const density = nonSkinDark / total
-  if (density < 0.20 || nonSkinDark < 20) {
+  // Strammere terskel — krever klart skjegg-mønster, ikke bare skygger
+  if (density < 0.30 || nonSkinDark < 60) {
     return { hasBeard: false, density }
   }
   return { hasBeard: true, density }

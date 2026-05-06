@@ -30,6 +30,7 @@ const headMesh = ref(null)
 const hairMesh = ref(null)
 const accessoriesData = ref(null)
 const palette = ref(defaultPalette())
+const capturedThumbnail = ref(null)
 
 // Render-modus: 'wireframe' | 'shaded' | 'both'
 const renderMode = ref('both')
@@ -261,11 +262,27 @@ async function runPipeline(frames) {
   )
   accessoriesData.value = accessories
 
-  // Stadium 5: bygg 3D-mesh deformert av proporsjonene
-  headMesh.value = buildHeadMesh(proportions)
+  // Lagre thumbnail av brukt frame (gir bruker tillit til at capturen brukes)
+  capturedThumbnail.value = frameRgbaToDataUrl(bestFrame)
+
+  // Stadium 5: bygg 3D-mesh deformert av proporsjonene + face aspect
+  const bestBbox = detections[bestIdx].bbox
+  const faceAspect = bestBbox.w / bestBbox.h
+  headMesh.value = buildHeadMesh(proportions, { faceAspect })
   hairMesh.value = buildHairMesh(headMesh.value, accessories.hair)
   processingStage.value = 'done'
   await yieldFrame()
+}
+
+function frameRgbaToDataUrl(frame) {
+  const c = document.createElement('canvas')
+  c.width = frame.width
+  c.height = frame.height
+  const ctx = c.getContext('2d')
+  const img = ctx.createImageData(frame.width, frame.height)
+  img.data.set(frame.rgba)
+  ctx.putImageData(img, 0, 0)
+  return c.toDataURL('image/jpeg', 0.7)
 }
 
 function pickNewPalette() {
@@ -286,6 +303,7 @@ function reset() {
   headMesh.value = null
   hairMesh.value = null
   accessoriesData.value = null
+  capturedThumbnail.value = null
   palette.value = defaultPalette()
   renderMode.value = 'both'
   processingStage.value = ''
@@ -535,15 +553,21 @@ onBeforeUnmount(() => {
           <p class="text-sm text-white/60">{{ diagnosticHint }}</p>
         </div>
 
-        <div
-          v-if="hasResult"
-          class="rounded-xl overflow-hidden border border-emerald-400/20 aspect-square relative touch-none select-none"
-          @pointerdown="onPointerDown"
-          @pointermove="onPointerMove"
-          @pointerup="onPointerUp"
-          @pointercancel="onPointerUp"
-          v-html="rotatedSvg"
-        />
+        <div v-if="hasResult" class="space-y-2">
+          <div
+            class="rounded-xl overflow-hidden border border-emerald-400/20 aspect-square relative touch-none select-none"
+            @pointerdown="onPointerDown"
+            @pointermove="onPointerMove"
+            @pointerup="onPointerUp"
+            @pointercancel="onPointerUp"
+            v-html="rotatedSvg"
+          />
+          <!-- Foto-thumbnail: viser at capturen faktisk brukes -->
+          <div v-if="capturedThumbnail" class="flex items-center gap-2 text-[10px] text-white/40">
+            <img :src="capturedThumbnail" class="w-12 h-9 object-cover rounded border border-white/10" style="transform: scaleX(-1);" />
+            <span>Bygd fra denne framen — proporsjonene dine deformerer meshen</span>
+          </div>
+        </div>
 
         <div
           v-else

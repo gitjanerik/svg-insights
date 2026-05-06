@@ -114,10 +114,32 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.2.0 -->
+          <!-- 6.2.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.2.1</span>
+                <span class="text-white/40">&mdash; Capture-til-mesh kobling + cell-shading + silhuett-outline</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Bredt ansikt → bredt hode</strong> &mdash; mesh-bredden drives nå av face bbox aspect ratio fra capturen, ikke en hardkodet konstant. Smalansiktet bruker får smal mesh, bredansiktet får bred</li>
+                <li><strong class="text-white/60">Strammere hår-deteksjon</strong> krever mørke (luma &lt; 140) ikke-hud-piksler over panna, ikke bare ikke-hud-piksler. Lyse vegger og himmel klassifiseres ikke lenger som hår</li>
+                <li><strong class="text-white/60">Strammere skjegg-deteksjon</strong> krever 30% non-skin-density i stedet for 20% &mdash; reduserer falske positive på skygger eller mørk munn</li>
+                <li><strong class="text-white/60">Bedre hår-mesh</strong> med per-vertex deformasjon: bakhode har mest volum, hairline foran kommer kun litt frem på panna, sidene drapres ned (ikke flat kalott)</li>
+                <li><strong class="text-white/60">Cell-shading med 4 nivåer</strong> erstatter kontinuerlig Lambertian-gradient. Gir poster-art-look i stedet for jevn 3D-CG, mer på linje med SVG Insights' kunst-aspekt</li>
+                <li><strong class="text-white/60">Silhuett-outline</strong> som en tjukk svart kontur rundt hodets convex hull, kun tegnet i Skyggelagt og Begge-modi. Trekant-kanter pr-trekant droppet i Skyggelagt-modus &mdash; rensere cartoon-look</li>
+                <li><strong class="text-white/60">Større Simpsons-features</strong>: øyne 13×9 (var 9×6), bredere munn med fyll-farge, mer karakterfullt</li>
+                <li><strong class="text-white/60">Foto-thumbnail i resultatet</strong> &mdash; den brukte framen vises som liten thumbnail under selvbildet med teksten «Bygd fra denne framen — proporsjonene dine deformerer meshen». Synliggjør at capturen faktisk brukes</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.2.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.2.0</span>
                 <span class="text-white/40">&mdash; Polygonalt 3D-portrett: ekte mesh + wireframe/shading-toggle</span>
