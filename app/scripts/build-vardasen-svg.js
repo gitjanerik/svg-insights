@@ -117,6 +117,13 @@ function fmt(n) {
   return Number(n.toFixed(2));
 }
 
+function xmlEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function pathFromGeometry(geom, close = false) {
   if (!geom || geom.length === 0) return '';
   const pts = geom.map(g => project(g.lat, g.lon));
@@ -193,14 +200,16 @@ function buildSVG(elements) {
     const parts = [];
     for (const el of buckets.peak) {
       const p = project(el.lat, el.lon);
-      const name = el.tags?.name ?? '';
+      const name = xmlEscape(el.tags?.name ?? '');
       const ele = el.tags?.ele ?? '';
-      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><circle r="3" data-symbol="peak"/><text x="6" y="2" data-label="peak">${name}${ele ? ` ${Math.round(parseFloat(ele))}` : ''}</text></g>`);
+      const eleNum = parseFloat(ele);
+      const label = name + (Number.isFinite(eleNum) ? ` ${Math.round(eleNum)}` : '');
+      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><circle r="3" data-symbol="peak"/><text x="6" y="2" data-label="peak">${label}</text></g>`);
     }
     for (const el of buckets.place) {
       if (!el.tags?.name) continue;
       const p = project(el.lat, el.lon);
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" data-label="place">${el.tags.name}</text>`);
+      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" data-label="place">${xmlEscape(el.tags.name)}</text>`);
     }
     if (!parts.length) return '';
     return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`;
