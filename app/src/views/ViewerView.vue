@@ -49,6 +49,7 @@ const halftoneMerge = ref(0.3)
 const halftoneBlend = ref('normal')
 const halftoneOpacity = ref(50)
 const halftoneColor = ref('#000000')
+const halftonePattern = ref('grid')   // 'grid' | 'stipple'
 
 // ── Strek-tab effects (v4.11) ──────────────────────────────────────────
 // Each effect has an `enabled` toggle and an `amount` slider. Turning a
@@ -341,6 +342,7 @@ function rebuildSvg() {
       merge: halftoneMerge.value,
       blend: halftoneBlend.value,
       opacity: halftoneOpacity.value,
+      pattern: halftonePattern.value,
     })
   }
 
@@ -372,7 +374,7 @@ watch(
   [
     strokeScale, strokeColor, dashPattern, linecapStyle, isSmooth, wobbleIntensity,
     svgFilter, opacities, colorized, halftone, halftoneScale, halftoneMerge,
-    halftoneBlend, halftoneOpacity, halftoneColor, gameActive,
+    halftoneBlend, halftoneOpacity, halftoneColor, halftonePattern, gameActive,
     // New Strek-tab effect refs
     trimEnabled, trimAmount, simplifyEnabled, simplifyAmount,
     spaghettiEnabled, spaghettiAmount, calligraphyEnabled, calligraphyAmount,
@@ -457,6 +459,7 @@ function applyPreset(name) {
     if (p.halftoneBlend   != null) halftoneBlend.value   = p.halftoneBlend
     if (p.halftoneOpacity != null) halftoneOpacity.value = p.halftoneOpacity
     if (p.halftoneColor   != null) halftoneColor.value   = p.halftoneColor
+    if (p.halftonePattern != null) halftonePattern.value = p.halftonePattern
   }
 
   // Interactivity mode
@@ -1123,6 +1126,20 @@ onMounted(() => {
                   </button>
                 </label>
                 <div v-if="halftone">
+                  <!-- Mønster: rutenett (klassisk halftone) eller stipple (Voronoi-distribusjon) -->
+                  <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Mønster</label>
+                  <div class="grid grid-cols-2 gap-1.5 mb-3">
+                    <button v-for="p in [
+                      { v: 'grid', label: 'Rutenett' },
+                      { v: 'stipple', label: 'Stipple' },
+                    ]" :key="p.v"
+                      @click="halftonePattern = p.v"
+                      class="py-1.5 text-[11px] rounded-lg border transition-all"
+                      :class="halftonePattern === p.v ? 'bg-sky-600 border-sky-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                      {{ p.label }}
+                    </button>
+                  </div>
+
                   <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 block">Punktstorrelse</label>
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-white/30 shrink-0">Sma</span>
@@ -1144,12 +1161,11 @@ onMounted(() => {
 
                   <!-- Blend mode -->
                   <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-3 block">Blend-modus</label>
-                  <div class="grid grid-cols-2 gap-1.5">
+                  <div class="grid grid-cols-3 gap-1.5">
                     <button v-for="b in [
                       { v: 'normal', label: 'Normal' },
                       { v: 'luminosity', label: 'Luminositet' },
                       { v: 'multiply', label: 'Multiply' },
-                      { v: 'difference', label: 'Difference' },
                     ]" :key="b.v"
                       @click="halftoneBlend = b.v"
                       class="py-1.5 text-[11px] rounded-lg border transition-all"

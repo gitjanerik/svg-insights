@@ -6,6 +6,8 @@
  * string — no DOM required, so the module works in Node / test environments.
  */
 
+import { generateStipplePoints } from './voronoiStippling.js'
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -674,6 +676,7 @@ export function computeHalftoneDots(svgString, options = {}) {
     merge = 0,
     maxDots = 4800,
     lightThreshold = 230,  // pixels lighter than this are treated as background
+    pattern = 'grid',      // 'grid' eller 'stipple' (Voronoi-distribusjon)
   } = options
 
   // When gridSpacing isn't explicitly set, make dot density fall off exponentially
@@ -727,7 +730,38 @@ export function computeHalftoneDots(svgString, options = {}) {
 
   let dots = []
 
-  if (rgba && rgba.width && rgba.data) {
+  if (rgba && rgba.width && rgba.data && pattern === 'stipple') {
+    // ── Stippling: Adrian Secords vektede Voronoi-distribusjon ──
+    // I stedet for et regulært rutenett distribueres prikker via rejection
+    // sampling vektet av tetthet, etterfulgt av Lloyd's relaxation. Resultat:
+    // organisk prikkmønster som faktisk gjenspeiler bildets struktur.
+    const targetCount = Math.min(maxDots, Math.max(200, Math.round(2400 / Math.max(0.4, scale))))
+    const stipplePoints = generateStipplePoints(rgba.data, rgba.width, rgba.height, {
+      numPoints: targetCount,
+      iterations: 5,
+      seed: 1337,
+    })
+
+    for (const p of stipplePoints) {
+      const x = (p.x / rgba.width) * svgW
+      const y = (p.y / rgba.height) * svgH
+      const sample = samplePixel(x, y)
+      // Hopp over prikker som havnet i lyse områder (de gir lite informasjon)
+      if (sample && sample.lum > lightThreshold) continue
+      const t = Math.max(0, Math.min(1, p.weight ?? 0.5))
+      const radius = rMin + t * (rMax - rMin)
+      let color = fallbackColor
+      if (usePhotoColors && sample) {
+        const max = Math.max(sample.r, sample.g, sample.b, 1)
+        const boost = 1.15
+        const r = Math.min(255, Math.round(sample.r / max * 255 * boost))
+        const g = Math.min(255, Math.round(sample.g / max * 255 * boost))
+        const b = Math.min(255, Math.round(sample.b / max * 255 * boost))
+        color = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`
+      }
+      dots.push({ x, y, radius, color, merged: false })
+    }
+  } else if (rgba && rgba.width && rgba.data) {
     // ── Grid sampling: cover natural blocks (contiguous fields) in the motif ──
     // A regular grid over the SVG frame. At each cell, sample the photo's luminance
     // and drop a dot if the pixel is dark enough. The dot's radius scales with

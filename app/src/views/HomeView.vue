@@ -112,33 +112,6 @@ async function onInstallClick() {
             </svg>
           </button>
 
-          <button @click="router.push('/digitalt-selvbilde')"
-                  class="group relative w-full rounded-2xl p-4 flex items-center gap-4
-                         bg-gradient-to-br from-emerald-900/40 via-teal-900/25 to-transparent
-                         border border-emerald-400/25
-                         active:scale-[0.98] transition-all duration-200 text-left">
-            <div class="shrink-0 w-14 h-14 rounded-xl bg-emerald-500/15 border border-emerald-400/25
-                        flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7 text-emerald-300"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="9" r="4"/>
-                <path d="M5 21c0-3.866 3.134-7 7-7s7 3.134 7 7"/>
-              </svg>
-            </div>
-            <div class="flex-1">
-              <div class="flex items-center gap-2">
-                <span class="text-white font-semibold">Digitalt selvbilde</span>
-                <span class="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">Ny</span>
-              </div>
-              <div class="text-[11px] text-white/50 mt-0.5">Stipple-portrett av deg i pop-art-stil</div>
-            </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white/30"
-                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </button>
         </div>
 
         <!-- Feature hints -->

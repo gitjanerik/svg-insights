@@ -33,12 +33,11 @@ const router = useRouter()
       <section>
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Om appen</h3>
         <p class="text-sm text-white/50 leading-relaxed">
-          SVG Insights utforsker hva man kan gjøre med vektorgrafikk. Tre spor:
-          <strong class="text-white/70">SVG-tegning</strong> fra bilde,
-          <strong class="text-white/70">webfont</strong> fra inspirasjons-Google-fonter, og
-          <strong class="text-white/70">digitalt selvbilde</strong> &mdash; 3D-selfie sveipet til
-          stilisert pop-art-portrett. Alt prosesseres i nettleseren med ren JavaScript over
-          typed arrays.
+          SVG Insights utforsker hva man kan gjøre med vektorgrafikk. To spor:
+          <strong class="text-white/70">SVG-tegning</strong> fra bilde (med stipple-portretter
+          som halftone-variant), og
+          <strong class="text-white/70">webfont</strong> fra inspirasjons-Google-fonter.
+          Alt prosesseres i nettleseren med ren JavaScript over typed arrays.
         </p>
         <p class="text-sm text-white/40 mt-2">Lansert 8. april 2026</p>
       </section>
@@ -114,10 +113,33 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.0.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">7.0.0</span>
+                <span class="text-white/40">&mdash; Stipple-portrett som halftone-variant, Digitalt selvbilde fjernet</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Tilbake til to hovedspor</strong> &mdash; Digitalt selvbilde-funksjonen er fjernet etter brukertest. Det stipple-portretterende output-laget var for likt halftonen i SVG-sporet til å forsvare en egen funksjon. Vi flyttet algoritmen dit den hører hjemme</li>
+                <li><strong class="text-white/60">Stipple som halftone-mønster</strong>: rasterpunkter-bryteren i SVG-vieweren har nå et nytt valg «Mønster: Rutenett / Stipple». «Rutenett» er den klassiske halftonen, «Stipple» er Adrian Secords vektede Voronoi-distribusjon &mdash; rejection sampling vektet av tetthet etterfulgt av Lloyd's relaxation</li>
+                <li><strong class="text-white/60">Alle halftone-kontroller fungerer på begge mønstre</strong>: punktstørrelse, sammenslåing, blend-modus, opacity, farge. Eneste forskjell er hvor prikkene plasseres &mdash; i et regulært rutenett, eller via organisk Voronoi</li>
+                <li><strong class="text-white/60">«Difference»-blendmodus fjernet</strong> &mdash; den gjorde i praksis bare alle prikkene usynlige, ingen visuell verdi</li>
+                <li>Slettet: <code>PortraitView.vue</code>, <code>useMotionRecorder</code>, <code>useDeviceMotion</code>, <code>videoFrameCapture</code>, <code>faceLandmarks</code>, <code>landmarkTriangulation</code>, <code>accessoryDetection</code>, <code>expressionDetection</code>, <code>headMesh</code>, <code>meshToSvg</code>, <code>portraitModel</code>, <code>portraitToSvg</code>, <code>portraitPalettes</code>, <code>stipplingToSvg</code>, og de gamle SfM-bibliotekene (<code>featureDetection</code>, <code>opticalFlow</code>, <code>motionFusion</code>, <code>triangulation</code>, <code>wireframeBuilder</code>, <code>wireframeToSvg</code>) &mdash; ingen lenger i bruk</li>
+                <li><strong class="text-white/60">Beholdt</strong>: <code>voronoiStippling.js</code> som fortsatt driver stipple-mønsteret i halftonen</li>
+                <li>Tester: 151 totalt (var 293 &mdash; ~140 tester fjernet sammen med portrett-koden)</li>
+                <li>Bundle-størrelse: PortraitView-bundlet (~30 KB) er borte, ViewerView vokser med 2.5 KB pga voronoi-import</li>
+                <li>Brukere som hadde lagret bokmerker til <code>/digitalt-selvbilde</code> eller <code>/skann-rommet</code> får 404 nå. En tredje hovedfunksjon kommer i en framtidig versjon</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.4.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
-            <details class="group" open>
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.4.1</span>
                 <span class="text-white/40">&mdash; Riktig aspect, blend-modi på prikkene, pinch-zoom + slider</span>

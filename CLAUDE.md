@@ -2,13 +2,14 @@
 
 ## Hva er dette?
 
-SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
+SVG Insights er en Vue 3-mobilapp med to hovedfunksjoner:
 
-1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
+1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering. Inkluderer rasterpunkter (halftone) med to mønstre: klassisk rutenett og **stipple** (Adrian Secords vektede Voronoi-distribusjon)
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
-3. **Digitalt selvbilde** — 3D-selfie: brukeren sveiper telefonen fra venstre til høyre øre over 3 sek, og får tilbake et stilisert SVG-portrett i Simpsons/Warhol-stil. Pipeline: hudtone-segmentering for face bbox → 6-punkts landemerke-deteksjon (deterministisk min/max-søk) → 2-frame DLT-triangulering med IMU-sveip-vinkel → parametrisk hodemodell → palett-stilisert SVG-render
 
-Gjeldende versjon: **6.1.0** (release 6. mai 2026).
+Gjeldende versjon: **7.0.0** (release 6. mai 2026).
+
+> Tidligere versjoner (v6.x) hadde et tredje spor «Digitalt selvbilde» med ansikts-stippling. Output-laget var for likt halftonen i SVG-sporet, så stippling-algoritmen ble flyttet inn som en halftone-variant og selvbilde-sporet ble fjernet. En ny tredje hovedfunksjon planlegges senere.
 
 ## Viktige kommandoer
 
@@ -44,27 +45,21 @@ npm run build       # Produksjonsbygg
 - Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
 - **Glyf-fra-foto-flyt**: `GlyphPhotoDialog.vue` har tre faser — kamera, crop, preview. I preview-fasen kjører tracingen internt, viser cropet bilde + sporet glyf side ved side med statusmelding fra `meta.warnings`, så bekreftelse
 
-### Digitalt selvbilde (3D-selfie-sporet)
+### Halftone med stipple-mønster
 
-- **Datapipeline** i `app/src/lib/videoFrameCapture.js` — `recordFrames` henter 15 fps frames over 3 sek; lagrer luma (Float32, Rec. 709) for alle, men kun RGBA for første og siste frame (de vi gjør hudtone-deteksjon på). `useMotionRecorder.js` logger IMU med felles tids-basis (`performance.now()`) og iOS-permission-flyt
-- **Ansiktsregion-deteksjon** i `app/src/lib/faceLandmarks.js` — YCbCr hudtone-segmentering (77 ≤ Cb ≤ 127, 133 ≤ Cr ≤ 173, 60 ≤ Y ≤ 240) → 4-connected components → største kandidat med ansikts-aspect-ratio (0.5-1.6) i øvre 75% av frame
-- **6-punkts landemerker** i samme fil — `findLandmarks` søker innenfor face bbox med deterministisk min/max-søk: øyne (mørkest i øvre 50% delt midt), nese-tipp (lysest sentralt), munn (mørkeste rad nedre 1/3), panne og hake fra bbox-grenser
-- **Triangulering** i `app/src/lib/landmarkTriangulation.js` — `buildSweepPose` konstruerer kameraposer for sveip rundt origo (Y-akse-rotasjon), `triangulateLandmarks` bruker DLT mellom første og siste frame. `deriveProportions` normaliserer alt mot intra-okulær avstand så modellen blir skala-invariant
-- **Aksessoir-deteksjon** i `app/src/lib/accessoryDetection.js` — kun PRESENS, ikke farger: `detectHair` (ikke-hud over panne), `detectGlasses` (mørkt bånd på øye-høyde), `detectBeard` (ikke-hud + mørk i nedre ansikt). Fargesampling droppet bevisst — palett brukes uansett
-- **Parametrisk 3D-hodemodell** i `app/src/lib/portraitModel.js` — 30 vertices i 5 horisontale skiver (panne, øye-nivå, nese, munn, hake) skalert mot målte proporsjoner. Separate lag for øyenbryn, øyne, nese, munn, hår, briller, skjegg. Alle som 3D-vertices for senere STL-eksport
-- **Palett-system** i `app/src/lib/portraitPalettes.js` — 10 kuraterte Simpsons/Warhol-paletter (Klassisk, Homer, Lisa, Marge, Krusty, Marilyn, Pop, Mint, Banan, Neon). `pickRandomPalette` ekskluderer nåværende
-- **SVG-render** i `app/src/lib/portraitToSvg.js` — convex hull av roterte hodevertices → glatt lukket bane via mid-point-tangenter, alle indre features projisert direkte. Ingen forsøk på realisme — knall fyll, sorte konturer, kun viewBox
-- Visning: `PortraitView.vue` (rute `/digitalt-selvbilde`, gammel `/skann-rommet` redirecter dit). Front-kamera-preview med ansikts-oval-overlay, opptaksknapp disabled til ansikt detektert. Drag-rotasjon med idle-auto-rotasjon etter 4 sek, palett-bytte via Tilfeldig-knapp.
-- **Den gamle generelle SfM-pipelinen** (`featureDetection.js`, `opticalFlow.js`, `motionFusion.js`, `triangulation.js`, `wireframeBuilder.js`, `wireframeToSvg.js`) er beholdt som lib-filer for framtidig «ekspert-modus», men ikke koblet inn — for ustabil på tilfeldige motiv
+Rasterpunkter-bryteren i SVG-vieweren har to mønstre:
+
+- **Rutenett** (default) — klassisk halftone over et regulært rutenett, med jitter og mørkhet-til-radius-mapping. Implementert i `pathFilters.js#computeHalftoneDots`
+- **Stipple** — Adrian Secords vektede Voronoi-distribusjon i `voronoiStippling.js`: rejection sampling vektet av tetthet → 5 iterasjoner Lloyd's relaxation → punkter med per-punkt density-vekt for radius-skalering. Brukes når `pattern: 'stipple'` sendes til `computeHalftoneDots`. Pure JS, ~200 linjer
+
+Begge mønstrene deler samme nedstrømsbehandling: `merge` (sammenslåing av nære prikker), `blend` (mix-blend-mode på gruppen), `opacity`, og `dotColor`. Eneste forskjellen er hvor punktene plasseres.
 
 ### Delte komponenter
 
 - Vue-komposisjonsfunksjoner i `app/src/composables/`
   - `usePinchZoom.js` — pinch-to-zoom i vieweren
-  - `useDeviceMotion.js` — gyroskop til parallax-effekter (live-tilt)
-  - `useMotionRecorder.js` — tidsstemplet IMU-logging for romskan-sporet
   - `useHalftoneGame.js` — interaktivt rasterlag + solsystem-modus (se under)
-- Visninger: `HomeView.vue` (portal med tre kort: SVG, webfont, romskan), `AboutView.vue` (felles med endringslogg)
+- Visninger: `HomeView.vue` (portal med to kort: SVG, webfont), `AboutView.vue` (felles med endringslogg)
 
 ### Test-harness for font-kvalitet
 
