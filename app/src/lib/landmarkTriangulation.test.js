@@ -3,6 +3,8 @@ import {
   buildSweepPose,
   triangulateLandmarks,
   deriveProportions,
+  proportionsFrom2D,
+  medianLandmarks,
 } from './landmarkTriangulation.js'
 import { defaultIntrinsics, projectionMatrix } from './triangulation.js'
 
@@ -113,5 +115,92 @@ describe('deriveProportions', () => {
     expect(ps.noseLength).toBeCloseTo(pb.noseLength, 5)
     expect(ps.noseProjection).toBeCloseTo(pb.noseProjection, 5)
     expect(pb.eyeDistance).toBeCloseTo(2 * ps.eyeDistance, 5)
+  })
+})
+
+describe('proportionsFrom2D', () => {
+  it('returnerer null uten øyne', () => {
+    expect(proportionsFrom2D({})).toBeNull()
+    expect(proportionsFrom2D({ leftEye: { x: 100, y: 100 } })).toBeNull()
+  })
+
+  it('returnerer null når øynene er for nær hverandre', () => {
+    const lm = {
+      leftEye: { x: 100, y: 100 },
+      rightEye: { x: 102, y: 100 },
+      nose: { x: 101, y: 110 },
+    }
+    expect(proportionsFrom2D(lm)).toBeNull()
+  })
+
+  it('beregner skala-invariante proporsjoner fra 2D-piksler', () => {
+    const lm = {
+      leftEye: { x: 100, y: 100 },
+      rightEye: { x: 140, y: 100 },
+      nose: { x: 120, y: 130 },
+      mouth: { x: 120, y: 150 },
+      forehead: { x: 120, y: 60 },
+      chin: { x: 120, y: 170 },
+    }
+    const props = proportionsFrom2D(lm)
+    expect(props).not.toBeNull()
+    // Landemerkene normaliseres mot eyeDistance internt, så eyeDistance i
+    // output-proporsjonene er alltid 1.0 (vi har ikke piksel-til-meter-mapping)
+    expect(props.eyeDistance).toBeCloseTo(1, 5)
+    // noseLength: nese er 30 piksel under øye-senter, normalisert med eyeDist=40
+    expect(props.noseLength).toBeCloseTo(0.75, 4)
+  })
+})
+
+describe('medianLandmarks', () => {
+  it('returnerer null for tom input', () => {
+    expect(medianLandmarks([])).toBeNull()
+    expect(medianLandmarks([null, null])).toBeNull()
+  })
+
+  it('beregner median pr koordinat over flere frames', () => {
+    const frames = [
+      {
+        leftEye: { x: 100, y: 100 },
+        rightEye: { x: 140, y: 100 },
+        nose: { x: 120, y: 130 },
+      },
+      {
+        leftEye: { x: 102, y: 101 },
+        rightEye: { x: 142, y: 99 },
+        nose: { x: 121, y: 131 },
+      },
+      {
+        leftEye: { x: 101, y: 99 },
+        rightEye: { x: 141, y: 101 },
+        nose: { x: 122, y: 132 },
+      },
+    ]
+    const med = medianLandmarks(frames)
+    expect(med.leftEye.x).toBe(101) // median av [100, 102, 101]
+    expect(med.leftEye.y).toBe(100)
+    expect(med.nose.x).toBe(121)
+  })
+
+  it('returnerer null hvis øyne mangler i alle frames', () => {
+    const frames = [
+      { nose: { x: 120, y: 130 } },
+      { nose: { x: 121, y: 131 } },
+    ]
+    expect(medianLandmarks(frames)).toBeNull()
+  })
+
+  it('hopper over null-frames', () => {
+    const frames = [
+      null,
+      {
+        leftEye: { x: 100, y: 100 },
+        rightEye: { x: 140, y: 100 },
+      },
+      null,
+    ]
+    const med = medianLandmarks(frames)
+    expect(med).not.toBeNull()
+    expect(med.leftEye.x).toBe(100)
   })
 })

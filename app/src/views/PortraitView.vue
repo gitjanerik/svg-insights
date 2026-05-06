@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { createFrameGrabber, recordFrames } from '../lib/videoFrameCapture.js'
 import { useMotionRecorder } from '../composables/useMotionRecorder.js'
 import { detectFaceRegion, findLandmarks } from '../lib/faceLandmarks.js'
-import { triangulateLandmarks, deriveProportions } from '../lib/landmarkTriangulation.js'
+import { proportionsFrom2D, medianLandmarks } from '../lib/landmarkTriangulation.js'
 import { detectAccessories } from '../lib/accessoryDetection.js'
 import { buildPortraitModel } from '../lib/portraitModel.js'
 import { portraitToSvg } from '../lib/portraitToSvg.js'
@@ -16,40 +16,33 @@ const videoRef = ref(null)
 const stream = ref(null)
 const cameraReady = ref(false)
 
-// Faser
 const phase = ref('idle')
-const progress = ref(0)
+const captureProgress = ref(0)        // 0..1 under selve burst-en (~500ms)
+const autoTriggerProgress = ref(0)    // 0..1 under 1.5s sentrerings-countdown
 const frameCount = ref(0)
 const errorMessage = ref('')
 const processingStage = ref('')
 
 const motion = useMotionRecorder()
-
-// Capture-output
-const capturedFrames = ref([])
 const motionSampleCount = ref(0)
 
-// Pipeline-output
 const portraitModel = ref(null)
 const palette = ref(defaultPalette())
 
-// Diagnostikk
 const diagnostics = ref({
+  framesCaptured: 0,
   framesWithFace: 0,
-  faceCoverageStart: 0,
-  faceCoverageEnd: 0,
-  landmarksStart: 0,
-  landmarksEnd: 0,
-  triangulated: 0,
-  sweepAngle: 0,
-  hasHair: false,
-  hasGlasses: false,
-  hasBeard: false,
+  framesWithLandmarks: 0,
+  bestFrameIndex: -1,
 })
 
-// Live ansikts-deteksjon under preview
 let liveDetectRaf = null
 const liveFaceBox = ref(null)
+
+// Auto-trigger: 1.5s sammenhengende ansikts-deteksjon → fyrer av capture
+const AUTO_TRIGGER_MS = 1500
+let faceStableSince = 0
+let autoTriggerCheckRaf = null
 
 // Drag-rotasjon
 const rotY = ref(0)
@@ -76,6 +69,7 @@ async function startCamera() {
       await videoRef.value.play()
       cameraReady.value = true
       startLiveFaceDetection()
+      startAutoTriggerCheck()
     }
   } catch (e) {
     errorMessage.value = 'Fikk ikke tilgang til kameraet. Sjekk tillatelser.'
@@ -85,6 +79,7 @@ async function startCamera() {
 
 function stopCamera() {
   stopLiveFaceDetection()
+  stopAutoTriggerCheck()
   stopAutoRotate()
   stream.value?.getTracks().forEach(t => t.stop())
   stream.value = null
@@ -100,7 +95,7 @@ function startLiveFaceDetection() {
   const ctx = c.getContext('2d', { willReadFrequently: true })
   let last = 0
   function tick(now) {
-    if (!cameraReady.value || phase.value === 'recording') {
+    if (!cameraReady.value || phase.value !== 'idle') {
       liveDetectRaf = requestAnimationFrame(tick)
       return
     }
@@ -127,121 +122,130 @@ function stopLiveFaceDetection() {
   liveFaceBox.value = null
 }
 
+function startAutoTriggerCheck() {
+  faceStableSince = 0
+  function tick(now) {
+    if (phase.value !== 'idle') {
+      autoTriggerProgress.value = 0
+      faceStableSince = 0
+      autoTriggerCheckRaf = requestAnimationFrame(tick)
+      return
+    }
+    if (liveFaceBox.value) {
+      if (faceStableSince === 0) faceStableSince = now
+      const elapsed = now - faceStableSince
+      autoTriggerProgress.value = Math.min(1, elapsed / AUTO_TRIGGER_MS)
+      if (elapsed >= AUTO_TRIGGER_MS) {
+        autoTriggerProgress.value = 0
+        faceStableSince = 0
+        handleStart()
+        return
+      }
+    } else {
+      autoTriggerProgress.value = 0
+      faceStableSince = 0
+    }
+    autoTriggerCheckRaf = requestAnimationFrame(tick)
+  }
+  autoTriggerCheckRaf = requestAnimationFrame(tick)
+}
+
+function stopAutoTriggerCheck() {
+  if (autoTriggerCheckRaf !== null) cancelAnimationFrame(autoTriggerCheckRaf)
+  autoTriggerCheckRaf = null
+  autoTriggerProgress.value = 0
+  faceStableSince = 0
+}
+
 async function handleStart() {
   if (phase.value !== 'idle') return
 
+  // Sensor-permission: hyggelig å ha for diagnose, ikke nødvendig for pipelinen
   await motion.requestPermission()
 
   phase.value = 'recording'
-  progress.value = 0
+  captureProgress.value = 0
   frameCount.value = 0
 
   motion.start()
 
   const grabber = createFrameGrabber(videoRef.value, { width: 320, height: 240 })
 
+  // 5 frames over ~500ms — alle med RGBA siden vi gjør hudtone-deteksjon på alle
   const frames = await recordFrames({
     grabber,
-    durationMs: 3000,
-    fps: 15,
+    durationMs: 500,
+    fps: 10,
+    rgbaFrames: [0, 1, 2, 3, 4],
     onProgress: (p, count) => {
-      progress.value = p
+      captureProgress.value = p
       frameCount.value = count
     },
-    // RGBA for første og siste — der vi gjør hudtone-deteksjon
   })
 
   const motionSamples = motion.stop()
-
-  capturedFrames.value = frames
   motionSampleCount.value = motionSamples.length
+
+  diagnostics.value.framesCaptured = frames.length
 
   phase.value = 'processing'
   await yieldFrame()
 
-  await runPipeline(frames, motionSamples)
+  await runPipeline(frames)
 
   phase.value = 'result'
   startAutoRotate()
 }
 
-async function runPipeline(frames, motionSamples) {
-  const N = frames.length
-  if (N < 2) {
-    diagnostics.value.framesWithFace = 0
-    return
-  }
-
-  // Stadium 1: ansiktsdeteksjon i første og siste frame
+async function runPipeline(frames) {
+  // Stadium 1: ansikts-deteksjon på alle frames
   processingStage.value = 'detecting'
   await yieldFrame()
 
-  const firstFrame = frames[0]
-  const lastFrame = frames[N - 1]
+  const detections = frames.map(f => f.rgba ? detectFaceRegion(f.rgba, f.width, f.height) : null)
+  diagnostics.value.framesWithFace = detections.filter(r => r !== null).length
 
-  if (!firstFrame.rgba || !lastFrame.rgba) {
-    // Fallback: hvis RGBA ikke ble lagret, går vi ikke videre
-    return
+  // Velg beste frame: største ansikts-areal
+  let bestIdx = -1
+  let bestArea = 0
+  for (let i = 0; i < detections.length; i++) {
+    if (detections[i] && detections[i].area > bestArea) {
+      bestArea = detections[i].area
+      bestIdx = i
+    }
   }
+  diagnostics.value.bestFrameIndex = bestIdx
+  if (bestIdx === -1) return
 
-  const w = firstFrame.width
-  const h = firstFrame.height
-
-  const regionStart = detectFaceRegion(firstFrame.rgba, w, h)
-  const regionEnd = detectFaceRegion(lastFrame.rgba, w, h)
-
-  diagnostics.value.framesWithFace = (regionStart ? 1 : 0) + (regionEnd ? 1 : 0)
-  if (regionStart) diagnostics.value.faceCoverageStart = regionStart.area / (w * h)
-  if (regionEnd) diagnostics.value.faceCoverageEnd = regionEnd.area / (w * h)
-
-  if (!regionStart || !regionEnd) return
-
-  // Stadium 2: landemerker i begge
+  // Stadium 2: landemerker på alle frames der ansikt ble detektert
   processingStage.value = 'measuring'
   await yieldFrame()
 
-  const landmarksStart = findLandmarks(firstFrame.rgba, w, h, regionStart)
-  const landmarksEnd = findLandmarks(lastFrame.rgba, w, h, regionEnd)
+  const landmarksPerFrame = frames.map((f, i) => {
+    if (!detections[i] || !f.rgba) return null
+    return findLandmarks(f.rgba, f.width, f.height, detections[i])
+  })
+  diagnostics.value.framesWithLandmarks = landmarksPerFrame.filter(l => l !== null).length
 
-  diagnostics.value.landmarksStart = landmarksStart ? 6 : 0
-  diagnostics.value.landmarksEnd = landmarksEnd ? 6 : 0
+  // Median av landemerke-posisjoner reduserer støy fra én-frames mis-deteksjon
+  const landmarks = medianLandmarks(landmarksPerFrame)
+  if (!landmarks) return
 
-  if (!landmarksStart || !landmarksEnd) return
-
-  // Stadium 3: triangulering via IMU sveip-vinkel
-  const orient = motionSamples.filter(s => s.kind === 'orientation')
-  let sweepAngleDeg = 30 // default 30° antakelse hvis IMU mangler
-  if (orient.length >= 2) {
-    let dGamma = orient[orient.length - 1].gamma - orient[0].gamma
-    if (dGamma > 180) dGamma -= 360
-    if (dGamma < -180) dGamma += 360
-    // Bruk gamma (rotasjon rundt Y-aksen i landscape) eller alpha
-    let dAlpha = orient[orient.length - 1].alpha - orient[0].alpha
-    if (dAlpha > 180) dAlpha -= 360
-    if (dAlpha < -180) dAlpha += 360
-    // Velg den med størst magnitude (avhenger av telefonens orientering)
-    sweepAngleDeg = Math.max(Math.abs(dGamma), Math.abs(dAlpha))
-    if (sweepAngleDeg < 5) sweepAngleDeg = 30 // sikkerhets-fallback
-  }
-  diagnostics.value.sweepAngle = sweepAngleDeg
-
-  const sweepRad = (sweepAngleDeg * Math.PI) / 180
-  const landmarks3D = triangulateLandmarks(landmarksStart, landmarksEnd, sweepRad, w, h)
-  diagnostics.value.triangulated = Object.keys(landmarks3D).length
-
-  const proportions = deriveProportions(landmarks3D)
+  // Stadium 3: 2D-proporsjoner med mal-Z (ingen triangulering)
+  const proportions = proportionsFrom2D(landmarks)
   if (!proportions) return
 
-  // Stadium 4: aksessoir-deteksjon (på første frame)
+  // Stadium 4: aksessoir-deteksjon på beste frame
   processingStage.value = 'composing'
   await yieldFrame()
 
-  const accessories = detectAccessories(firstFrame.rgba, w, h, regionStart, landmarksStart)
-  diagnostics.value.hasHair = accessories.hair.hasHair
-  diagnostics.value.hasGlasses = accessories.glasses.hasGlasses
-  diagnostics.value.hasBeard = accessories.beard.hasBeard
+  const bestFrame = frames[bestIdx]
+  const accessories = detectAccessories(
+    bestFrame.rgba, bestFrame.width, bestFrame.height,
+    detections[bestIdx], landmarks
+  )
 
-  // Stadium 5: bygg modell. Selve SVG-en rendres reaktivt via rotatedSvg.
+  // Stadium 5: bygg modell
   portraitModel.value = buildPortraitModel(proportions, accessories)
   processingStage.value = 'done'
   await yieldFrame()
@@ -258,54 +262,37 @@ function yieldFrame() {
 function reset() {
   stopAutoRotate()
   phase.value = 'idle'
-  progress.value = 0
+  captureProgress.value = 0
+  autoTriggerProgress.value = 0
   frameCount.value = 0
-  capturedFrames.value = []
   motionSampleCount.value = 0
   portraitModel.value = null
   palette.value = defaultPalette()
   processingStage.value = ''
   errorMessage.value = ''
   rotY.value = 0
+  faceStableSince = 0
   diagnostics.value = {
+    framesCaptured: 0,
     framesWithFace: 0,
-    faceCoverageStart: 0,
-    faceCoverageEnd: 0,
-    landmarksStart: 0,
-    landmarksEnd: 0,
-    triangulated: 0,
-    sweepAngle: 0,
-    hasHair: false,
-    hasGlasses: false,
-    hasBeard: false,
+    framesWithLandmarks: 0,
+    bestFrameIndex: -1,
   }
 }
-
-const recordingLabel = computed(() => {
-  const remaining = Math.max(0, 3 - progress.value * 3)
-  return remaining.toFixed(1) + ' s'
-})
 
 const diagnosticHint = computed(() => {
   const d = diagnostics.value
   if (d.framesWithFace === 0) {
-    return 'Fant ikke ansiktet. Hold telefonen så ansiktet er sentrert i ovalen, med god belysning.'
+    return 'Fant ikke ansiktet i noen frames. Pek mot mer lys, eller hold telefonen så ansiktet sentreres i ovalen.'
   }
-  if (d.framesWithFace < 2) {
-    return 'Mistet ansiktet halvveis. Hold det synlig gjennom hele sveipen.'
-  }
-  if (d.landmarksStart === 0 || d.landmarksEnd === 0) {
-    return 'Klarte ikke å finne øyne/nese/munn. Sørg for god belysning og at hele ansiktet er synlig.'
-  }
-  if (d.triangulated < 4) {
-    return 'For få landemerker triangulert. Sveip litt mer (30°) fra venstre til høyre øre.'
+  if (d.framesWithLandmarks === 0) {
+    return 'Fant ansiktet, men ikke landemerker. Sørg for at hele ansiktet er synlig (ikke skjult av hånd e.l.).'
   }
   return 'Selvbildet ditt er klart!'
 })
 
 const hasResult = computed(() => portraitModel.value !== null)
 
-// Live-rendering av SVG ved rotasjon eller palett-bytte
 const rotatedSvg = computed(() => {
   if (!portraitModel.value) return null
   return portraitToSvg({
@@ -378,7 +365,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="relative min-h-[100dvh] bg-black text-white overflow-hidden">
 
-    <!-- Kamera-preview -->
     <video
       v-show="phase === 'idle' || phase === 'recording'"
       ref="videoRef"
@@ -401,7 +387,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Ansikts-oval-overlay (idle/recording) -->
+    <!-- Ansikts-oval-overlay -->
     <div
       v-if="phase === 'idle' || phase === 'recording'"
       class="absolute inset-0 pointer-events-none flex items-center justify-center z-10"
@@ -421,10 +407,22 @@ onBeforeUnmount(() => {
           stroke-width="1.5"
           stroke-dasharray="3 3"
         />
+        <!-- Auto-trigger progress: ring rundt ovalen som fylles 0..1 over 1.5s -->
+        <ellipse
+          v-if="phase === 'idle' && autoTriggerProgress > 0"
+          cx="160" cy="240" rx="80" ry="105"
+          fill="none"
+          stroke="#10b981"
+          stroke-width="3"
+          :stroke-dasharray="2 * Math.PI * Math.sqrt((80*80 + 105*105) / 2)"
+          :stroke-dashoffset="2 * Math.PI * Math.sqrt((80*80 + 105*105) / 2) * (1 - autoTriggerProgress)"
+          stroke-linecap="round"
+          style="transform-origin: 160px 240px; transform: rotate(-90deg);"
+        />
       </svg>
     </div>
 
-    <!-- Live-status-pille -->
+    <!-- Live status-pille -->
     <div
       v-if="phase === 'idle' && cameraReady"
       class="absolute top-20 inset-x-0 flex justify-center z-10 pointer-events-none"
@@ -435,19 +433,22 @@ onBeforeUnmount(() => {
           ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-200'
           : 'bg-amber-500/15 border border-amber-400/30 text-amber-200'"
       >
-        {{ liveFaceBox ? 'Ansikt detektert' : 'Sentrer ansiktet i ovalen' }}
+        <template v-if="!liveFaceBox">Sentrer ansiktet i ovalen</template>
+        <template v-else-if="autoTriggerProgress > 0 && autoTriggerProgress < 1">
+          Hold stille… tar bilde om {{ ((1 - autoTriggerProgress) * 1.5).toFixed(1) }} s
+        </template>
+        <template v-else>Ansikt detektert — tap eller hold stille</template>
       </div>
     </div>
 
-    <!-- Idle: instruksjon + opptaksknapp -->
+    <!-- Idle-bunn: instruksjon + manuell knapp -->
     <div
       v-if="phase === 'idle'"
       class="absolute bottom-0 inset-x-0 p-6 z-10 flex flex-col items-center gap-5 bg-gradient-to-t from-black/90 via-black/60 to-transparent"
     >
       <p class="text-center text-sm text-white/75 max-w-xs leading-relaxed">
-        Hold telefonen på <strong class="text-white">armlengdes avstand</strong>
-        og sveip sakte fra <strong class="text-white">venstre øre til høyre øre</strong>.
-        Du blir til en stilisert SVG-figur.
+        Hold telefonen og <strong class="text-white">se mot kameraet</strong>.
+        Bildet tas automatisk når ansiktet ditt er sentrert.
       </p>
       <button
         @click="handleStart"
@@ -458,35 +459,23 @@ onBeforeUnmount(() => {
           ? 'bg-emerald-500 border-white/80 shadow-[0_0_40px_rgba(16,185,129,0.5)]'
           : 'bg-zinc-700 border-white/30'"
       >
-        <span class="text-white text-xs font-semibold">3 s</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
       </button>
-      <div class="text-[11px] text-white/40">
-        Sensor: {{ motion.permissionState === 'granted' ? 'klar' : 'gir tilgang ved start' }}
-      </div>
     </div>
 
-    <!-- Recording -->
+    <!-- Recording: lite flash + frame-teller -->
     <div
       v-if="phase === 'recording'"
-      class="absolute bottom-0 inset-x-0 p-6 z-10 flex flex-col items-center gap-4 bg-gradient-to-t from-black/80 to-transparent"
+      class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
     >
-      <div class="text-2xl font-mono text-white/90">{{ recordingLabel }}</div>
-      <div class="relative w-20 h-20">
-        <svg class="absolute inset-0 -rotate-90" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r="36" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4" />
-          <circle
-            cx="40" cy="40" r="36" fill="none" stroke="#10b981" stroke-width="4"
-            stroke-linecap="round"
-            :stroke-dasharray="2 * Math.PI * 36"
-            :stroke-dashoffset="2 * Math.PI * 36 * (1 - progress)"
-            class="transition-[stroke-dashoffset] duration-100"
-          />
-        </svg>
-        <div class="absolute inset-0 flex items-center justify-center">
-          <div class="w-5 h-5 rounded-full bg-emerald-500 animate-pulse" />
-        </div>
-      </div>
-      <div class="text-[11px] text-white/50">{{ frameCount }} frames</div>
+      <div
+        class="absolute inset-0 bg-white transition-opacity"
+        :style="{ opacity: 0.35 + 0.4 * captureProgress }"
+      />
+      <div class="relative z-10 text-2xl font-mono text-white/90 drop-shadow">{{ frameCount }} / 5</div>
     </div>
 
     <!-- Processing -->
@@ -502,7 +491,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="flex items-center gap-2 text-sm" :class="processingStage === 'measuring' ? 'text-white' : (processingStage === 'composing' || processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
           <span class="w-2 h-2 rounded-full" :class="processingStage === 'measuring' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'composing' || processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
-          Måler proporsjoner i 3D…
+          Måler proporsjoner…
         </div>
         <div class="flex items-center gap-2 text-sm" :class="processingStage === 'composing' ? 'text-white' : (processingStage === 'done' ? 'text-emerald-300' : 'text-white/40')">
           <span class="w-2 h-2 rounded-full" :class="processingStage === 'composing' ? 'bg-emerald-400 animate-pulse' : (processingStage === 'done' ? 'bg-emerald-400' : 'bg-white/20')"></span>
@@ -522,7 +511,6 @@ onBeforeUnmount(() => {
           <p class="text-sm text-white/60">{{ diagnosticHint }}</p>
         </div>
 
-        <!-- Portrett-viewer -->
         <div
           v-if="hasResult"
           class="rounded-xl overflow-hidden border border-emerald-400/20 aspect-square relative touch-none select-none"
@@ -533,7 +521,6 @@ onBeforeUnmount(() => {
           v-html="rotatedSvg"
         />
 
-        <!-- Tom-tilstand -->
         <div
           v-else
           class="rounded-xl border border-amber-400/30 bg-amber-950/20 p-5 space-y-3"
@@ -553,23 +540,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Aksessoir-funn -->
-        <div v-if="hasResult" class="grid grid-cols-3 gap-2 text-center">
-          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
-            <div class="text-[10px] text-white/40 uppercase">Hår</div>
-            <div class="text-sm font-mono" :class="diagnostics.hasHair ? 'text-emerald-300' : 'text-white/40'">{{ diagnostics.hasHair ? 'Ja' : 'Nei' }}</div>
-          </div>
-          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
-            <div class="text-[10px] text-white/40 uppercase">Briller</div>
-            <div class="text-sm font-mono" :class="diagnostics.hasGlasses ? 'text-emerald-300' : 'text-white/40'">{{ diagnostics.hasGlasses ? 'Ja' : 'Nei' }}</div>
-          </div>
-          <div class="rounded-lg bg-white/5 border border-white/10 p-2">
-            <div class="text-[10px] text-white/40 uppercase">Skjegg</div>
-            <div class="text-sm font-mono" :class="diagnostics.hasBeard ? 'text-emerald-300' : 'text-white/40'">{{ diagnostics.hasBeard ? 'Ja' : 'Nei' }}</div>
-          </div>
-        </div>
-
-        <!-- Palett-rad: tilfeldig-knapp + nåværende navn -->
+        <!-- Palett-rad -->
         <div v-if="hasResult" class="flex items-center gap-3">
           <button
             @click="pickNewPalette"
@@ -587,7 +558,6 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Eksport-knapp -->
         <button
           v-if="hasResult"
           @click="downloadSvg"
@@ -596,7 +566,6 @@ onBeforeUnmount(() => {
           Last ned SVG
         </button>
 
-        <!-- Diagnose -->
         <details class="rounded-xl bg-white/5 border border-white/10 overflow-hidden" :open="!hasResult">
           <summary class="px-4 py-3 text-sm text-white/70 cursor-pointer flex items-center justify-between list-none">
             <span>Pipeline-diagnose</span>
@@ -607,27 +576,23 @@ onBeforeUnmount(() => {
           <div class="px-4 pb-4 pt-1 space-y-1.5 text-xs font-mono text-white/60">
             <div class="flex justify-between border-b border-white/5 pb-1">
               <span>Frames fanget</span>
-              <span class="text-white">{{ capturedFrames.length }}</span>
-            </div>
-            <div class="flex justify-between border-b border-white/5 pb-1">
-              <span>IMU-samples</span>
-              <span :class="motionSampleCount > 0 ? 'text-white' : 'text-amber-400'">{{ motionSampleCount }}</span>
+              <span class="text-white">{{ diagnostics.framesCaptured }}</span>
             </div>
             <div class="flex justify-between border-b border-white/5 pb-1">
               <span>Ansikt funnet</span>
-              <span :class="diagnostics.framesWithFace === 2 ? 'text-emerald-300' : 'text-amber-400'">{{ diagnostics.framesWithFace }}/2</span>
+              <span :class="diagnostics.framesWithFace > 0 ? 'text-white' : 'text-amber-400'">{{ diagnostics.framesWithFace }}/{{ diagnostics.framesCaptured }}</span>
             </div>
             <div class="flex justify-between border-b border-white/5 pb-1">
-              <span>Landemerker (start/slutt)</span>
-              <span :class="diagnostics.landmarksStart === 6 && diagnostics.landmarksEnd === 6 ? 'text-white' : 'text-amber-400'">{{ diagnostics.landmarksStart }}/{{ diagnostics.landmarksEnd }}</span>
+              <span>Landemerker</span>
+              <span :class="diagnostics.framesWithLandmarks > 0 ? 'text-white' : 'text-amber-400'">{{ diagnostics.framesWithLandmarks }}/{{ diagnostics.framesCaptured }}</span>
             </div>
             <div class="flex justify-between border-b border-white/5 pb-1">
-              <span>3D-triangulert</span>
-              <span :class="diagnostics.triangulated >= 4 ? 'text-white' : 'text-amber-400'">{{ diagnostics.triangulated }}/6</span>
+              <span>Beste frame</span>
+              <span :class="diagnostics.bestFrameIndex >= 0 ? 'text-white' : 'text-amber-400'">#{{ diagnostics.bestFrameIndex >= 0 ? diagnostics.bestFrameIndex + 1 : '–' }}</span>
             </div>
             <div class="flex justify-between">
-              <span>Sveip-vinkel</span>
-              <span :class="diagnostics.sweepAngle > 10 ? 'text-white' : 'text-amber-400'">{{ diagnostics.sweepAngle.toFixed(1) }}°</span>
+              <span>IMU-samples</span>
+              <span :class="motionSampleCount > 0 ? 'text-white' : 'text-white/40'">{{ motionSampleCount }}</span>
             </div>
           </div>
         </details>

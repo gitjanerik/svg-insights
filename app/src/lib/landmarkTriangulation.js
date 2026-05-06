@@ -54,6 +54,89 @@ export function triangulateLandmarks(landmarksFirst, landmarksLast, sweepAngleRa
   return out
 }
 
+// Avled portrettparametre fra 2D-landemerker uten triangulering.
+// Bruker mal-Z-verdier for dybde — tilstrekkelig når output stiliseres
+// uansett (Simpsons-stil bryr seg ikke om eksakt nese-utstikk).
+//
+// Z-malverdier representerer en typisk ansikts-anatomi der øyne er på
+// referanse-planet (Z=0) og andre features stikker frem mot kameraet.
+const TEMPLATE_Z = {
+  leftEye: 0,
+  rightEye: 0,
+  nose: -0.30,
+  mouth: -0.10,
+  forehead: -0.05,
+  chin: -0.05,
+}
+
+export function proportionsFrom2D(landmarks2D) {
+  if (!landmarks2D?.leftEye || !landmarks2D?.rightEye) return null
+
+  const eyeCx = (landmarks2D.leftEye.x + landmarks2D.rightEye.x) / 2
+  const eyeCy = (landmarks2D.leftEye.y + landmarks2D.rightEye.y) / 2
+  const eyeDist2D = Math.hypot(
+    landmarks2D.rightEye.x - landmarks2D.leftEye.x,
+    landmarks2D.rightEye.y - landmarks2D.leftEye.y
+  )
+  if (eyeDist2D < 5) return null
+
+  // Konverter 2D-landemerker til normaliserte 3D-punkter med mal-Z
+  function lift(name) {
+    const p = landmarks2D[name]
+    if (!p) return null
+    return {
+      X: (p.x - eyeCx) / eyeDist2D,
+      Y: (p.y - eyeCy) / eyeDist2D,
+      Z: TEMPLATE_Z[name] ?? 0,
+    }
+  }
+
+  const landmarks3D = {
+    leftEye: lift('leftEye'),
+    rightEye: lift('rightEye'),
+    nose: lift('nose'),
+    mouth: lift('mouth'),
+    forehead: lift('forehead'),
+    chin: lift('chin'),
+  }
+
+  return deriveProportions(landmarks3D)
+}
+
+// Tar median av landemerke-posisjoner over flere frames for å redusere
+// støy fra én-frames mis-deteksjon. Returnerer landmarks-objekt med median
+// pr koordinat, eller null hvis ingen valide finnes.
+export function medianLandmarks(landmarksArray) {
+  const valid = landmarksArray.filter(l => l !== null && l !== undefined)
+  if (valid.length === 0) return null
+
+  function median(arr) {
+    if (arr.length === 0) return null
+    const sorted = [...arr].sort((a, b) => a - b)
+    return sorted[Math.floor(sorted.length / 2)]
+  }
+
+  const out = {}
+  const names = ['leftEye', 'rightEye', 'nose', 'mouth', 'forehead', 'chin']
+  for (const name of names) {
+    const xs = []
+    const ys = []
+    for (const lm of valid) {
+      if (lm[name]) {
+        xs.push(lm[name].x)
+        ys.push(lm[name].y)
+      }
+    }
+    if (xs.length > 0) {
+      out[name] = { x: median(xs), y: median(ys) }
+    }
+  }
+
+  // Returner null hvis vi ikke har minimum øyne (alt annet kan være valgfritt)
+  if (!out.leftEye || !out.rightEye) return null
+  return out
+}
+
 // Avled portrettparametre fra trianguliderte 3D-landemerker.
 // Alle dimensjoner er relative til intra-okulær avstand (eyeWidth = 1 enhet),
 // så modellen blir skala-invariant. Dette gjør parametrene direkte sammenlignbare
