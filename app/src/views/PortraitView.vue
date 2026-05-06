@@ -6,8 +6,8 @@ import { useMotionRecorder } from '../composables/useMotionRecorder.js'
 import { detectFaceRegion, findLandmarks } from '../lib/faceLandmarks.js'
 import { proportionsFrom2D, medianLandmarks } from '../lib/landmarkTriangulation.js'
 import { detectAccessories } from '../lib/accessoryDetection.js'
-import { buildPortraitModel } from '../lib/portraitModel.js'
-import { portraitToSvg } from '../lib/portraitToSvg.js'
+import { buildHeadMesh, buildHairMesh } from '../lib/headMesh.js'
+import { meshToSvg } from '../lib/meshToSvg.js'
 import { defaultPalette, pickRandomPalette } from '../lib/portraitPalettes.js'
 
 const router = useRouter()
@@ -26,8 +26,23 @@ const processingStage = ref('')
 const motion = useMotionRecorder()
 const motionSampleCount = ref(0)
 
-const portraitModel = ref(null)
+const headMesh = ref(null)
+const hairMesh = ref(null)
+const accessoriesData = ref(null)
 const palette = ref(defaultPalette())
+
+// Render-modus: 'wireframe' | 'shaded' | 'both'
+const renderMode = ref('both')
+const RENDER_MODES = ['wireframe', 'shaded', 'both']
+const RENDER_MODE_LABELS = {
+  wireframe: 'Trådramme',
+  shaded: 'Skyggelagt',
+  both: 'Begge',
+}
+function cycleRenderMode() {
+  const idx = RENDER_MODES.indexOf(renderMode.value)
+  renderMode.value = RENDER_MODES[(idx + 1) % RENDER_MODES.length]
+}
 
 const diagnostics = ref({
   framesCaptured: 0,
@@ -244,9 +259,11 @@ async function runPipeline(frames) {
     bestFrame.rgba, bestFrame.width, bestFrame.height,
     detections[bestIdx], landmarks
   )
+  accessoriesData.value = accessories
 
-  // Stadium 5: bygg modell
-  portraitModel.value = buildPortraitModel(proportions, accessories)
+  // Stadium 5: bygg 3D-mesh deformert av proporsjonene
+  headMesh.value = buildHeadMesh(proportions)
+  hairMesh.value = buildHairMesh(headMesh.value, accessories.hair)
   processingStage.value = 'done'
   await yieldFrame()
 }
@@ -266,8 +283,11 @@ function reset() {
   autoTriggerProgress.value = 0
   frameCount.value = 0
   motionSampleCount.value = 0
-  portraitModel.value = null
+  headMesh.value = null
+  hairMesh.value = null
+  accessoriesData.value = null
   palette.value = defaultPalette()
+  renderMode.value = 'both'
   processingStage.value = ''
   errorMessage.value = ''
   rotY.value = 0
@@ -291,15 +311,19 @@ const diagnosticHint = computed(() => {
   return 'Selvbildet ditt er klart!'
 })
 
-const hasResult = computed(() => portraitModel.value !== null)
+const hasResult = computed(() => headMesh.value !== null)
 
 const rotatedSvg = computed(() => {
-  if (!portraitModel.value) return null
-  return portraitToSvg({
-    model: portraitModel.value,
+  if (!headMesh.value) return null
+  return meshToSvg({
+    mesh: headMesh.value,
+    hair: hairMesh.value,
+    glasses: accessoriesData.value?.glasses,
+    beard: accessoriesData.value?.beard,
     rotY: rotY.value,
     viewBoxSize: 400,
     palette: palette.value,
+    mode: renderMode.value,
   })
 })
 
@@ -538,6 +562,21 @@ onBeforeUnmount(() => {
               <div class="text-xs text-amber-100/80 mt-1 leading-relaxed">{{ diagnosticHint }}</div>
             </div>
           </div>
+        </div>
+
+        <!-- Modus-toggle -->
+        <div v-if="hasResult" class="grid grid-cols-3 gap-2">
+          <button
+            v-for="m in RENDER_MODES"
+            :key="m"
+            @click="renderMode = m"
+            class="py-2.5 rounded-xl border text-sm transition active:scale-[0.98]"
+            :class="renderMode === m
+              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+              : 'bg-white/5 border-white/10 text-white/60'"
+          >
+            {{ RENDER_MODE_LABELS[m] }}
+          </button>
         </div>
 
         <!-- Palett-rad -->

@@ -114,10 +114,34 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.1.1 -->
+          <!-- 6.2.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400 animate-pulse" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.2.0</span>
+                <span class="text-white/40">&mdash; Polygonalt 3D-portrett: ekte mesh + wireframe/shading-toggle</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">6. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong class="text-white/60">Renderen er fullstendig refaktorert</strong> &mdash; den parametriske convex-hull-figuren er erstattet med en ekte triangulær 3D-mesh på ~360 trekanter, generert som 11 horisontale skiver à 16 punkter pluss apex-vertices for kran og hake</li>
+                <li><strong class="text-white/60">Anatomiske features som mesh-deformasjoner</strong>: øyehuler indenteres i Z, brynkam stikker frem på bryn-skiven, nesa har ekte 3D-utstikk over tre skiver, kjevelinjen smalner riktig &mdash; alt synes når du roterer hodet</li>
+                <li><strong class="text-white/60">Tre render-modi</strong> (Trådramme / Skyggelagt / Begge) som kan veksles fritt etter capture. Wireframe gir ren lavpoly-look, Skyggelagt gir solide flater med Lambertian-belysning, Begge gir klassisk 3D-grafikk-stil</li>
+                <li><strong class="text-white/60">Lambertian shading</strong> per trekant fra fast lyskilde (oppe-venstre-foran). HSL-baserte fargevariasjoner avledes fra paletten — Klassisk gul gir lys gul → mørk mustard gjennom skygger, Mint gir tilsvarende grønn-gradient osv.</li>
+                <li><strong class="text-white/60">Backface culling + painter's algorithm</strong>: trekanter på baksiden av hodet droppes, resten sorteres bak-til-front. Funker live ved drag-rotasjon</li>
+                <li><strong class="text-white/60">Hår, briller og skjegg</strong> integrert med 3D-rotasjon: hår som ekstra mesh-cap over hodet, briller som ringer ved øye-Z (bare synlige fra forsiden), skjegg som halvgjennomsiktig overlay som forsvinner i profil</li>
+                <li><strong class="text-white/60">Bryn og munn</strong> tegnes kun når de er foran kameraet — så de forsvinner naturlig når du roterer hodet 180°</li>
+                <li>Hjem-kortet endret til «Polygonalt 3D-portrett — wireframe + skygger», 3D-selfie-tittelen droppet</li>
+                <li>~360 trekanter rendres på ~3 ms ved 60 fps drag-rotasjon. STL-eksport for 3D-print er én linje kode unna i en framtidig versjon</li>
+                <li>17 nye tester for headMesh + meshToSvg &mdash; 270 totalt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.1.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.1.1</span>
                 <span class="text-white/40">&mdash; Stillbilde-modus: ingen sveip, auto-trigger, 5-frame median</span>

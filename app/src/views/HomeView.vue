@@ -131,7 +131,7 @@ async function onInstallClick() {
                 <span class="text-white font-semibold">Digitalt selvbilde</span>
                 <span class="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">Ny</span>
               </div>
-              <div class="text-[11px] text-white/50 mt-0.5">3D-selfie: sveip ansiktet og få et stilisert SVG-portrett</div>
+              <div class="text-[11px] text-white/50 mt-0.5">Polygonalt 3D-portrett — wireframe + skygger</div>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-white/30"
                  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
