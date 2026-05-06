@@ -1,0 +1,39 @@
+name: Build Vardåsen map SVG
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/svg-map-investigation-kY7NE
+    paths:
+      - 'app/scripts/build-vardasen-svg.js'
+      - '.github/workflows/build-vardasen-map.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build SVG from Overpass
+        working-directory: app
+        run: node scripts/build-vardasen-svg.js
+
+      - name: Commit SVG if changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/public/maps/vardasen.svg
+          if git diff --staged --quiet; then
+            echo "Ingen endringer i vardasen.svg"
+          else
+            git commit -m "kart: oppdater vardasen.svg fra OSM (auto)"
+            git push
+          fi
