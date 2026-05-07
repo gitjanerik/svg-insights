@@ -15,6 +15,7 @@ import {
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
+import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -219,6 +220,34 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── ISOM 522: tette bebyggelse-klynger ───────────────────────────────
+  // Slå sammen tett bebygde områder til urbanmasse-multipolygoner med
+  // pattern-fyll. Reduserer SVG-størrelsen og gir bedre kart-look.
+  let urbanMassMultiPoly = []
+  if (buckets['521'].length >= 4) {
+    const buildingsXY = buckets['521']
+      .filter(el => el.geometry && el.geometry.length >= 3)
+      .map(el => ({
+        ring: el.geometry.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        }),
+        original: el,
+      }))
+    const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
+      neighborRadiusM: 15,
+      minClusterSize: 3,
+      bufferM: 6,
+    })
+    if (urbanMass.length > 0) {
+      urbanMassMultiPoly = urbanMass
+      // Erstatt 521-bucket med kun spredte bygninger
+      buckets['521'] = scattered.map(b => b.original)
+      counts['521'] = buckets['521'].length
+      counts['522'] = urbanMass.length
+    }
+  }
+
   // ── DEM-deriverte features (konturer, knauser, stupkanter) ───────────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
   if (usableDem) {
@@ -379,12 +408,21 @@ export function buildSvg(elements, bbox, options = {}) {
   const cliffsLayerSvg = cliffsSvg
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
+  // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
+  // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
+  const urbanMassPath = urbanMassMultiPoly.length
+    ? multiPolyToPath(urbanMassMultiPoly, fmt)
+    : ''
+  const urbanMassLayerSvg = urbanMassPath
+    ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
+    : ''
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
-${layers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}</svg>
+${layers}${urbanMassLayerSvg}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}</svg>
 `
 
   return { svg, counts, meta }
