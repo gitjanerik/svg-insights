@@ -1,0 +1,196 @@
+{
+  "$comment": "ISOM 2017-2 inspirert symbol-katalog. Alle dimensjoner i mm (print-kvalitet).",
+  "$comment2": "Farger fra ISOM-2017 spec der relevant. Ikke offisielt sertifisert.",
+  "version": "2017-2-derived",
+  "intendedScale": 10000,
+  "magneticNorth": {
+    "$comment": "Deklinasjon for Sør-Norge ca 3°E (varierer 1-5°). Hentes egentlig fra IGRF.",
+    "defaultDeclinationDeg": 3.0
+  },
+
+  "background": {
+    "color": "#fefae0",
+    "darkColor": "#0e1116"
+  },
+
+  "categories": {
+    "terrain": {
+      "401": { "label": "Åpen mark — fast", "fill": { "color": "#ffd966" } },
+      "403": { "label": "Halv-åpen mark", "fill": { "type": "pattern", "pattern": "halv-aapen" } },
+      "404": { "label": "Råtne / nyhugst", "fill": { "type": "pattern", "pattern": "hugst" } },
+      "405": { "label": "Skog — normal", "fill": { "color": "#ffffff" } },
+      "406": { "label": "Skog — sakte løp", "fill": { "color": "#cae8a3" } },
+      "407": { "label": "Skog — vanskelig løp", "fill": { "color": "#94d473" } },
+      "408": { "label": "Tett skog — kjempe-vanskelig", "fill": { "color": "#5cb348" } },
+      "409": { "label": "Tett kratt", "fill": { "color": "#3e8c2c", "type": "pattern", "pattern": "kratt" } }
+    },
+    "water": {
+      "301": { "label": "Innsjø", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
+      "302": { "label": "Tjern", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
+      "304": { "label": "Bekk", "stroke": { "color": "#0099cc", "widthMm": 0.25, "linecap": "round" } },
+      "305": { "label": "Liten bekk", "stroke": { "color": "#0099cc", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
+      "308": { "label": "Myr — fast", "fill": { "type": "pattern", "pattern": "myr" } },
+      "309": { "label": "Myr — utrygg", "fill": { "type": "pattern", "pattern": "myr-utrygg" } },
+      "310": { "label": "Brønn / kilde", "point": { "symbol": "brønn", "scaleMm": 1.5 } }
+    },
+    "rock": {
+      "201": { "label": "Loddrett stupkant — passérbar", "stroke": { "color": "#000", "widthMm": 0.35, "linecap": "round" } },
+      "203": { "label": "Stupkant — upassérbar", "stroke": { "color": "#000", "widthMm": 0.5, "linecap": "round" } },
+      "210": { "label": "Blokkmark", "fill": { "type": "pattern", "pattern": "blokkmark" } },
+      "212": { "label": "Røys", "point": { "symbol": "stein", "scaleMm": 0.6 } },
+      "213": { "label": "Knaus", "point": { "symbol": "knaus", "scaleMm": 1.2 } }
+    },
+    "contour": {
+      "101": { "label": "Hjelpekontur (5m)", "stroke": { "color": "#7f4f24", "widthMm": 0.14 } },
+      "102": { "label": "Indekskontur (25m)", "stroke": { "color": "#7f4f24", "widthMm": 0.21 } },
+      "103": { "label": "Hjelpekontur — punktet", "stroke": { "color": "#7f4f24", "widthMm": 0.14, "dasharray": [1.5, 1.0] } },
+      "104": { "label": "Skråstrek (kontur ned)", "stroke": { "color": "#7f4f24", "widthMm": 0.14, "linecap": "round" } }
+    },
+    "manmade": {
+      "501": { "label": "Motorvei", "stroke": { "color": "#d97a5a", "widthMm": 0.6 } },
+      "502": { "label": "Hovedvei", "stroke": { "color": "#d97a5a", "widthMm": 0.5 } },
+      "503": { "label": "Småvei", "stroke": { "color": "#d4b08a", "widthMm": 0.35 } },
+      "504": { "label": "Skogsbilvei", "stroke": { "color": "#000", "widthMm": 0.25, "dasharray": [2.0, 0.8] } },
+      "505": { "label": "Sti — godt løp", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
+      "506": { "label": "Sti — uklar", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.8, 0.6] } },
+      "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.4, 0.8] } },
+      "509": { "label": "Krysset — bro / overgang", "point": { "symbol": "bro", "scaleMm": 1.2 } },
+      "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
+      "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },
+      "525": { "label": "Gjerde", "stroke": { "color": "#000", "widthMm": 0.15, "dasharray": [1.0, 0.5] } },
+      "528": { "label": "Kraftledning", "stroke": { "color": "#000", "widthMm": 0.18 } }
+    }
+  },
+
+  "patterns": {
+    "myr": {
+      "$comment": "Horisontale blå streker — våtmark fast",
+      "widthMm": 1.5,
+      "heightMm": 1.2,
+      "elements": [
+        { "type": "line", "x1": 0, "y1": 0.6, "x2": 1.5, "y2": 0.6, "stroke": "#0099cc", "widthMm": 0.18 }
+      ]
+    },
+    "myr-utrygg": {
+      "$comment": "Horisontale blå streker, tettere — våtmark utrygg",
+      "widthMm": 1.0,
+      "heightMm": 0.6,
+      "elements": [
+        { "type": "line", "x1": 0, "y1": 0.3, "x2": 1.0, "y2": 0.3, "stroke": "#0099cc", "widthMm": 0.18 }
+      ]
+    },
+    "kratt": {
+      "$comment": "Mørkegrønn med små blader",
+      "widthMm": 2.0,
+      "heightMm": 2.0,
+      "background": "#94d473",
+      "elements": [
+        { "type": "circle", "cx": 0.5, "cy": 0.5, "r": 0.18, "fill": "#3e8c2c" },
+        { "type": "circle", "cx": 1.4, "cy": 1.5, "r": 0.18, "fill": "#3e8c2c" }
+      ]
+    },
+    "halv-aapen": {
+      "$comment": "Gul med svake grønne tussocks",
+      "widthMm": 2.5,
+      "heightMm": 2.5,
+      "background": "#ffd966",
+      "elements": [
+        { "type": "circle", "cx": 1.25, "cy": 1.25, "r": 0.18, "fill": "#cae8a3" }
+      ]
+    },
+    "hugst": {
+      "$comment": "Diagonale grønne tikker",
+      "widthMm": 2.0,
+      "heightMm": 2.0,
+      "background": "#cae8a3",
+      "elements": [
+        { "type": "line", "x1": 0.5, "y1": 0.3, "x2": 0.7, "y2": 1.7, "stroke": "#5cb348", "widthMm": 0.2 }
+      ]
+    },
+    "blokkmark": {
+      "$comment": "Sort triangler — stein",
+      "widthMm": 2.5,
+      "heightMm": 2.5,
+      "elements": [
+        { "type": "polygon", "points": "1.25,0.7 1.7,1.5 0.8,1.5", "fill": "#000" }
+      ]
+    },
+    "bebyggelse": {
+      "$comment": "Tett brun-rosa for tett bebyggelse",
+      "widthMm": 1.5,
+      "heightMm": 1.5,
+      "background": "#d9b89a",
+      "elements": [
+        { "type": "rect", "x": 0.2, "y": 0.2, "w": 1.1, "h": 1.1, "fill": "#7a5a3a" }
+      ]
+    }
+  },
+
+  "pointSymbols": {
+    "knaus": {
+      "$comment": "Liten halvmåne for knaus / liten knatte",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "path", "d": "M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4", "stroke": "#7f4f24", "widthMm": 0.14, "fill": "none" }
+      ]
+    },
+    "stein": {
+      "$comment": "Solid svart trekant",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "polygon", "points": "0,-0.6 0.6,0.5 -0.6,0.5", "fill": "#000" }
+      ]
+    },
+    "brønn": {
+      "$comment": "Sirkel med kryss",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "circle", "cx": 0, "cy": 0, "r": 0.6, "stroke": "#0099cc", "widthMm": 0.18, "fill": "none" },
+        { "type": "line", "x1": -0.6, "y1": 0, "x2": 0.6, "y2": 0, "stroke": "#0099cc", "widthMm": 0.18 },
+        { "type": "line", "x1": 0, "y1": -0.6, "x2": 0, "y2": 0.6, "stroke": "#0099cc", "widthMm": 0.18 }
+      ]
+    },
+    "bro": {
+      "$comment": "To parallelle streker — bro / klopp",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "line", "x1": -0.6, "y1": -0.3, "x2": 0.6, "y2": -0.3, "stroke": "#000", "widthMm": 0.2 },
+        { "type": "line", "x1": -0.6, "y1": 0.3, "x2": 0.6, "y2": 0.3, "stroke": "#000", "widthMm": 0.2 }
+      ]
+    },
+    "peak": {
+      "$comment": "Sort prikk for topp / høyde",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "circle", "cx": 0, "cy": 0, "r": 0.5, "fill": "#7f4f24" }
+      ]
+    }
+  },
+
+  "labels": {
+    "place": { "fontSizeMm": 2.5, "color": "#2a2a2a", "haloColor": "#fff", "haloWidthMm": 0.5 },
+    "peak":  { "fontSizeMm": 2.8, "color": "#7f4f24", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.5 },
+    "kontur-tall": { "fontSizeMm": 1.8, "color": "#7f4f24", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 }
+  },
+
+  "darkMode": {
+    "$comment": "Overstyringer for nattvisning. Kun for skjerm — print bruker alltid lys.",
+    "background": "#0e1116",
+    "categories": {
+      "405": { "fill": { "color": "#0e1116" } },
+      "406": { "fill": { "color": "#1f3b1f" } },
+      "407": { "fill": { "color": "#2c4a2c" } },
+      "408": { "fill": { "color": "#3a5a3a" } },
+      "401": { "fill": { "color": "#3a2e1c" } },
+      "301": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
+      "302": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
+      "501": { "stroke": { "color": "#d97a5a" } },
+      "502": { "stroke": { "color": "#d97a5a" } },
+      "503": { "stroke": { "color": "#a08568" } },
+      "505": { "stroke": { "color": "#d4a47a" } },
+      "521": { "fill": { "color": "#5a4a3c" } },
+      "101": { "stroke": { "color": "#b88a52" } },
+      "102": { "stroke": { "color": "#d4a47a" } }
+    }
+  }
+}

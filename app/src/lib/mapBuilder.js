@@ -1,10 +1,17 @@
-// Delt SVG-byggeverktøy for turkart. Bruker WGS84 → UTM 32N og produserer
-// et lagdelt SVG identisk med det Node-scriptet genererer offline.
+// Delt SVG-byggeverktøy for ISOM-inspirerte turkart.
+// Bruker WGS84 → UTM 32N og produserer et lagdelt SVG med mm-baserte
+// streker (print-kvalitet) basert på en data-drevet ISOM-katalog.
 //
-// Brukes både fra build-vardasen-svg.js (Node, headless) og fra
-// MapPickerView.vue (nettleser, klient-side ved kart-generering).
+// Brukes både fra build-vardasen-svg.js (Node) og fra MapPickerView.vue
+// (klient-side ved kart-generering).
 
 import { wgs84ToUtm32 } from './utm.js'
+import {
+  classifyToIsom,
+  buildIsomDefs,
+  buildIsomCss,
+  isomCatalog,
+} from './symbolizer.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -18,10 +25,12 @@ export function buildOverpassQuery(bbox) {
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
-  way["natural"="wood"];
+  way["natural"~"^(wood|scree|bare_rock)$"];
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
   way["building"];
   way["leisure"~"^(park|pitch|playground)$"];
+  way["barrier"~"^(fence|wall)$"];
+  way["power"="line"];
   node["natural"="peak"];
   node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
   relation["natural"="water"];
@@ -37,7 +46,7 @@ export async function fetchOverpass(bbox, { signal } = {}) {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Accept': 'application/json',
-      'User-Agent': 'svg-insights/5.2 (https://github.com/gitjanerik/svg-insights)',
+      'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
     },
     body,
     signal,
@@ -60,66 +69,47 @@ export function bboxFromCenter(lat, lon, halfKm) {
   }
 }
 
-function fmt(n) {
-  return Number(n.toFixed(2))
-}
+function fmt(n) { return Number(n.toFixed(2)) }
 
 function xmlEscape(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function classify(el) {
-  const t = el.tags ?? {}
-  if (el.type === 'node' && t.natural === 'peak') return 'peak'
-  if (el.type === 'node' && t.place) return 'place'
-  if (t.building) return 'bygning'
-  if (t.natural === 'water' || t.water) return 'vann'
-  if (t.waterway) return 'bekk'
-  if (t.natural === 'wetland') return 'myr'
-  if (t.natural === 'wood' || t.landuse === 'forest') return 'skog'
-  if (t.landuse === 'meadow' || t.landuse === 'grass' || t.leisure === 'park') return 'eng'
-  if (t.landuse === 'farmland') return 'aker'
-  if (t.highway) {
-    const major = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary']
-    const minor = ['residential', 'unclassified', 'service', 'living_street']
-    const trail = ['path', 'track', 'footway', 'bridleway', 'cycleway', 'steps']
-    if (major.includes(t.highway)) return 'vei-stor'
-    if (minor.includes(t.highway)) return 'vei-liten'
-    if (trail.includes(t.highway)) return 'sti'
-  }
-  return null
-}
+// Layer-rekkefølge (z-order, bunn til topp). Inspirert av ISOM 2017.
+const LAYER_ORDER = [
+  // 400-serien: vegetasjon og åpen mark
+  '401', '403', '404', '406', '407', '408', '409',
+  // 200-serien: stein/blokkmark/knaus (under vann, men over vegetasjon)
+  '210',
+  // 300-serien: vann
+  '308', '309', '301', '302', '304', '305',
+  // 100-serien: konturer (over vann, under stier)
+  '101', '103', '104', '102',
+  // 500-serien: veier nedenfra opp
+  '501', '502', '503', '504', '505', '506', '507',
+  // bygninger og menneskeskapt over alt
+  '521', '522', '525', '528',
+  // stupkanter
+  '201', '203',
+]
 
-const STYLE = `
-svg { background: var(--bg, #f4ecd8); font-family: ui-sans-serif, system-ui, sans-serif; }
-[data-layer] path { vector-effect: non-scaling-stroke; }
-[data-layer="skog"] path { fill: var(--skog, #cde3b8); stroke: none; }
-[data-layer="eng"] path { fill: var(--eng, #e8edc4); stroke: none; }
-[data-layer="aker"] path { fill: var(--aker, #efe3c2); stroke: none; }
-[data-layer="myr"] path { fill: var(--myr, #cfe1d8); stroke: var(--myr-s, #5a8a78); stroke-dasharray: 2 2; stroke-width: 0.3; }
-[data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.4; }
-[data-layer="bygning"] path { fill: var(--bygning, #b8a190); stroke: var(--bygning-s, #6e5a4a); stroke-width: 0.25; }
-[data-layer="bekk"] path { fill: none; stroke: var(--vann-s, #4a9bbf); stroke-width: 0.7; stroke-linecap: round; }
-[data-layer="vei-stor"] path { fill: none; stroke: var(--vei-stor, #d97a5a); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-[data-layer="vei-liten"] path { fill: none; stroke: var(--vei-liten, #d4b08a); stroke-width: 1.0; stroke-linecap: round; stroke-linejoin: round; }
-[data-layer="sti"] path { fill: none; stroke: var(--sti, #6b3a1e); stroke-width: 0.6; stroke-dasharray: 2.5 1.5; stroke-linecap: round; }
-[data-symbol="peak"] { fill: var(--peak, #6b3a1e); }
-[data-label] { font-size: 14px; fill: var(--label, #2a2a2a); paint-order: stroke; stroke: var(--bg, #f4ecd8); stroke-width: 3; stroke-linejoin: round; }
-[data-label="peak"] { font-weight: 600; }
-`.trim().replace(/\s+/g, ' ')
-
-const LAYER_ORDER = ['skog', 'eng', 'aker', 'myr', 'vann', 'bekk', 'vei-stor', 'vei-liten', 'bygning', 'sti']
-const POLYGON_CATS = new Set(['skog', 'eng', 'aker', 'myr', 'vann', 'bygning'])
-const LINE_CATS = new Set(['bekk', 'vei-liten', 'vei-stor', 'sti'])
+const POLYGON_CODES = new Set(['401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '308', '309', '521', '522'])
+const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
- * Bygg ferdig SVG-streng for et bbox + Overpass-elementer.
+ * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
+ * symbolisering med mm-baserte streker for print.
+ *
+ * @param {Array} elements   - Overpass-elementer
+ * @param {Object} bbox      - { south, west, north, east } i WGS84
+ * @param {Object} [options]
+ * @param {number} [options.scaleDenom=10000]  - Print-skala (1:10 000 typisk for ISOM)
+ * @param {boolean} [options.printSize=true]   - Sett width/height i mm for print
  * @returns {{ svg: string, counts: object, meta: object }}
  */
-export function buildSvg(elements, bbox) {
+export function buildSvg(elements, bbox, options = {}) {
+  const { scaleDenom = 10000, printSize = true } = options
+
   const sw = wgs84ToUtm32(bbox.south, bbox.west)
   const ne = wgs84ToUtm32(bbox.north, bbox.east)
   const minE = Math.min(sw.e, ne.e)
@@ -148,22 +138,38 @@ export function buildSvg(elements, bbox) {
     return d
   }
 
-  const buckets = {
-    skog: [], eng: [], aker: [], myr: [], vann: [], bekk: [],
-    bygning: [], 'vei-liten': [], 'vei-stor': [], sti: [],
-    peak: [], place: [],
-  }
+  // Bucket pr ISOM-kode
+  const buckets = {}
+  for (const code of LAYER_ORDER) buckets[code] = []
+  const peaks = []
+  const places = []
+
+  const counts = { peak: 0, place: 0 }
+  for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
-    const cat = classify(el)
-    if (!cat) continue
-    buckets[cat].push(el)
+    const cls = classifyToIsom(el)
+    if (!cls) continue
+    if (cls.cat === 'point') {
+      if (cls.code === 'peak') { peaks.push(el); counts.peak++ }
+      else if (cls.code === 'place') { places.push(el); counts.place++ }
+      continue
+    }
+    if (buckets[cls.code]) {
+      buckets[cls.code].push(el)
+      counts[cls.code]++
+    }
   }
 
-  const layerSvg = (cat) => {
-    const els = buckets[cat]
-    if (!els.length) return `  <g data-layer="${cat}"></g>\n`
-    if (POLYGON_CATS.has(cat)) {
+  // Bygg ISOM-defs (patterns + symbols) og CSS
+  const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
+  const isomCss = buildIsomCss(isomCatalog, patternIds)
+
+  const layerSvg = (code) => {
+    const els = buckets[code]
+    if (!els.length) return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"></g>\n`
+
+    if (POLYGON_CODES.has(code)) {
       const paths = els.map(el => {
         if (el.type === 'way' && el.geometry) return pathFromGeometry(el.geometry, true)
         if (el.type === 'relation' && el.members) {
@@ -174,26 +180,26 @@ export function buildSvg(elements, bbox) {
         }
         return ''
       }).filter(Boolean)
-      return `  <g data-layer="${cat}"><path d="${paths.join(' ')}" fill-rule="evenodd"/></g>\n`
+      return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"><path d="${paths.join(' ')}" fill-rule="evenodd"/></g>\n`
     }
-    if (LINE_CATS.has(cat)) {
+    if (LINE_CODES.has(code)) {
       const paths = els.map(el => pathFromGeometry(el.geometry, false)).filter(Boolean)
-      return `  <g data-layer="${cat}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
+      return `  <g data-layer="${categoryFor(code)}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
     }
     return ''
   }
 
   const labelSvg = () => {
     const parts = []
-    for (const el of buckets.peak) {
+    for (const el of peaks) {
       const p = project(el.lat, el.lon)
       const name = xmlEscape(el.tags?.name ?? '')
       const ele = el.tags?.ele ?? ''
       const eleNum = parseFloat(ele)
       const label = name + (Number.isFinite(eleNum) ? ` ${Math.round(eleNum)}` : '')
-      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><circle r="3" data-symbol="peak"/><text x="6" y="2" data-label="peak">${label}</text></g>`)
+      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${symbolIds.get('peak')}" x="-0.5mm" y="-0.5mm" width="1mm" height="1mm"/><text x="1.5mm" y="0.5mm" data-label="peak">${label}</text></g>`)
     }
-    for (const el of buckets.place) {
+    for (const el of places) {
       if (!el.tags?.name) continue
       const p = project(el.lat, el.lon)
       parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" data-label="place">${xmlEscape(el.tags.name)}</text>`)
@@ -202,26 +208,58 @@ export function buildSvg(elements, bbox) {
     return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
   }
 
-  const counts = Object.fromEntries(
-    Object.entries(buckets).map(([k, v]) => [k, v.length])
-  )
-
   const meta = {
     bbox,
     utmBbox: { minE, minN, maxE, maxN },
     widthM, heightM,
+    scaleDenom,
     equidistance: null,
-    source: 'OpenStreetMap (ODbL)',
+    isomVersion: '2017-2-derived',
+    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0',
     generated: new Date().toISOString(),
   }
+
+  // ViewBox = meter (1 SVG-enhet = 1 m)
+  const viewBox = `0 0 ${fmt(widthM)} ${fmt(heightM)}`
+
+  // Print-størrelse: 1:10000 betyr at 1 m kart = 0.1 mm papir.
+  // For å printe et 5×5 km kart i 1:10000 trenger vi 500×500 mm papir.
+  // Vi setter width/height kun hvis printSize er true.
+  const printAttrs = printSize
+    ? `width="${fmt(widthM * 1000 / scaleDenom)}mm" height="${fmt(heightM * 1000 / scaleDenom)}mm"`
+    : ''
 
   const layers = LAYER_ORDER.map(layerSvg).join('') + labelSvg()
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${fmt(widthM)} ${fmt(heightM)}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
-  <style>${STYLE}</style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
+  <defs>${isomDefs}</defs>
+  <style>${isomCss}</style>
+  <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
 ${layers}</svg>
 `
 
   return { svg, counts, meta }
+}
+
+function categoryFor(code) {
+  // Mapping fra ISOM-kode til UI-kategori (for lag-toggling i MapView).
+  // Flere koder kan ende i samme kategori (skog samler 406-409 osv).
+  switch (code) {
+    case '401': case '403':                     return 'aapen'
+    case '404':                                  return 'aker'
+    case '406': case '407': case '408': case '409': return 'skog'
+    case '308': case '309':                     return 'myr'
+    case '301': case '302':                     return 'vann'
+    case '304': case '305':                     return 'bekk'
+    case '521': case '522':                     return 'bygning'
+    case '501': case '502':                     return 'vei-stor'
+    case '503': case '504':                     return 'vei-liten'
+    case '505': case '506': case '507':         return 'sti'
+    case '201': case '203':                     return 'stupkant'
+    case '210': case '212': case '213':         return 'stein'
+    case '525': case '528':                     return 'linje'
+    case '101': case '102': case '103': case '104': return 'kontur'
+    default:                                     return 'other'
+  }
 }
