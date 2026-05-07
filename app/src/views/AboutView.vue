@@ -112,10 +112,31 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 5.1.0 -->
+          <!-- 5.2.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">5.2.0</span>
+                <span class="text-white/40">&mdash; Lag ditt eget turkart: stedssøk, bbox-velger og IndexedDB-lagring</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Søk etter sted, postnummer eller adresse via Nominatim — start ved Oslo som standard</li>
+                <li>Pinch og slider for å justere kart-størrelse mellom 1 og 10 km bredde</li>
+                <li>SVG genereres direkte i nettleseren — Overpass-spørring + reprojisering uten serverside</li>
+                <li>Lagres lokalt i IndexedDB så de fungerer offline og overlever reload</li>
+                <li>Liste over genererte kart i ny <code>/kart</code>-startside med slett-knapp</li>
+                <li>Bug-fixer fra første brukertest: synlige toppbar-ikoner, swipe-drawer, tynnere streker, forbedret skala-bar, layer-rekkefølge slik at bygninger nå ligger over veier og stier over alt</li>
+                <li>Delt SVG-byggekode mellom Node-script og nettleser via <code>app/src/lib/mapBuilder.js</code></li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 5.1.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">5.1.0</span>
                 <span class="text-white/40">&mdash; Turkart-sporet: Vardåsen i Asker som SVG med GPS og kompass</span>

@@ -1,18 +1,26 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
+import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
 
 const router = useRouter()
+const route = useRoute()
 const wrapperRef = ref(null)
 const svgHostRef = ref(null)
 
 const loading = ref(true)
 const loadError = ref(null)
 const meta = ref(null)
+const mapTitle = ref('Turkart')
+
+// Innebygde kart som lastes fra public/maps/<id>.svg
+const BUILTIN = {
+  vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
+}
 
 const LAYERS = [
   { key: 'skog',      label: 'Skog' },
@@ -73,10 +81,20 @@ async function loadMap() {
   loading.value = true
   loadError.value = null
   try {
-    const url = `${import.meta.env.BASE_URL}maps/vardasen.svg`
-    const res = await fetch(url, { cache: 'no-cache' })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
+    const id = route.params.id ?? 'vardasen'
+    let text
+    if (BUILTIN[id]) {
+      mapTitle.value = BUILTIN[id].navn
+      const url = `${import.meta.env.BASE_URL}maps/${BUILTIN[id].file}`
+      const res = await fetch(url, { cache: 'no-cache' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      text = await res.text()
+    } else {
+      const stored = await loadStoredMap(id)
+      if (!stored) throw new Error('Kart ikke funnet i lagring')
+      mapTitle.value = stored.navn
+      text = stored.svg
+    }
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'image/svg+xml')
     const root = doc.documentElement
@@ -261,7 +279,7 @@ onMounted(() => {
     <!-- Toppbar — låst mørk så ikoner alltid er lesbare uansett kart-tema -->
     <div class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
                 pointer-events-none">
-      <button @click="router.push('/')"
+      <button @click="router.push('/kart')"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
                      backdrop-blur bg-zinc-900/85 border border-white/15 text-white shadow-lg
                      active:scale-95 transition">
@@ -272,8 +290,8 @@ onMounted(() => {
       </button>
 
       <div class="pointer-events-none px-3 py-1.5 rounded-full backdrop-blur bg-zinc-900/85
-                  border border-white/15 text-[12px] text-white font-medium shadow-lg">
-        Vardåsen · turkart
+                  border border-white/15 text-[12px] text-white font-medium shadow-lg max-w-[60%] truncate">
+        {{ mapTitle }}
       </div>
 
       <button @click="openDrawer"
@@ -456,7 +474,7 @@ onMounted(() => {
           </div>
 
           <div class="text-white/45 text-[10px] leading-relaxed mt-4">
-            Kartdata © OpenStreetMap-bidragsytere (ODbL). 4 × 4 km utsnitt rundt Vardåsen i Asker.
+            Kartdata © OpenStreetMap-bidragsytere (ODbL).
             Reprojisert til UTM 32N (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
           </div>
         </div>

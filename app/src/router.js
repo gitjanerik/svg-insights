@@ -9,7 +9,9 @@ const routes = [
   { path: '/font-chooser',  name: 'font-chooser', component: () => import('./views/FontChooserView.vue') },
   { path: '/font-editor',   name: 'font-editor',  component: () => import('./views/FontEditorView.vue') },
   { path: '/font-preview',  name: 'font-preview', component: () => import('./views/FontPreviewView.vue') },
-  { path: '/kart',          name: 'kart',         component: () => import('./views/MapView.vue') },
+  { path: '/kart',          name: 'kart-hjem',    component: () => import('./views/MapHomeView.vue') },
+  { path: '/kart/nytt',     name: 'kart-nytt',    component: () => import('./views/MapPickerView.vue') },
+  { path: '/kart/:id',      name: 'kart-vis',     component: () => import('./views/MapView.vue') },
 ]
 
 export default createRouter({

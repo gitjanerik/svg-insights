@@ -1,0 +1,157 @@
+<script setup>
+import { ref, onMounted, onActivated } from 'vue'
+import { useRouter } from 'vue-router'
+import { listMaps, deleteMap } from '../lib/mapStorage.js'
+
+const router = useRouter()
+const maps = ref([])
+const loading = ref(true)
+const builtin = ref([
+  { id: 'vardasen', navn: 'Vardåsen i Asker', center: { lat: 59.835, lon: 10.4575 }, halfKm: 2, builtin: true },
+])
+
+async function refresh() {
+  loading.value = true
+  try {
+    maps.value = await listMaps()
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(refresh)
+onActivated(refresh)
+
+function openMap(id) {
+  router.push({ name: 'kart-vis', params: { id } })
+}
+
+async function onDelete(id, navn) {
+  if (!confirm(`Slett kart "${navn}"?`)) return
+  await deleteMap(id)
+  await refresh()
+}
+
+function formatDate(ts) {
+  return new Date(ts).toLocaleDateString('no-NO', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  })
+}
+</script>
+
+<template>
+  <div class="relative w-full min-h-[100dvh] flex flex-col bg-zinc-950 text-white">
+
+    <!-- Toppbar -->
+    <div class="shrink-0 px-3 py-3 flex items-center justify-between
+                bg-zinc-900/95 border-b border-white/10">
+      <button @click="router.push('/')"
+              class="rounded-full w-10 h-10 flex items-center justify-center
+                     bg-white/5 border border-white/10 active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
+      <div class="text-[14px] font-semibold">Turkart</div>
+      <div class="w-10 h-10"/>
+    </div>
+
+    <!-- Innhold -->
+    <div class="flex-1 px-4 pt-4 pb-32 overflow-y-auto">
+
+      <!-- "Nytt kart"-CTA -->
+      <button @click="router.push('/kart/nytt')"
+              class="w-full mb-4 rounded-2xl p-4 flex items-center gap-4
+                     bg-gradient-to-br from-violet-600 to-indigo-700
+                     border border-violet-400/30 active:scale-[0.99] transition shadow-lg">
+        <div class="shrink-0 w-12 h-12 rounded-xl bg-white/15 border border-white/20
+                    flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </div>
+        <div class="flex-1 text-left">
+          <div class="text-white font-semibold">Lag nytt turkart</div>
+          <div class="text-[11px] text-white/70 mt-0.5">Søk etter sted og last ned område</div>
+        </div>
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/60" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- Innebygde kart -->
+      <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
+      <button v-for="m in builtin" :key="m.id"
+              @click="openMap(m.id)"
+              class="w-full mb-2 rounded-xl px-4 py-3 flex items-center gap-3
+                     bg-white/5 border border-white/10 active:scale-[0.99] transition text-left">
+        <div class="shrink-0 w-10 h-10 rounded-lg bg-emerald-500/15 border border-emerald-400/25
+                    flex items-center justify-center">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 text-emerald-300" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+            <path d="M9 4 V18 M15 6 V20"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium text-[14px] truncate">{{ m.navn }}</div>
+          <div class="text-[11px] text-white/40">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
+        </div>
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- Brukergenererte kart -->
+      <div v-if="maps.length > 0 || loading"
+           class="mt-6 mb-2 text-white/45 text-[11px] uppercase tracking-wide">Mine kart</div>
+
+      <div v-if="loading" class="flex justify-center py-6">
+        <div class="w-5 h-5 border-2 border-white/20 border-t-white/60 rounded-full animate-spin"/>
+      </div>
+
+      <div v-for="m in maps" :key="m.id"
+           class="mb-2 rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+        <div class="flex items-center gap-3 px-4 py-3 active:bg-white/[0.07]"
+             @click="openMap(m.id)">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-violet-500/15 border border-violet-400/25
+                      flex items-center justify-center">
+            <svg viewBox="0 0 24 24" class="w-5 h-5 text-violet-300" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+              <path d="M9 4 V18 M15 6 V20"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-[14px] truncate">{{ m.navn }}</div>
+            <div class="text-[11px] text-white/40 flex items-center gap-2 truncate">
+              <span>{{ (m.halfKm * 2).toFixed(1) }} × {{ (m.halfKm * 2).toFixed(1) }} km</span>
+              <span>·</span>
+              <span>{{ formatDate(m.opprettet) }}</span>
+            </div>
+          </div>
+          <button @click.stop="onDelete(m.id, m.navn)"
+                  class="w-9 h-9 rounded-lg flex items-center justify-center text-white/40
+                         active:bg-white/10 active:text-white/70">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6 L18 20 a2 2 0 0 1 -2 2 H8 a2 2 0 0 1 -2 -2 L5 6"/>
+              <line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div v-if="!loading && maps.length === 0"
+           class="mt-6 px-4 py-6 rounded-xl bg-white/5 border border-white/10
+                  text-white/45 text-[12px] text-center">
+        Ingen egne kart ennå. Trykk «Lag nytt turkart» for å komme i gang.
+      </div>
+    </div>
+  </div>
+</template>
