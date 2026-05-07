@@ -65,22 +65,31 @@ async function generateMap() {
       }),
     ])
     const useN50 = n50Water.length > 0
-    const elements = useN50
-      ? [
-          ...osmData.elements.filter(el => {
-            const t = el.tags ?? {}
-            if (t.natural === 'water') return false
-            if (t.natural === 'coastline') return false
-            if (t.natural === 'bay' || t.natural === 'strait') return false
-            if (t.water) return false
-            if (t.waterway === 'stream' || t.waterway === 'ditch') return false
-            if (t.place === 'sea' || t.place === 'ocean') return false
-            return true
-          }),
-          ...n50Water,
-        ]
-      : osmData.elements
-    const source = useN50 ? `OSM + N50 (${n50Water.length} vann)` : 'OSM'
+    // Filtrer ALLTID OSM `natural=coastline` og place=sea/ocean — uansett
+    // om N50 lyktes. Coastline-polygoniseringen i mapBuilder.js har
+    // dokumenterte feilmoduser (wedger, inversjon) når OSM mistags,
+    // og det er bedre å miste kyst-rendering enn å rendre wedger som
+    // ser ut som ekte vann. Hvis N50 lyktes: filtrer også natural=water
+    // siden N50 er autoritativ. Hvis ikke: behold OSM natural=water som
+    // fallback for innlands-vann (det fungerer typisk).
+    const elements = osmData.elements.filter(el => {
+      const t = el.tags ?? {}
+      // Alltid filtrert (potensielt skadelig polygonisering):
+      if (t.natural === 'coastline') return false
+      if (t.natural === 'bay' || t.natural === 'strait') return false
+      if (t.place === 'sea' || t.place === 'ocean') return false
+      if (useN50) {
+        // N50 leverer autoritativt vann — fjern OSM-vann
+        if (t.natural === 'water') return false
+        if (t.water) return false
+        if (t.waterway === 'stream' || t.waterway === 'ditch') return false
+      }
+      return true
+    })
+    if (useN50) elements.push(...n50Water)
+    const source = useN50
+      ? `OSM + N50 (${n50Water.length} vann)`
+      : 'OSM (N50 feilet — kun OSM natural=water)'
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
 

@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.7.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.7.1</span>
+                <span class="text-white/40">&mdash; Hestesund-fix: alltid filtrer OSM coastline uansett N50-suksess</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Annotert Hestesund-screenshot avslørte at land/vann fortsatt blir invertert med blå wedger der det skulle ha vært land. Rotårsak: hvis N50-fetch returnerte 0 features (axis-order, CORS, eller annen WFS-feil), brukte vi OSM uten å filtrere coastline-tagger. Coastline-polygoniseringen i mapBuilder fyrte da igjen og produserte v6.5.x's wedger</li>
+                <li>Fix: filtrer ALLTID OSM <code>natural=coastline/bay/strait</code> + <code>place=sea/ocean</code>, uansett om N50 lyktes. Vi mister kyst-rendering der N50 feiler, men dette er en kjent og synlig degradering — ikke wedge-magi</li>
+                <li>Hvis N50 lykkes: filtrer også OSM <code>natural=water</code> som før (N50 er autoritativ)</li>
+                <li>Hvis N50 feiler: behold OSM <code>natural=water</code> som fallback for innlands-vann (typisk korrekt)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.7.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.7.0</span>
                 <span class="text-white/40">&mdash; Stupkant-trekanter (ISOM 203 teeth) + N50 utstreknings-validering</span>

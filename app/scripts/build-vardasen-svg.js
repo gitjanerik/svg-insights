@@ -37,24 +37,24 @@ try {
   console.warn(`N50-vann feilet: ${e.message} — bruker OSM-vann`)
 }
 
-// Slå sammen: filtrer OSM-vann ut, legg til N50-vann i stedet
+// Slå sammen: ALLTID filtrer ut natural=coastline/bay/strait, place=sea/ocean
+// uavhengig av om N50 lyktes — coastline-polygoniseringen i mapBuilder
+// har dokumenterte feilmoduser (wedger, inversjon) når OSM mistags.
+// Hvis N50 lyktes: filtrer OGSÅ natural=water siden N50 er autoritativ.
 const N50_USE_FOR_WATER = n50Water.length > 0
-const elements = N50_USE_FOR_WATER
-  ? [
-      ...data.elements.filter(el => {
-        const t = el.tags ?? {}
-        // Behold OSM-elementer som IKKE er vann/coastline
-        if (t.natural === 'water') return false
-        if (t.natural === 'coastline') return false
-        if (t.natural === 'bay' || t.natural === 'strait') return false
-        if (t.water) return false
-        if (t.waterway === 'stream' || t.waterway === 'ditch') return false
-        if (t.place === 'sea' || t.place === 'ocean') return false
-        return true
-      }),
-      ...n50Water,
-    ]
-  : data.elements
+const elements = data.elements.filter(el => {
+  const t = el.tags ?? {}
+  if (t.natural === 'coastline') return false
+  if (t.natural === 'bay' || t.natural === 'strait') return false
+  if (t.place === 'sea' || t.place === 'ocean') return false
+  if (N50_USE_FOR_WATER) {
+    if (t.natural === 'water') return false
+    if (t.water) return false
+    if (t.waterway === 'stream' || t.waterway === 'ditch') return false
+  }
+  return true
+})
+if (N50_USE_FOR_WATER) elements.push(...n50Water)
 console.log(`Etter merge: ${elements.length} elementer (N50-vann ${N50_USE_FOR_WATER ? 'aktiv' : 'inaktiv'})`)
 
 // DEM: forsøk ekte Kartverket WCS DTM først (workflow har full nettverkstilgang).
