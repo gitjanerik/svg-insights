@@ -31,7 +31,8 @@ export function buildOverpassQuery(bbox) {
   way["natural"="water"];
   way["natural"~"^(bay|strait|coastline)$"];
   way["water"];
-  way["place"~"^(sea|ocean)$"];
+  way["place"~"^(sea|ocean|island|islet)$"];
+  relation["place"~"^(island|islet)$"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
@@ -297,8 +298,9 @@ export function buildSvg(elements, bbox, options = {}) {
   const peaks = []
   const places = []
   const coastlineWays = []
+  const islandPolygons = []
 
-  const counts = { peak: 0, place: 0, coastline: 0 }
+  const counts = { peak: 0, place: 0, coastline: 0, island: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
@@ -307,6 +309,16 @@ export function buildSvg(elements, bbox, options = {}) {
     if (el.type === 'way' && el.tags?.natural === 'coastline') {
       coastlineWays.push(el)
       counts.coastline++
+      continue
+    }
+    // OSM place=island/islet er polygon-omriss av øyer. Brukes som backup
+    // hvis natural=coastline ikke chainer riktig (f.eks. Landøya som
+    // historisk var øy men nå er halvøy via Hestesund).
+    const placeTag = el.tags?.place
+    if ((placeTag === 'island' || placeTag === 'islet') &&
+        (el.type === 'way' || el.type === 'relation')) {
+      islandPolygons.push(el)
+      counts.island++
       continue
     }
     const cls = classifyToIsom(el)
@@ -323,8 +335,7 @@ export function buildSvg(elements, bbox, options = {}) {
   }
 
   // Bygg land-polygoner fra kystlinje-ways. Hvis vi har minst én kystlinje
-  // i bbox, behandler vi det som et kystkart: blå sjø-bakgrunn med land-
-  // maske som dekker landområdene.
+  // eller en place=island i bbox, behandler vi det som et kystkart.
   let landRings = []
   if (coastlineWays.length > 0) {
     try {
@@ -333,6 +344,30 @@ export function buildSvg(elements, bbox, options = {}) {
     } catch (e) {
       console.warn(`[Kystlinje] polygonisering feilet: ${e.message}`)
     }
+  }
+  // Legg til place=island/islet polygoner som ekstra land-ringer.
+  // Disse er allerede lukkede polygoner i OSM, så ingen chaining trengs.
+  for (const el of islandPolygons) {
+    if (el.type === 'way' && el.geometry?.length >= 3) {
+      const ring = el.geometry.map(g => {
+        const p = project(g.lat, g.lon)
+        return [p.x, p.y]
+      })
+      landRings.push(ring)
+    } else if (el.type === 'relation' && el.members) {
+      for (const m of el.members) {
+        if (m.type === 'way' && m.role === 'outer' && m.geometry?.length >= 3) {
+          const ring = m.geometry.map(g => {
+            const p = project(g.lat, g.lon)
+            return [p.x, p.y]
+          })
+          landRings.push(ring)
+        }
+      }
+    }
+  }
+  if (islandPolygons.length > 0) {
+    console.log(`[Place=island] ${islandPolygons.length} øyer → land-ringer`)
   }
   const isCoastalMap = landRings.length > 0
 
@@ -608,6 +643,7 @@ export function buildSvg(elements, bbox, options = {}) {
     lakeLabels: lakeLabels.length,
     coastline: {
       ways: coastlineWays.length,
+      islands: islandPolygons.length,
       landRings: landRings.length,
     },
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
