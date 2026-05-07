@@ -81,24 +81,28 @@ function xmlEscape(s) {
 }
 
 // Layer-rekkefølge (z-order, bunn til topp). Inspirert av ISOM 2017.
+//
+// Merk: ISOM 522 (tett bebyggelse) er ikke listet her — den rendres
+// separat fra urbanMassMultiPoly mellom GROUND_CODES og WATER_CODES
+// slik at vann og høydekurver legger seg over bymassen og forblir
+// lesbare i tett bebygde områder (f.eks. Oslo sentrum).
+const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210']
+const WATER_CODES  = ['308', '309', '301', '302', '303', '304', '305']
+const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507']
+const UPPER_CODES  = ['521', '525', '528']
+// Plassholder-koder for lag som rendres separat (konturer/stupkanter).
+// Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
+const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
 const LAYER_ORDER = [
-  // 400-serien: vegetasjon og åpen mark
-  '401', '403', '404', '406', '407', '408', '409',
-  // 200-serien: stein/blokkmark/knaus (under vann, men over vegetasjon)
-  '210',
-  // 300-serien: vann
-  '308', '309', '301', '302', '304', '305',
-  // 100-serien: konturer (over vann, under stier)
-  '101', '103', '104', '102',
-  // 500-serien: veier nedenfra opp
-  '501', '502', '503', '504', '505', '506', '507',
-  // bygninger og menneskeskapt over alt
-  '521', '522', '525', '528',
-  // stupkanter
-  '201', '203',
+  ...GROUND_CODES,
+  ...WATER_CODES,
+  ...PLACEHOLDER_CODES,
+  ...ROAD_CODES,
+  ...UPPER_CODES,
+  '522',
 ]
 
-const POLYGON_CODES = new Set(['401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '308', '309', '521', '522'])
+const POLYGON_CODES = new Set(['401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '308', '309', '521', '522'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -179,6 +183,25 @@ export function buildSvg(elements, bbox, options = {}) {
       a += pts[i].x * pts[j].y - pts[j].x * pts[i].y
     }
     return Math.abs(a) / 2
+  }
+
+  // Areal-vektet polygon-sentroid i SVG-koord. Returnerer null for
+  // degenererte polygoner (areal ≈ 0). Brukes til å plassere
+  // elevasjons-label inne i innsjø-polygoner.
+  const polygonCentroid = (geom) => {
+    if (!geom || geom.length < 3) return null
+    const pts = geom.map(g => project(g.lat, g.lon))
+    let cx = 0, cy = 0, area = 0
+    for (let i = 0, n = pts.length; i < n; i++) {
+      const j = (i + 1) % n
+      const cross = pts[i].x * pts[j].y - pts[j].x * pts[i].y
+      cx += (pts[i].x + pts[j].x) * cross
+      cy += (pts[i].y + pts[j].y) * cross
+      area += cross
+    }
+    area /= 2
+    if (Math.abs(area) < 1e-6) return null
+    return { x: cx / (6 * area), y: cy / (6 * area) }
   }
 
   // Per-kategori forenkling og filtrering. Tunet for å holde SVG <1.5 MB
@@ -356,7 +379,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // kontur-laget kun rendres der det er land. Konturer som "krysser"
   // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
   const waterPaths = []
-  for (const code of ['301', '302', '308', '309']) {
+  for (const code of ['301', '302', '303', '308', '309']) {
     for (const el of buckets[code] ?? []) {
       if (el.type === 'way' && el.geometry) {
         waterPaths.push(pathFromGeometry(el.geometry, true))
@@ -395,6 +418,39 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Elevasjons-labels på innsjøer ────────────────────────────────────
+  // Sample DTM i polygon-sentroid for hver innsjø/tjern (301/302) og vis
+  // høyde over havet som italic blå tekst. Skipped for saltvann (303 ≈ 0)
+  // og myr (308/309 — typisk for små polygoner). Krever ekte DEM, ikke
+  // syntetisk, ellers gir tallet falsk informasjon. Min-areal 5000 m²
+  // for å unngå clutter på små vannhull.
+  const lakeLabels = []
+  if (usableDem) {
+    const t = usableDem.transform
+    const sampleDem = (utmE, utmN) => {
+      const col = Math.round((utmE - t.originX) / t.pixelWidth)
+      const row = Math.round((utmN - t.originY) / t.pixelHeight)
+      if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
+      const v = usableDem.data[row * usableDem.cols + col]
+      if (v === usableDem.noData) return null
+      return v
+    }
+    for (const code of ['301', '302']) {
+      for (const el of buckets[code] ?? []) {
+        if (el.type !== 'way' || !el.geometry) continue
+        if (polygonAreaM2(el.geometry) < 5000) continue
+        const c = polygonCentroid(el.geometry)
+        if (!c) continue
+        // Konverter SVG-sentroid tilbake til UTM for DEM-sampling
+        const utmE = c.x + minE
+        const utmN = (heightM - c.y) + minN
+        const elev = sampleDem(utmE, utmN)
+        if (elev == null || !Number.isFinite(elev)) continue
+        lakeLabels.push({ x: c.x, y: c.y, elev: Math.round(elev) })
+      }
+    }
+  }
+
   const knauserSvg = demFeatures.knauser.map(k => {
     const [x, y] = demProject([k.x, k.y])
     return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
@@ -417,9 +473,10 @@ export function buildSvg(elements, bbox, options = {}) {
     demSource: dem?.source ?? null,
     domSource: dom?.source ?? null,
     vegReclassified: chm ? vegReclassified : null,
+    lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     isomVersion: '2017-2-derived',
-    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (usableDem ? ` + DEM (${dem.source})` : ''),
+    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
   }
 
@@ -433,7 +490,13 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `width="${fmt(widthM * 1000 / scaleDenom)}mm" height="${fmt(heightM * 1000 / scaleDenom)}mm"`
     : ''
 
-  const layers = LAYER_ORDER.map(layerSvg).join('') + labelSvg()
+  const renderCodes = (codes) => codes.map(layerSvg).join('')
+  const groundLayers = renderCodes(GROUND_CODES)
+  const waterLayers  = renderCodes(WATER_CODES)
+  const roadLayers   = renderCodes(ROAD_CODES)
+  const upperLayers  = renderCodes(UPPER_CODES)
+  const placeholderLayers = renderCodes(PLACEHOLDER_CODES)
+  const labelLayer = labelSvg()
 
   const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
     ? `  <g data-layer="kontur"${contourMaskAttr}>\n` +
@@ -446,6 +509,11 @@ export function buildSvg(elements, bbox, options = {}) {
       `  </g>\n`
     : ''
 
+  const lakeLabelLayer = lakeLabels.length
+    ? `  <g data-layer="vann">\n    <g data-label="vann-tall">\n${lakeLabels.map(l =>
+        `      <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n    </g>\n  </g>\n`
+    : ''
+
   const knauserLayerSvg = knauserSvg
     ? `  <g data-layer="stein" data-iso="213">\n${knauserSvg}\n  </g>\n` : ''
 
@@ -454,6 +522,8 @@ export function buildSvg(elements, bbox, options = {}) {
 
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
+  // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
+  // forblir lesbare over bymassen i tett bebygde områder.
   const urbanMassPath = urbanMassMultiPoly.length
     ? multiPolyToPath(urbanMassMultiPoly, fmt)
     : ''
@@ -466,7 +536,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
-${layers}${urbanMassLayerSvg}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}</svg>
+${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -480,7 +550,7 @@ function categoryFor(code) {
     case '404':                                  return 'aker'
     case '406': case '407': case '408': case '409': return 'skog'
     case '308': case '309':                     return 'myr'
-    case '301': case '302':                     return 'vann'
+    case '301': case '302': case '303':         return 'vann'
     case '304': case '305':                     return 'bekk'
     case '521': case '522':                     return 'bygning'
     case '501': case '502':                     return 'vei-stor'

@@ -27,6 +27,7 @@
     "water": {
       "301": { "label": "Innsjø", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
       "302": { "label": "Tjern", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
+      "303": { "label": "Saltvann / fjord", "fill": { "color": "#6fb6da" }, "stroke": { "color": "#1f7aa3", "widthMm": 0.22 } },
       "304": { "label": "Bekk", "stroke": { "color": "#0099cc", "widthMm": 0.25, "linecap": "round" } },
       "305": { "label": "Liten bekk", "stroke": { "color": "#0099cc", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
       "308": { "label": "Myr — fast", "fill": { "type": "pattern", "pattern": "myr" } },
@@ -170,7 +171,8 @@
   "labels": {
     "place": { "fontSizeMm": 2.5, "color": "#2a2a2a", "haloColor": "#fff", "haloWidthMm": 0.5 },
     "peak":  { "fontSizeMm": 2.8, "color": "#7f4f24", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "kontur-tall": { "fontSizeMm": 1.6, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 }
+    "kontur-tall": { "fontSizeMm": 1.6, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 },
+    "vann-tall": { "fontSizeMm": 1.7, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 }
   },
 
   "darkMode": {
@@ -184,6 +186,7 @@
       "401": { "fill": { "color": "#3a2e1c" } },
       "301": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
       "302": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
+      "303": { "fill": { "color": "#0f2a45" }, "stroke": { "color": "#3a8db8" } },
       "501": { "stroke": { "color": "#d97a5a" } },
       "502": { "stroke": { "color": "#d97a5a" } },
       "503": { "stroke": { "color": "#a08568" } },

@@ -185,10 +185,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.5.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.5.0</span>
+                <span class="text-white/40">&mdash; Kart-polish: bymasse under vann, høyde-labels i innsjøer, saltvann skiller seg fra ferskvann</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>ISOM 522 tett bebyggelse-pattern flyttet ned i z-order — vann og høydekurver legger seg nå over bymassen så kartet er lesbart i tett bebygde sentrum</li>
+                <li>Innsjøer (ISOM 301/302) får italic blå høyde-label hentet fra DTM-sample i polygon-sentroid — krever ekte Kartverket-DEM, hopper over saltvann og små vannhull (&lt;5000 m²)</li>
+                <li>Saltvann/fjord (ISOM 303) skilles fra ferskvann via OSM-tags <code>salt=yes</code> / <code>water=sea|fjord|bay|strait|lagoon</code> / <code>tidal=yes</code></li>
+                <li>Saltvann får mørkere, mer mettet blå (#6fb6da) for å skille fjordene fra innlands-innsjøer på kartet</li>
+                <li>Ny <code>vann-tall</code> label-stil i ISOM-katalogen (italic blå med hvit halo, samme stil som høydekurve-tall)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.4.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.4.0</span>
                 <span class="text-white/40">&mdash; LiDAR-derivert vegetasjons-klassifisering: ISOM 405–408 grønnskala fra ekte canopy-høyde</span>

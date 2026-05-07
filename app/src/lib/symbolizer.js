@@ -108,7 +108,15 @@ export function classifyToIsom(el) {
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
   if (t.building)                                   return { code: '521', cat: 'manmade' }
-  if (t.natural === 'water' || t.water)             return { code: '301', cat: 'water' }
+  if (t.natural === 'water' || t.water) {
+    // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
+    // OSM-tags: salt=yes, water=sea|fjord|bay|strait|lagoon, tidal=yes
+    const saltyWaters = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
+    if (t.salt === 'yes' || t.tidal === 'yes' || saltyWaters.has(t.water)) {
+      return { code: '303', cat: 'water' }
+    }
+    return { code: '301', cat: 'water' }
+  }
   if (t.waterway === 'stream' || t.waterway === 'ditch') return { code: '305', cat: 'water' }
   if (t.waterway === 'river' || t.waterway === 'canal')  return { code: '304', cat: 'water' }
   if (t.natural === 'wetland')                      return { code: '308', cat: 'water' }
@@ -223,6 +231,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
   rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; }`)
   rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
+  if (lab['vann-tall']) {
+    rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: ${lab['vann-tall'].color}; font-style: italic; stroke: ${lab['vann-tall'].haloColor}; stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
+  }
 
   return rules.join(' ')
 }
