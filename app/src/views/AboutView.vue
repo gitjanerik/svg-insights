@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.8.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.8.1</span>
+                <span class="text-white/40">&mdash; Wedge-bug rotårsak: polygon-clipping CCW-orientering + MultiPolygon-flatten</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Wedger fortsatt i v6.8.0 ⇒ ikke coastline. Ny analyse: <code>polygon-clipping.union()</code> i <code>unionByName</code> krever <strong>CCW outer-rings</strong> i standard y-up matematikk-konvensjon (positivt shoelace signed area). Vi jobbet i SVG y-down, så våre rings hadde NEGATIVT signed area → biblioteket tolket dem som <em>hull</em> → invertert union → wedger</li>
+                <li>Fix: ny <code>ensureCCWForPolygonClipping(ring)</code> som reverserer ringen hvis signed area er negativt FØR vi gir den til polygon-clipping. Setten/Mjøsa med flere navn-matchende OSM-ways slår sammen korrekt nå</li>
+                <li>N50 MultiPolygon parses nå til <strong>separate ways</strong> i stedet for én relation med multiple <code>role=outer</code> medlemmer. Eliminerer evenodd-cancellation-risk for MultiPolygon-features (en lake med øyer ble tidligere rendret som relation med flere outer-ringer som overlappet — evenodd cancellation produserte hull/wedger)</li>
+                <li>Tester: 143 passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.8.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.8.0</span>
                 <span class="text-white/40">&mdash; Drastisk opprydning: fjerner coastline-polygonisering helt</span>

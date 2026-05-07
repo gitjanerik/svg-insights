@@ -91,12 +91,9 @@ export async function fetchN50Water(bbox, opts = {}) {
 
 async function fetchN50Layers(bbox, layers, opts = {}) {
   const elements = []
-  // Buffer rundt bbox for å akseptere features som strekker seg litt
-  // utover. Større enn dette indikerer en feature av nasjonal skala
-  // som vil rendre som wedger/triangler i lokal projeksjon.
   const lonSpan = Math.abs(bbox.east - bbox.west)
   const latSpan = Math.abs(bbox.north - bbox.south)
-  const maxAcceptedSpan = Math.max(lonSpan, latSpan) * 8  // 8x bbox = sjenerøs buffer
+  const maxAcceptedSpan = Math.max(lonSpan, latSpan) * 8
   let totalAccepted = 0
   let totalRejected = 0
   for (const [typeName, mapping] of Object.entries(layers)) {
@@ -107,11 +104,12 @@ async function fetchN50Layers(bbox, layers, opts = {}) {
           totalRejected++
           continue
         }
-        const osmLike = geojsonToOsmLike(feat, mapping)
-        if (osmLike) {
-          elements.push(osmLike)
-          totalAccepted++
-        }
+        // Flatten til array av separate ways. MultiPolygon → flere ways,
+        // hver med outer ring som geometri. Holes droppes (mindre presisjon
+        // for innsjø-øyer, men eliminerer evenodd-cancellation-risk).
+        const items = geojsonToWays(feat, mapping)
+        for (const item of items) elements.push(item)
+        totalAccepted += items.length
       }
     } catch (e) {
       console.warn(`[N50] ${typeName} feilet: ${e.message}`)
@@ -120,7 +118,7 @@ async function fetchN50Layers(bbox, layers, opts = {}) {
   if (totalRejected > 0) {
     console.warn(`[N50] ${totalRejected} features avvist pga for stor utstrekning (> 8x bbox)`)
   }
-  console.log(`[N50] ${totalAccepted} features akseptert`)
+  console.log(`[N50] ${totalAccepted} ways akseptert`)
   return elements
 }
 
@@ -166,6 +164,66 @@ async function fetchSingleLayer(bbox, typeName, opts = {}) {
   return json.features ?? []
 }
 
+function geojsonToWays(feat, mapping) {
+  const g = feat.geometry
+  if (!g) return []
+  const tags = {
+    [mapping.tag]: mapping.value,
+    ...(mapping.extraTags ?? {}),
+    ...(feat.properties ?? {}),
+  }
+  const baseId = feat.id ?? Math.random()
+  const result = []
+  if (g.type === 'LineString' && g.coordinates.length >= 2) {
+    result.push({
+      type: 'way',
+      id: baseId,
+      geometry: g.coordinates.map(([lon, lat]) => ({ lat, lon })),
+      tags,
+    })
+  } else if (g.type === 'MultiLineString') {
+    for (let i = 0; i < g.coordinates.length; i++) {
+      const line = g.coordinates[i]
+      if (line.length < 2) continue
+      result.push({
+        type: 'way',
+        id: `${baseId}-${i}`,
+        geometry: line.map(([lon, lat]) => ({ lat, lon })),
+        tags,
+      })
+    }
+  } else if (g.type === 'Polygon' && g.coordinates[0]?.length >= 3) {
+    result.push({
+      type: 'way',
+      id: baseId,
+      geometry: g.coordinates[0].map(([lon, lat]) => ({ lat, lon })),
+      tags,
+    })
+  } else if (g.type === 'MultiPolygon') {
+    for (let i = 0; i < g.coordinates.length; i++) {
+      const poly = g.coordinates[i]
+      if (!poly[0] || poly[0].length < 3) continue
+      result.push({
+        type: 'way',
+        id: `${baseId}-${i}`,
+        geometry: poly[0].map(([lon, lat]) => ({ lat, lon })),
+        tags,
+      })
+    }
+  } else if (g.type === 'Point') {
+    result.push({
+      type: 'node',
+      id: baseId,
+      lat: g.coordinates[1],
+      lon: g.coordinates[0],
+      tags,
+    })
+  }
+  return result
+}
+
+// Eldre kode-stier kan fortsatt referere geojsonToOsmLike — beholdes for
+// kompatibilitet (legacy fetchN50OrFallback). Ny kode bør bruke geojsonToWays.
 function geojsonToOsmLike(feat, mapping) {
   const g = feat.geometry
   const tags = {

@@ -84,6 +84,26 @@ export function bboxFromCenter(lat, lon, halfKm) {
 
 function fmt(n) { return Number(n.toFixed(2)) }
 
+/**
+ * Mutate ring i-place så orienteringen passer polygon-clipping (CCW i
+ * standard y-up math = positivt shoelace signed area). I SVG y-down
+ * blir det visuelt CW. Hvis ringen er feil vei, reverseres den.
+ *
+ * Polygon-clipping forutsetter strikt CCW outer + CW holes; uten denne
+ * fix-en tolker biblioteket innkommende CW-rings som hull og produserer
+ * invertert union (wedger).
+ */
+function ensureCCWForPolygonClipping(ring) {
+  if (ring.length < 3) return
+  // Shoelace med y-up math-konvensjon
+  let a = 0
+  for (let i = 0; i < ring.length - 1; i++) {
+    a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]
+  }
+  // Negativt = CW i y-up = visuelt CCW i y-down → reverser så y-up blir CCW
+  if (a < 0) ring.reverse()
+}
+
 function xmlEscape(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -131,6 +151,15 @@ function unionByName(elements, project) {
           const f = ring[0], l = ring[ring.length - 1]
           if (f[0] !== l[0] || f[1] !== l[1]) ring.push([f[0], f[1]])
         }
+        // polygon-clipping krever CCW outer-rings (positivt signed area i
+        // standard y-up matematikk-konvensjon). Vi jobber i SVG y-down,
+        // så CCW visuelt = NEGATIVT signed area i shoelace-formula.
+        // Hvis ringen er CW visuelt (positivt signed area i y-down =
+        // negativt y-up), reverser så biblioteket tolker den som outer
+        // istedenfor hull. Bug-en før dette fix-en var at polygon-clipping
+        // tolket CW-rings som "hull" og produserte invertert union →
+        // wedger og merkelige polygoner.
+        ensureCCWForPolygonClipping(ring)
         return [[ring]]
       })
       const merged = polygonClipping.union(...inputs)
