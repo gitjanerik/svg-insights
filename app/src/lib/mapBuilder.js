@@ -17,6 +17,7 @@ import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
+import { buildLandPolygonsFromCoastline, ringToPath } from './coastline.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -27,7 +28,7 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
   way["natural"="water"];
-  way["natural"~"^(bay|strait)$"];
+  way["natural"~"^(bay|strait|coastline)$"];
   way["water"];
   way["place"~"^(sea|ocean)$"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
@@ -231,11 +232,19 @@ export function buildSvg(elements, bbox, options = {}) {
   for (const code of LAYER_ORDER) buckets[code] = []
   const peaks = []
   const places = []
+  const coastlineWays = []
 
-  const counts = { peak: 0, place: 0 }
+  const counts = { peak: 0, place: 0, coastline: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
+    // OSM natural=coastline er linje, ikke polygon. Plukkes ut for separat
+    // land-maske-bygging — gir ikke sin egen ISOM-kategori.
+    if (el.type === 'way' && el.tags?.natural === 'coastline') {
+      coastlineWays.push(el)
+      counts.coastline++
+      continue
+    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
@@ -248,6 +257,20 @@ export function buildSvg(elements, bbox, options = {}) {
       counts[cls.code]++
     }
   }
+
+  // Bygg land-polygoner fra kystlinje-ways. Hvis vi har minst én kystlinje
+  // i bbox, behandler vi det som et kystkart: blå sjø-bakgrunn med land-
+  // maske som dekker landområdene.
+  let landRings = []
+  if (coastlineWays.length > 0) {
+    try {
+      landRings = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
+      console.log(`[Kystlinje] ${coastlineWays.length} ways → ${landRings.length} land-polygoner`)
+    } catch (e) {
+      console.warn(`[Kystlinje] polygonisering feilet: ${e.message}`)
+    }
+  }
+  const isCoastalMap = landRings.length > 0
 
   // ── Vegetasjons-klassifisering via CHM (DOM − DTM) ───────────────────
   // For hvert OSM-skog-polygon: sample CHM og bestem ISOM-kode basert
@@ -535,12 +558,43 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
+  // Bakgrunn: hvis vi er på et kystkart, brukes saltvann-blå (303-fyll)
+  // som heldekkende bakgrunn. Land-maske rendres på toppen i kremgul
+  // (ISOM-bakgrunnsfarge) for å maskere ut landområdene. Innenlands-kart
+  // beholder original kremgul som før.
+  const seaFill = isomCatalog.categories.water['303']?.fill?.color ?? '#6fb6da'
+  const landFill = isomCatalog.background.color
+  const bgFill = isCoastalMap ? seaFill : landFill
+  const landMaskPaths = landRings.map(r => ringToPath(r, fmt))
+  const landMaskLayerSvg = isCoastalMap
+    ? `  <g data-layer="land" data-iso="land-maske"><path d="${landMaskPaths.join(' ')}" fill="${landFill}"/></g>\n`
+    : ''
+  // Tegn kystlinjen tynt i 303-stroke for tydelig kant
+  const coastStrokeColor = isomCatalog.categories.water['303']?.stroke?.color ?? '#1f7aa3'
+  const coastlineSvg = isCoastalMap
+    ? coastlineWays
+        .filter(w => w.geometry?.length >= 2)
+        .map(w => {
+          const pts = w.geometry.map(g => {
+            const p = project(g.lat, g.lon)
+            return [p.x, p.y]
+          })
+          if (pts.length < 2) return ''
+          let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
+          for (let i = 1; i < pts.length; i++) d += `L${fmt(pts[i][0])},${fmt(pts[i][1])}`
+          return `<path d="${d}" fill="none" stroke="${coastStrokeColor}" stroke-width="0.18mm"/>`
+        }).join('')
+    : ''
+  const coastlineLayerSvg = coastlineSvg
+    ? `  <g data-layer="vann" data-iso="kystlinje" vector-effect="non-scaling-stroke">${coastlineSvg}</g>\n`
+    : ''
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
-  <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
-${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
+  <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
+${landMaskLayerSvg}${coastlineLayerSvg}${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }

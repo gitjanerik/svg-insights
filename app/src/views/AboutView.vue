@@ -185,10 +185,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.5.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.5.2</span>
+                <span class="text-white/40">&mdash; Kystlinje-polygonisering: ekte sjø-bakgrunn for kystkart</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>OSM tagger kysten som <code>natural=coastline</code> (linje), ikke som sjø-polygon — sjøen er bare "alt utenfor kystlinjen". Ny modul <code>lib/coastline.js</code> rekonstruerer LAND-polygoner fra disse linjene</li>
+                <li>Algoritme: kystlinje-ways slås sammen til kjeder, lukkede ringer = øyer, åpne arcer lukkes ved å gå CW langs bbox-kanten</li>
+                <li>Når bbox inneholder kystlinje brukes mørkeblå <code>#6fb6da</code> (ISOM 303) som heldekkende bakgrunn, med kremgul land-maske over som dekker landområdene</li>
+                <li>Kystlinjen tegnes som tynn mørkeblå strek for tydelig kant</li>
+                <li>Innenlands-kart (uten kystlinje) beholder original kremgul bakgrunn</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.5.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.5.1</span>
                 <span class="text-white/40">&mdash; Bredere saltvann-deteksjon: navn-heuristikk, place=sea, natural=bay/strait</span>
