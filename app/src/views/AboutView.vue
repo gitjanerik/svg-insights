@@ -185,10 +185,30 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.6.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-purple-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.6.0</span>
+                <span class="text-white/40">&mdash; Kartverket N50 som autoritativ vann-kilde (Havflate, Innsjø, ElvBekk)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Bytter fra OSM <code>natural=water</code> til Kartverket N50 WFS for sjø, innsjø og elv. N50 har korrekt skille mellom sjø (Havflate) og ferskvann (Innsjø) — i motsetning til OSM som ofte feilmerker store norske innsjøer som <code>natural=coastline</code></li>
+                <li>Hestesund/Mjøsa/Setten/Vardåsen-feilene er løst på datakilden — N50 har ikke disse mistags</li>
+                <li>Nesøya og kyst-bbox: presis fjord-utstrekning fra Havflate-polygonen, ingen on-the-fly polygonisering nødvendig</li>
+                <li>OSM beholdes som fallback hvis Geonorge WFS er nede eller utenfor Norge. OSM beholdes uansett for veier, stier, bygninger, navn osv. — kun vann byttes ut</li>
+                <li>Ny <code>fetchN50Water(bbox)</code> i lib/n50Fetcher.js. Filtrerer OSM <code>natural=water/coastline/bay/strait</code> ut og legger til N50 i stedet</li>
+                <li>v6.6.0 er Fase 1 av tre: Fase 2 = ISOM-polish (stupkant-trekanter, fargeskille innmark/utmark, navn-toggle, bedre zoom). Fase 3 = dedikert Tegnforklaring-side</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.5.8 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-indigo-600" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.5.8</span>
                 <span class="text-white/40">&mdash; Coastal-modus krever nå at minst én åpen kystlinje-arc krysser bbox-kanten</span>

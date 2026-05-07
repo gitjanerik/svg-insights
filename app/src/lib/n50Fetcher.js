@@ -25,11 +25,21 @@ const N50_LAYERS = {
   'app:Traktorvei':     { tag: 'highway', value: 'track' },
   'app:Skogsbilveg':    { tag: 'highway', value: 'track' },
   'app:Innsjø':         { tag: 'natural', value: 'water' },
+  'app:Havflate':       { tag: 'natural', value: 'water', extraTags: { water: 'sea', salt: 'yes' } },
   'app:ElvBekk':        { tag: 'waterway', value: 'stream' },
   'app:Myr':            { tag: 'natural', value: 'wetland' },
   'app:Skog':           { tag: 'natural', value: 'wood' },
   'app:Bygning':        { tag: 'building', value: 'yes' },
   'app:Høydekurve':     { tag: 'contour', value: 'yes' },
+}
+
+// Subset for vann-only fetch (autoritativ kilde for sjø/innsjø-rendering,
+// erstatter OSM `natural=water`/`natural=coastline` siden OSM har dokumenterte
+// data-kvalitets-issues på store norske innsjøer som Mjøsa, Setten, etc).
+const N50_WATER_LAYERS = {
+  'app:Innsjø':   { tag: 'natural', value: 'water' },
+  'app:Havflate': { tag: 'natural', value: 'water', extraTags: { water: 'sea', salt: 'yes' } },
+  'app:ElvBekk':  { tag: 'waterway', value: 'stream' },
 }
 
 /**
@@ -60,36 +70,67 @@ export async function fetchN50OrFallback(bbox, opts = {}) {
 }
 
 async function fetchN50(bbox, opts = {}) {
+  return fetchN50Layers(bbox, N50_LAYERS, opts)
+}
+
+/**
+ * Hent KUN vann-features (Havflate, Innsjø, ElvBekk) fra N50.
+ *
+ * Brukes til å erstatte OSM's `natural=water` siden Kartverket har
+ * korrekt skille mellom sjø og innsjø (OSM mistagger ofte store norske
+ * innsjøer som natural=coastline → vår polygonisering blir kaotisk).
+ *
+ * @param {{south,west,north,east}} bbox  WGS84
+ * @param {{ signal?: AbortSignal }} [opts]
+ * @returns {Promise<Array>}  OSM-aktige elementer (way + relation),
+ *                            klare for buildSvg()
+ */
+export async function fetchN50Water(bbox, opts = {}) {
+  return fetchN50Layers(bbox, N50_WATER_LAYERS, opts)
+}
+
+async function fetchN50Layers(bbox, layers, opts = {}) {
   const elements = []
-  // Spør hvert lag separat (WFS-2.0 støtter ikke multi-typename uten ekstra)
-  for (const [typeName, mapping] of Object.entries(N50_LAYERS)) {
-    const params = new URLSearchParams({
-      SERVICE: 'WFS',
-      VERSION: '2.0.0',
-      REQUEST: 'GetFeature',
-      TYPENAMES: typeName,
-      SRSNAME: 'EPSG:4326',
-      BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`,
-      OUTPUTFORMAT: 'application/json',
-      COUNT: '5000',
-    })
-    const url = `${N50_WFS}?${params}`
-    const res = await fetch(url, { signal: opts.signal })
-    if (!res.ok) throw new Error(`N50 ${typeName} HTTP ${res.status}`)
-    const json = await res.json()
-    if (!json.features) continue
-    for (const feat of json.features) {
-      // Konverter GeoJSON til "OSM-aktig"-form
-      const osmLike = geojsonToOsmLike(feat, mapping)
-      if (osmLike) elements.push(osmLike)
+  for (const [typeName, mapping] of Object.entries(layers)) {
+    try {
+      const features = await fetchSingleLayer(bbox, typeName, opts)
+      for (const feat of features) {
+        const osmLike = geojsonToOsmLike(feat, mapping)
+        if (osmLike) elements.push(osmLike)
+      }
+    } catch (e) {
+      console.warn(`[N50] ${typeName} feilet: ${e.message}`)
+      // Fortsett med andre lag — partial failure tolereres
     }
   }
   return elements
 }
 
+async function fetchSingleLayer(bbox, typeName, opts = {}) {
+  const params = new URLSearchParams({
+    SERVICE: 'WFS',
+    VERSION: '2.0.0',
+    REQUEST: 'GetFeature',
+    TYPENAMES: typeName,
+    SRSNAME: 'EPSG:4326',
+    BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`,
+    OUTPUTFORMAT: 'application/json',
+    COUNT: '5000',
+  })
+  const url = `${N50_WFS}?${params}`
+  const res = await fetch(url, { signal: opts.signal })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const json = await res.json()
+  return json.features ?? []
+}
+
 function geojsonToOsmLike(feat, mapping) {
   const g = feat.geometry
-  const tags = { [mapping.tag]: mapping.value, ...(feat.properties ?? {}) }
+  const tags = {
+    [mapping.tag]: mapping.value,
+    ...(mapping.extraTags ?? {}),
+    ...(feat.properties ?? {}),
+  }
   if (!g) return null
   if (g.type === 'LineString') {
     return {

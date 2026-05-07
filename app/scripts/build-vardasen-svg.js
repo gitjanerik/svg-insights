@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.js'
 import { fetchDEM } from '../src/lib/demFetcher.js'
 import { fetchDOM } from '../src/lib/canopyHeight.js'
+import { fetchN50Water } from '../src/lib/n50Fetcher.js'
 import { wgs84ToUtm32 } from '../src/lib/utm.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -24,6 +25,37 @@ console.log(`Henter OSM for bbox: ${bbox.south.toFixed(4)}, ${bbox.west.toFixed(
 
 const data = await fetchOverpass(bbox)
 console.log(`Mottok ${data.elements.length} elementer fra Overpass`)
+
+// Hent N50-vann fra Kartverket — autoritativ kilde for sjø/innsjø/elv.
+// Erstatter OSM `natural=water` siden OSM mistagger ofte store norske
+// innsjøer som natural=coastline. N50 har korrekt klassifisering.
+let n50Water = []
+try {
+  n50Water = await fetchN50Water(bbox)
+  console.log(`Mottok ${n50Water.length} vann-features fra N50`)
+} catch (e) {
+  console.warn(`N50-vann feilet: ${e.message} — bruker OSM-vann`)
+}
+
+// Slå sammen: filtrer OSM-vann ut, legg til N50-vann i stedet
+const N50_USE_FOR_WATER = n50Water.length > 0
+const elements = N50_USE_FOR_WATER
+  ? [
+      ...data.elements.filter(el => {
+        const t = el.tags ?? {}
+        // Behold OSM-elementer som IKKE er vann/coastline
+        if (t.natural === 'water') return false
+        if (t.natural === 'coastline') return false
+        if (t.natural === 'bay' || t.natural === 'strait') return false
+        if (t.water) return false
+        if (t.waterway === 'stream' || t.waterway === 'ditch') return false
+        if (t.place === 'sea' || t.place === 'ocean') return false
+        return true
+      }),
+      ...n50Water,
+    ]
+  : data.elements
+console.log(`Etter merge: ${elements.length} elementer (N50-vann ${N50_USE_FOR_WATER ? 'aktiv' : 'inaktiv'})`)
 
 // DEM: forsøk ekte Kartverket WCS DTM først (workflow har full nettverkstilgang).
 // Fallback til syntetisk Vardåsen-modell hvis WCS feiler eller coverage ikke
@@ -49,7 +81,7 @@ console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution.toFix
 const dom = await fetchDOM(utmBbox, 5)
 if (dom) console.log(`DOM: ${dom.cols} × ${dom.rows} (kilde: ${dom.source})`)
 
-const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, dom, contourIntervalM: 5 })
+const { svg, counts, meta } = buildSvg(elements, bbox, { dem, dom, contourIntervalM: 5 })
 console.log('Klassifisering:', counts)
 console.log(`Konturer: ekvidistanse ${meta.equidistance} m, høyde ${meta.elevationRange?.min}–${meta.elevationRange?.max} m`)
 

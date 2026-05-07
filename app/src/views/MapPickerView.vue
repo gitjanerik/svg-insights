@@ -3,7 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
-import { fetchN50OrFallback } from '../lib/n50Fetcher.js'
+import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
@@ -54,8 +54,33 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    // 1. Hent OSM-data (eller N50 hvis tilgjengelig)
-    const { source, elements } = await fetchN50OrFallback(bbox.value)
+    // 1. Hent OSM (rik data) + N50-vann (autoritativ kilde for sjø/innsjø).
+    //    Kjør parallelt for fart. N50 erstatter OSMs natural=water siden
+    //    OSM har dokumenterte mistags på store norske innsjøer (Mjøsa osv).
+    const [osmData, n50Water] = await Promise.all([
+      fetchOverpass(bbox.value),
+      fetchN50Water(bbox.value).catch(e => {
+        console.warn('N50-vann ikke tilgjengelig:', e.message)
+        return []
+      }),
+    ])
+    const useN50 = n50Water.length > 0
+    const elements = useN50
+      ? [
+          ...osmData.elements.filter(el => {
+            const t = el.tags ?? {}
+            if (t.natural === 'water') return false
+            if (t.natural === 'coastline') return false
+            if (t.natural === 'bay' || t.natural === 'strait') return false
+            if (t.water) return false
+            if (t.waterway === 'stream' || t.waterway === 'ditch') return false
+            if (t.place === 'sea' || t.place === 'ocean') return false
+            return true
+          }),
+          ...n50Water,
+        ]
+      : osmData.elements
+    const source = useN50 ? `OSM + N50 (${n50Water.length} vann)` : 'OSM'
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
 
