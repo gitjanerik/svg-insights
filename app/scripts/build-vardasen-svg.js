@@ -44,7 +44,7 @@ const dem = await fetchDEM(bbox, utmBbox, {
 })
 console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution.toFixed(1)} m, kilde: ${dem.source})`)
 
-const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, contourIntervalM: 20 })
+const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, contourIntervalM: 5 })
 console.log('Klassifisering:', counts)
 console.log(`Konturer: ekvidistanse ${meta.equidistance} m, høyde ${meta.elevationRange?.min}–${meta.elevationRange?.max} m`)
 
