@@ -196,10 +196,17 @@ export function mergeChains(segments, eps = 1.0) {
 }
 
 /**
- * Lukk åpne kystlinje-arcer ved å gå CW langs bbox-omkretsen mellom
- * endepunkt og neste arcs startpunkt. Genererer lukkede land-polygoner.
+ * Lukk åpne kystlinje-arcer ved å gå CCW langs bbox-omkretsen mellom
+ * endepunkt og neste arcs startpunkt. Resultatet er lukkede LAND-
+ * polygoner.
  *
- * Bbox-omkretsen parametrisert CW i SVG (y-ned):
+ * Hvorfor CCW: OSM-konvensjon er "land på venstre, sjø på høyre" når
+ * du går langs kystlinjen. I SVG y-ned beholder en CCW gangrunde rundt
+ * bbox interiøret på venstre side. Hvis vi vil at interiøret skal være
+ * LAND (= bbox-fyll med kremgul over sjø-blå bg), må vi gå CCW.
+ *
+ * Bbox-omkretsen parametrisert CW i SVG (y-ned) — vi snur "delta-
+ * retningen" for å gå CCW:
  *   t ∈ [0, W):           top-edge          (0,0) → (W,0)
  *   t ∈ [W, W+H):         right-edge        (W,0) → (W,H)
  *   t ∈ [W+H, 2W+H):      bottom-edge       (W,H) → (0,H)
@@ -224,7 +231,7 @@ export function closeArcsViaBbox(arcs, W, H, edgeEps = 5.0) {
     return [0, H - (tt - 2 * W - H)]
   }
 
-  // Bbox-hjørner som t-verdier (i CW-rekkefølge)
+  // Bbox-hjørner som t-verdier (CW-rekkefølge i parametrisering)
   const cornerTs = [W, W + H, 2 * W + H, 2 * W + 2 * H]
 
   const items = []
@@ -242,39 +249,41 @@ export function closeArcsViaBbox(arcs, W, H, edgeEps = 5.0) {
     const ring = []
     let cur = startItem
     let safety = items.length * 4 + 4
-    let started = false
 
     while (cur && safety-- > 0) {
       cur.used = true
       const startIdx = ring.length === 0 ? 0 : 1
       for (let i = startIdx; i < cur.arc.length; i++) ring.push(cur.arc[i])
 
-      // Gå CW langs bbox fra cur.endT til neste arcs startT
+      // Gå CCW langs bbox fra cur.endT (decreasing t mod perim) til neste
+      // arcs startT. CCW-distanse = (fromT - candidateStartT) mod perim.
       const fromT = cur.endT
       let next = null
       let bestDelta = Infinity
       for (const cand of items) {
         if (cand.used && cand !== startItem) continue
-        let delta = cand.startT - fromT
+        let delta = fromT - cand.startT
         if (delta <= 0) delta += perim
         if (delta < bestDelta) { bestDelta = delta; next = cand }
       }
       if (!next) break
 
-      // Legg på bbox-hjørner som ligger mellom fromT og next.startT
+      // Hjørner mellom fromT og next.startT i CCW-retning, sortert etter
+      // når de møtes (smallest cDelta først)
+      const cornersBetween = []
       for (const cT of cornerTs) {
-        let cDelta = cT - fromT
+        let cDelta = fromT - cT
         if (cDelta <= 0) cDelta += perim
-        if (cDelta > 0 && cDelta < bestDelta) ring.push(pointAt(cT))
+        if (cDelta > 0 && cDelta < bestDelta) cornersBetween.push({ cT, cDelta })
       }
+      cornersBetween.sort((a, b) => a.cDelta - b.cDelta)
+      for (const c of cornersBetween) ring.push(pointAt(c.cT))
 
       // Hopp til neste arcs startpunkt
       ring.push(pointAt(next.startT))
 
       if (next === startItem) break
       cur = next
-      started = true
-      if (started && cur === startItem) break
     }
 
     if (ring.length >= 3) polygons.push(ring)

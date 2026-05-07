@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.5.4 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-700" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.5.4</span>
+                <span class="text-white/40">&mdash; Reparert kystlinje-orientering: land vises nå korrekt over sjø</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Bug i v6.5.2: bbox-closure for åpne kystlinje-arcer gikk CW i SVG y-ned, men OSM-konvensjon ("land på venstre, sjø på høyre") krever CCW for at polygon-interiøret skal være LAND</li>
+                <li>Resultatet var invertert: Nesøya og andre øyer fikk sjø-blå farge mens fjorden ble kremgul</li>
+                <li>Reparert closeArcsViaBbox til å gå CCW (decreasing t mod perim) — bbox-interiøret er nå alltid på venstre side av gangrunden, så lukkede ringer omslutter LAND som tiltenkt</li>
+                <li>Tillegg: DP-forenkling påført merged-water-polygoner (fra v6.5.3 same-name-union) for å rydde opp eventuelle artefakter fra polygon-clipping</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.5.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-600" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.5.3</span>
                 <span class="text-white/40">&mdash; Vann-polygoner med samme navn slås sammen</span>

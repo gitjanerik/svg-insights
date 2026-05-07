@@ -436,12 +436,18 @@ export function buildSvg(elements, bbox, options = {}) {
     if (POLYGON_CODES.has(code)) {
       const filter = POLYGON_FILTER[cat] ?? { simplifyM: 0, minAreaM2: 0 }
       const paths = els.map(el => {
-        // merged-water: allerede projisert MultiPolygon fra unionByName
+        // merged-water: allerede projisert MultiPolygon fra unionByName.
+        // Polygon-clipping kan introdusere intermediate-punkter ved
+        // intersections; DP-forenkling rydder opp uten å skade form.
         if (el.type === 'merged-water' && el._mergedRings) {
           const subpaths = []
           for (const polygon of el._mergedRings) {
-            for (const ring of polygon) {
+            for (let ring of polygon) {
               if (ring.length < 3) continue
+              if (filter.simplifyM > 0 && ring.length > 3) {
+                ring = simplifyDP(ring, filter.simplifyM)
+                if (ring.length < 3) continue
+              }
               let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
               for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
               d += 'Z'
