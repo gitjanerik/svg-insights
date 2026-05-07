@@ -25,8 +25,10 @@ const utmBbox = {
   maxN: Math.max(sw.n, ne.n),
 }
 
-// Hent DEM (syntetisk for nå, kalibrert mot Vardåsen)
-const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 20, knownArea: 'vardasen' })
+// Hent DEM (syntetisk for stub — workflow regenererer med ekte WCS-data)
+const dem = await fetchDEM(bbox, utmBbox, {
+  resolutionM: 20, knownArea: 'vardasen', useReal: false,
+})
 
 // Tom feature-liste = bare ISOM-defs/CSS/bakgrunn + DEM-deriverte konturer
 const { svg: baseSvg, meta } = buildSvg([], bbox, {

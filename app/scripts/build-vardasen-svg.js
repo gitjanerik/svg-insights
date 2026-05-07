@@ -24,15 +24,21 @@ console.log(`Henter OSM for bbox: ${bbox.south.toFixed(4)}, ${bbox.west.toFixed(
 const data = await fetchOverpass(bbox)
 console.log(`Mottok ${data.elements.length} elementer fra Overpass`)
 
-// DEM: syntetisk for Vardåsen til ekte DTM-tjeneste er konfigurert
+// DEM: forsøk ekte Kartverket WCS DTM først (workflow har full nettverkstilgang).
+// Fallback til syntetisk Vardåsen-modell hvis WCS feiler eller coverage ikke
+// matcher.
 const sw = wgs84ToUtm32(bbox.south, bbox.west)
 const ne = wgs84ToUtm32(bbox.north, bbox.east)
 const utmBbox = {
   minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
   minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
 }
-const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 20, knownArea: 'vardasen' })
-console.log(`DEM: ${dem.cols} × ${dem.rows} (resolusjon ${dem.resolution} m)`)
+const dem = await fetchDEM(bbox, utmBbox, {
+  resolutionM: 10,
+  knownArea: 'vardasen',     // fallback hvis WCS feiler
+  useReal: true,
+})
+console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution} m)`)
 
 const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, contourIntervalM: 20 })
 console.log('Klassifisering:', counts)
