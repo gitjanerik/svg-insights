@@ -16,6 +16,7 @@ import { buildContours, detectKnauser, detectCliffs } from './dem.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
+import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -120,6 +121,7 @@ export function buildSvg(elements, bbox, options = {}) {
     scaleDenom = 10000,
     printSize = true,
     dem = null,
+    dom = null,                    // Digital overflate-modell for CHM/vegetasjon
     contourIntervalM = 5,
     includeKnauser = true,
     includeCliffs = true,
@@ -217,6 +219,46 @@ export function buildSvg(elements, bbox, options = {}) {
     if (buckets[cls.code]) {
       buckets[cls.code].push(el)
       counts[cls.code]++
+    }
+  }
+
+  // ── Vegetasjons-klassifisering via CHM (DOM − DTM) ───────────────────
+  // For hvert OSM-skog-polygon: sample CHM og bestem ISOM-kode basert
+  // på vegetasjonshøyde og varians. Beveger features mellom buckets.
+  let chm = null
+  let vegReclassified = 0
+  if (dem && dom) {
+    try {
+      chm = computeCHM(dem, dom)
+      console.log(`[CHM] Beregnet ${chm.cols}×${chm.rows} celler`)
+      const oldSkogCodes = ['405', '406', '407', '408', '409']
+      const allSkog = []
+      for (const c of oldSkogCodes) {
+        for (const el of buckets[c] ?? []) allSkog.push({ code: c, el })
+        buckets[c] = []
+        counts[c] = 0
+      }
+      for (const { code, el } of allSkog) {
+        if (el.type === 'way' && el.geometry) {
+          const ring = el.geometry.map(g => {
+            const p = project(g.lat, g.lon)
+            return [p.x, p.y]
+          })
+          const stats = sampleCHMInPolygon(chm, ring)
+          const newCode = classifyVegetationFromCHM(stats, code)
+          if (buckets[newCode]) {
+            buckets[newCode].push(el)
+            counts[newCode]++
+            if (newCode !== code) vegReclassified++
+          }
+        } else {
+          buckets[code].push(el)
+          counts[code]++
+        }
+      }
+      console.log(`[CHM] Re-klassifiserte ${vegReclassified} vegetasjons-features`)
+    } catch (e) {
+      console.warn(`[CHM] Klassifisering feilet: ${e.message}`)
     }
   }
 
@@ -373,6 +415,8 @@ export function buildSvg(elements, bbox, options = {}) {
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
     demSource: dem?.source ?? null,
+    domSource: dom?.source ?? null,
+    vegReclassified: chm ? vegReclassified : null,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (usableDem ? ` + DEM (${dem.source})` : ''),
