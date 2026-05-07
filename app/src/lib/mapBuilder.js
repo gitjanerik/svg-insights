@@ -14,7 +14,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
 import { fetchDEM } from './demFetcher.js'
-import { polylineToPath } from './pathUtils.js'
+import { polylineToPath, simplifyDP } from './pathUtils.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -141,15 +141,51 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  const pathFromGeometry = (geom, close = false) => {
+  const pathFromGeometry = (geom, close = false, simplifyToleranceM = 0) => {
     if (!geom || geom.length === 0) return ''
-    const pts = geom.map(g => project(g.lat, g.lon))
-    let d = `M${fmt(pts[0].x)},${fmt(pts[0].y)}`
+    let pts = geom.map(g => {
+      const p = project(g.lat, g.lon)
+      return [p.x, p.y]
+    })
+    if (simplifyToleranceM > 0 && pts.length > 3) {
+      pts = simplifyDP(pts, simplifyToleranceM)
+    }
+    if (pts.length === 0) return ''
+    let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
     for (let i = 1; i < pts.length; i++) {
-      d += `L${fmt(pts[i].x)},${fmt(pts[i].y)}`
+      d += `L${fmt(pts[i][0])},${fmt(pts[i][1])}`
     }
     if (close) d += 'Z'
     return d
+  }
+
+  // Beregn approksimert polygon-areal i m² for et OSM-way
+  const polygonAreaM2 = (geom) => {
+    if (!geom || geom.length < 3) return 0
+    const pts = geom.map(g => project(g.lat, g.lon))
+    let a = 0
+    for (let i = 0, n = pts.length; i < n; i++) {
+      const j = (i + 1) % n
+      a += pts[i].x * pts[j].y - pts[j].x * pts[i].y
+    }
+    return Math.abs(a) / 2
+  }
+
+  // Per-kategori forenkling og filtrering
+  const POLYGON_FILTER = {
+    bygning: { simplifyM: 1.5, minAreaM2: 30 },
+    skog:    { simplifyM: 3.0, minAreaM2: 200 },
+    eng:     { simplifyM: 3.0, minAreaM2: 200 },
+    aker:    { simplifyM: 3.0, minAreaM2: 200 },
+    myr:     { simplifyM: 2.0, minAreaM2: 100 },
+    vann:    { simplifyM: 1.5, minAreaM2: 25 },
+    aapen:   { simplifyM: 3.0, minAreaM2: 200 },
+  }
+  const LINE_SIMPLIFY = {
+    'vei-stor':  1.0,
+    'vei-liten': 1.5,
+    sti:         1.5,
+    bekk:        1.5,
   }
 
   // Bucket pr ISOM-kode
@@ -191,23 +227,29 @@ export function buildSvg(elements, bbox, options = {}) {
   const layerSvg = (code) => {
     const els = buckets[code]
     if (!els.length) return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"></g>\n`
+    const cat = categoryFor(code)
 
     if (POLYGON_CODES.has(code)) {
+      const filter = POLYGON_FILTER[cat] ?? { simplifyM: 0, minAreaM2: 0 }
       const paths = els.map(el => {
-        if (el.type === 'way' && el.geometry) return pathFromGeometry(el.geometry, true)
+        if (el.type === 'way' && el.geometry) {
+          if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) return ''
+          return pathFromGeometry(el.geometry, true, filter.simplifyM)
+        }
         if (el.type === 'relation' && el.members) {
           return el.members
             .filter(m => m.type === 'way' && m.geometry && (m.role === 'outer' || m.role === 'inner'))
-            .map(m => pathFromGeometry(m.geometry, true))
+            .map(m => pathFromGeometry(m.geometry, true, filter.simplifyM))
             .join(' ')
         }
         return ''
       }).filter(Boolean)
-      return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"><path d="${paths.join(' ')}" fill-rule="evenodd"/></g>\n`
+      return `  <g data-layer="${cat}" data-iso="${code}"><path d="${paths.join(' ')}" fill-rule="evenodd"/></g>\n`
     }
     if (LINE_CODES.has(code)) {
-      const paths = els.map(el => pathFromGeometry(el.geometry, false)).filter(Boolean)
-      return `  <g data-layer="${categoryFor(code)}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
+      const tol = LINE_SIMPLIFY[cat] ?? 0
+      const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
+      return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
     }
     return ''
   }
