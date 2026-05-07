@@ -33,11 +33,14 @@ const router = useRouter()
       <section>
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Om appen</h3>
         <p class="text-sm text-white/50 leading-relaxed">
-          SVG Insights konverterer bilder til interaktive strektegninger i SVG-format. Ta et bilde med mobilen
-          eller last opp fra galleriet, og appen gjør det om til en detaljert vektortegning du kan utforske
-          med fingre, gyroskop og zoom.
+          SVG Insights er et lekent vektor-laboratorium med tre hovedfunksjoner:
         </p>
-        <p class="text-sm text-white/40 mt-2">Lansert 8. april 2026</p>
+        <ul class="text-sm text-white/50 mt-2 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/70">Lag SVG-tegning</strong> — konverter bilder til interaktive strektegninger</li>
+          <li><strong class="text-white/70">Lag webfont</strong> — bygg din egen .otf-font fra glyf-tegninger</li>
+          <li><strong class="text-white/70">Vis turkart</strong> — ISOM-inspirerte sportskart i SVG generert fra åpne norske data</li>
+        </ul>
+        <p class="text-sm text-white/40 mt-3">Lansert 8. april 2026 · turkart-funksjonen lagt til 6. mai 2026</p>
       </section>
 
       <!-- Team -->
@@ -50,9 +53,9 @@ const router = useRouter()
         </ul>
       </section>
 
-      <!-- How it works -->
+      <!-- Bilde-til-SVG: hvordan det fungerer -->
       <section>
-        <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Slik fungerer det</h3>
+        <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Bilde til SVG — slik fungerer det</h3>
         <p class="text-sm text-white/50 leading-relaxed">
           Bildet gjennomgår en 12-trinns prosesseringspipeline, helt uten eksterne bildebiblioteker.
           All bildeprosessering skjer med ren JavaScript og typed arrays direkte i nettleseren.
@@ -69,6 +72,76 @@ const router = useRouter()
           <li>Stiene konverteres til SVG med Catmull-Rom-kurver</li>
           <li>Resultatet grupperes i tre lag: kanter, konturer og skravering</li>
         </ol>
+      </section>
+
+      <!-- Turkart-pipeline -->
+      <section>
+        <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-3">Turkart — ISOM-inspirert pipeline</h3>
+        <p class="text-sm text-white/50 leading-relaxed">
+          Turkart-funksjonen lager print-kvalitets sportskart inspirert av ISOM 2017-2-standarden
+          ved å kombinere åpne norske data fra Kartverket og OpenStreetMap. Hele rendringen er
+          ren SVG med mm-baserte streker — ingen kart-engine.
+        </p>
+
+        <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Datakilder (alle CC BY 4.0 / ODbL)</h4>
+        <ul class="text-xs text-white/45 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/65">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn</li>
+          <li><strong class="text-white/65">Kartverket DTM 1m/10m</strong> via WCS — terrengmodell for høydekurver og stupkanter</li>
+          <li><strong class="text-white/65">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
+          <li><strong class="text-white/65">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
+        </ul>
+
+        <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Pipeline (fra OSM/DEM til ISOM-SVG)</h4>
+        <ol class="text-xs text-white/45 space-y-1.5 list-decimal list-inside leading-relaxed">
+          <li>Bbox velges i picker (UTM 32N, 1×10 km bredde, 5/10/20/50/100 m ekvidistanse)</li>
+          <li>OSM-features hentes via Overpass for valgt bbox; reprojiseres med håndskrevet UTM-formel</li>
+          <li>DTM hentes som GeoTIFF fra Kartverket WCS, parses med <code>geotiff.js</code></li>
+          <li>Høydekurver: <code>d3-contour</code> marching squares → Chaikin-glatting → DP-forenkling</li>
+          <li>Stupkanter: terrenghelling &gt; 45° → morfologisk lukking → Zhang-Suen skeletonization → vectorisering</li>
+          <li>DOM hentes parallelt; CHM = DOM − DTM beregnes pixel-vis</li>
+          <li>Hver skog-polygon samples for vegetasjons-statistikk (p50/p90/std av canopy-høyde)</li>
+          <li>Klassifiseres til ISOM 405–408 (lett løp → kjempe-vanskelig grønn) basert på CHM-statistikk</li>
+          <li>Tett bebyggelse: bygninger med ≥3 naboer innen 15m grupperes via R-tree + Union-Find, slås sammen til ISOM 522 multipolygon med <code>polygon-clipping</code></li>
+          <li>Vann-polygoner brukes som SVG <code>&lt;mask&gt;</code> så høydekurver ikke krysser innsjøer</li>
+          <li>Alle features renderes i ISOM-z-order med mm-baserte streker (<code>vector-effect: non-scaling-stroke</code>)</li>
+          <li>Lagring i IndexedDB; egen visning med pinch-zoom, GPS-prikk, kompass og print-eksport</li>
+        </ol>
+
+        <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Open source-bibliotek brukt i pipelinen</h4>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">d3-contour</p>
+            <p class="text-[10px] text-white/30">Høydekurver fra DTM</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">geotiff.js</p>
+            <p class="text-[10px] text-white/30">GeoTIFF-parsing</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">graphology</p>
+            <p class="text-[10px] text-white/30">Routing-graf</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">polygon-clipping</p>
+            <p class="text-[10px] text-white/30">Boolean union (522)</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">rbush</p>
+            <p class="text-[10px] text-white/30">R-tree spatial index</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/5">
+            <p class="text-[11px] font-medium text-white/60">simplify-js</p>
+            <p class="text-[10px] text-white/30">Douglas-Peucker</p>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-white/30 mt-3 leading-relaxed">
+          Egne implementasjoner: UTM 32N-projeksjon, ISOM 2017-2-katalog som JSON, Zhang-Suen
+          skeletonization, Chaikin corner-cutting, R-tree-basert urbanmasse-grupperer, GPS-til-SVG-mapper,
+          DeviceOrientation-kompass, print-PDF-eksport. Hele turkart-pipelinen er
+          ~3000 linjer JavaScript og kjører dels i nettleseren (interaktiv generering for
+          brukerens egne kart) og dels i GitHub Actions (innebygde demokart med ekte WCS-data).
+        </p>
       </section>
 
       <!-- Tech stack -->
@@ -112,10 +185,88 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.4.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.4.0</span>
+                <span class="text-white/40">&mdash; LiDAR-derivert vegetasjons-klassifisering: ISOM 405–408 grønnskala fra ekte canopy-høyde</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Henter Kartverkets DOM (overflatemodell) via WCS i tillegg til DTM (terreng)</li>
+                <li>Beregner Canopy Height Model: <code>CHM = DOM − DTM</code> = vegetasjons-/bygnings-høyde pixel-vis</li>
+                <li>Sampler hver OSM-skog-polygon innenfor CHM, beregner p10/p50/p90/std av høyde</li>
+                <li>Klassifiserer til ISOM 405 (lett løp, hvit), 406 (litt vanskelig, lysegrønn), 407 (sakte løp, mellomgrønn) eller 408 (kjempe-vanskelig, mørkegrønn)</li>
+                <li>Vardåsen-demo: 21 skog-polygoner re-klassifisert basert på faktisk vegetasjons-tetthet</li>
+                <li>Egen modul <code>lib/canopyHeight.js</code> med fetchDOM, computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.3.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.3.0–6.3.3</span>
+                <span class="text-white/40">&mdash; ISOM 522 tett bebyggelse + bruker-velgbar ekvidistanse + 5m default</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Tett bygnings-klynger slås sammen til ISOM 522 multipolygon med pattern-fyll</li>
+                <li>R-tree spatial index + Union-Find for transitiv klyngegruppering, polygon-clipping union</li>
+                <li>Bygnings-laget halvert (799 KB → 439 KB) ved Vardåsen pga Asker-sentrum-bymassen</li>
+                <li>Picker har nå 5/10/20/50/100 m som ekvidistanse-valg (5m er ISOM-standard)</li>
+                <li>Innebygd Vardåsen-demo bruker 5m høydekurver med ekte 1m-resamplet DTM</li>
+                <li>Mildere kontur-forenkling (DP 2.5m) for å vise nyanser i bratt terreng</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.2.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-300" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.2.0–6.2.4</span>
+                <span class="text-white/40">&mdash; Ekte stupkant-vectorisering med Zhang-Suen + tunet forenkling</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Ny modul <code>lib/skeleton.js</code> med Zhang-Suen thinning + skeleton-til-polylines</li>
+                <li>Stupkant-pipeline: helling &gt; 45° → morfologisk lukking → skeletonize → vectorize → DP</li>
+                <li>19 stupkant-features detektert rundt Vardåsen (fra 1 før — Vardåsen-stupet er nå synlig)</li>
+                <li>5m DTM-oppløsning for bedre stupkant-presisjon</li>
+                <li>Per-kategori polygon/linje-forenkling (DP 1.5–4m, min-areal 30–300 m²)</li>
+                <li>Brukerens egne kart skjuler konturer hvis WCS-CORS feiler — ærlig framfor villedende</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.1.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
+            <details class="group">
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.1.0–6.1.1</span>
+                <span class="text-white/40">&mdash; Ekte Kartverket DTM via WCS + multi-endpoint fallback</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Henter ekte 10m DTM fra Kartverket WCS som GeoTIFF, parses med <code>geotiff.js</code></li>
+                <li>Multi-endpoint-strategi: prøver UTM 32 native, UTM 33 reprojisert, DOM 10m i sekvens</li>
+                <li>Verifisert kilde: NHM_DTM_25832 (UTM 32 native) — Vardåsen-elevasjonsspenn 29–348m matcher virkeligheten</li>
+                <li>Master-arbeidsflyt: workflow trigger på master-push istedenfor feature branch</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.0.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.0.2</span>
                 <span class="text-white/40">&mdash; Brukertest-forbedringer for høydekurver, knapper og vann-maske</span>
