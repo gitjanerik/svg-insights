@@ -67,7 +67,9 @@ async function generateMap() {
     }
     buildProgress.value = `Genererer høydekurver …`
     await new Promise(r => setTimeout(r, 30))
-    const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 20 })
+    // Bruker syntetisk DEM klient-side. Kartverket WCS er CORS-blokkert
+    // i nettleser; ekte data fås kun via CI-bygde innebygde kart.
+    const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 20, useReal: false })
 
     // 3. Bygg SVG med konturer
     const { svg, counts, meta } = buildSvg(elements, bbox.value, {

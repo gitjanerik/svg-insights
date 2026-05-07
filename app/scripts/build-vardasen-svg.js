@@ -33,12 +33,16 @@ const utmBbox = {
   minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
   minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
 }
+// 5m oppløsning: 1000×1000 celler for 5×5 km — ~4 MB GeoTIFF.
+// Hvis WCS-tjenesten har 1m-data tilgjengelig blir det resamplet ved
+// kilden; hvis bare 10m, får vi resampled 5m (ikke ekte detalj, men
+// får skikkelig stupkant-vectorisering uansett).
 const dem = await fetchDEM(bbox, utmBbox, {
-  resolutionM: 10,
+  resolutionM: 5,
   knownArea: 'vardasen',     // fallback hvis WCS feiler
   useReal: true,
 })
-console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution} m)`)
+console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution.toFixed(1)} m, kilde: ${dem.source})`)
 
 const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, contourIntervalM: 20 })
 console.log('Klassifisering:', counts)

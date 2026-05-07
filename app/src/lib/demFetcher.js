@@ -12,23 +12,45 @@
 
 import { syntheticDEM } from './dem.js'
 
+// Endpoints prøves i rekkefølge. Best (1m) først, fallback til 10m.
+// Hvis 1m-tjenestene har andre coverage-navn enn antatt, faller vi
+// pent tilbake til 10m som vi allerede vet fungerer.
 const WCS_ENDPOINTS = [
-  // UTM 32 native — passer best for sør-Norge (Vardåsen, Oslo, Bergen)
+  // ── DTM 1m UTM 32 native ──────────────────────────────────────────────
+  {
+    url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-1-utm32',
+    coverage: 'hoyde_dtm_1_utm32',
+    bboxCrs: 'EPSG:25832',
+    name: 'DTM 1m UTM32 (variant a)',
+  },
+  {
+    url: 'https://wcs.geonorge.no/skwms1/wcs.hoeyde-dtm-1-utm32',
+    coverage: 'hoeyde_dtm_1_utm32',
+    bboxCrs: 'EPSG:25832',
+    name: 'DTM 1m UTM32 (variant b)',
+  },
+  {
+    url: 'https://wcs.geonorge.no/skwms1/wcs.dtm1-utm32',
+    coverage: 'dtm1_utm32',
+    bboxCrs: 'EPSG:25832',
+    name: 'DTM 1m UTM32 (variant c)',
+  },
+  // ── DTM 10m UTM 32 native (verifisert virker) ────────────────────────
   {
     url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-nhm-25832',
     coverage: 'NHM_DTM_25832',
     bboxCrs: 'EPSG:25832',
     name: 'NHM_DTM_25832 (UTM 32 native)',
   },
-  // UTM 33 med 32-reprojeksjon
+  // ── UTM 33 med 32-reprojeksjon (fallback) ────────────────────────────
   {
     url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-nhm-25833',
     coverage: 'NHM_DTM_25833',
     bboxCrs: 'EPSG:25832',
     responseCrs: 'EPSG:25832',
-    name: 'NHM_DTM_25833 (UTM 33 reprojisert til 32)',
+    name: 'NHM_DTM_25833 (UTM 33 reprojisert)',
   },
-  // Alternativ DOM 10 — overflate-modell, men bedre enn ingenting
+  // ── DOM 10 (overflate-modell, siste utvei) ───────────────────────────
   {
     url: 'https://wms.geonorge.no/skwms1/wcs.hoyde-dom10_33',
     coverage: 'hoyde_dom10_33',

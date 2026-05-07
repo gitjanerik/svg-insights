@@ -16,6 +16,7 @@
 
 import { contours as d3Contours } from 'd3-contour'
 import { simplifyDP, chaikin, polylineToPath, polylineLength } from './pathUtils.js'
+import { zhangSuenSkeletonize, vectorizeSkeleton } from './skeleton.js'
 
 /**
  * @typedef {Object} AffineTransform
@@ -231,38 +232,92 @@ export function detectKnauser(dem, tpiRadius = 5, tpiThresholdM = 1.5) {
 }
 
 /**
- * Detekter stupkanter — kontinuerlige strekninger med slope > terskel.
- * Returnerer som linjer i UTM. ISOM 203.
+ * Detekter stupkanter via slope-terskel + skeletonization + vectorisering.
+ *
+ * Algoritme:
+ *   1. Beregn slope per pixel (Horn 1981 sentrale differanser)
+ *   2. Threshold → binær mask (1 hvor helling > terskel)
+ *   3. Morphological close (én iter) for å bro små gap
+ *   4. Zhang-Suen skeletonization → 1-pixel-bred centerline
+ *   5. Vectorize skeleton fra endepunkter → polylines i grid-koord
+ *   6. Reproject til UTM, simplifiser med DP, filtrer på lengde
+ *
+ * @param {DEM} dem
+ * @param {number} slopeDegThreshold  ISOM 203 (upassérbar): typisk 55-65°
+ * @param {number} minLengthM         minimum stupkant-lengde for å beholde
+ * @returns {Array}
  */
-export function detectCliffs(dem, slopeDegThreshold = 60, minLengthM = 5) {
-  // Forenklet: vectorize toppen av hver høy-helling-region.
-  // Full versjon vil bruke Zhang-Suen skeletonization, men det er
-  // er pyrese og dette er nok for første iterasjon.
+export function detectCliffs(dem, slopeDegThreshold = 55, minLengthM = 8) {
   const slope = computeSlope(dem)
-  const features = []
   const { cols, rows, transform } = dem
-  // Walk gjennom og identifiser sammenhengende linjer
-  // (todo: skikkelig vectorisering — defer)
-  const visited = new Uint8Array(slope.data.length)
-  for (let y = 1; y < rows - 1; y++) {
-    for (let x = 1; x < cols - 1; x++) {
-      const i = y * cols + x
-      if (visited[i] || slope.data[i] < slopeDegThreshold) continue
-      // Trace en enkel linje vannrett (bedre: skeleton)
-      const ring = []
-      let xx = x, yy = y
-      while (xx < cols - 1 && slope.data[yy * cols + xx] >= slopeDegThreshold && !visited[yy * cols + xx]) {
-        visited[yy * cols + xx] = 1
-        ring.push(gridToWorld([xx, yy], transform))
-        xx++
-      }
-      const length = ring.length * Math.abs(transform.pixelWidth)
-      if (length >= minLengthM && ring.length >= 2) {
-        features.push({ type: 'cliff', isomCode: '203', coordinates: ring })
-      }
-    }
+
+  // Threshold til binær
+  let mask = new Uint8Array(slope.data.length)
+  for (let i = 0; i < slope.data.length; i++) {
+    mask[i] = slope.data[i] >= slopeDegThreshold ? 1 : 0
+  }
+
+  // Morphological close (dilate → erode) for å bro små diskontinuiteter
+  mask = morphClose(mask, cols, rows)
+
+  // Skeletonize
+  const skeleton = zhangSuenSkeletonize(mask, cols, rows)
+
+  // Vectorize til polylines i grid-koord
+  const minPx = Math.max(3, Math.round(minLengthM / Math.abs(transform.pixelWidth)))
+  const lines = vectorizeSkeleton(skeleton, cols, rows, { minPx })
+
+  // Reproject + forenkle + filtrer
+  const features = []
+  for (const line of lines) {
+    const worldLine = line.map(([x, y]) => gridToWorld([x, y], transform))
+    if (polylineLength(worldLine) < minLengthM) continue
+    const simplified = simplifyDP(worldLine, Math.max(1, Math.abs(transform.pixelWidth) * 0.6))
+    if (simplified.length < 2) continue
+    features.push({
+      type: 'cliff',
+      isomCode: '203',
+      coordinates: simplified,
+    })
   }
   return features
+}
+
+/** Morphological close (dilate + erode) på binær mask, 3x3-kjerne. */
+function morphClose(mask, cols, rows) {
+  const dilated = new Uint8Array(mask.length)
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x
+      if (mask[i]) { dilated[i] = 1; continue }
+      let any = 0
+      for (let dy = -1; dy <= 1 && !any; dy++) {
+        for (let dx = -1; dx <= 1 && !any; dx++) {
+          const ny = y + dy, nx = x + dx
+          if (ny < 0 || ny >= rows || nx < 0 || nx >= cols) continue
+          if (mask[ny * cols + nx]) any = 1
+        }
+      }
+      dilated[i] = any
+    }
+  }
+  const closed = new Uint8Array(mask.length)
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const i = y * cols + x
+      if (!dilated[i]) { closed[i] = 0; continue }
+      let all = 1
+      for (let dy = -1; dy <= 1 && all; dy++) {
+        for (let dx = -1; dx <= 1 && all; dx++) {
+          const ny = y + dy, nx = x + dx
+          if (ny < 0 || ny >= rows || nx < 0 || nx >= cols) { all = 0; break }
+          if (!dilated[ny * cols + nx]) all = 0
+        }
+      }
+      closed[i] = all
+    }
+  }
+  return closed
 }
 
 /**
