@@ -606,6 +606,10 @@ export function buildSvg(elements, bbox, options = {}) {
     domSource: dom?.source ?? null,
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
+    coastline: {
+      ways: coastlineWays.length,
+      landRings: landRings.length,
+    },
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),

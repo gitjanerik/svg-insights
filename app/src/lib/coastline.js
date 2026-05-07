@@ -36,8 +36,9 @@
 export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM) {
   const W = widthM
   const H = heightM
-  const eps = 1.0      // 1 meter for å matche endepunkter mellom ways
+  const eps = 5.0      // 5 meter for å matche endepunkter mellom ways
   const edgeEps = 5.0  // 5m fra bbox-kant regnes som "på kanten"
+  const bboxArea = W * H
 
   // Projiser ways
   const projected = coastlineWays
@@ -72,10 +73,33 @@ export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, h
     }
   }
 
+  // Filtrer ut lukkede ringer som er for store — antagelig store innenlands-
+  // innsjøer (Mjøsa, Setten osv) som er feilmerket som natural=coastline i
+  // OSM. En ekte øy dekker typisk en liten del av bbox; en lake-mistag
+  // dekker ofte > 50% av bbox.
+  const filteredClosed = closedRings.filter(ring => {
+    const area = Math.abs(signedArea(ring))
+    if (area > 0.5 * bboxArea) {
+      console.warn(`[Kystlinje] Lukket ring dekker ${(100 * area / bboxArea).toFixed(0)}% av bbox — antagelig lake-mistag, hopper over`)
+      return false
+    }
+    return true
+  })
+
   // Lukk åpne arcer via bbox-kanter
   const mainlandRings = closeArcsViaBbox(openArcs, W, H, edgeEps)
 
-  return [...closedRings, ...mainlandRings]
+  return [...filteredClosed, ...mainlandRings]
+}
+
+function signedArea(ring) {
+  let a = 0
+  const n = ring.length
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    a += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+  }
+  return a / 2
 }
 
 /**

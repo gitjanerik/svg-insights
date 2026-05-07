@@ -185,10 +185,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.5.6 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-900" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.5.6</span>
+                <span class="text-white/40">&mdash; Mjøsa-fix: filtrer ut store lukkede coastline-ringer (lake-mistag), og bedre chain-merging</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Mjøsa, Setten og andre store norske innsjøer er ofte feilmerket som <code>natural=coastline</code> i OSM (skal være <code>natural=water</code>). Dette gjorde at min polygonisering behandlet dem som "kjempe-øyer" som dekket mest av bbox-en, og inverterte sjø/land-rendering</li>
+                <li>Nytt: skip lukkede ringer som dekker &gt;50% av bbox-arealet. Ekte øyer er små relativt til bbox, lake-mistags er store</li>
+                <li>Chain-merging tolerance bumpet fra 1m til 5m for å være mer robust mot OSM-data-kvalitet</li>
+                <li>Diagnostisk: <code>meta.coastline.ways</code> og <code>meta.coastline.landRings</code> viser nå antall ways funnet vs polygoner produsert</li>
+                <li>Kjente begrensninger: halvøyer (som Landøya) er del av fastland-kysten i OSM, så de skal håndteres av mainland-arc-closure. Hvis chain-merging svikter på fastland (f.eks. T-junctions), kan deler av halvøyen falle utenfor land-masken</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.5.5 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-800" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.5.5</span>
                 <span class="text-white/40">&mdash; Snudd masking-strategi: land som default, sjø som overlay (sea = bbox − land)</span>
