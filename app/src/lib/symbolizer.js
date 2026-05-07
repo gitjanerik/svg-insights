@@ -102,17 +102,47 @@ export function buildPointSymbolDef(symId, spec) {
  * Klassifiser en OSM/N50-feature til ISOM-kode (forenklet — full versjon
  * vil bruke LiDAR/CHM/NIBIO i fase 3 av v6.0).
  */
+// Norske navn-suffix som med rimelig sikkerhet indikerer saltvann.
+// Bevisst konservativ liste — "sjøen"/"sjø" alene er IKKE med (Mjøsa,
+// Storsjøen, Lutvann er innsjøer; Nordsjøen er sjø). "vannet"/"vatnet"
+// er omtrent alltid ferskvann og blir derfor ikke filtrert som salt.
+const SALT_NAME_SUFFIXES = [
+  'fjord', 'fjorden', 'fjorder',
+  'sundet', 'sund',
+  'havet', 'havn', 'havna',
+  'pollen',
+]
+function nameLooksSalty(name) {
+  if (!name) return false
+  const lower = name.toLowerCase().trim()
+  return SALT_NAME_SUFFIXES.some(suf =>
+    lower === suf || lower.endsWith(' ' + suf) || lower.endsWith('-' + suf) || lower.endsWith(suf)
+  )
+}
+
 export function classifyToIsom(el) {
   const t = el.tags ?? {}
   if (el.type === 'node' && t.natural === 'peak') return { code: 'peak', cat: 'point' }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
   if (t.building)                                   return { code: '521', cat: 'manmade' }
-  if (t.natural === 'water' || t.water) {
-    // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
-    // OSM-tags: salt=yes, water=sea|fjord|bay|strait|lagoon, tidal=yes
-    const saltyWaters = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
-    if (t.salt === 'yes' || t.tidal === 'yes' || saltyWaters.has(t.water)) {
+  // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
+  // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
+  // som mangler subtype-tag (svært vanlig for Oslofjord, Sognefjord osv.)
+  const saltyWaterTypes = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
+  const isSeaPlace = t.place === 'sea' || t.place === 'ocean'
+  if (t.natural === 'water' || t.water || t.natural === 'bay' || t.natural === 'strait' || isSeaPlace) {
+    if (
+      t.salt === 'yes' ||
+      t.tidal === 'yes' ||
+      isSeaPlace ||
+      t.natural === 'bay' ||
+      t.natural === 'strait' ||
+      saltyWaterTypes.has(t.water) ||
+      nameLooksSalty(t.name) ||
+      nameLooksSalty(t['name:no']) ||
+      nameLooksSalty(t['name:nb'])
+    ) {
       return { code: '303', cat: 'water' }
     }
     return { code: '301', cat: 'water' }

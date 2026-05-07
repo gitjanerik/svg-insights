@@ -27,7 +27,9 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
   way["natural"="water"];
+  way["natural"~"^(bay|strait)$"];
   way["water"];
+  way["place"~"^(sea|ocean)$"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
@@ -39,6 +41,8 @@ export function buildOverpassQuery(bbox) {
   node["natural"="peak"];
   node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
   relation["natural"="water"];
+  relation["natural"~"^(bay|strait)$"];
+  relation["place"~"^(sea|ocean)$"];
 );
 out geom;
 `.trim()
