@@ -48,7 +48,11 @@ async function fetchOSM() {
   const body = 'data=' + encodeURIComponent(overpassQuery);
   const res = await fetch(OVERPASS_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': 'svg-insights/5.1 (https://github.com/gitjanerik/svg-insights)',
+    },
     body,
   });
   if (!res.ok) {
