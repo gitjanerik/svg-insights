@@ -2,12 +2,13 @@
 
 ## Hva er dette?
 
-SVG Insights er en Vue 3-mobilapp med to hovedfunksjoner:
+SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 
 1. **Lag SVG-tegning** — konverterer bilder til interaktive SVG-strektegninger via en 12-trinns bildeprosesseringspipeline med kantdeteksjon, luminans-konturer og skravering
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
+3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: **5.0.1** (release 30. april 2026).
+Gjeldende versjon: **6.4.0** (release 7. mai 2026).
 
 ## Viktige kommandoer
 
@@ -42,6 +43,57 @@ npm run build       # Produksjonsbygg
 - **Boolean-union** i `app/src/lib/glyphUnion.js` — bruker `polygon-clipping`-biblioteket. `editorPointsToRings` flatener M/L/C-segmenter (12 samples pr cubic), `ringsToPolygons` klassifiserer outer/hole via signed area i y-up font-units, `orientPolygonRings` sorterer brush-strøkenes ringer etter abs(area) så største alltid er outer (kritisk — ellers blir CW-tegnede lukkede former invertert)
 - Visninger: `FontChooserView.vue`, `FontEditorView.vue`, `FontPreviewView.vue`
 - **Glyf-fra-foto-flyt**: `GlyphPhotoDialog.vue` har tre faser — kamera, crop, preview. I preview-fasen kjører tracingen internt, viser cropet bilde + sporet glyf side ved side med statusmelding fra `meta.warnings`, så bekreftelse
+
+### Vis turkart (Kart-sporet)
+
+ISOM 2017-2-inspirert sportskart fra åpne norske data. Den største enkeltkomponenten i prosjektet (~3000 linjer ny kode i v6).
+
+#### Datapipeline (oppsummert)
+1. **Bbox-velger** (`MapPickerView.vue`) — Nominatim-stedssøk + WMTS-tile-bakgrunn (`lib/tileBackground.js`) + slider for bbox 1–10 km og ekvidistanse 5/10/20/50/100 m
+2. **OSM Overpass** (`lib/mapBuilder.js#fetchOverpass`) — stier, veier, vann, bygninger, skog. CORS støttes
+3. **WGS84 → UTM 32N** (`lib/utm.js`) — håndskreven, ingen proj4 i bundle
+4. **Kartverket WCS DTM** (`lib/demFetcher.js#fetchWCSDtm`) — multi-endpoint, prøver `NHM_DTM_25832` først, deretter UTM 33 reprojisert. GeoTIFF parses med `geotiff.js` (lazy-loaded). Verifisert ekte data: elevation-spenn matcher virkeligheten
+5. **Kartverket WCS DOM** (`lib/canopyHeight.js#fetchDOM`) — overflate-modell, samme strategi. Coverage `NHM_DOM_25832`
+6. **CHM = DOM − DTM** (`computeCHM`) — vegetasjons-/bygnings-høyde pixel-vis
+7. **Vegetasjons-klassifisering** (`sampleCHMInPolygon`, `classifyVegetationFromCHM`) — sampler hver skog-polygon, klassifiserer til ISOM 405–408 basert på p50/p90/std av canopy-høyde
+8. **Høydekurver** (`lib/dem.js#buildContours`) — `d3-contour` marching squares → Chaikin-glatting → DP-forenkling. Min-lengde `intervalM * 4`, DP-toleranse 2.5m initial / 1m etter Chaikin
+9. **Stupkanter** (`lib/dem.js#detectCliffs`) — slope > 45° → morfologisk lukking → Zhang-Suen skeletonization (`lib/skeleton.js`) → vectorize fra endepunkter → DP
+10. **Tett bebyggelse → ISOM 522** (`lib/buildingMass.js`) — R-tree spatial index + Union-Find for transitiv klyngegruppering, polygon-clipping union av buffer'ede bbox-rektangler
+11. **Vann-maske** for konturer — `<mask>` med vann-polygoner svart, sikrer at høydekurver ikke krysser innsjøer
+12. **Symbolisering** (`lib/symbolizer.js`) — datadrevet ISOM-katalog (`isomCatalog.json`), produserer `<defs>` (patterns + symbols) og scoped CSS med `.isom-map`-prefix (kritisk: ellers lekker `svg { background }` til alle SVG-er på siden)
+13. **Lagring** (`lib/mapStorage.js`) — IndexedDB pr kart, full SVG-tekst lagres
+14. **Visning** (`MapView.vue`) — `usePinchZoom`, `useUserPosition` (GPS via watchPosition + UTM-konvertering), `useCompass` (DeviceOrientation), `useDraggableDrawer`. Magnetisk nord-pil med deklinasjon
+15. **Print/eksport** (`lib/printExport.js`) — .svg, .png 300 dpi, OS-print til PDF
+16. **Annotering** (`composables/useMapAnnotations.js`) — manuell plassering av ISOM-symboler over auto-generert kart, lagres med kartet i IndexedDB
+
+#### Hvor data hentes (CI vs klient)
+- **Innebygd Vardåsen-demo** bygges i GitHub Actions (`.github/workflows/build-vardasen-map.yml`) med `useReal: true`. CI har full nettverkstilgang og henter ekte WCS DTM+DOM. Resultatet er sjekket inn som `app/public/maps/vardasen.svg`. Workflow trigges på push til `master` og deployer til gh-pages
+- **Brukerens egne kart** bygges klient-side i `MapPickerView`. Kartverket WCS støtter også CORS (verifisert v6.3.x — ekte DTM+DOM klient-side fungerer!). Hvis WCS feiler, falles tilbake til syntetisk DEM med `skipContoursIfSynthetic: true` så vi ikke viser falske konsentriske ringer
+
+#### ISOM-konvensjoner og lag-rekkefølge
+LAYER_ORDER i `mapBuilder.js` følger ISOM 2017-2-stack (bunn → topp): vegetasjon (401–409) → blokkmark (210) → vann (308–305) → konturer (101–104) → veier (501–507) → bygninger (521, 522) → kraftledning/gjerde (525, 528) → stupkanter (201, 203). **Kjent issue (todo neste sesjon):** ISOM 522 bymasse-pattern dekker for mye når det er sentralt i tett by — bygninger må flyttes lenger ned i z-order
+
+#### Filer
+- `lib/utm.js` — WGS84↔UTM 32N
+- `lib/mapBuilder.js` — hovedpipeline, `fetchOverpass`, `buildSvg(elements, bbox, options)`
+- `lib/symbolizer.js` — `classifyToIsom`, `buildIsomDefs`, `buildIsomCss`
+- `lib/isomCatalog.json` — datadrevet ISOM-katalog (kategorier, patterns, point-symbols, dark mode-overstyringer pr kode)
+- `lib/dem.js` — `buildContours`, `computeSlope`, `computeTPI`, `detectKnauser`, `detectCliffs`, `syntheticDEM`
+- `lib/demFetcher.js` — WCS DTM med multi-endpoint og syntetisk fallback
+- `lib/canopyHeight.js` — DOM-fetcher, CHM, vegetasjons-klassifisering
+- `lib/skeleton.js` — Zhang-Suen + skeleton-til-polylines
+- `lib/buildingMass.js` — ISOM 522 tett-bebyggelse-grupperer
+- `lib/pathUtils.js` — DP, VW, Chaikin, polylineLength, generalize
+- `lib/tileBackground.js` — Web Mercator XYZ-tile-mosaikk for picker-bakgrunn
+- `lib/mapStorage.js` — IndexedDB-wrapper
+- `lib/printExport.js` — SVG/PNG/print-til-PDF
+- `composables/useUserPosition.js` — GPS via watchPosition
+- `composables/useCompass.js` — DeviceOrientation
+- `composables/useNominatim.js` — debounced stedssøk
+- `composables/useMapAnnotations.js` — annoteringsmodus
+- `views/MapHomeView.vue`, `views/MapPickerView.vue`, `views/MapView.vue`
+- `scripts/build-vardasen-svg.js` — CI-script som kjører i workflow
+- `scripts/build-vardasen-stub.js` — placeholder for lokal bygging (ingen WCS)
 
 ### Delte komponenter
 
@@ -107,6 +159,28 @@ Release notes i AboutView.vue er **hovedkanalen** for brukernes oversikt over en
 ## Påskeegg (ikke del av release notes)
 
 Når Sort hull-modus har absorbert alle sirkler til én eneste stor sirkel som har vokst, aktiveres solsystem-modus som beskrevet i arkitektur-seksjonen. Dette er en bonus for brukere som leker nok med effekten. **Dokumenter ikke dette i release notes** — det er meningen å være en oppdagelse.
+
+## Lærdommer fra v6-pakken (turkart, 6.–7. mai 2026)
+
+- **Kartverket WCS støtter CORS** for browser-fetch (verifisert v6.3.x). Vi antok først at den var blokkert; den er ikke. `fetchDEM`/`fetchDOM` fungerer både i CI og klient
+- **`<style>` inne i en SVG lekker** — regelen `svg { background: ... }` matcher ALLE `<svg>`-elementer på siden, ikke bare den ene SVG-en. Fix: scope alle CSS-regler til en klasse (`.isom-map`) og sett klassen både i `mapBuilder.js`-output og `setupHostSvg` i MapView
+- **OSM-bygninger har reell strukturell detalj** — DP-forenkling fjerner kun punkter på rette linjer, ikke ekte hjørner. For å redusere bygnings-størrelse i tett bebyggelse må man bruke ISOM 522 (slå sammen bygnings-klynger til pattern-fyll)
+- **Multi-endpoint-strategi for WCS-fetcher** er robust — Geonorge har flere coverages og inkonsistent navngivning. Prøv flere i sekvens og logg hvilken som lykkes
+- **Workflow-cache kan gi gamle SVG-er** — selv etter push av ny kode kan workflow bygge identisk output. Force fresh build med en triviell endring i build-scriptet hvis nødvendig
+- **`skipContoursIfSynthetic`** — hvis ekte WCS feiler og vi falle tilbake til syntetisk DEM, skjul konturer helt heller enn å vise falske konsentriske ringer rundt en Gaussian-modell. Brukeren må kunne stole på at konturer er ekte
+- **Konturer skal IKKE krysse vann** — bruk SVG `<mask>` med vann-polygoner svart over hvit bakgrunn for å maskere bort konturer over innsjøer
+- **CHM = DOM − DTM** er en legitim erstatning for å parse LAZ-punkter direkte. Mye lettere enn `laz-perf` WASM, og gir god nok klassifisering for ISOM 405–408
+- **Stupkanter krever skikkelig vectorisering** — Zhang-Suen skeletonization gir mye bedre resultater enn naiv horisontal-traversal. Verifisert: 1 → 19 stupkanter på Vardåsen
+- **Versjonslogg-konvensjon** — versjonsnummer i `package.json`, `version.js`, `sw.js` og en oppføring i `AboutView.vue` (skjult `v-if="false"` men beholdt i kildekode). Hver hovedversjon får farget prikk i tidslinja
+
+## Todos for neste kart-sesjon (UI-fixer)
+
+Brukeren har identifisert disse for neste sesjon:
+
+1. **Bygninger må lenger ned i z-order**. ISOM 522 bymasse-pattern dekker uleselig i tett bebygde områder (Oslo sentrum-test viste dette). Forslag: flytt 522 til etter åpen mark (rett etter 404), så vann og konturer rendres OVER bymassen. Behold 521 individuelle bygninger over veier/stier
+2. **Høyde over havet i innsjøer** — vis elevasjon som tekst-label på vann-polygoner (eller hent fra DTM-sample i sentroid)
+3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
+4. **Generelt UI-polish i MapView**
 
 ## Lærdommer fra 5.0-pakken (30. april 2026)
 
