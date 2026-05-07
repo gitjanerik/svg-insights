@@ -94,14 +94,14 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
       // Vi vil ha alle ringer som linjer (kontur er jo linje uansett)
       for (const ring of poly) {
         const worldRing = ring.map(p => gridToWorld(p, transform))
-        // Filtrer ut svært korte konturer (sannsynligvis støy)
-        if (polylineLength(worldRing) < intervalM * 4) continue
-        // Aggressiv simplification — vi vil ha pene linjer, ikke alle pixler
-        const simplified = simplifyDP(worldRing, 3.0)
+        // Filtrer ut korte/triviell konturer. Min-lengde er 8× ekvidistanse
+        // for å unngå støy og bittesmå indre ringer som ikke gir kart-verdi.
+        if (polylineLength(worldRing) < intervalM * 8) continue
+        // Aggressiv simplification (DP toleranse 5m) — vi vil ha pene linjer
+        const simplified = simplifyDP(worldRing, 5.0)
         const smoothed = chaikin(simplified, 2, true)
-        // Etter smoothing kan vi simplifisere igjen for å fjerne overflødige punkter
-        const final = simplifyDP(smoothed, 1.5)
-        if (final.length < 4) continue
+        const final = simplifyDP(smoothed, 2.5)
+        if (final.length < 5) continue
         features.push({
           type: 'contour',
           isomCode: isIndex ? '102' : '101',
@@ -247,7 +247,7 @@ export function detectKnauser(dem, tpiRadius = 5, tpiThresholdM = 1.5) {
  * @param {number} minLengthM         minimum stupkant-lengde for å beholde
  * @returns {Array}
  */
-export function detectCliffs(dem, slopeDegThreshold = 55, minLengthM = 8) {
+export function detectCliffs(dem, slopeDegThreshold = 45, minLengthM = 10) {
   const slope = computeSlope(dem)
   const { cols, rows, transform } = dem
 
