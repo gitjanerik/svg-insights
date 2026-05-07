@@ -91,19 +91,61 @@ export async function fetchN50Water(bbox, opts = {}) {
 
 async function fetchN50Layers(bbox, layers, opts = {}) {
   const elements = []
+  // Buffer rundt bbox for å akseptere features som strekker seg litt
+  // utover. Større enn dette indikerer en feature av nasjonal skala
+  // som vil rendre som wedger/triangler i lokal projeksjon.
+  const lonSpan = Math.abs(bbox.east - bbox.west)
+  const latSpan = Math.abs(bbox.north - bbox.south)
+  const maxAcceptedSpan = Math.max(lonSpan, latSpan) * 8  // 8x bbox = sjenerøs buffer
+  let totalAccepted = 0
+  let totalRejected = 0
   for (const [typeName, mapping] of Object.entries(layers)) {
     try {
       const features = await fetchSingleLayer(bbox, typeName, opts)
       for (const feat of features) {
+        if (!isFeatureSpanReasonable(feat, maxAcceptedSpan)) {
+          totalRejected++
+          continue
+        }
         const osmLike = geojsonToOsmLike(feat, mapping)
-        if (osmLike) elements.push(osmLike)
+        if (osmLike) {
+          elements.push(osmLike)
+          totalAccepted++
+        }
       }
     } catch (e) {
       console.warn(`[N50] ${typeName} feilet: ${e.message}`)
-      // Fortsett med andre lag — partial failure tolereres
     }
   }
+  if (totalRejected > 0) {
+    console.warn(`[N50] ${totalRejected} features avvist pga for stor utstrekning (> 8x bbox)`)
+  }
+  console.log(`[N50] ${totalAccepted} features akseptert`)
   return elements
+}
+
+function isFeatureSpanReasonable(feat, maxSpanDeg) {
+  const g = feat.geometry
+  if (!g) return false
+  let minLon = Infinity, maxLon = -Infinity
+  let minLat = Infinity, maxLat = -Infinity
+  const visit = (coords) => {
+    if (!Array.isArray(coords)) return
+    if (typeof coords[0] === 'number') {
+      const [lon, lat] = coords
+      if (lon < minLon) minLon = lon
+      if (lon > maxLon) maxLon = lon
+      if (lat < minLat) minLat = lat
+      if (lat > maxLat) maxLat = lat
+      return
+    }
+    for (const c of coords) visit(c)
+  }
+  visit(g.coordinates)
+  if (!Number.isFinite(minLon)) return false
+  const lonSpan = maxLon - minLon
+  const latSpan = maxLat - minLat
+  return Math.max(lonSpan, latSpan) <= maxSpanDeg
 }
 
 async function fetchSingleLayer(bbox, typeName, opts = {}) {

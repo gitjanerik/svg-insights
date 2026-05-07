@@ -604,9 +604,67 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
   }).join('\n')
 
+  // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
+  // ekte DEM, sampler vi høyde på begge sider av spine for å velge
+  // riktig side; ellers default til høyre. Spacing ~20m (~2mm @ 1:10k),
+  // tann-lengde ~5m (~0.5mm). Coordinates er i meter-rom relativt til
+  // UTM bbox sw-hjørne (samme som cliff-spine).
+  const cliffSampleDem = usableDem
+    ? (xM, yM) => {
+        const t = usableDem.transform
+        const utmE = xM + minE
+        const utmN = yM + minN
+        const col = Math.round((utmE - t.originX) / t.pixelWidth)
+        const row = Math.round((utmN - t.originY) / t.pixelHeight)
+        if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
+        const v = usableDem.data[row * usableDem.cols + col]
+        if (v === usableDem.noData) return null
+        return v
+      }
+    : null
+
   const cliffsSvg = demFeatures.cliffs.map(c => {
     const projected = c.coordinates.map(demProject)
-    return `    <path d="${polylineToPath(projected, false)}" />`
+    const linePath = polylineToPath(projected, false)
+    const teethPaths = []
+    const SPACING_M = 20
+    const TOOTH_LEN_M = 5
+    let acc = SPACING_M
+    for (let i = 1; i < c.coordinates.length; i++) {
+      const [x0, y0] = c.coordinates[i - 1]
+      const [x1, y1] = c.coordinates[i]
+      const dx = x1 - x0, dy = y1 - y0
+      const segLen = Math.hypot(dx, dy)
+      if (segLen < 1) continue
+      const ux = dx / segLen, uy = dy / segLen
+      const lpx = -uy, lpy = ux
+      const rpx =  uy, rpy = -ux
+      while (acc <= segLen) {
+        const t = acc / segLen
+        const cx = x0 + dx * t, cy = y0 + dy * t
+        let side = [rpx, rpy]
+        if (cliffSampleDem) {
+          const sx = TOOTH_LEN_M * 1.5
+          const lh = cliffSampleDem(cx + lpx * sx, cy + lpy * sx)
+          const rh = cliffSampleDem(cx + rpx * sx, cy + rpy * sx)
+          if (Number.isFinite(lh) && Number.isFinite(rh)) {
+            side = lh < rh ? [lpx, lpy] : [rpx, rpy]
+          }
+        }
+        const tipX = cx + side[0] * TOOTH_LEN_M
+        const tipY = cy + side[1] * TOOTH_LEN_M
+        const [csx, csy] = demProject([cx, cy])
+        const [tsx, tsy] = demProject([tipX, tipY])
+        teethPaths.push(`M${fmt(csx)},${fmt(csy)}L${fmt(tsx)},${fmt(tsy)}`)
+        acc += SPACING_M
+      }
+      acc -= segLen
+      if (acc < 0) acc = SPACING_M
+    }
+    const teeth = teethPaths.length
+      ? `\n    <path d="${teethPaths.join(' ')}" data-cliff-teeth="1"/>`
+      : ''
+    return `    <path d="${linePath}" />${teeth}`
   }).join('\n')
 
   const meta = {
