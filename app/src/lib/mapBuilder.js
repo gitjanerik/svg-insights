@@ -171,21 +171,22 @@ export function buildSvg(elements, bbox, options = {}) {
     return Math.abs(a) / 2
   }
 
-  // Per-kategori forenkling og filtrering
+  // Per-kategori forenkling og filtrering. Tunet for å holde SVG <1.5 MB
+  // selv i tett bebygde områder som Vardåsen-bbox.
   const POLYGON_FILTER = {
-    bygning: { simplifyM: 1.5, minAreaM2: 30 },
-    skog:    { simplifyM: 3.0, minAreaM2: 200 },
-    eng:     { simplifyM: 3.0, minAreaM2: 200 },
-    aker:    { simplifyM: 3.0, minAreaM2: 200 },
-    myr:     { simplifyM: 2.0, minAreaM2: 100 },
-    vann:    { simplifyM: 1.5, minAreaM2: 25 },
-    aapen:   { simplifyM: 3.0, minAreaM2: 200 },
+    bygning: { simplifyM: 3.0, minAreaM2: 80 },
+    skog:    { simplifyM: 4.0, minAreaM2: 300 },
+    eng:     { simplifyM: 4.0, minAreaM2: 300 },
+    aker:    { simplifyM: 4.0, minAreaM2: 300 },
+    myr:     { simplifyM: 2.5, minAreaM2: 150 },
+    vann:    { simplifyM: 2.0, minAreaM2: 50 },
+    aapen:   { simplifyM: 4.0, minAreaM2: 300 },
   }
   const LINE_SIMPLIFY = {
-    'vei-stor':  1.0,
-    'vei-liten': 1.5,
-    sti:         1.5,
-    bekk:        1.5,
+    'vei-stor':  1.5,
+    'vei-liten': 2.5,
+    sti:         2.5,
+    bekk:        2.0,
   }
 
   // Bucket pr ISOM-kode
