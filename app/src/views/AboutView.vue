@@ -112,10 +112,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.0.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.0.2</span>
+                <span class="text-white/40">&mdash; Brukertest-forbedringer for høydekurver, knapper og vann-maske</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Knapper i toppbar fungerer nå korrekt</strong>: stilen <code>svg { background: var(--bg) }</code> i kart-SVG lakk ut til ikon-SVGer i knappene. Fix: prefikset all kart-CSS med <code>.isom-map</code>-klasse</li>
+                <li><strong>Høydekurver byttet til rødt og 20m ekvidistanse</strong>: tynnere streker (0.10/0.16 mm), N50-standard intervall. Indekskontur fortsatt hver 100m</li>
+                <li><strong>Brukervalgt ekvidistanse</strong> i kart-velgeren: 10 / 20 / 50 / 100 m segmentert kontroll med beskrivelse for hvert valg</li>
+                <li><strong>Vann-maske</strong>: høydekurver krysser ikke lenger innsjøer (innsjø = én høyde per definisjon). Implementert SVG <code>&lt;mask&gt;</code> med vann-polygoner svart over hvit bakgrunn, anvendt på kontur-laget</li>
+                <li>Etiketten "Konturer" byttet til "Høydekurver" i innstillinger</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.0.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.0.0</span>
                 <span class="text-white/40">&mdash; ISOM-inspirert turkart-pipeline med høydekurver, N50, routing og print</span>
