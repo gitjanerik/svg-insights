@@ -122,7 +122,14 @@ export function buildSvg(elements, bbox, options = {}) {
     contourIntervalM = 5,
     includeKnauser = true,
     includeCliffs = true,
+    skipContoursIfSynthetic = false,
   } = options
+
+  // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
+  // konturer i det tilfellet, bruk DEM kun til ingenting (eller faktisk
+  // dropp den helt slik at hopp-igjennom-koden ikke prøver å bygge konturer)
+  const isSyntheticDEM = dem?.source?.startsWith('synthetic')
+  const usableDem = (skipContoursIfSynthetic && isSyntheticDEM) ? null : dem
 
   const sw = wgs84ToUtm32(bbox.south, bbox.west)
   const ne = wgs84ToUtm32(bbox.north, bbox.east)
@@ -214,10 +221,10 @@ export function buildSvg(elements, bbox, options = {}) {
 
   // ── DEM-deriverte features (konturer, knauser, stupkanter) ───────────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
-  if (dem) {
-    const c = buildContours(dem, contourIntervalM, 5)
-    const k = includeKnauser ? detectKnauser(dem, 5, 1.5) : []
-    const cl = includeCliffs ? detectCliffs(dem, 60, 5) : []
+  if (usableDem) {
+    const c = buildContours(usableDem, contourIntervalM, 5)
+    const k = includeKnauser ? detectKnauser(usableDem, 5, 1.5) : []
+    const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
     demFeatures = { contours: c, knauser: k, cliffs: cl, equidistanceM: contourIntervalM }
   }
 
@@ -333,12 +340,13 @@ export function buildSvg(elements, bbox, options = {}) {
     widthM, heightM,
     scaleDenom,
     equidistance: demFeatures.equidistanceM,
-    elevationRange: dem
+    elevationRange: usableDem
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
     demSource: dem?.source ?? null,
+    contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     isomVersion: '2017-2-derived',
-    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (dem ? ` + DEM (${dem.source ?? 'unknown'})` : ''),
+    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
   }
 

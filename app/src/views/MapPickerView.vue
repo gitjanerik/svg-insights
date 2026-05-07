@@ -65,15 +65,19 @@ async function generateMap() {
       minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
       minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
     }
-    buildProgress.value = `Genererer høydekurver …`
+    buildProgress.value = `Henter høydedata fra Kartverket …`
     await new Promise(r => setTimeout(r, 30))
-    // Bruker syntetisk DEM klient-side. Kartverket WCS er CORS-blokkert
-    // i nettleser; ekte data fås kun via CI-bygde innebygde kart.
-    const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 20, useReal: false })
+    // Forsøk ekte WCS — kan CORS-feile i nettleser. Hvis så, dropper
+    // mapBuilder konturer (skipContoursIfSynthetic) heller enn å vise
+    // falske konsentriske ringer fra syntetisk Gaussian-modell.
+    const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 10, useReal: true })
 
     // 3. Bygg SVG med konturer
     const { svg, counts, meta } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
+      // Hvis WCS faller tilbake til syntetisk: ingen falske konsentriske
+      // ringer i kartet. Bedre uten konturer enn villedende konturer.
+      skipContoursIfSynthetic: true,
     })
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'

@@ -196,6 +196,7 @@ async function loadMap() {
       scaleDenom: m.scaleDenom ?? 10000,
       source: m.source,
       demSource: m.demSource ?? null,
+      contoursSkipped: m.contoursSkipped ?? null,
     }
     setupHostSvg(root)
     loading.value = false
@@ -288,6 +289,7 @@ const equidistanceLabel = computed(() => {
   if (!meta.value) return ''
   const eq = meta.value.equidistance
   if (eq) return `Høydekurver pr ${eq} m`
+  if (meta.value.contoursSkipped) return 'Høydekurver: kun på innebygde kart'
   return 'Høydekurver ikke tilgjengelig'
 })
 
