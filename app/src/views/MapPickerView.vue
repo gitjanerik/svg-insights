@@ -16,7 +16,15 @@ const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
 
 const center = ref({ ...DEFAULT_CENTER })
 const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*halfKm
+const equidistanceM = ref(20)  // høydekurve-intervall, 10/20/50/100 m
 const customName = ref('')
+
+const EQUIDISTANCE_OPTIONS = [
+  { value: 10,  label: '10 m', desc: 'tett — for små områder' },
+  { value: 20,  label: '20 m', desc: 'turkart-standard' },
+  { value: 50,  label: '50 m', desc: 'oversikt' },
+  { value: 100, label: '100 m', desc: 'glissen — for store områder' },
+]
 
 const { query, results, isSearching, error: searchError } = useNominatim()
 
@@ -63,7 +71,7 @@ async function generateMap() {
 
     // 3. Bygg SVG med konturer
     const { svg, counts, meta } = buildSvg(elements, bbox.value, {
-      dem, contourIntervalM: 50, scaleDenom: 10000,
+      dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
     })
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'
@@ -282,6 +290,27 @@ onMounted(() => {
                class="w-full accent-violet-500" />
         <div class="flex justify-between text-[10px] text-white/35 mt-1">
           <span>1 km</span><span>4 km</span><span>10 km</span>
+        </div>
+      </div>
+
+      <!-- Ekvidistanse-velger -->
+      <div class="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] text-white/45 uppercase tracking-wide">Høydekurver</div>
+          <div class="text-[13px] font-medium tabular-nums">hver {{ equidistanceM }} m</div>
+        </div>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
+                  @click="equidistanceM = opt.value"
+                  class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition"
+                  :class="equidistanceM === opt.value
+                          ? 'bg-violet-500/25 border-violet-400/60 text-white'
+                          : 'bg-white/5 border-white/10 text-white/60'">
+            {{ opt.label }}
+          </button>
+        </div>
+        <div class="text-[10px] text-white/35 mt-1.5">
+          {{ EQUIDISTANCE_OPTIONS.find(o => o.value === equidistanceM)?.desc }}
         </div>
       </div>
     </div>

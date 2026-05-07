@@ -32,7 +32,7 @@ const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 20, knownArea: 'vardase
 const { svg: baseSvg, meta } = buildSvg([], bbox, {
   scaleDenom: 10000,
   dem,
-  contourIntervalM: 50,
+  contourIntervalM: 20,
 })
 
 // Sett inn en sentral "venter på CI"-melding i SVG-en. Vi finner
