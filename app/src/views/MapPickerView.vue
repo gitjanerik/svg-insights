@@ -3,6 +3,9 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
+import { fetchN50OrFallback } from '../lib/n50Fetcher.js'
+import { fetchDEM } from '../lib/demFetcher.js'
+import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
 
@@ -39,16 +42,29 @@ const buildProgress = ref('')
 async function generateMap() {
   buildState.value = 'fetching'
   buildError.value = null
-  buildProgress.value = `Henter OSM-data for ${sizeKm.value} × ${sizeKm.value} km …`
+  buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    const data = await fetchOverpass(bbox.value)
-    buildProgress.value = `Bygger SVG fra ${data.elements.length} elementer …`
+    // 1. Hent OSM-data (eller N50 hvis tilgjengelig)
+    const { source, elements } = await fetchN50OrFallback(bbox.value)
+    buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
-    // Gi browser et beat for å oppdatere UI før synkron build
-    await new Promise(r => setTimeout(r, 30))
 
-    const { svg, counts } = buildSvg(data.elements, bbox.value)
+    // 2. Generer DEM (syntetisk for nå)
+    const sw = wgs84ToUtm32(bbox.value.south, bbox.value.west)
+    const ne = wgs84ToUtm32(bbox.value.north, bbox.value.east)
+    const utmBbox = {
+      minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
+      minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
+    }
+    buildProgress.value = `Genererer høydekurver …`
+    await new Promise(r => setTimeout(r, 30))
+    const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 20 })
+
+    // 3. Bygg SVG med konturer
+    const { svg, counts, meta } = buildSvg(elements, bbox.value, {
+      dem, contourIntervalM: 5, scaleDenom: 10000,
+    })
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'
 
@@ -62,6 +78,8 @@ async function generateMap() {
       halfKm: halfKm.value,
       counts,
       svg,
+      source,
+      annotations: [],
       opprettet: Date.now(),
     }
     await saveMap(entry)

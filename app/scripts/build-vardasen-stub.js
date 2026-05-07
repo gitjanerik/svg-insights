@@ -6,6 +6,8 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.js'
+import { fetchDEM } from '../src/lib/demFetcher.js'
+import { wgs84ToUtm32 } from '../src/lib/utm.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -13,8 +15,25 @@ const CENTER = { lat: 59.813746, lon: 10.414616 }
 const HALF_KM = 2.5
 const bbox = bboxFromCenter(CENTER.lat, CENTER.lon, HALF_KM)
 
-// Tom feature-liste = bare ISOM-defs/CSS/bakgrunn, ingen geometri
-const { svg: baseSvg, meta } = buildSvg([], bbox, { scaleDenom: 10000 })
+// Beregn UTM-bbox slik at fetchDEM kan generere riktig størrelse
+const sw = wgs84ToUtm32(bbox.south, bbox.west)
+const ne = wgs84ToUtm32(bbox.north, bbox.east)
+const utmBbox = {
+  minE: Math.min(sw.e, ne.e),
+  maxE: Math.max(sw.e, ne.e),
+  minN: Math.min(sw.n, ne.n),
+  maxN: Math.max(sw.n, ne.n),
+}
+
+// Hent DEM (syntetisk for nå, kalibrert mot Vardåsen)
+const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 20, knownArea: 'vardasen' })
+
+// Tom feature-liste = bare ISOM-defs/CSS/bakgrunn + DEM-deriverte konturer
+const { svg: baseSvg, meta } = buildSvg([], bbox, {
+  scaleDenom: 10000,
+  dem,
+  contourIntervalM: 5,
+})
 
 // Sett inn en sentral "venter på CI"-melding i SVG-en. Vi finner
 // </svg> og setter inn et overlegg rett før.
@@ -42,7 +61,7 @@ const overlay = `
 `
 
 // Sett kilden til "Stub" i meta så MapView vet det
-meta.source = 'Stub — venter på CI-generert OSM-data'
+meta.source = 'Stub — venter på CI-generert OSM-data (men inkluderer syntetisk DEM-konturer)'
 const newMetaJson = JSON.stringify(meta).replace(/'/g, '&apos;')
 let svg = baseSvg.replace(
   /data-meta='[^']*'/,

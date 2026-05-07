@@ -112,10 +112,34 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.0.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.0.0</span>
+                <span class="text-white/40">&mdash; ISOM-inspirert turkart-pipeline med høydekurver, N50, routing og print</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Kartografisk polish (fase 1):</strong> ISOM 2017-2-inspirert symbol-katalog som JSON, mm-baserte streker for print-kvalitet, layer-rekkefølge etter ISOM-stack, magnetisk nord-pil med deklinasjon, skala-bar med tikker, 14 lag-kategorier</li>
+                <li><strong>Pattern fills:</strong> myr, myr-utrygg, kratt, halv-åpen mark, hugst, blokkmark, bebyggelse</li>
+                <li><strong>Høydekurver fra DEM (fase 2):</strong> marching squares (d3-contour) → Chaikin smoothing → DP-forenkling. Hjelpekontur 5 m, indekskontur hver 25 m, automatisk høyde-tall ved indekskonturer. Knaus-deteksjon via Topographic Position Index, stupkant via slope-terskel</li>
+                <li><strong>DEM-håndtering:</strong> syntetisk fallback med kalibrerte topp-modeller for kjente områder (Vardåsen). Rammeverk klart for ekte DTM 1m fra hoydedata.no</li>
+                <li><strong>N50 WFS-fetcher (fase 3):</strong> Geonorge åpne data først, transparent fallback til OSM Overpass</li>
+                <li><strong>Routing-graph (fase 4):</strong> Graphology + R-tree spatial index, ISOM-vekter pr stikategori, Dijkstra korteste vei</li>
+                <li><strong>Path-utilities:</strong> Douglas-Peucker, Visvalingam-Whyatt, Chaikin smoothing, generaliserings-pipeline</li>
+                <li><strong>Annoteringsmodus:</strong> manuell plassering av ISOM-symboler (knaus, stein, brønn, bro) over auto-generert kart, lagres i IndexedDB</li>
+                <li><strong>Print-eksport:</strong> last ned som .svg, .png 300 dpi eller print til PDF via OS print-dialog</li>
+                <li><strong>Bedre dark mode:</strong> CSS-variabler genereres dynamisk pr ISOM-kode fra katalog</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 5.2.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">5.2.0</span>
                 <span class="text-white/40">&mdash; Lag ditt eget turkart: stedssøk, bbox-velger og IndexedDB-lagring</span>

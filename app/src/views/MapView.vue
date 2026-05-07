@@ -5,8 +5,10 @@ import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
+import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
+import { printDocument, exportSvgFile, exportPngFile } from '../lib/printExport.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -79,6 +81,81 @@ const transformStyle = computed(() => ({
 const userPos = useUserPosition(() => meta.value)
 const compass = useCompass()
 
+// Annoteringsmodus — point-symboler over auto-generert kart
+const mapId = computed(() => route.params.id ?? 'vardasen')
+const annot = useMapAnnotations(mapId.value)
+const showSymbolPalette = ref(false)
+let lastSvgString = ''      // huskes til print-eksport
+
+watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
+
+// Klikk på kart i annoteringsmodus → plasser symbol
+function onMapClick(e) {
+  if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const pt = svg.createSVGPoint()
+  pt.x = e.clientX
+  pt.y = e.clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return
+  const local = pt.matrixTransform(ctm.inverse())
+  const sym = ANNOTATION_SYMBOLS.find(s => s.symbolKey === annot.selectedSymbol.value)
+  if (!sym) return
+  annot.addPoint(sym.code, local.x, local.y)
+  annot.persist()
+}
+
+function renderAnnotations() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  let layer = svg.querySelector('#annotation-layer')
+  if (!layer) {
+    const ns = 'http://www.w3.org/2000/svg'
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'annotation-layer')
+    layer.setAttribute('data-layer', 'annotering')
+    svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  for (const a of annot.annotations.value) {
+    if (a.type !== 'point') continue
+    const ns = 'http://www.w3.org/2000/svg'
+    const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
+    if (!sym) continue
+    const use = document.createElementNS(ns, 'use')
+    use.setAttribute('href', `#iso-sym-${sym.symbolKey}`)
+    use.setAttribute('x', `${a.x - 0.6}mm`)
+    use.setAttribute('y', `${a.y - 0.6}mm`)
+    use.setAttribute('width', '1.4mm')
+    use.setAttribute('height', '1.4mm')
+    use.setAttribute('data-annot-id', a.id)
+    layer.appendChild(use)
+  }
+}
+
+function selectSymbol(key) {
+  annot.selectedSymbol.value = annot.selectedSymbol.value === key ? null : key
+  annot.isAnnotateMode.value = annot.selectedSymbol.value !== null
+}
+
+// Print- / eksport-handlers
+function onExportSvg() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  exportSvgFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.svg`)
+}
+async function onExportPng() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  await exportPngFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.png`, { dpi: 300 })
+}
+function onPrint() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  printDocument(svg.outerHTML, { title: mapTitle.value })
+}
+
 async function loadMap() {
   loading.value = true
   loadError.value = null
@@ -125,6 +202,8 @@ async function loadMap() {
     applyLayerVisibility()
     applyDarkMode()
     userPos.recompute()
+    await annot.load()
+    renderAnnotations()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
@@ -347,9 +426,20 @@ onMounted(() => {
     </div>
 
     <!-- Kart-flate -->
-    <div ref="wrapperRef" class="absolute inset-0 touch-none select-none">
+    <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
+         :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''">
       <div class="w-full h-full" :style="transformStyle">
-        <div ref="svgHostRef" class="w-full h-full"></div>
+        <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
+      </div>
+    </div>
+
+    <!-- Annoteringsmodus indikator -->
+    <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value"
+         class="absolute top-[16rem] right-3 z-20 px-2.5 py-1.5 rounded-md bg-violet-600
+                text-white text-[11px] font-medium shadow-lg pointer-events-none">
+      Trykk på kartet for å plassere
+      <div class="text-[9px] text-white/80 mt-0.5">
+        {{ ANNOTATION_SYMBOLS.find(s => s.symbolKey === annot.selectedSymbol.value)?.label }}
       </div>
     </div>
 
@@ -472,6 +562,49 @@ onMounted(() => {
                     class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
                            text-[12px] active:scale-[0.98]">
               Sentrer
+            </button>
+          </div>
+
+          <div v-if="!mapId.startsWith('vardasen')"
+               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Annotering</div>
+          <div v-if="!mapId.startsWith('vardasen')" class="space-y-2 mb-4">
+            <div class="grid grid-cols-2 gap-2">
+              <button v-for="s in ANNOTATION_SYMBOLS" :key="s.code"
+                      @click="selectSymbol(s.symbolKey)"
+                      class="px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] transition flex items-center gap-2"
+                      :class="annot.selectedSymbol.value === s.symbolKey
+                              ? 'bg-violet-500/30 border-violet-300/60 text-white'
+                              : 'bg-white/5 border-white/10 text-white/70'">
+                <svg viewBox="-1 -1 2 2" class="w-4 h-4">
+                  <use :href="`#iso-sym-${s.symbolKey}`"/>
+                </svg>
+                {{ s.label }}
+              </button>
+            </div>
+            <div class="flex gap-2 text-[11px] text-white/55">
+              <span>{{ annot.annotations.value.length }} symbol(er)</span>
+              <button v-if="annot.annotations.value.length"
+                      @click="annot.clearAll(); annot.persist()"
+                      class="ml-auto text-red-300 active:text-red-100">Slett alle</button>
+            </div>
+          </div>
+
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Eksport og print</div>
+          <div class="grid grid-cols-3 gap-2 mb-4">
+            <button @click="onExportSvg"
+                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                           text-[11px] active:scale-[0.98]">
+              .svg
+            </button>
+            <button @click="onExportPng"
+                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                           text-[11px] active:scale-[0.98]">
+              .png 300 dpi
+            </button>
+            <button @click="onPrint"
+                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                           text-[11px] active:scale-[0.98]">
+              Print / PDF
             </button>
           </div>
 

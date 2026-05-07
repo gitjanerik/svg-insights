@@ -10,6 +10,8 @@ import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.js'
+import { fetchDEM } from '../src/lib/demFetcher.js'
+import { wgs84ToUtm32 } from '../src/lib/utm.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -22,8 +24,19 @@ console.log(`Henter OSM for bbox: ${bbox.south.toFixed(4)}, ${bbox.west.toFixed(
 const data = await fetchOverpass(bbox)
 console.log(`Mottok ${data.elements.length} elementer fra Overpass`)
 
-const { svg, counts, meta } = buildSvg(data.elements, bbox)
+// DEM: syntetisk for Vardåsen til ekte DTM-tjeneste er konfigurert
+const sw = wgs84ToUtm32(bbox.south, bbox.west)
+const ne = wgs84ToUtm32(bbox.north, bbox.east)
+const utmBbox = {
+  minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
+  minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
+}
+const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 20, knownArea: 'vardasen' })
+console.log(`DEM: ${dem.cols} × ${dem.rows} (resolusjon ${dem.resolution} m)`)
+
+const { svg, counts, meta } = buildSvg(data.elements, bbox, { dem, contourIntervalM: 5 })
 console.log('Klassifisering:', counts)
+console.log(`Konturer: ekvidistanse ${meta.equidistance} m, høyde ${meta.elevationRange?.min}–${meta.elevationRange?.max} m`)
 
 const outDir = resolve(__dirname, '..', 'public', 'maps')
 mkdirSync(outDir, { recursive: true })

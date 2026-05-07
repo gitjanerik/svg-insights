@@ -2,11 +2,9 @@ name: Build map and deploy
 
 on:
   workflow_dispatch:
-  # NB: auto-trigger på push er midlertidig deaktivert mens v6.0
-  # bygges. Når v6.0 er klar, re-aktiver:
-  # push:
-  #   branches:
-  #     - claude/svg-map-investigation-kY7NE
+  push:
+    branches:
+      - claude/svg-map-investigation-kY7NE
 
 permissions:
   contents: write

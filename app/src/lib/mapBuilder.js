@@ -12,6 +12,9 @@ import {
   buildIsomCss,
   isomCatalog,
 } from './symbolizer.js'
+import { buildContours, detectKnauser, detectCliffs } from './dem.js'
+import { fetchDEM } from './demFetcher.js'
+import { polylineToPath } from './pathUtils.js'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -103,12 +106,23 @@ const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '50
  * @param {Array} elements   - Overpass-elementer
  * @param {Object} bbox      - { south, west, north, east } i WGS84
  * @param {Object} [options]
- * @param {number} [options.scaleDenom=10000]  - Print-skala (1:10 000 typisk for ISOM)
- * @param {boolean} [options.printSize=true]   - Sett width/height i mm for print
+ * @param {number} [options.scaleDenom=10000]
+ * @param {boolean} [options.printSize=true]
+ * @param {Object} [options.dem]               Pre-prosessert DEM (valgfritt)
+ * @param {number} [options.contourIntervalM=5]
+ * @param {boolean} [options.includeKnauser=true]
+ * @param {boolean} [options.includeCliffs=true]
  * @returns {{ svg: string, counts: object, meta: object }}
  */
 export function buildSvg(elements, bbox, options = {}) {
-  const { scaleDenom = 10000, printSize = true } = options
+  const {
+    scaleDenom = 10000,
+    printSize = true,
+    dem = null,
+    contourIntervalM = 5,
+    includeKnauser = true,
+    includeCliffs = true,
+  } = options
 
   const sw = wgs84ToUtm32(bbox.south, bbox.west)
   const ne = wgs84ToUtm32(bbox.north, bbox.east)
@@ -161,6 +175,15 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── DEM-deriverte features (konturer, knauser, stupkanter) ───────────
+  let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
+  if (dem) {
+    const c = buildContours(dem, contourIntervalM, 5)
+    const k = includeKnauser ? detectKnauser(dem, 5, 1.5) : []
+    const cl = includeCliffs ? detectCliffs(dem, 60, 5) : []
+    demFeatures = { contours: c, knauser: k, cliffs: cl, equidistanceM: contourIntervalM }
+  }
+
   // Bygg ISOM-defs (patterns + symbols) og CSS
   const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
   const isomCss = buildIsomCss(isomCatalog, patternIds)
@@ -208,14 +231,48 @@ export function buildSvg(elements, bbox, options = {}) {
     return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
   }
 
+  // ── Bygg kontur-, knaus- og cliff-lag fra DEM-features ───────────────
+  // DEM-koordinater er i meter relativ til UTM bbox sw-hjørne. Vi må
+  // y-flippe for SVG (y vokser nedover).
+  const demProject = ([x, y]) => [x, heightM - y]
+
+  const contourMinorPaths = []
+  const contourIndexPaths = []
+  const contourLabels = []
+  for (const f of demFeatures.contours.features) {
+    const projected = f.coordinates.map(demProject)
+    const d = polylineToPath(projected, true)
+    if (f.isIndex) {
+      contourIndexPaths.push(d)
+      // Legg på elevasjons-tall midt på kurven (forenklet — bare første punkt)
+      const mid = projected[Math.floor(projected.length / 2)]
+      contourLabels.push({ x: mid[0], y: mid[1], elev: Math.round(f.elevation) })
+    } else {
+      contourMinorPaths.push(d)
+    }
+  }
+
+  const knauserSvg = demFeatures.knauser.map(k => {
+    const [x, y] = demProject([k.x, k.y])
+    return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
+  }).join('\n')
+
+  const cliffsSvg = demFeatures.cliffs.map(c => {
+    const projected = c.coordinates.map(demProject)
+    return `    <path d="${polylineToPath(projected, false)}" />`
+  }).join('\n')
+
   const meta = {
     bbox,
     utmBbox: { minE, minN, maxE, maxN },
     widthM, heightM,
     scaleDenom,
-    equidistance: null,
+    equidistance: demFeatures.equidistanceM,
+    elevationRange: dem
+      ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
+      : null,
     isomVersion: '2017-2-derived',
-    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0',
+    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (dem ? ' + DEM-konturer' : ''),
     generated: new Date().toISOString(),
   }
 
@@ -231,12 +288,27 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const layers = LAYER_ORDER.map(layerSvg).join('') + labelSvg()
 
+  const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
+    ? `  <g data-layer="kontur" data-iso="101">\n    <path d="${contourMinorPaths.join(' ')}" />\n  </g>\n` +
+      `  <g data-layer="kontur" data-iso="102">\n    <path d="${contourIndexPaths.join(' ')}" />\n  </g>\n` +
+      (contourLabels.length
+        ? `  <g data-layer="kontur"><g data-label="kontur-tall">\n${contourLabels.slice(0, 80).map(l =>
+            `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n  </g></g>\n`
+        : '')
+    : ''
+
+  const knauserLayerSvg = knauserSvg
+    ? `  <g data-layer="stein" data-iso="213">\n${knauserSvg}\n  </g>\n` : ''
+
+  const cliffsLayerSvg = cliffsSvg
+    ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
   <defs>${isomDefs}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
-${layers}</svg>
+${layers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}</svg>
 `
 
   return { svg, counts, meta }
