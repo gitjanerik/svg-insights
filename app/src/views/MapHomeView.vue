@@ -7,7 +7,7 @@ const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
 const builtin = ref([
-  { id: 'vardasen', navn: 'Vardåsen i Asker', center: { lat: 59.835, lon: 10.4575 }, halfKm: 2, builtin: true },
+  { id: 'vardasen', navn: 'Vardåsen i Asker', center: { lat: 59.813746, lon: 10.414616 }, halfKm: 2.5, builtin: true },
 ])
 
 async function refresh() {

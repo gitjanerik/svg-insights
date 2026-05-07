@@ -13,8 +13,8 @@ import { fetchOverpass, buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.j
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-const CENTER = { lat: 59.835, lon: 10.4575 }
-const HALF_KM = 2
+const CENTER = { lat: 59.813746, lon: 10.414616 }
+const HALF_KM = 2.5
 const bbox = bboxFromCenter(CENTER.lat, CENTER.lon, HALF_KM)
 
 console.log(`Henter OSM for bbox: ${bbox.south.toFixed(4)}, ${bbox.west.toFixed(4)} → ${bbox.north.toFixed(4)}, ${bbox.east.toFixed(4)}`)

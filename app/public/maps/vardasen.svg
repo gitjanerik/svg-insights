@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3931.07 4100.93" data-meta='{"bbox":{"south":59.81698198198198,"north":59.85301801801802,"west":10.42164266953946,"east":10.493357330460539},"utmBbox":{"minE":579729.4562989342,"minN":6631884.2762766415,"maxE":583660.5241177063,"maxN":6635985.201496337},"widthM":3931.067818772164,"heightM":4100.925219695084,"equidistance":null,"source":"Stub — venter på CI-generert OSM-data","generated":"2026-05-07T04:16:24.029Z"}'>
-  <style>svg { background: var(--bg, #f4ecd8); font-family: ui-sans-serif, system-ui, sans-serif; } [data-layer] path { vector-effect: non-scaling-stroke; } [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.8; } [data-symbol="peak"] { fill: var(--peak, #6b3a1e); } [data-label] { font-size: 14px; fill: var(--label, #2a2a2a); paint-order: stroke; stroke: var(--bg, #f4ecd8); stroke-width: 3; stroke-linejoin: round; } [data-label="peak"] { font-weight: 600; } .stub-msg { font-size: 80px; font-weight: 600; fill: var(--label, #6b3a1e); text-anchor: middle; opacity: 0.4; } .stub-sub { font-size: 50px; fill: var(--label, #6b3a1e); text-anchor: middle; opacity: 0.3; }</style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4917.15 5122.91" data-meta='{"bbox":{"south":59.79122347747748,"north":59.83626852252252,"west":10.369822923306415,"east":10.459409076693586},"utmBbox":{"minE":576882.8265180711,"minN":6628954.897738419,"maxE":581799.9733845863,"maxN":6634077.809742244},"widthM":4917.146866515162,"heightM":5122.912003825419,"equidistance":null,"source":"Stub — venter på CI-generert OSM-data","generated":"2026-05-07T05:35:27.827Z"}'>
+  <style>svg { background: var(--bg, #f4ecd8); font-family: ui-sans-serif, system-ui, sans-serif; } [data-layer] path { vector-effect: non-scaling-stroke; } [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.4; } [data-symbol="peak"] { fill: var(--peak, #6b3a1e); } [data-label] { font-size: 14px; fill: var(--label, #2a2a2a); paint-order: stroke; stroke: var(--bg, #f4ecd8); stroke-width: 3; stroke-linejoin: round; } [data-label="peak"] { font-weight: 600; } .stub-msg { font-size: 80px; font-weight: 600; fill: var(--label, #6b3a1e); text-anchor: middle; opacity: 0.4; } .stub-sub { font-size: 50px; fill: var(--label, #6b3a1e); text-anchor: middle; opacity: 0.3; }</style>
   <g data-layer="skog"></g>
   <g data-layer="eng"></g>
   <g data-layer="aker"></g>
@@ -12,14 +12,14 @@
   <g data-layer="vei-stor"></g>
   <g data-layer="sti"></g>
   <g data-layer="navn">
-    <g transform="translate(1967,2051)">
+    <g transform="translate(2460,2562)">
       <circle r="3" data-symbol="peak"/>
       <text x="6" y="2" data-label="peak">Vardåsen 349</text>
     </g>
   </g>
   <g pointer-events="none">
-    <text x="1966" y="1950" class="stub-msg">Kart genereres av CI</text>
-    <text x="1966" y="2100" class="stub-sub">Trigge "Build map and deploy" i GitHub Actions</text>
-    <text x="1966" y="2180" class="stub-sub">eller vent på neste push til feature-branchen</text>
+    <text x="2459" y="2461" class="stub-msg">Kart genereres av CI</text>
+    <text x="2459" y="2611" class="stub-sub">Trigge "Build map and deploy" i GitHub Actions</text>
+    <text x="2459" y="2691" class="stub-sub">eller vent på neste push til feature-branchen</text>
   </g>
 </svg>

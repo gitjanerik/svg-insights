@@ -9,8 +9,8 @@ import { wgs84ToUtm32 } from '../src/lib/utm.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const CENTER = { lat: 59.835, lon: 10.4575 };
-const HALF_KM = 2;
+const CENTER = { lat: 59.813746, lon: 10.414616 };
+const HALF_KM = 2.5;
 const dLat = HALF_KM / 111;
 const dLon = HALF_KM / (111 * Math.cos(CENTER.lat * Math.PI / 180));
 const BBOX = {
