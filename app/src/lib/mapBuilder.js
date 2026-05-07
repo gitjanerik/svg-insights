@@ -444,40 +444,62 @@ export function buildSvg(elements, bbox, options = {}) {
 
     if (POLYGON_CODES.has(code)) {
       const filter = POLYGON_FILTER[cat] ?? { simplifyM: 0, minAreaM2: 0 }
-      const paths = els.map(el => {
-        // merged-water: allerede projisert MultiPolygon fra unionByName.
-        // Polygon-clipping kan introdusere intermediate-punkter ved
-        // intersections; DP-forenkling rydder opp uten å skade form.
+      // Hver feature får sin egen <path> så overlappende polygoner ikke
+      // kanselleres av evenodd. Holes inni en relation/multipolygon
+      // hånderes fortsatt med evenodd internt i samme path.
+      const pathElements = []
+      for (const el of els) {
+        let d = ''
+        let src = el._source ?? (el._mergedRings ? 'merged' : el.type)
+        const name = el.tags?.name ?? el.tags?.navn ?? ''
         if (el.type === 'merged-water' && el._mergedRings) {
-          const subpaths = []
-          for (const polygon of el._mergedRings) {
+          // polygon-clipping output: én <path> per topologisk polygon
+          // (outer + dens hull), så holes virker via evenodd uten at
+          // separate polygoner kanselleres mot hverandre.
+          for (let pi = 0; pi < el._mergedRings.length; pi++) {
+            const polygon = el._mergedRings[pi]
+            const ringPaths = []
             for (let ring of polygon) {
               if (ring.length < 3) continue
               if (filter.simplifyM > 0 && ring.length > 3) {
                 ring = simplifyDP(ring, filter.simplifyM)
                 if (ring.length < 3) continue
               }
-              let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-              for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-              d += 'Z'
-              subpaths.push(d)
+              let rd = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+              for (let i = 1; i < ring.length; i++) rd += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+              rd += 'Z'
+              ringPaths.push(rd)
+            }
+            if (ringPaths.length > 0) {
+              pathElements.push(
+                `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd" data-src="merged" data-name="${xmlEscape(name)}"/>`
+              )
             }
           }
-          return subpaths.join(' ')
+          continue
         }
         if (el.type === 'way' && el.geometry) {
-          if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) return ''
-          return pathFromGeometry(el.geometry, true, filter.simplifyM)
-        }
-        if (el.type === 'relation' && el.members) {
-          return el.members
+          if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) continue
+          d = pathFromGeometry(el.geometry, true, filter.simplifyM)
+        } else if (el.type === 'relation' && el.members) {
+          // Relation med outer + inner medlemmer: rendres som én path med
+          // evenodd så holes virker. Antakelse: outer-rings i samme
+          // relation overlapper ikke (ellers OSM data-feil).
+          d = el.members
             .filter(m => m.type === 'way' && m.geometry && (m.role === 'outer' || m.role === 'inner'))
             .map(m => pathFromGeometry(m.geometry, true, filter.simplifyM))
             .join(' ')
         }
-        return ''
-      }).filter(Boolean)
-      return `  <g data-layer="${cat}" data-iso="${code}"><path d="${paths.join(' ')}" fill-rule="evenodd"/></g>\n`
+        if (d) {
+          pathElements.push(
+            `    <path d="${d}" fill-rule="evenodd" data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+          )
+        }
+      }
+      if (pathElements.length === 0) {
+        return `  <g data-layer="${cat}" data-iso="${code}"></g>\n`
+      }
+      return `  <g data-layer="${cat}" data-iso="${code}">\n${pathElements.join('\n')}\n  </g>\n`
     }
     if (LINE_CODES.has(code)) {
       const tol = LINE_SIMPLIFY[cat] ?? 0

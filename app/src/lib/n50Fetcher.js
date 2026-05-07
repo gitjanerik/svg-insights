@@ -180,6 +180,7 @@ function geojsonToWays(feat, mapping) {
       id: baseId,
       geometry: g.coordinates.map(([lon, lat]) => ({ lat, lon })),
       tags,
+      _source: 'n50',
     })
   } else if (g.type === 'MultiLineString') {
     for (let i = 0; i < g.coordinates.length; i++) {
@@ -190,6 +191,7 @@ function geojsonToWays(feat, mapping) {
         id: `${baseId}-${i}`,
         geometry: line.map(([lon, lat]) => ({ lat, lon })),
         tags,
+        _source: 'n50',
       })
     }
   } else if (g.type === 'Polygon' && g.coordinates[0]?.length >= 3) {
@@ -198,6 +200,7 @@ function geojsonToWays(feat, mapping) {
       id: baseId,
       geometry: g.coordinates[0].map(([lon, lat]) => ({ lat, lon })),
       tags,
+      _source: 'n50',
     })
   } else if (g.type === 'MultiPolygon') {
     for (let i = 0; i < g.coordinates.length; i++) {
@@ -208,6 +211,7 @@ function geojsonToWays(feat, mapping) {
         id: `${baseId}-${i}`,
         geometry: poly[0].map(([lon, lat]) => ({ lat, lon })),
         tags,
+        _source: 'n50',
       })
     }
   } else if (g.type === 'Point') {

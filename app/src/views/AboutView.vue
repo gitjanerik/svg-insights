@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.8.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.8.2</span>
+                <span class="text-white/40">&mdash; Per-feature path (ingen evenodd cross-cancellation) + data-src diagnose</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Wedger fortsatt etter v6.8.1. Dypere analyse: ALLE polygon-features i én kategori ble samlet i én <code>&lt;path d="A B C"&gt;</code> med <code>fill-rule="evenodd"</code>. Hvis to features overlappet selv minimalt (e.g. floating-point ved felles grense), ble overlappet KANSELLERT av evenodd → wedge-formede hull</li>
+                <li>Fix: hver feature får nå sin egen <code>&lt;path&gt;</code>. Holes inni én relation/multipolygon hånderes fortsatt med evenodd internt, men separate features kan ikke lenger interferere med hverandre</li>
+                <li>Diagnostikk: hver path har nå <code>data-src</code> (n50/way/relation/merged) og <code>data-name</code> (lake name). Inspiser en wedge i DevTools for å se nøyaktig hvor den kom fra</li>
+                <li>Hvis wedger fortsatt persisterer etter v6.8.2: open DevTools → klikk på wedge → sjekk data-src og data-name → del med Claude</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.8.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.8.1</span>
                 <span class="text-white/40">&mdash; Wedge-bug rotårsak: polygon-clipping CCW-orientering + MultiPolygon-flatten</span>
