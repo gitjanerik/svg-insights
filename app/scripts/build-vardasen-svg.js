@@ -54,3 +54,4 @@ const outPath = resolve(outDir, 'vardasen.svg')
 writeFileSync(outPath, svg)
 console.log(`Skrev ${outPath} (${(svg.length / 1024).toFixed(1)} KB)`)
 console.log(`Kart-størrelse: ${meta.widthM.toFixed(0)} × ${meta.heightM.toFixed(0)} m`)
+// Force fresh build 1778174983
