@@ -1,20 +1,43 @@
 // DEM-data-henting. Strategi:
-//  1. Forsøk Kartverket WCS (Web Coverage Service) — leverer GeoTIFF
-//     med ekte float-høyder for et bbox. Krever serverside / CI fordi
-//     CORS er ikke garantert.
-//  2. Fall tilbake til syntetisk DEM kalibrert for kjente områder
-//     (Vardåsen) hvis ekte data ikke er tilgjengelig.
+//  1. Forsøk Kartverket WCS i sekvens (vi prøver flere endpoints fordi
+//     coverage-navn har endret seg over tid og er forskjellig pr UTM-sone).
+//  2. Fall tilbake til syntetisk DEM kalibrert for kjente områder.
 //
-// WCS-endepunkt: https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm
-// Krever EPSG:25832 (UTM 32N) for sør-Norge, 25833 for nord.
+// Aktuelle Kartverket-WCS-coverages (basert på Geonorge metadata):
+//   wcs.hoyde-dtm-nhm-25832  COVERAGE=NHM_DTM_25832  (UTM 32 — sør-Norge)
+//   wcs.hoyde-dtm-nhm-25833  COVERAGE=NHM_DTM_25833  (UTM 33 — hele Norge)
+//   wms.hoyde-dom10_33       COVERAGE=hoyde_dom10_33 (alternativ DOM 10m UTM 33)
+// WCS-server støtter i prinsippet reprojeksjon mellom 25832 og 25833 via
+// RESPONSE_CRS-parameteren, så vi kan spørre 33-tjenesten med 32-bbox.
 
 import { syntheticDEM } from './dem.js'
 
-const KARTVERKET_WCS = 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm'
+const WCS_ENDPOINTS = [
+  // UTM 32 native — passer best for sør-Norge (Vardåsen, Oslo, Bergen)
+  {
+    url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-nhm-25832',
+    coverage: 'NHM_DTM_25832',
+    bboxCrs: 'EPSG:25832',
+    name: 'NHM_DTM_25832 (UTM 32 native)',
+  },
+  // UTM 33 med 32-reprojeksjon
+  {
+    url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-nhm-25833',
+    coverage: 'NHM_DTM_25833',
+    bboxCrs: 'EPSG:25832',
+    responseCrs: 'EPSG:25832',
+    name: 'NHM_DTM_25833 (UTM 33 reprojisert til 32)',
+  },
+  // Alternativ DOM 10 — overflate-modell, men bedre enn ingenting
+  {
+    url: 'https://wms.geonorge.no/skwms1/wcs.hoyde-dom10_33',
+    coverage: 'hoyde_dom10_33',
+    bboxCrs: 'EPSG:25832',
+    responseCrs: 'EPSG:25832',
+    name: 'hoyde_dom10_33 (UTM 33 DOM 10m)',
+  },
+]
 
-/**
- * Kalibrert kjent-områder med Gaussian-modeller (fallback).
- */
 const KNOWN_AREAS = {
   vardasen: {
     description: 'Vardåsen i Asker (1 topp 349 m)',
@@ -28,31 +51,28 @@ const KNOWN_AREAS = {
 }
 
 /**
- * Hent DEM for et bbox. Forsøker først ekte WCS, fallback til syntetisk.
- *
- * @param {{ south:number, west:number, north:number, east:number }} bbox  WGS84
- * @param {{ minE:number, minN:number, maxE:number, maxN:number }} utmBbox  EPSG:25832
- * @param {object} options
- * @param {number} [options.resolutionM=10]
- * @param {string} [options.knownArea]
- * @param {boolean} [options.useReal=true]      Forsøk ekte data først
- * @param {AbortSignal} [options.signal]
- * @returns {Promise<DEM>}
+ * Hent DEM. Forsøker ekte WCS i sekvens, fallback til syntetisk.
+ * @returns {Promise<DEM & { source: string }>}
  */
 export async function fetchDEM(bbox, utmBbox, options = {}) {
   const { resolutionM = 10, knownArea, useReal = true, signal } = options
 
   if (useReal) {
-    try {
-      const dem = await fetchWCSDtm(utmBbox, resolutionM, { signal })
-      console.log(`Hentet ekte DTM: ${dem.cols}×${dem.rows} celler, oppløsning ${dem.resolution} m`)
-      return dem
-    } catch (e) {
-      console.warn('Kartverket WCS ikke tilgjengelig — bruker syntetisk:', e.message)
+    for (const ep of WCS_ENDPOINTS) {
+      try {
+        console.log(`[DEM] Forsøker ${ep.name} ...`)
+        const dem = await fetchWCSDtm(utmBbox, resolutionM, ep, { signal })
+        console.log(`[DEM] ✓ Hentet ${dem.cols}×${dem.rows} celler @ ${dem.resolution.toFixed(1)}m fra ${ep.name}`)
+        return { ...dem, source: ep.name }
+      } catch (e) {
+        console.warn(`[DEM] ✗ ${ep.name} feilet: ${e.message}`)
+      }
     }
+    console.warn('[DEM] Alle WCS-endpoints feilet — fallback til syntetisk')
   }
 
-  return buildSyntheticDEM(utmBbox, resolutionM, knownArea)
+  const dem = buildSyntheticDEM(utmBbox, resolutionM, knownArea)
+  return { ...dem, source: `synthetic (${knownArea ?? 'generic'})` }
 }
 
 function buildSyntheticDEM(utmBbox, resolutionM, knownArea) {
@@ -76,63 +96,65 @@ function buildSyntheticDEM(utmBbox, resolutionM, knownArea) {
 }
 
 /**
- * Hent ekte DTM fra Kartverket WCS som GeoTIFF og parse til Float32Array.
- * Krever at `geotiff` er tilgjengelig.
- *
- * @param {{minE,minN,maxE,maxN}} utmBbox
+ * Spør én WCS-endpoint om GeoTIFF og parse til DEM.
+ * @param {{minE,minN,maxE,maxN}} utmBbox  i EPSG:25832
  * @param {number} resolutionM
- * @param {{ signal?: AbortSignal }} opts
- * @returns {Promise<DEM>}
+ * @param {{ url, coverage, bboxCrs, responseCrs?, name }} ep
+ * @param {{ signal? }} opts
  */
-export async function fetchWCSDtm(utmBbox, resolutionM = 10, opts = {}) {
+export async function fetchWCSDtm(utmBbox, resolutionM, ep, opts = {}) {
   const widthM = utmBbox.maxE - utmBbox.minE
   const heightM = utmBbox.maxN - utmBbox.minN
   const widthPx = Math.round(widthM / resolutionM)
   const heightPx = Math.round(heightM / resolutionM)
 
-  // WCS 1.0.0 GetCoverage. SUBSET er bbox i CRS-orden (E, N).
   const params = new URLSearchParams({
     SERVICE: 'WCS',
     VERSION: '1.0.0',
     REQUEST: 'GetCoverage',
-    COVERAGE: 'land_utm33_10m',  // dekker Norge i UTM 33; vi reprojekterer ved spørring
-    CRS: 'EPSG:25832',
+    COVERAGE: ep.coverage,
+    CRS: ep.bboxCrs,
     BBOX: `${utmBbox.minE},${utmBbox.minN},${utmBbox.maxE},${utmBbox.maxN}`,
-    RESPONSE_CRS: 'EPSG:25832',
     FORMAT: 'GeoTIFF',
     WIDTH: String(widthPx),
     HEIGHT: String(heightPx),
   })
+  if (ep.responseCrs) params.set('RESPONSE_CRS', ep.responseCrs)
 
-  const url = `${KARTVERKET_WCS}?${params}`
+  const url = `${ep.url}?${params}`
   const res = await fetch(url, { signal: opts.signal })
-  if (!res.ok) throw new Error(`WCS HTTP ${res.status}`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status} ${text.slice(0, 100)}`)
+  }
+  const ct = res.headers.get('content-type') ?? ''
+  if (ct.includes('xml') || ct.includes('html')) {
+    const text = await res.text()
+    throw new Error(`forventet GeoTIFF, fikk ${ct}: ${text.slice(0, 200)}`)
+  }
   const arrayBuffer = await res.arrayBuffer()
+  if (arrayBuffer.byteLength < 1000) {
+    throw new Error(`for liten respons (${arrayBuffer.byteLength} bytes)`)
+  }
 
-  // Parse GeoTIFF
   const { fromArrayBuffer } = await import('geotiff')
   const tiff = await fromArrayBuffer(arrayBuffer)
   const image = await tiff.getImage()
   const rasters = await image.readRasters()
-  const rawData = rasters[0]   // single-band float32
+  const rawData = rasters[0]
+  const data = rawData instanceof Float32Array ? rawData : Float32Array.from(rawData)
 
-  // Konverter til Float32Array hvis ikke allerede
-  const data = rawData instanceof Float32Array ? rawData : new Float32Array(rawData)
-
-  // GeoTIFF har sin egen transform — men vi lar grid-koord matche bbox-relativ
   const cols = image.getWidth()
   const rows = image.getHeight()
   const transform = {
-    originX: 0,
-    originY: 0,
+    originX: 0, originY: 0,
     pixelWidth: widthM / cols,
     pixelHeight: heightM / rows,
   }
 
-  // Erstatt nodata-verdier (typisk -9999 fra Kartverket)
-  let noData = -9999
+  const noData = -9999
   for (let i = 0; i < data.length; i++) {
-    if (data[i] < -1000) data[i] = noData
+    if (data[i] < -1000 || !Number.isFinite(data[i])) data[i] = noData
   }
 
   return {

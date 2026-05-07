@@ -293,8 +293,9 @@ export function buildSvg(elements, bbox, options = {}) {
     elevationRange: dem
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
+    demSource: dem?.source ?? null,
     isomVersion: '2017-2-derived',
-    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (dem ? ' + DEM-konturer' : ''),
+    source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.0' + (dem ? ` + DEM (${dem.source ?? 'unknown'})` : ''),
     generated: new Date().toISOString(),
   }
 

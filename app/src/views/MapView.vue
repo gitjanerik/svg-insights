@@ -195,6 +195,7 @@ async function loadMap() {
       isomVersion: m.isomVersion ?? null,
       scaleDenom: m.scaleDenom ?? 10000,
       source: m.source,
+      demSource: m.demSource ?? null,
     }
     setupHostSvg(root)
     loading.value = false
@@ -506,7 +507,8 @@ onMounted(() => {
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[160px]">
       © OpenStreetMap-bidragsytere<br>
-      <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span>
+      <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
+      <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
     </div>
 
     <!-- Kontrollpanel (drawer) -->
