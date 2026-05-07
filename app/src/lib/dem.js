@@ -94,14 +94,16 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
       // Vi vil ha alle ringer som linjer (kontur er jo linje uansett)
       for (const ring of poly) {
         const worldRing = ring.map(p => gridToWorld(p, transform))
-        // Filtrer ut korte/triviell konturer. Min-lengde er 8× ekvidistanse
-        // for å unngå støy og bittesmå indre ringer som ikke gir kart-verdi.
-        if (polylineLength(worldRing) < intervalM * 8) continue
-        // Aggressiv simplification (DP toleranse 5m) — vi vil ha pene linjer
-        const simplified = simplifyDP(worldRing, 5.0)
+        // Min-lengde 4× ekvidistanse for å beholde lokale konturer i bratte
+        // områder (stupkant-soner) og rundt små topper, men fortsatt fjerne
+        // ren støy.
+        if (polylineLength(worldRing) < intervalM * 4) continue
+        // Mildere simplification (2.5m → 1.0m) bevarer nyanser i tette
+        // kontur-regioner (bratte sider) uten å overdrive antall punkter.
+        const simplified = simplifyDP(worldRing, 2.5)
         const smoothed = chaikin(simplified, 2, true)
-        const final = simplifyDP(smoothed, 2.5)
-        if (final.length < 5) continue
+        const final = simplifyDP(smoothed, 1.0)
+        if (final.length < 4) continue
         features.push({
           type: 'contour',
           isomCode: isIndex ? '102' : '101',
