@@ -186,15 +186,18 @@ export function pathAttrsForIsomCode(code, catalog = isomCatalogDefault, pattern
   return { fill, stroke }
 }
 
-/** Inline CSS for en kategori-stil (alternativ til per-element attribs) */
+/** Inline CSS for en kategori-stil. Alle regler er prefikset med
+ * `.isom-map` slik at stilene ikke lekker til andre SVG-er på siden
+ * (f.eks. ikoner i toppbar-knapper). */
 export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   const rules = []
-  rules.push(`svg { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
-  rules.push(`[data-layer] path { vector-effect: non-scaling-stroke; }`)
+  const root = `.isom-map`
+  rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
+  rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
 
   for (const cat of ['terrain', 'water', 'rock', 'contour', 'manmade']) {
     for (const [code, def] of Object.entries(catalog.categories[cat])) {
-      const sel = `[data-iso="${code}"]`
+      const sel = `${root} [data-iso="${code}"]`
       const props = []
       if (def.fill) {
         if (def.fill.type === 'pattern' && def.fill.pattern) {
@@ -217,9 +220,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
 
   // Etiketter
   const lab = catalog.labels
-  rules.push(`[data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
-  rules.push(`[data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; }`)
-  rules.push(`[data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
+  rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; }`)
+  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
 
   return rules.join(' ')
 }

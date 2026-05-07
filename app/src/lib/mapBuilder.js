@@ -231,6 +231,28 @@ export function buildSvg(elements, bbox, options = {}) {
     return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
   }
 
+  // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
+  // kontur-laget kun rendres der det er land. Konturer som "krysser"
+  // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
+  const waterPaths = []
+  for (const code of ['301', '302', '308', '309']) {
+    for (const el of buckets[code] ?? []) {
+      if (el.type === 'way' && el.geometry) {
+        waterPaths.push(pathFromGeometry(el.geometry, true))
+      } else if (el.type === 'relation' && el.members) {
+        for (const m of el.members) {
+          if (m.type === 'way' && m.geometry) {
+            waterPaths.push(pathFromGeometry(m.geometry, true))
+          }
+        }
+      }
+    }
+  }
+  const landMaskSvg = waterPaths.length
+    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
+    : ''
+  const contourMaskAttr = waterPaths.length ? ' mask="url(#land-mask)"' : ''
+
   // ── Bygg kontur-, knaus- og cliff-lag fra DEM-features ───────────────
   // DEM-koordinater er i meter relativ til UTM bbox sw-hjørne. Vi må
   // y-flippe for SVG (y vokser nedover).
@@ -289,12 +311,14 @@ export function buildSvg(elements, bbox, options = {}) {
   const layers = LAYER_ORDER.map(layerSvg).join('') + labelSvg()
 
   const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
-    ? `  <g data-layer="kontur" data-iso="101">\n    <path d="${contourMinorPaths.join(' ')}" />\n  </g>\n` +
-      `  <g data-layer="kontur" data-iso="102">\n    <path d="${contourIndexPaths.join(' ')}" />\n  </g>\n` +
+    ? `  <g data-layer="kontur"${contourMaskAttr}>\n` +
+      `    <g data-iso="101"><path d="${contourMinorPaths.join(' ')}" /></g>\n` +
+      `    <g data-iso="102"><path d="${contourIndexPaths.join(' ')}" /></g>\n` +
       (contourLabels.length
-        ? `  <g data-layer="kontur"><g data-label="kontur-tall">\n${contourLabels.slice(0, 80).map(l =>
-            `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n  </g></g>\n`
-        : '')
+        ? `    <g data-label="kontur-tall">\n${contourLabels.slice(0, 80).map(l =>
+            `      <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n    </g>\n`
+        : '') +
+      `  </g>\n`
     : ''
 
   const knauserLayerSvg = knauserSvg
@@ -304,8 +328,8 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
-  <defs>${isomDefs}</defs>
+<svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
+  <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${isomCatalog.background.color}"/></g>
 ${layers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}</svg>

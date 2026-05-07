@@ -58,7 +58,7 @@ function gridToWorld([col, row], t) {
  *   maxElevM: number
  * }}
  */
-export function buildContours(dem, intervalM = 5, indexEvery = 5) {
+export function buildContours(dem, intervalM = 50, indexEvery = 2) {
   const { data, cols, rows, transform, noData } = dem
 
   // Finn min/max

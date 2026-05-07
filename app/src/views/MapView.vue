@@ -32,7 +32,7 @@ const LAYERS = [
   { key: 'myr',        label: 'Myr' },
   { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk' },
-  { key: 'kontur',     label: 'Konturer' },
+  { key: 'kontur',     label: 'Høydekurver' },
   { key: 'bygning',    label: 'Bygninger' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
@@ -217,6 +217,7 @@ function setupHostSvg(sourceRoot) {
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', sourceRoot.getAttribute('viewBox'))
   svg.setAttribute('xmlns', ns)
+  svg.setAttribute('class', 'isom-map')
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
@@ -285,8 +286,8 @@ function updateUserDot() {
 const equidistanceLabel = computed(() => {
   if (!meta.value) return ''
   const eq = meta.value.equidistance
-  if (eq) return `Ekvidistanse ${eq} m`
-  return 'Konturer kommer i fase 2 (DTM)'
+  if (eq) return `Høydekurver pr ${eq} m`
+  return 'Høydekurver ikke tilgjengelig'
 })
 
 const wrapperSize = ref({ w: 0, h: 0 })

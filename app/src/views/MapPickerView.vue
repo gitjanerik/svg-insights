@@ -63,7 +63,7 @@ async function generateMap() {
 
     // 3. Bygg SVG med konturer
     const { svg, counts, meta } = buildSvg(elements, bbox.value, {
-      dem, contourIntervalM: 5, scaleDenom: 10000,
+      dem, contourIntervalM: 50, scaleDenom: 10000,
     })
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'
