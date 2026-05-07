@@ -663,17 +663,53 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
-  // Bakgrunn: hvis vi er på et kystkart, brukes saltvann-blå (303-fyll)
-  // som heldekkende bakgrunn. Land-maske rendres på toppen i kremgul
-  // (ISOM-bakgrunnsfarge) for å maskere ut landområdene. Innenlands-kart
-  // beholder original kremgul som før.
+  // Bakgrunn: alltid kremgul (land) som default. Hvis kystlinje finnes,
+  // beregner vi SJØ-polygon = bbox MINUS land via polygon-clipping
+  // difference, og legger som blå overlay over land-bakgrunnen.
+  //
+  // Hvorfor: hvis land-polygoniseringen er ufullstendig (f.eks. fastland
+  // som ikke berører bbox-kanten korrekt, eller orphaned coastline-ways
+  // i innlandet), forblir den ukoverte delen av bbox kremgul (land) i
+  // stedet for å lekke blå gjennom som "falsk sjø". Land som default
+  // er en sikrere standard for mest innenlandske områder i Norge.
   const seaFill = isomCatalog.categories.water['303']?.fill?.color ?? '#6fb6da'
   const landFill = isomCatalog.background.color
-  const bgFill = isCoastalMap ? seaFill : landFill
-  const landMaskPaths = landRings.map(r => ringToPath(r, fmt))
-  const landMaskLayerSvg = isCoastalMap
-    ? `  <g data-layer="land" data-iso="land-maske"><path d="${landMaskPaths.join(' ')}" fill="${landFill}"/></g>\n`
+  const bgFill = landFill
+
+  let seaPathD = ''
+  if (isCoastalMap) {
+    try {
+      const bboxRing = [[0, 0], [widthM, 0], [widthM, heightM], [0, heightM], [0, 0]]
+      const bboxMultiPoly = [[bboxRing]]
+      const landMultiPoly = landRings.map(ring => {
+        const closed = ring.slice()
+        if (closed.length > 0) {
+          const f = closed[0], l = closed[closed.length - 1]
+          if (f[0] !== l[0] || f[1] !== l[1]) closed.push([f[0], f[1]])
+        }
+        return [closed]
+      })
+      const seaMulti = polygonClipping.difference(bboxMultiPoly, landMultiPoly)
+      const subpaths = []
+      for (const polygon of seaMulti) {
+        for (const ring of polygon) {
+          if (ring.length < 3) continue
+          let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+          for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+          d += 'Z'
+          subpaths.push(d)
+        }
+      }
+      seaPathD = subpaths.join(' ')
+    } catch (e) {
+      console.warn(`[Sjø-overlay] beregning feilet: ${e.message}`)
+    }
+  }
+
+  const seaOverlayLayerSvg = seaPathD
+    ? `  <g data-layer="sjo" data-iso="sjo-overlay"><path d="${seaPathD}" fill="${seaFill}" fill-rule="evenodd"/></g>\n`
     : ''
+
   // Tegn kystlinjen tynt i 303-stroke for tydelig kant
   const coastStrokeColor = isomCatalog.categories.water['303']?.stroke?.color ?? '#1f7aa3'
   const coastlineSvg = isCoastalMap
@@ -699,7 +735,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskLayerSvg}${coastlineLayerSvg}${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${seaOverlayLayerSvg}${coastlineLayerSvg}${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
