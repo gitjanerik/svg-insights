@@ -1,9 +1,10 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
+import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
 
 const router = useRouter()
 
@@ -71,10 +72,35 @@ async function generateMap() {
   }
 }
 
-// ── Mini-preview SVG av valgt utsnitt ─────────────────────────────────────
-// Bruker en latitude-aware kvadrat-form som visualiserer hva brukeren har
-// valgt. Pinch-zoom her endrer halfKm i stedet for visuell skala.
+// ── Preview med ekte Kartverket-tiler som bakgrunn ─────────────────────────
 const previewRef = ref(null)
+const previewSize = ref({ w: 0, h: 0 })
+const previewZoom = computed(() => zoomForKm(halfKm.value * 2 + 2))
+
+function measurePreview() {
+  const r = previewRef.value?.getBoundingClientRect()
+  if (r) previewSize.value = { w: r.width, h: r.height }
+}
+
+const tiles = computed(() => {
+  if (!previewSize.value.w) return []
+  return tileMosaic(
+    center.value.lat, center.value.lon,
+    previewZoom.value, previewSize.value
+  )
+})
+
+// Pixel-størrelse av bbox-overlegget innen preview-en
+const bboxOverlayPx = computed(() => {
+  if (!previewSize.value.w) return { w: 0, h: 0 }
+  const mPerPx = metersPerPixel(center.value.lat, previewZoom.value)
+  const sizeM = halfKm.value * 2 * 1000
+  return {
+    w: sizeM / mPerPx,
+    h: sizeM / mPerPx,
+  }
+})
+
 let lastDist = 0
 let pinching = false
 
@@ -90,7 +116,6 @@ function onPreviewTouchMove(e) {
   e.preventDefault()
   const d = touchDist(e)
   const ratio = d / lastDist
-  // Pinche ut → zoom ut → større halvkm; pinche inn → mindre område
   const next = halfKm.value / ratio
   halfKm.value = Math.max(0.5, Math.min(5, next))
   lastDist = d
@@ -103,6 +128,11 @@ function touchDist(e) {
   const dy = e.touches[0].clientY - e.touches[1].clientY
   return Math.sqrt(dx * dx + dy * dy)
 }
+
+onMounted(() => {
+  nextTick(() => measurePreview())
+  window.addEventListener('resize', measurePreview)
+})
 </script>
 
 <template>
@@ -183,33 +213,44 @@ function touchDist(e) {
         Forhåndsvisning — pinch for å justere størrelse
       </div>
       <div ref="previewRef"
-           class="flex-1 min-h-[200px] rounded-xl bg-stone-200 border border-white/10 overflow-hidden
+           class="flex-1 min-h-[220px] rounded-xl bg-stone-200 border border-white/10 overflow-hidden
                   relative touch-none"
            @touchstart="onPreviewTouchStart"
            @touchmove="onPreviewTouchMove"
            @touchend="onPreviewTouchEnd"
            @touchcancel="onPreviewTouchEnd">
-        <!-- Stilisert turkart-preview: lyse "land", litt grønn rundt, en blå strek for elv -->
-        <svg viewBox="-50 -50 100 100" class="absolute inset-0 w-full h-full"
-             preserveAspectRatio="xMidYMid meet">
-          <!-- Skog rundt -->
-          <rect x="-50" y="-50" width="100" height="100" fill="#cde3b8"/>
-          <!-- Et åpent felt -->
-          <ellipse cx="0" cy="-10" rx="35" ry="20" fill="#e8edc4"/>
-          <!-- Vannflate -->
-          <path d="M-20,15 Q-10,5 -5,15 Q5,25 15,18 Q25,10 20,25 Z" fill="#a8d4e8" stroke="#4a9bbf" stroke-width="0.4"/>
-          <!-- Bbox-overlegg som viser valgt utsnitt -->
-          <g :style="{ transform: `scale(${1 / Math.max(halfKm, 0.5)})`, transformOrigin: '0 0', transition: 'transform 200ms' }">
-            <rect x="-50" y="-50" width="100" height="100" fill="none"
-                  stroke="#a78bfa" stroke-width="2" stroke-dasharray="3 2"/>
-            <line x1="-3" y1="0" x2="3" y2="0" stroke="#a78bfa" stroke-width="1.5"/>
-            <line x1="0" y1="-3" x2="0" y2="3" stroke="#a78bfa" stroke-width="1.5"/>
-          </g>
-        </svg>
+        <!-- Ekte Kartverket-tiler som bakgrunn -->
+        <img v-for="t in tiles" :key="t.url"
+             :src="t.url" alt=""
+             class="absolute pointer-events-none select-none"
+             :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
+             draggable="false" />
 
-        <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-zinc-900/85 text-[11px]
-                    text-white/90 backdrop-blur border border-white/15 font-medium">
+        <!-- Bbox-overlegg sentrert -->
+        <div class="absolute pointer-events-none border-2 border-violet-400
+                    rounded-sm shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+             :style="{
+               width:  bboxOverlayPx.w + 'px',
+               height: bboxOverlayPx.h + 'px',
+               left:   (previewSize.w - bboxOverlayPx.w) / 2 + 'px',
+               top:    (previewSize.h - bboxOverlayPx.h) / 2 + 'px',
+               transition: 'all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+             }">
+          <div class="absolute inset-0 border border-violet-300/60 rounded-sm pointer-events-none"></div>
+          <!-- Senter-kryss -->
+          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4">
+            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-violet-300 -translate-y-1/2"></div>
+            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-violet-300 -translate-x-1/2"></div>
+          </div>
+        </div>
+
+        <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-zinc-900 text-[11px]
+                    text-white border border-white/30 font-medium shadow-lg z-10">
           {{ sizeKm }} × {{ sizeKm }} km
+        </div>
+        <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-zinc-900/85 text-[8px]
+                    text-white/70 border border-white/20 leading-tight pointer-events-none">
+          © Kartverket
         </div>
       </div>
 

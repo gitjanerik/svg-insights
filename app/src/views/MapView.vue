@@ -281,24 +281,24 @@ onMounted(() => {
                 pointer-events-none">
       <button @click="router.push('/kart')"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     backdrop-blur bg-zinc-900/85 border border-white/15 text-white shadow-lg
+                     bg-zinc-900 border border-white/30 text-white shadow-lg
                      active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
              stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
         </svg>
       </button>
 
-      <div class="pointer-events-none px-3 py-1.5 rounded-full backdrop-blur bg-zinc-900/85
-                  border border-white/15 text-[12px] text-white font-medium shadow-lg max-w-[60%] truncate">
+      <div class="pointer-events-none px-3 py-1.5 rounded-full bg-zinc-900
+                  border border-white/30 text-[12px] text-white font-medium shadow-lg max-w-[60%] truncate">
         {{ mapTitle }}
       </div>
 
       <button @click="openDrawer"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     backdrop-blur bg-zinc-900/85 border border-white/15 text-white shadow-lg
+                     bg-zinc-900 border border-white/30 text-white shadow-lg
                      active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
              stroke-linecap="round" stroke-linejoin="round">
           <line x1="4" y1="6" x2="20" y2="6"/>
           <line x1="4" y1="12" x2="20" y2="12"/>
@@ -310,23 +310,23 @@ onMounted(() => {
     <!-- Kompass-rose -->
     <div class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
-              class="w-14 h-14 rounded-full backdrop-blur bg-zinc-900/85 border border-white/15
+              class="w-14 h-14 rounded-full bg-zinc-900 border border-white/30
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
         <svg viewBox="-50 -50 100 100" class="w-12 h-12"
              :style="{ transform: compass.isActive && compass.headingDeg !== null
                                   ? `rotate(${-compass.headingDeg}deg)`
                                   : 'none',
                        transition: 'transform 0.2s linear' }">
-          <circle r="44" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+          <circle r="44" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
           <polygon points="0,-38 6,0 0,8 -6,0" fill="#ef4444"/>
-          <polygon points="0,38 6,0 0,-8 -6,0" fill="currentColor" opacity="0.7"/>
+          <polygon points="0,38 6,0 0,-8 -6,0" fill="currentColor" opacity="0.85"/>
           <text y="-28" text-anchor="middle" font-size="14" font-weight="700"
                 fill="currentColor">N</text>
         </svg>
       </button>
       <div v-if="compass.error"
            class="text-[10px] text-red-300 mt-1 max-w-[80px] text-right leading-tight
-                  px-1.5 py-0.5 rounded bg-zinc-900/85 backdrop-blur">
+                  px-1.5 py-0.5 rounded bg-zinc-900 border border-white/20">
         {{ compass.error }}
       </div>
     </div>
@@ -374,7 +374,7 @@ onMounted(() => {
     <!-- Skala + ekvidistanse -->
     <div v-if="!loading"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
-      <div class="px-3 py-2 rounded-lg backdrop-blur bg-zinc-900/85 border border-white/15
+      <div class="px-3 py-2 rounded-lg bg-zinc-900 border border-white/30
                   text-white text-[11px] font-medium space-y-1.5 shadow-lg">
         <div class="flex items-end gap-2" v-if="scaleBar.px > 0">
           <div class="relative">
@@ -392,8 +392,8 @@ onMounted(() => {
 
     <!-- Attribusjon -->
     <div v-if="!loading"
-         class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md backdrop-blur bg-zinc-900/85
-                border border-white/15 text-white/75 text-[9px] leading-tight pointer-events-none shadow-lg">
+         class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-900
+                border border-white/30 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg">
       © OpenStreetMap-bidragsytere
     </div>
 
