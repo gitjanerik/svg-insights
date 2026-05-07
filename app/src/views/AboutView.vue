@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.5.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-600" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.5.3</span>
+                <span class="text-white/40">&mdash; Vann-polygoner med samme navn slås sammen</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>OSM deler ofte store innsjøer over sund/broer i flere polygoner. Når flere polygoner har samme <code>name</code>-tag, slås de sammen til én multipolygon med polygon-clipping union</li>
+                <li>Hjelper for innsjøer som Setten (delt over Hestesund-bro) — selv om OSM-datene har dem som separate polygoner, renders de som én sammenhengende vann-flate hvis de overlapper eller berører hverandre</li>
+                <li>Begrensning: hvis OSM-polygonene har en synlig avstand mellom seg uten overlapp, beholder vi dem som adskilte sub-polygoner (krever en bredere "gap-fill"-heuristikk å løse fullt ut)</li>
+                <li>Anvendes på alle ferskvann (301/302) og saltvann (303)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.5.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-blue-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.5.2</span>
                 <span class="text-white/40">&mdash; Kystlinje-polygonisering: ekte sjø-bakgrunn for kystkart</span>

@@ -18,6 +18,7 @@ import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import { buildLandPolygonsFromCoastline, ringToPath } from './coastline.js'
+import polygonClipping from 'polygon-clipping'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 
@@ -83,6 +84,69 @@ function fmt(n) { return Number(n.toFixed(2)) }
 
 function xmlEscape(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Slå sammen ways som har samme `name`-tag til én polygon. Bruker
+ * polygon-clipping union på SVG-projiserte ringer. Returnerer en
+ * blanding av originale (unike eller navnløse) ways og syntetiske
+ * "merged-water"-elementer med _mergedRings (polygon-clipping format:
+ * MultiPolygon = array av polygoner, hver polygon = array av ringer).
+ *
+ * Fanger opp typisk OSM-tilfelle der en innsjø er delt over et sund/bro
+ * og hver del har samme navn (f.eks. Setten med Hestesund-bro).
+ */
+function unionByName(elements, project) {
+  const byName = new Map()
+  const result = []
+
+  for (const el of elements) {
+    if (el.type !== 'way' || !el.geometry || el.geometry.length < 3) {
+      result.push(el)
+      continue
+    }
+    const name = el.tags?.name?.trim()
+    if (!name) {
+      result.push(el)
+      continue
+    }
+    if (!byName.has(name)) byName.set(name, [])
+    byName.get(name).push(el)
+  }
+
+  for (const [name, group] of byName) {
+    if (group.length === 1) {
+      result.push(group[0])
+      continue
+    }
+    try {
+      const inputs = group.map(el => {
+        const ring = el.geometry.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        })
+        if (ring.length > 0) {
+          const f = ring[0], l = ring[ring.length - 1]
+          if (f[0] !== l[0] || f[1] !== l[1]) ring.push([f[0], f[1]])
+        }
+        return [[ring]]
+      })
+      const merged = polygonClipping.union(...inputs)
+      result.push({
+        type: 'merged-water',
+        id: group[0].id,
+        tags: { ...group[0].tags },
+        _mergedRings: merged,
+        _mergedFromCount: group.length,
+      })
+      console.log(`[Vann-merge] "${name}": ${group.length} → 1 multipolygon`)
+    } catch (e) {
+      console.warn(`[Vann-merge] "${name}" feilet (${e.message}) — beholder originalene`)
+      result.push(...group)
+    }
+  }
+
+  return result
 }
 
 // Layer-rekkefølge (z-order, bunn til topp). Inspirert av ISOM 2017.
@@ -272,6 +336,17 @@ export function buildSvg(elements, bbox, options = {}) {
   }
   const isCoastalMap = landRings.length > 0
 
+  // ── Vann-polygoner med samme navn slås sammen ────────────────────────
+  // OSM deler ofte store innsjøer i flere polygoner (f.eks. Setten med
+  // Hestesund som strait på midten — mappet som to separate ways). Hvis
+  // de har samme `name`-tag, slår vi dem sammen til én polygon med
+  // polygon-clipping union, slik at innsjøen renders som én sammen-
+  // hengende blå flate med bro/vei oppå.
+  for (const code of ['301', '302', '303']) {
+    if (buckets[code].length < 2) continue
+    buckets[code] = unionByName(buckets[code], project)
+  }
+
   // ── Vegetasjons-klassifisering via CHM (DOM − DTM) ───────────────────
   // For hvert OSM-skog-polygon: sample CHM og bestem ISOM-kode basert
   // på vegetasjonshøyde og varians. Beveger features mellom buckets.
@@ -361,6 +436,20 @@ export function buildSvg(elements, bbox, options = {}) {
     if (POLYGON_CODES.has(code)) {
       const filter = POLYGON_FILTER[cat] ?? { simplifyM: 0, minAreaM2: 0 }
       const paths = els.map(el => {
+        // merged-water: allerede projisert MultiPolygon fra unionByName
+        if (el.type === 'merged-water' && el._mergedRings) {
+          const subpaths = []
+          for (const polygon of el._mergedRings) {
+            for (const ring of polygon) {
+              if (ring.length < 3) continue
+              let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+              for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+              d += 'Z'
+              subpaths.push(d)
+            }
+          }
+          return subpaths.join(' ')
+        }
         if (el.type === 'way' && el.geometry) {
           if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) return ''
           return pathFromGeometry(el.geometry, true, filter.simplifyM)
@@ -408,7 +497,17 @@ export function buildSvg(elements, bbox, options = {}) {
   const waterPaths = []
   for (const code of ['301', '302', '303', '308', '309']) {
     for (const el of buckets[code] ?? []) {
-      if (el.type === 'way' && el.geometry) {
+      if (el.type === 'merged-water' && el._mergedRings) {
+        for (const polygon of el._mergedRings) {
+          for (const ring of polygon) {
+            if (ring.length < 3) continue
+            let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+            for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+            d += 'Z'
+            waterPaths.push(d)
+          }
+        }
+      } else if (el.type === 'way' && el.geometry) {
         waterPaths.push(pathFromGeometry(el.geometry, true))
       } else if (el.type === 'relation' && el.members) {
         for (const m of el.members) {
