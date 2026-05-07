@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
+import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 
 const router = useRouter()
 const wrapperRef = ref(null)
@@ -30,6 +31,16 @@ const LAYERS = [
 const visibleLayers = ref(new Set(LAYERS.map(l => l.key)))
 const isDark = ref(false)
 const showControls = ref(false)
+
+const drawer = useDraggableDrawer({ expandedHeight: 0.55, minimizedPeek: 32 })
+
+function openDrawer() {
+  showControls.value = true
+  drawer.reset()
+}
+function closeDrawer() {
+  showControls.value = false
+}
 
 function toggleLayer(key) {
   const next = new Set(visibleLayers.value)
@@ -174,7 +185,7 @@ const equidistanceLabel = computed(() => {
   if (!meta.value) return ''
   const eq = meta.value.equidistance
   if (eq) return `Ekvidistanse ${eq} m`
-  return 'Konturer ikke i denne datakilden'
+  return 'Ekvidistanse: ikke tilgjengelig'
 })
 
 const wrapperSize = ref({ w: 0, h: 0 })
@@ -183,16 +194,26 @@ function measureWrapper() {
   if (r) wrapperSize.value = { w: r.width, h: r.height }
 }
 
-const realScaleBarPx = computed(() => {
+// Maks-bredde slik at skala-baren ikke renner ut av høyre side
+const SCALE_BAR_MAX_PX = 180
+
+const scaleBar = computed(() => {
   if (!meta.value) return { px: 0, label: '' }
   const { w, h } = wrapperSize.value
   if (!w || !h) return { px: 0, label: '' }
   const fit = Math.min(w / meta.value.widthM, h / meta.value.heightM)
-  const onePx = 1000 * fit * scale.value
-  if (onePx >= 200) return { px: onePx, label: '1 km' }
-  if (onePx >= 100) return { px: onePx / 2, label: '500 m' }
-  if (onePx >= 40)  return { px: onePx / 5, label: '200 m' }
-  if (onePx >= 16)  return { px: onePx / 10, label: '100 m' }
+  const pxPerMeter = fit * scale.value
+  // Velg distanse som passer innenfor maks-bredde
+  const candidates = [1000, 500, 200, 100, 50, 20]
+  for (const m of candidates) {
+    const px = m * pxPerMeter
+    if (px <= SCALE_BAR_MAX_PX && px >= 30) {
+      return {
+        px,
+        label: m >= 1000 ? `${m / 1000} km` : `${m} m`,
+      }
+    }
+  }
   return { px: 0, label: '' }
 })
 
@@ -237,12 +258,12 @@ onMounted(() => {
   <div class="relative w-full h-[100dvh] overflow-hidden"
        :class="isDark ? 'bg-zinc-900' : 'bg-stone-100'">
 
-    <!-- Toppbar -->
+    <!-- Toppbar — låst mørk så ikoner alltid er lesbare uansett kart-tema -->
     <div class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
                 pointer-events-none">
       <button @click="router.push('/')"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     backdrop-blur bg-black/40 border border-white/10 text-white/80
+                     backdrop-blur bg-zinc-900/85 border border-white/15 text-white shadow-lg
                      active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
@@ -250,14 +271,14 @@ onMounted(() => {
         </svg>
       </button>
 
-      <div class="pointer-events-none px-3 py-1.5 rounded-full backdrop-blur bg-black/40
-                  border border-white/10 text-[12px] text-white/70 font-medium">
+      <div class="pointer-events-none px-3 py-1.5 rounded-full backdrop-blur bg-zinc-900/85
+                  border border-white/15 text-[12px] text-white font-medium shadow-lg">
         Vardåsen · turkart
       </div>
 
-      <button @click="showControls = !showControls"
+      <button @click="openDrawer"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     backdrop-blur bg-black/40 border border-white/10 text-white/80
+                     backdrop-blur bg-zinc-900/85 border border-white/15 text-white shadow-lg
                      active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
@@ -271,8 +292,8 @@ onMounted(() => {
     <!-- Kompass-rose -->
     <div class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
-              class="w-14 h-14 rounded-full backdrop-blur bg-black/40 border border-white/10
-                     flex items-center justify-center text-white/90 active:scale-95 transition">
+              class="w-14 h-14 rounded-full backdrop-blur bg-zinc-900/85 border border-white/15
+                     flex items-center justify-center text-white shadow-lg active:scale-95 transition">
         <svg viewBox="-50 -50 100 100" class="w-12 h-12"
              :style="{ transform: compass.isActive && compass.headingDeg !== null
                                   ? `rotate(${-compass.headingDeg}deg)`
@@ -286,7 +307,8 @@ onMounted(() => {
         </svg>
       </button>
       <div v-if="compass.error"
-           class="text-[10px] text-red-300 mt-1 max-w-[80px] text-right leading-tight">
+           class="text-[10px] text-red-300 mt-1 max-w-[80px] text-right leading-tight
+                  px-1.5 py-0.5 rounded bg-zinc-900/85 backdrop-blur">
         {{ compass.error }}
       </div>
     </div>
@@ -310,12 +332,8 @@ onMounted(() => {
          :class="isDark ? 'text-white/80' : 'text-zinc-700'">
       <div class="text-lg font-semibold mb-2">Kunne ikke laste kartet</div>
       <div class="text-sm opacity-70 mb-4">{{ loadError }}</div>
-      <div class="text-xs opacity-50 max-w-xs">
-        Kart-SVG-en bygges av en GitHub Action. Hvis dette er første deploy, vent et par minutter
-        og last siden på nytt.
-      </div>
       <button @click="loadMap"
-              class="mt-4 px-4 py-2 rounded-lg border text-sm active:scale-95"
+              class="mt-2 px-4 py-2 rounded-lg border text-sm active:scale-95"
               :class="isDark
                       ? 'bg-white/10 border-white/20 text-white'
                       : 'bg-white border-zinc-300 text-zinc-800'">
@@ -323,110 +341,124 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Posisjons-status -->
+    <!-- Posisjons-status — alltid mørk bakgrunn for begge moduser -->
     <div v-if="!loading && userPos.error"
          class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-500/20 border border-amber-300/30 text-amber-100 text-[12px]">
+                bg-amber-600/95 border border-amber-300/40 text-white text-[12px] shadow-lg">
       {{ userPos.error }}
     </div>
     <div v-else-if="!loading && userPos.isOutsideMap"
          class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-500/20 border border-amber-300/30 text-amber-100 text-[12px]">
-      Du er utenfor dette kartet. Beveg deg mot Vardåsen for å se posisjonen din.
+                bg-amber-600/95 border border-amber-300/40 text-white text-[12px] shadow-lg">
+      Du er utenfor dette kartet.
     </div>
 
     <!-- Skala + ekvidistanse -->
     <div v-if="!loading"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
-      <div class="px-3 py-2 rounded-lg backdrop-blur bg-black/45 border border-white/10
-                  text-white/85 text-[11px] font-medium space-y-1.5">
-        <div class="flex items-end gap-2" v-if="realScaleBarPx.px > 0">
+      <div class="px-3 py-2 rounded-lg backdrop-blur bg-zinc-900/85 border border-white/15
+                  text-white text-[11px] font-medium space-y-1.5 shadow-lg">
+        <div class="flex items-end gap-2" v-if="scaleBar.px > 0">
           <div class="relative">
-            <div class="h-1.5 bg-white/85" :style="{ width: `${realScaleBarPx.px}px` }"></div>
+            <div class="h-1.5 bg-white" :style="{ width: `${scaleBar.px}px` }"></div>
             <div class="absolute inset-0 flex justify-between">
-              <div class="w-0.5 h-3 bg-white/85 -translate-y-1"/>
-              <div class="w-0.5 h-3 bg-white/85 -translate-y-1"/>
+              <div class="w-0.5 h-3 bg-white -translate-y-1"/>
+              <div class="w-0.5 h-3 bg-white -translate-y-1"/>
             </div>
           </div>
-          <div>{{ realScaleBarPx.label }}</div>
+          <div>{{ scaleBar.label }}</div>
         </div>
-        <div class="text-white/55">{{ equidistanceLabel }}</div>
+        <div class="text-white/70">{{ equidistanceLabel }}</div>
       </div>
     </div>
 
     <!-- Attribusjon -->
     <div v-if="!loading"
-         class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md backdrop-blur bg-black/40
-                border border-white/10 text-white/55 text-[9px] leading-tight pointer-events-none">
+         class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md backdrop-blur bg-zinc-900/85
+                border border-white/15 text-white/75 text-[9px] leading-tight pointer-events-none shadow-lg">
       © OpenStreetMap-bidragsytere
     </div>
 
-    <!-- Kontrollpanel (drawer) -->
+    <!-- Kontrollpanel (drawer) — swipe opp/ned for å skjule/vise -->
     <Transition name="drawer">
       <div v-if="showControls"
-           class="absolute inset-x-0 bottom-0 z-30 backdrop-blur-md bg-black/75 border-t border-white/10
-                  rounded-t-2xl px-4 pt-3 pb-6 max-h-[70dvh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-3">
-          <div class="text-white/90 text-sm font-semibold">Innstillinger</div>
-          <button @click="showControls = false"
-                  class="w-8 h-8 rounded-full flex items-center justify-center text-white/60
-                         active:bg-white/10">
-            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-            </svg>
-          </button>
+           class="absolute inset-x-0 bottom-0 z-30 backdrop-blur-md bg-zinc-900/92
+                  border-t border-white/15 rounded-t-2xl flex flex-col shadow-2xl"
+           :style="drawer.drawerHeightStyle.value">
+        <!-- Sticky drag-handle og header -->
+        <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
+             @pointerdown="drawer.onPointerDown"
+             @pointermove="drawer.onPointerMove"
+             @pointerup="drawer.onPointerUp"
+             @pointercancel="drawer.onPointerUp">
+          <div class="pt-2 pb-1 flex justify-center">
+            <div class="w-10 h-1 rounded-full bg-white/40"
+                 :style="{ opacity: drawer.handleOpacity.value }"></div>
+          </div>
+          <div class="px-4 pb-2 flex items-center justify-between">
+            <div class="text-white text-sm font-semibold">Innstillinger</div>
+            <button @pointerdown.stop @click.stop="closeDrawer"
+                    class="w-8 h-8 -mr-1 rounded-full flex items-center justify-center
+                           text-white/70 active:bg-white/10">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <div class="text-white/50 text-[11px] uppercase tracking-wide mb-2">Lag</div>
-        <div class="grid grid-cols-2 gap-2 mb-4">
-          <button v-for="lay in LAYERS" :key="lay.key"
-                  @click="toggleLayer(lay.key)"
-                  class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
-                  :class="visibleLayers.has(lay.key)
-                          ? 'bg-violet-500/15 border-violet-400/40 text-white'
-                          : 'bg-white/5 border-white/10 text-white/40'">
-            <span class="text-[12px]">{{ lay.label }}</span>
-          </button>
-        </div>
+        <div class="flex-1 overflow-y-auto px-4 pb-6">
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Lag</div>
+          <div class="grid grid-cols-2 gap-2 mb-4">
+            <button v-for="lay in LAYERS" :key="lay.key"
+                    @click="toggleLayer(lay.key)"
+                    class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
+                    :class="visibleLayers.has(lay.key)
+                            ? 'bg-violet-500/20 border-violet-400/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/45'">
+              <span class="text-[12px]">{{ lay.label }}</span>
+            </button>
+          </div>
 
-        <div class="text-white/50 text-[11px] uppercase tracking-wide mb-2">Visning</div>
-        <div class="flex gap-2 mb-4">
-          <button @click="isDark = !isDark"
-                  class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                  :class="isDark
-                          ? 'bg-violet-500/15 border-violet-400/40 text-white'
-                          : 'bg-white/5 border-white/10 text-white/70'">
-            {{ isDark ? 'Mørk modus på' : 'Mørk modus av' }}
-          </button>
-          <button @click="reset()"
-                  class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/70
-                         text-[12px] active:scale-[0.98]">
-            Sentrer
-          </button>
-        </div>
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Visning</div>
+          <div class="flex gap-2 mb-4">
+            <button @click="isDark = !isDark"
+                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
+                    :class="isDark
+                            ? 'bg-violet-500/20 border-violet-400/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ isDark ? 'Mørk modus på' : 'Mørk modus av' }}
+            </button>
+            <button @click="reset()"
+                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                           text-[12px] active:scale-[0.98]">
+              Sentrer
+            </button>
+          </div>
 
-        <div class="text-white/50 text-[11px] uppercase tracking-wide mb-2">Posisjon og kompass</div>
-        <div class="flex gap-2 mb-2">
-          <button @click="userPos.isWatching ? userPos.stop() : userPos.start()"
-                  class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                  :class="userPos.isWatching
-                          ? 'bg-sky-500/15 border-sky-400/40 text-white'
-                          : 'bg-white/5 border-white/10 text-white/70'">
-            {{ userPos.isWatching ? 'Følger GPS' : 'Start GPS' }}
-          </button>
-          <button @click="compass.isActive ? compass.stop() : compass.start()"
-                  class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                  :class="compass.isActive
-                          ? 'bg-sky-500/15 border-sky-400/40 text-white'
-                          : 'bg-white/5 border-white/10 text-white/70'">
-            {{ compass.isActive ? 'Kompass på' : 'Aktiver kompass' }}
-          </button>
-        </div>
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Posisjon og kompass</div>
+          <div class="flex gap-2 mb-2">
+            <button @click="userPos.isWatching ? userPos.stop() : userPos.start()"
+                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
+                    :class="userPos.isWatching
+                            ? 'bg-sky-500/20 border-sky-400/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ userPos.isWatching ? 'Følger GPS' : 'Start GPS' }}
+            </button>
+            <button @click="compass.isActive ? compass.stop() : compass.start()"
+                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
+                    :class="compass.isActive
+                            ? 'bg-sky-500/20 border-sky-400/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ compass.isActive ? 'Kompass på' : 'Aktiver kompass' }}
+            </button>
+          </div>
 
-        <div class="text-white/40 text-[10px] leading-relaxed mt-4">
-          Kartdata © OpenStreetMap-bidragsytere (ODbL). 4 × 4 km utsnitt rundt Vardåsen i Asker.
-          Reprojisert til UTM 32N (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
+          <div class="text-white/45 text-[10px] leading-relaxed mt-4">
+            Kartdata © OpenStreetMap-bidragsytere (ODbL). 4 × 4 km utsnitt rundt Vardåsen i Asker.
+            Reprojisert til UTM 32N (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
+          </div>
         </div>
       </div>
     </Transition>

@@ -232,19 +232,19 @@ function buildSVG(elements) {
     [data-layer="skog"] path { fill: var(--skog, #cde3b8); stroke: none; }
     [data-layer="eng"] path { fill: var(--eng, #e8edc4); stroke: none; }
     [data-layer="aker"] path { fill: var(--aker, #efe3c2); stroke: none; }
-    [data-layer="myr"] path { fill: var(--myr, #cfe1d8); stroke: var(--myr-s, #5a8a78); stroke-dasharray: 2 2; stroke-width: 0.6; }
-    [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.8; }
-    [data-layer="bygning"] path { fill: var(--bygning, #b8a190); stroke: var(--bygning-s, #6e5a4a); stroke-width: 0.5; }
-    [data-layer="bekk"] path { fill: none; stroke: var(--vann-s, #4a9bbf); stroke-width: 1; stroke-linecap: round; }
-    [data-layer="vei-stor"] path { fill: none; stroke: var(--vei-stor, #d97a5a); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-    [data-layer="vei-liten"] path { fill: none; stroke: var(--vei-liten, #d4b08a); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-    [data-layer="sti"] path { fill: none; stroke: var(--sti, #6b3a1e); stroke-width: 1; stroke-dasharray: 3 2; stroke-linecap: round; }
+    [data-layer="myr"] path { fill: var(--myr, #cfe1d8); stroke: var(--myr-s, #5a8a78); stroke-dasharray: 2 2; stroke-width: 0.3; }
+    [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.4; }
+    [data-layer="bygning"] path { fill: var(--bygning, #b8a190); stroke: var(--bygning-s, #6e5a4a); stroke-width: 0.25; }
+    [data-layer="bekk"] path { fill: none; stroke: var(--vann-s, #4a9bbf); stroke-width: 0.7; stroke-linecap: round; }
+    [data-layer="vei-stor"] path { fill: none; stroke: var(--vei-stor, #d97a5a); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+    [data-layer="vei-liten"] path { fill: none; stroke: var(--vei-liten, #d4b08a); stroke-width: 1.0; stroke-linecap: round; stroke-linejoin: round; }
+    [data-layer="sti"] path { fill: none; stroke: var(--sti, #6b3a1e); stroke-width: 0.6; stroke-dasharray: 2.5 1.5; stroke-linecap: round; }
     [data-symbol="peak"] { fill: var(--peak, #6b3a1e); }
     [data-label] { font-size: 14px; fill: var(--label, #2a2a2a); paint-order: stroke; stroke: var(--bg, #f4ecd8); stroke-width: 3; stroke-linejoin: round; }
     [data-label="peak"] { font-weight: 600; }
   `.trim().replace(/\s+/g, ' ');
 
-  const order = ['skog', 'eng', 'aker', 'myr', 'vann', 'bekk', 'bygning', 'vei-liten', 'vei-stor', 'sti'];
+  const order = ['skog', 'eng', 'aker', 'myr', 'vann', 'bekk', 'vei-stor', 'vei-liten', 'bygning', 'sti'];
   const layers = order.map(layerSvg).join('') + labelSvg();
 
   const meta = JSON.stringify({

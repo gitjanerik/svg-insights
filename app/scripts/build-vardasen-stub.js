@@ -53,7 +53,7 @@ const h = heightM.toFixed(2);
 const style = `
   svg { background: var(--bg, #f4ecd8); font-family: ui-sans-serif, system-ui, sans-serif; }
   [data-layer] path { vector-effect: non-scaling-stroke; }
-  [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.8; }
+  [data-layer="vann"] path { fill: var(--vann, #a8d4e8); stroke: var(--vann-s, #4a9bbf); stroke-width: 0.4; }
   [data-symbol="peak"] { fill: var(--peak, #6b3a1e); }
   [data-label] { font-size: 14px; fill: var(--label, #2a2a2a); paint-order: stroke; stroke: var(--bg, #f4ecd8); stroke-width: 3; stroke-linejoin: round; }
   [data-label="peak"] { font-weight: 600; }
