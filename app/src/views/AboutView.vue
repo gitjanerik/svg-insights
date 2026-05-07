@@ -185,10 +185,27 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.6.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-purple-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.6.1</span>
+                <span class="text-white/40">&mdash; Land-mask for bymasse + vegetasjon (klipper OSM-polygoner mot N50 vann-grense)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>522 tett bebyggelse-pattern og 401–408 vegetasjon-fyll/-mønster klippes nå med samme land-mask som høydekurver. OSM-bygnings/skog-polygoner som strekker seg utover N50 sin vann-grense blir ikke rendret inn i sjø/innsjø</li>
+                <li>Mjøsa/Hamar-kantene: bymasse-mønster slutter ved Mjøsas faktiske strandlinje i stedet for å lekke ut i vannet</li>
+                <li>Hestesund: vegetasjons-fyll respekterer Settens N50-grense — ingen myr/skog-fyll synlig inni sjøen</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.6.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-purple-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.6.0</span>
                 <span class="text-white/40">&mdash; Kartverket N50 som autoritativ vann-kilde (Havflate, Innsjø, ElvBekk)</span>

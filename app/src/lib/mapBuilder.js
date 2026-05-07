@@ -539,6 +539,11 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
     : ''
   const contourMaskAttr = waterPaths.length ? ' mask="url(#land-mask)"' : ''
+  // Samme mask brukes for vegetasjon (404, 405-408 etc.) og 522 bymasse
+  // slik at OSM-polygoner som strekker seg utover N50 vann-grensa blir
+  // klippet i stedet for å bli rendret over vann (som ellers ville være
+  // synlig hvis vann-polygonen ikke ligger oppå dem).
+  const landMaskAttr = contourMaskAttr
 
   // ── Bygg kontur-, knaus- og cliff-lag fra DEM-features ───────────────
   // DEM-koordinater er i meter relativ til UTM bbox sw-hjørne. Vi må
@@ -753,7 +758,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${seaOverlayLayerSvg}${coastlineLayerSvg}${groundLayers}${urbanMassLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${seaOverlayLayerSvg}${coastlineLayerSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
