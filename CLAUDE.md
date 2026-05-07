@@ -8,7 +8,17 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: **6.4.0** (release 7. mai 2026).
+Gjeldende versjon: **6.8.0** (release 7. mai 2026).
+
+## Viktig arkitektur-merknad (v6.8.0)
+
+**Coastline-polygonisering er fjernet.** Etter fire forsøk på å gjøre den robust mot OSM-mistags (lukkede ringer for store innsjøer, wedger og land/vann-inversjon for Mjøsa, Setten, Hestesund osv.) ble hele pipelinen fjernet i v6.8.0. `lib/coastline.js` ligger fortsatt på disk men er IKKE importert lenger.
+
+Vann tegnes utelukkende som eksplisitte polygoner:
+- **N50 Havflate / Innsjø / ElvBekk** (autoritativt, via Geonorge WFS) når tilgjengelig
+- **OSM `natural=water`** som fallback når N50 feiler
+
+Hvis N50 feiler i åpne kyst-områder uten `natural=water`-polygon i OSM, blir sjøen rett og slett IKKE tegnet (kremgul der det skulle vært vann). Det er en synlig, dokumentert degradering — vesentlig bedre enn wedger som ser ut som ekte vann men er feilplassert.
 
 ## Viktige kommandoer
 

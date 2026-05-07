@@ -185,10 +185,30 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.8.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.8.0</span>
+                <span class="text-white/40">&mdash; Drastisk opprydning: fjerner coastline-polygonisering helt</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">7. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li>Etter fire forsøk (v6.5.6, v6.5.7, v6.5.8, v6.7.1) på å fikse OSM coastline-mistag-bug-en med wedger og inversjon: vi gir opp å rekonstruere sjø fra OSM <code>natural=coastline</code>-linjer. Hele coastline-pipelinen er fjernet fra mapBuilder</li>
+                <li>Ny enkel arkitektur: vann tegnes utelukkende som eksplisitte polygoner fra N50 (Havflate, Innsjø, ElvBekk) eller OSM <code>natural=water</code>. Ingen polygon-rekonstruksjon, ingen sea-overlay, ingen open-arc-gate, ingen mistag-håndtering</li>
+                <li>Trade-off: hvis N50 feiler i åpne kyst-områder (hvor OSM bare har <code>natural=coastline</code>-linjer uten <code>natural=water</code>-polygon), vil sjøen ikke bli tegnet. Vi får synlig kremgul der det skulle ha vært vann — det er en lett-oppdaget degradering, ikke wedge-magi</li>
+                <li>Overpass-spørringen fjerner <code>natural=bay/strait/coastline</code> og <code>place=sea/ocean</code> — sparer båndbredde og eliminerer kilden til polygoniseringen</li>
+                <li>~120 linjer fjernet fra mapBuilder.js. <code>coastline.js</code> beholdes på disk men brukes ikke (kan slettes senere hvis ingen ber om den)</li>
+                <li>Hestesund-test: med v6.8.0 blir Setten tegnet som N50 Innsjø (autoritativ form) eller OSM <code>natural=water</code> hvis N50 feiler. Ingen wedger uansett</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.7.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.7.1</span>
                 <span class="text-white/40">&mdash; Hestesund-fix: alltid filtrer OSM coastline uansett N50-suksess</span>
