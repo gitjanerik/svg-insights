@@ -20,9 +20,10 @@ const equidistanceM = ref(20)  // høydekurve-intervall, 10/20/50/100 m
 const customName = ref('')
 
 const EQUIDISTANCE_OPTIONS = [
-  { value: 10,  label: '10 m', desc: 'tett — for små områder' },
-  { value: 20,  label: '20 m', desc: 'turkart-standard' },
-  { value: 50,  label: '50 m', desc: 'oversikt' },
+  { value: 5,   label: '5 m',   desc: 'ISOM-orientering — krever 1m DTM' },
+  { value: 10,  label: '10 m',  desc: 'tett — for små områder' },
+  { value: 20,  label: '20 m',  desc: 'turkart-standard' },
+  { value: 50,  label: '50 m',  desc: 'oversikt' },
   { value: 100, label: '100 m', desc: 'glissen — for store områder' },
 ]
 
@@ -305,7 +306,7 @@ onMounted(() => {
           <div class="text-[11px] text-white/45 uppercase tracking-wide">Høydekurver</div>
           <div class="text-[13px] font-medium tabular-nums">hver {{ equidistanceM }} m</div>
         </div>
-        <div class="grid grid-cols-4 gap-1.5">
+        <div class="grid grid-cols-5 gap-1.5">
           <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
                   @click="equidistanceM = opt.value"
                   class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition"
