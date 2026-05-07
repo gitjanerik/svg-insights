@@ -31,7 +31,10 @@
  * @param {(lat:number, lon:number) => {x:number, y:number}} project   til SVG-koord
  * @param {number} widthM   bbox-bredde i SVG-enheter
  * @param {number} heightM  bbox-høyde i SVG-enheter
- * @returns {Array<Array<[number, number]>>} ringer (hver ring er liste av [x,y])
+ * @returns {{ rings: Array<Array<[number, number]>>, openArcsCount: number, closedRingsCount: number }}
+ *          rings er liste av land-ringer (hver er liste av [x,y]).
+ *          openArcsCount = antall åpne arcer som ble lukket via bbox.
+ *          closedRingsCount = antall lukkede ringer (etter filter).
  */
 export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM) {
   const W = widthM
@@ -55,7 +58,9 @@ export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, h
       if (piece.length >= 2) clipped.push(piece)
     }
   }
-  if (clipped.length === 0) return []
+  if (clipped.length === 0) {
+    return { rings: [], openArcsCount: 0, closedRingsCount: 0 }
+  }
 
   // Slå sammen kjeder
   const chains = mergeChains(clipped, eps)
@@ -89,7 +94,11 @@ export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, h
   // Lukk åpne arcer via bbox-kanter
   const mainlandRings = closeArcsViaBbox(openArcs, W, H, edgeEps)
 
-  return [...filteredClosed, ...mainlandRings]
+  return {
+    rings: [...filteredClosed, ...mainlandRings],
+    openArcsCount: openArcs.length,
+    closedRingsCount: filteredClosed.length,
+  }
 }
 
 function signedArea(ring) {

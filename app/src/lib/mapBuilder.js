@@ -31,8 +31,7 @@ export function buildOverpassQuery(bbox) {
   way["natural"="water"];
   way["natural"~"^(bay|strait|coastline)$"];
   way["water"];
-  way["place"~"^(sea|ocean|island|islet)$"];
-  relation["place"~"^(island|islet)$"];
+  way["place"~"^(sea|ocean)$"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
@@ -298,9 +297,8 @@ export function buildSvg(elements, bbox, options = {}) {
   const peaks = []
   const places = []
   const coastlineWays = []
-  const islandPolygons = []
 
-  const counts = { peak: 0, place: 0, coastline: 0, island: 0 }
+  const counts = { peak: 0, place: 0, coastline: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
@@ -309,16 +307,6 @@ export function buildSvg(elements, bbox, options = {}) {
     if (el.type === 'way' && el.tags?.natural === 'coastline') {
       coastlineWays.push(el)
       counts.coastline++
-      continue
-    }
-    // OSM place=island/islet er polygon-omriss av øyer. Brukes som backup
-    // hvis natural=coastline ikke chainer riktig (f.eks. Landøya som
-    // historisk var øy men nå er halvøy via Hestesund).
-    const placeTag = el.tags?.place
-    if ((placeTag === 'island' || placeTag === 'islet') &&
-        (el.type === 'way' || el.type === 'relation')) {
-      islandPolygons.push(el)
-      counts.island++
       continue
     }
     const cls = classifyToIsom(el)
@@ -334,42 +322,30 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // Bygg land-polygoner fra kystlinje-ways. Hvis vi har minst én kystlinje
-  // eller en place=island i bbox, behandler vi det som et kystkart.
+  // Bygg land-polygoner fra kystlinje-ways. Vi aktiverer coastal-modus
+  // KUN hvis det finnes minst én ÅPEN kystlinje-arc (fastlandskyst som
+  // krysser bbox-kanten). Lukkede ringer alene er trolig lake-mistags
+  // (Mjøsa, Setten, etc) og skal ikke trigge sjø-overlay.
   let landRings = []
+  let openArcsCount = 0
+  let closedRingsCount = 0
   if (coastlineWays.length > 0) {
     try {
-      landRings = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
-      console.log(`[Kystlinje] ${coastlineWays.length} ways → ${landRings.length} land-polygoner`)
+      const result = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
+      landRings = result.rings
+      openArcsCount = result.openArcsCount
+      closedRingsCount = result.closedRingsCount
+      console.log(`[Kystlinje] ${coastlineWays.length} ways → ${landRings.length} land-polygoner (${openArcsCount} open arcs, ${closedRingsCount} closed rings)`)
     } catch (e) {
       console.warn(`[Kystlinje] polygonisering feilet: ${e.message}`)
     }
   }
-  // Legg til place=island/islet polygoner som ekstra land-ringer.
-  // Disse er allerede lukkede polygoner i OSM, så ingen chaining trengs.
-  for (const el of islandPolygons) {
-    if (el.type === 'way' && el.geometry?.length >= 3) {
-      const ring = el.geometry.map(g => {
-        const p = project(g.lat, g.lon)
-        return [p.x, p.y]
-      })
-      landRings.push(ring)
-    } else if (el.type === 'relation' && el.members) {
-      for (const m of el.members) {
-        if (m.type === 'way' && m.role === 'outer' && m.geometry?.length >= 3) {
-          const ring = m.geometry.map(g => {
-            const p = project(g.lat, g.lon)
-            return [p.x, p.y]
-          })
-          landRings.push(ring)
-        }
-      }
-    }
+  // Aktiver coastal-modus kun hvis det er minst én open arc (fastland-kyst
+  // som krysser bbox). Lukkede ringer alene = trolig lake-mistag, ignorer.
+  const isCoastalMap = openArcsCount > 0 && landRings.length > 0
+  if (closedRingsCount > 0 && openArcsCount === 0) {
+    console.warn(`[Kystlinje] ${closedRingsCount} lukkede ringer uten åpne arcer — antagelig lake-mistag, hopper over sjø-overlay`)
   }
-  if (islandPolygons.length > 0) {
-    console.log(`[Place=island] ${islandPolygons.length} øyer → land-ringer`)
-  }
-  const isCoastalMap = landRings.length > 0
 
   // ── Vann-polygoner med samme navn slås sammen ────────────────────────
   // OSM deler ofte store innsjøer i flere polygoner (f.eks. Setten med
@@ -643,8 +619,10 @@ export function buildSvg(elements, bbox, options = {}) {
     lakeLabels: lakeLabels.length,
     coastline: {
       ways: coastlineWays.length,
-      islands: islandPolygons.length,
+      openArcs: openArcsCount,
+      closedRings: closedRingsCount,
       landRings: landRings.length,
+      isCoastalMap,
     },
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     isomVersion: '2017-2-derived',
