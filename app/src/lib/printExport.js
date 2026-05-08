@@ -1,20 +1,19 @@
-// Print-eksport av kart-SVG. To måter:
+// Print-eksport av kart-SVG.
 //
 //   exportSvgFile(svgString, filename)
 //      Last ned som ren SVG (anbefalt for vektor-kvalitet).
 //
 //   exportPngFile(svgString, filename, dpi)
 //      Render til canvas og last ned som PNG. dpi=300 gir høy kvalitet,
-//      dpi=600 gir A1/A0 print. Bruker browser sin canvas-rendering.
+//      dpi=600 gir A1/A0 print.
+//
+//   exportPdfFile(svgString, filename, dpi)
+//      Lagre som PDF direkte (ingen print-dialog). Bruker jsPDF lazy-
+//      loaded. Embed PNG ved valgt DPI i en PDF med riktig papirstørrelse.
 //
 //   printDocument(svgString, options)
-//      Åpner et nytt vindu med kun SVG-en og kaller window.print().
-//      Bruker Apple/Chrome sin print-til-PDF for å få vektor-PDF.
-//      Anbefalt for slutt-print uten ekstra biblioteker.
-//
-// PDF-eksport kan legges til senere med svg2pdf.js (~50 KB lazy-loaded);
-// foreløpig holder vi nede bundle-størrelsen og lar OS-print håndtere
-// PDF-generering.
+//      Åpner et nytt vindu og triggrer window.print() — for de som vil
+//      printe på papir. Dropper kombinasjon med PDF (egen funksjon).
 
 export function exportSvgFile(svgString, filename = 'turkart.svg') {
   const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
@@ -66,6 +65,72 @@ export async function exportPngFile(svgString, filename = 'turkart.png', { dpi =
   } finally {
     URL.revokeObjectURL(url)
   }
+}
+
+/**
+ * Render SVG til kanvas + returner pxW/pxH/wMm/hMm. Gjenbrukes av PNG og PDF.
+ */
+async function renderSvgToCanvas(svgString, dpi) {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(svgString, 'image/svg+xml')
+  const root = doc.documentElement
+  const widthAttr = root.getAttribute('width')
+  const heightAttr = root.getAttribute('height')
+
+  let pxW, pxH, wMm, hMm
+  if (widthAttr?.endsWith('mm') && heightAttr?.endsWith('mm')) {
+    wMm = parseFloat(widthAttr)
+    hMm = parseFloat(heightAttr)
+    pxW = Math.round(wMm * dpi / 25.4)
+    pxH = Math.round(hMm * dpi / 25.4)
+  } else {
+    const vb = (root.getAttribute('viewBox') ?? '0 0 1000 1000').split(/\s+/).map(parseFloat)
+    pxW = Math.round(vb[2])
+    pxH = Math.round(vb[3])
+    wMm = pxW * 25.4 / dpi
+    hMm = pxH * 25.4 / dpi
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = pxW
+  canvas.height = pxH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas-context utilgjengelig')
+
+  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+      img.src = url
+    })
+    ctx.drawImage(img, 0, 0, pxW, pxH)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+  return { canvas, pxW, pxH, wMm, hMm }
+}
+
+export async function exportPdfFile(svgString, filename = 'turkart.pdf', { dpi = 300 } = {}) {
+  // Lazy-load jsPDF — ~40 KB gzipped, kun aktivert ved PDF-eksport.
+  const { default: jsPDF } = await import('jspdf')
+
+  const { canvas, wMm, hMm } = await renderSvgToCanvas(svgString, dpi)
+
+  const orientation = wMm > hMm ? 'l' : 'p'
+  const pdf = new jsPDF({
+    unit: 'mm',
+    orientation,
+    format: [wMm, hMm],
+    compress: true,
+  })
+
+  const dataUrl = canvas.toDataURL('image/png', 1.0)
+  pdf.addImage(dataUrl, 'PNG', 0, 0, wMm, hMm, undefined, 'FAST')
+  pdf.save(filename)
 }
 
 export function printDocument(svgString, { title = 'Turkart' } = {}) {

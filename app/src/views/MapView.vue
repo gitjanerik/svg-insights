@@ -8,7 +8,7 @@ import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
-import { printDocument, exportSvgFile, exportPngFile } from '../lib/printExport.js'
+import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -90,11 +90,20 @@ function applyLayerVisibility() {
   }
 }
 
-const { scale, translateX, translateY, reset, animating } = usePinchZoom(wrapperRef)
+const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef)
 
+// Translate + scale i ytre lag (origin 0 0 så pinch-zoom rundt finger
+// fungerer som før). Rotasjon i indre lag (origin center center) så
+// brukeren kan rotere kartet med to fingre uten at scale-matematikken
+// komplisseres.
 const transformStyle = computed(() => ({
   transform: `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
   transformOrigin: '0 0',
+  transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
+}))
+const rotateStyle = computed(() => ({
+  transform: `rotate(${rotation.value}deg)`,
+  transformOrigin: 'center center',
   transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
 }))
 
@@ -228,6 +237,11 @@ async function onExportPng() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
   await exportPngFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.png`, { dpi: 300 })
+}
+async function onExportPdf() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  await exportPdfFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.pdf`, { dpi: 300 })
 }
 function onPrint() {
   const svg = svgHostRef.value?.querySelector('svg')
@@ -457,10 +471,6 @@ function applyDiagnoseMode() {
 }
 watch(diagnose, applyDiagnoseMode)
 
-// Magnetisk nord-pil: konstant skjerm-størrelse i øvre høyre.
-// Deklinasjon hentes fra ISOM-katalog (statisk for nå; senere fra IGRF).
-const magneticDeclination = computed(() => isomCatalog.magneticNorth.defaultDeclinationDeg)
-
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -525,28 +535,49 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Magnetisk nord-pil (kart-element, fast skjerm-posisjon) -->
-    <div class="absolute top-[9rem] right-3 z-20 pointer-events-none select-none">
-      <div class="bg-zinc-950 rounded-md px-2 py-1.5 shadow-lg">
-        <svg viewBox="-12 -22 24 30" class="w-8 h-10" :style="{ transform: `rotate(${magneticDeclination}deg)` }">
-          <!-- Linje opp -->
-          <line x1="0" y1="6" x2="0" y2="-18" stroke="white" stroke-width="1.4" stroke-linecap="round"/>
-          <!-- Pil-spiss -->
-          <polygon points="0,-20 -3,-15 3,-15" fill="white"/>
-          <!-- MN-tekst -->
-          <text y="6" text-anchor="middle" font-size="5" font-weight="700" fill="white">MN</text>
+    <!-- FAB-stack: zoom inn / zoom ut / sentrer (nede til høyre, over drawer-peek) -->
+    <div class="absolute right-3 z-20 flex flex-col gap-2 pointer-events-auto select-none"
+         style="bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem)">
+      <button @click="zoomIn()" aria-label="Zoom inn"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+                     flex items-center justify-center active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
-        <div class="text-[8px] text-white/60 text-center -mt-1 tabular-nums">
-          {{ magneticDeclination > 0 ? '+' : '' }}{{ magneticDeclination.toFixed(1) }}°
-        </div>
-      </div>
+      </button>
+      <button @click="zoomOut()" aria-label="Zoom ut"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+                     flex items-center justify-center active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+      <button @click="reset()" aria-label="Sentrer"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+                     flex items-center justify-center active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <line x1="12" y1="2" x2="12" y2="5"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+          <line x1="2" y1="12" x2="5" y2="12"/>
+          <line x1="19" y1="12" x2="22" y2="12"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- Kart-flate -->
+    <!-- Kart-flate. Ytre lag = translate+scale, indre lag = rotate.
+         Indre lag separert så pinch-zoom og rotasjon kan brukes uavhengig
+         uten å komplisere transform-matematikken. -->
     <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
          :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''">
       <div class="w-full h-full" :style="transformStyle">
-        <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
+        <div class="w-full h-full" :style="rotateStyle">
+          <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
+        </div>
       </div>
     </div>
 
@@ -676,11 +707,6 @@ onMounted(() => {
                             : 'bg-white/5 border-white/10 text-white/75'">
               {{ isDark ? 'Mørk modus på' : 'Mørk modus av' }}
             </button>
-            <button @click="reset()"
-                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                           text-[12px] active:scale-[0.98]">
-              Sentrer
-            </button>
           </div>
 
           <button @click="router.push('/tegnforklaring')"
@@ -733,22 +759,27 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Eksport og print</div>
-          <div class="grid grid-cols-3 gap-2 mb-4">
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Eksport</div>
+          <div class="grid grid-cols-2 gap-2 mb-2">
             <button @click="onExportSvg"
                     class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
                            text-[11px] active:scale-[0.98]">
-              .svg
+              Lagre .svg
             </button>
             <button @click="onExportPng"
                     class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
                            text-[11px] active:scale-[0.98]">
-              .png 300 dpi
+              Lagre .png (300 dpi)
+            </button>
+            <button @click="onExportPdf"
+                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                           text-[11px] active:scale-[0.98]">
+              Lagre som PDF
             </button>
             <button @click="onPrint"
                     class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
                            text-[11px] active:scale-[0.98]">
-              Print / PDF
+              Skriv ut
             </button>
           </div>
 

@@ -3,7 +3,7 @@ import { RouterView } from 'vue-router'
 </script>
 
 <template>
-  <div class="min-h-[100dvh] bg-[#0a0a0f] text-white antialiased">
+  <div class="min-h-[100dvh] bg-stone-50 text-zinc-900 antialiased">
     <RouterView v-slot="{ Component, route }">
       <Transition
         :name="route.meta.transition || 'fade'"
