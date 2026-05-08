@@ -53,6 +53,9 @@ export function buildOverpassQuery(bbox) {
   way["leisure"="track"]["sport"="skiing"];
   node["natural"="peak"];
   node["natural"="saddle"];
+  node["natural"="cave_entrance"];
+  node["man_made"~"^(adit|mineshaft)$"];
+  node["historic"="mine"];
   node["place"~"^(locality|hamlet|village|town|city|suburb|neighbourhood|quarter|isolated_dwelling|farm)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
@@ -428,8 +431,10 @@ export function buildSvg(elements, bbox, options = {}) {
   const skjaer = []        // ISOM 211 (sjøkart-grunner)
   const lanterner = []     // ISOM 533 (sjøkart-lanterner)
   const dybdepunkter = []  // sjøkart-soundings (tekst-label)
+  const huler = []         // ISOM 215 (cave entrance)
+  const gruver = []        // ISOM 216 (mine / sjakt)
 
-  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0 }
+  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0, hule: 0, gruve: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   // Samle OSM natural=coastline + man_made=pier/breakwater ways for siste-
@@ -453,6 +458,8 @@ export function buildSvg(elements, bbox, options = {}) {
       else if (cls.code === 'place') { places.push(el); counts.place++ }
       else if (cls.code === '211') { skjaer.push(el); counts.skjaer++ }
       else if (cls.code === '533') { lanterner.push(el); counts.lanterne++ }
+      else if (cls.code === '215') { huler.push(el); counts.hule++ }
+      else if (cls.code === '216') { gruver.push(el); counts.gruve++ }
       else if (cls.code === 'dybdepunkt') { dybdepunkter.push(el); counts.dybdepunkt++ }
       continue
     }
@@ -883,6 +890,22 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>${labelPart}</g>`
   }).filter(Boolean).join('\n')
 
+  // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
+  // = 1.4mm bredde (matcher scaleMm i katalogen).
+  const huleSvg = huler.map(el => {
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('hule')
+    if (!sid) return ''
+    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+  }).filter(Boolean).join('\n')
+
+  const gruveSvg = gruver.map(el => {
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('gruve')
+    if (!sid) return ''
+    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+  }).filter(Boolean).join('\n')
+
   const dybdepunktSvg = dybdepunkter.map(el => {
     const p = project(el.lat, el.lon)
     const dybde = el.tags?.dybde
@@ -1032,6 +1055,10 @@ export function buildSvg(elements, bbox, options = {}) {
   // Sjøkart-punkter (skjær, lanterner) og dybdepunkt-labels.
   const skjaerLayerSvg = skjaerSvg
     ? `  <g data-layer="stein" data-iso="211">\n${skjaerSvg}\n  </g>\n` : ''
+  const huleLayerSvg = huleSvg
+    ? `  <g data-layer="stein" data-iso="215">\n${huleSvg}\n  </g>\n` : ''
+  const gruveLayerSvg = gruveSvg
+    ? `  <g data-layer="stein" data-iso="216">\n${gruveSvg}\n  </g>\n` : ''
   const lanterneLayerSvg = lanterneSvg
     ? `  <g data-layer="sjokart" data-iso="533">\n${lanterneSvg}\n  </g>\n` : ''
   const dybdepunktLayerSvg = dybdepunktSvg
@@ -1073,7 +1100,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1100,7 +1127,8 @@ function categoryFor(code) {
     case '512':                                  return 'slalombakke'
     case '515':                                  return 'tog'
     case '201': case '203':                     return 'stupkant'
-    case '210': case '211': case '212': case '213': return 'stein'
+    case '210': case '211': case '212': case '213':
+    case '215': case '216':                          return 'stein'
     case '525': case '528':                     return 'linje'
     case '533':                                  return 'sjokart'
     case '101': case '102': case '103': case '104': return 'kontur'

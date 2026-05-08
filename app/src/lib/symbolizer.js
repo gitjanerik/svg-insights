@@ -142,6 +142,8 @@ export function isOsmWaterSalty(tags) {
 export function classifyToIsom(el) {
   const t = el.tags ?? {}
   if (el.type === 'node' && (t.natural === 'peak' || t.natural === 'saddle')) return { code: 'peak', cat: 'point' }
+  if (el.type === 'node' && t.natural === 'cave_entrance') return { code: '215', cat: 'point' }
+  if (el.type === 'node' && (t.man_made === 'adit' || t.man_made === 'mineshaft' || t.historic === 'mine')) return { code: '216', cat: 'point' }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
   // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
