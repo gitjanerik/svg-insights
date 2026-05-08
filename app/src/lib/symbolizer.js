@@ -139,14 +139,31 @@ export function isOsmWaterSalty(tags) {
   return false
 }
 
+// Sjekk om en OSM-node har trigpunkt-relaterte tagger.
+// Eksportert så peak-rendering kan overlappe trigpunkt-symbol når peak
+// og trigpunkt deler node (vanlig i Norge: én node med både
+// natural=peak og man_made=survey_point).
+export function isTrigPoint(t) {
+  if (!t) return false
+  if (t.man_made === 'survey_point' || t.man_made === 'triangulation_pillar') return true
+  if (t.historic === 'survey_point') return true
+  if (t.geodesic) return true
+  if (t.survey_point) return true  // any value, e.g. survey_point=yes på peak-node
+  if (t['kartverket:objtype'] === 'Fastmerke') return true
+  return false
+}
+
 export function classifyToIsom(el) {
   const t = el.tags ?? {}
+  // Peak-noder sjekkes først, men hvis noden også har trigpunkt-tagger
+  // returneres `peak` likevel (label-rendering håndterer overlay) slik at
+  // navn + ele beholdes.
   if (el.type === 'node' && (t.natural === 'peak' || t.natural === 'saddle')) return { code: 'peak', cat: 'point' }
   if (el.type === 'node' && t.natural === 'cave_entrance') return { code: '215', cat: 'point' }
   if (el.type === 'node' && (t.man_made === 'adit' || t.man_made === 'mineshaft' || t.historic === 'mine')) return { code: '216', cat: 'point' }
-  // Trigonometrisk punkt (ISOM 113) — `man_made=survey_point/triangulation_pillar`
-  // er standard OSM-tagging. Sjekkes også ved `geodesic`-tagger.
-  if (el.type === 'node' && (t.man_made === 'survey_point' || t.man_made === 'triangulation_pillar' || t.geodesic)) {
+  // Standalone trigpunkt-noder (uten peak-tag) får ISOM 113. Bruker
+  // isTrigPoint() for å fange alle vanlige tagging-varianter.
+  if (el.type === 'node' && isTrigPoint(t)) {
     return { code: '113', cat: 'point' }
   }
   // Sjømerker (ISOM 540-543). OSM `seamark:type=*` med fargevariant fra

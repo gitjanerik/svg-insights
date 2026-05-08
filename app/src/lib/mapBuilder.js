@@ -8,6 +8,7 @@
 import { wgs84ToUtm32 } from './utm.js'
 import {
   classifyToIsom,
+  isTrigPoint,
   buildIsomDefs,
   buildIsomCss,
   isomCatalog,
@@ -55,7 +56,9 @@ export function buildOverpassQuery(bbox) {
   node["natural"="saddle"];
   node["natural"="cave_entrance"];
   node["man_made"~"^(adit|mineshaft|survey_point|triangulation_pillar)$"];
-  node["historic"="mine"];
+  node["historic"~"^(mine|survey_point)$"];
+  node["survey_point"];
+  node["geodesic"];
   node["seamark:type"];
   node["place"~"^(locality|hamlet|village|town|city|suburb|neighbourhood|quarter|isolated_dwelling|farm)$"];
   relation["natural"="water"];
@@ -716,7 +719,14 @@ export function buildSvg(elements, bbox, options = {}) {
       // bare navn. Dette matcher orienteringskart-konvensjon (navn over
       // toppsymbol, høyde italic under). Krever mer plass enn én linje
       // men gir bedre lesbarhet ved zoom.
-      const symbol = `<use href="#${symbolIds.get('peak')}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/>`
+      // Hvis peak-noden også har trigpunkt-tagger (vanlig i Norge — én
+      // OSM-node med både natural=peak og man_made=survey_point), erstatt
+      // peak-prikken med trigpunkt-trekant. Beholder navn+ele label slik
+      // at brukeren ser «Vardåsen 349» med trekant istedenfor sort prikk.
+      const isTrig = isTrigPoint(el.tags)
+      const symbol = isTrig
+        ? `<use href="#${symbolIds.get('trigpunkt')}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>`
+        : `<use href="#${symbolIds.get('peak')}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/>`
       const lines = []
       if (name) {
         lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}</text>`)
