@@ -641,15 +641,47 @@ export function buildSvg(elements, bbox, options = {}) {
     }
     if (LINE_CODES.has(code)) {
       const tol = LINE_SIMPLIFY[cat] ?? 0
-      const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
       // Jernbane (515) trenger to paths per geometri: solid sort base +
       // hvit dasharray-overlay som danner ladder-stripes (sviller).
       // CSS-regelen for `.overlay` settes opp i symbolizer.js.
+      //
+      // Tunnel-deteksjon: railway-ways tagget `tunnel=yes` rendres som
+      // grå dashed phantom-linje uten sviller, og start/slutt-noder får
+      // perpendikulære tunnel-portal-streker så det blir tydelig at
+      // toget går under bakken (Lieråstunnelen mellom Asker og Drammen).
       if (code === '515') {
-        return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d =>
-          `    <path d="${d}"/>\n    <path d="${d}" class="overlay"/>`
-        ).join('\n')}\n  </g>\n`
+        const pathParts = []
+        const entrances = []
+        const TICK_HALF_M = 6  // 12 m total = ~1.2 mm @ 1:10 000
+        for (const el of els) {
+          const d = pathFromGeometry(el.geometry, false, tol)
+          if (!d) continue
+          const isTunnel = !!el.tags?.tunnel && el.tags.tunnel !== 'no'
+          const tAttr = isTunnel ? ' data-tunnel="yes"' : ''
+          pathParts.push(`    <path d="${d}"${tAttr}/>`)
+          pathParts.push(`    <path d="${d}" class="overlay"${tAttr}/>`)
+          if (isTunnel && el.geometry && el.geometry.length >= 2) {
+            const g = el.geometry
+            const p0 = project(g[0].lat, g[0].lon)
+            const p1 = project(g[1].lat, g[1].lon)
+            const len0 = Math.hypot(p1.x - p0.x, p1.y - p0.y)
+            if (len0 > 0) entrances.push({ x: p0.x, y: p0.y, ux: (p1.x - p0.x) / len0, uy: (p1.y - p0.y) / len0 })
+            const n = g.length
+            const pE = project(g[n - 1].lat, g[n - 1].lon)
+            const pE2 = project(g[n - 2].lat, g[n - 2].lon)
+            const lenE = Math.hypot(pE.x - pE2.x, pE.y - pE2.y)
+            if (lenE > 0) entrances.push({ x: pE.x, y: pE.y, ux: (pE.x - pE2.x) / lenE, uy: (pE.y - pE2.y) / lenE })
+          }
+        }
+        for (const e of entrances) {
+          const px = -e.uy, py = e.ux
+          const x1 = e.x - px * TICK_HALF_M, y1 = e.y - py * TICK_HALF_M
+          const x2 = e.x + px * TICK_HALF_M, y2 = e.y + py * TICK_HALF_M
+          pathParts.push(`    <line x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2)}" y2="${fmt(y2)}" class="tunnel-portal"/>`)
+        }
+        return `  <g data-layer="${cat}" data-iso="${code}">\n${pathParts.join('\n')}\n  </g>\n`
       }
+      const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
       return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
     }
     return ''

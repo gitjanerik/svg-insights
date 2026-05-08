@@ -190,10 +190,34 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.14.0 -->
+          <!-- 6.14.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.14.1</span>
+                <span class="text-white/40">&mdash; Tunnel-fantom for jernbane + portal-markører</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Tunnel-deteksjon på jernbane:</strong> railway-ways tagget <code>tunnel=yes</code> rendres nå som phantom-stil i stedet for solid sort linje med sviller. Tidligere så Lieråstunnelen ut som om Drammensbanen gikk tvers gjennom Kjekstadmarka — nå får tunnel-segmenter:
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li>Tynnere grå base (0.35 mm <code>#555</code>) i stedet for 0.5 mm sort</li>
+                    <li>Dasharray <code>[1, 0.4]</code> mm for «under bakken»-følelse</li>
+                    <li>Sviller (overlay) skjult med <code>display:none</code></li>
+                  </ul>
+                </li>
+                <li><strong>Tunnel-portal-markører:</strong> ved start og slutt av hver tunnel-way tegnes en perpendikulær tverrstrek (12 m total = 1.2 mm @ 1:10 000, 0.6 mm sort kvadrat-cap). Markerer tydelig hvor toget går inn i fjellet</li>
+                <li><strong>Implementasjon:</strong> 515-rendering i <code>layerSvg</code> itererer nå <code>els</code> (i stedet for <code>paths</code>) så <code>tags.tunnel</code> er tilgjengelig per element. Beregner perpendikulær fra første/siste segment-vektor — samme matematikk som cliff-teeth</li>
+                <li>143 tester passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.14.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.14.0</span>
                 <span class="text-white/40">&mdash; Jernbane (ISOM 515) + finere stitråkk-dots</span>
