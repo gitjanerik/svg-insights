@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.11.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-100" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.11.2</span>
+                <span class="text-white/40">&mdash; Dynamisk skjerm-skalering: annoteringer + GPS-dot er nå alltid synlig (skala-uavhengig)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Rotårsak (endelig!):</strong> kart-SVG har viewBox i meter (1 user-unit = 1 m). På et 5×5 km kart vist i ~380 px container blir 1 m ≈ 0.076 CSS-px. En r=6 m GPS-dot blir da 0.5 CSS-px = usynlig. Annoterings-symbolet på 15 m blir ~1 CSS-px = også usynlig. Det BRUKEREN så som «GPS funksjonell» var faktisk bare den store nøyaktighets-ringen (radius = GPS-accuracy i meter) — selve dot-en var aldri synlig</li>
+                <li><strong>Fix: dynamisk skjerm-px → user-units konvertering.</strong> Ny <code>pxToUserUnits(cssPx)</code>-helper bruker <code>svg.getBoundingClientRect()</code> + <code>viewBox.baseVal</code> for å beregne user-units som tilsvarer ønsket skjerm-pixel-størrelse. Inkluderer pinch-zoom CSS-transform automatisk siden <code>getBoundingClientRect()</code> returnerer post-transform rect</li>
+                <li><strong>Annoteringssymboler er nå ~32 CSS-px på skjerm</strong> (dot + halo), uavhengig av zoom-nivå eller bbox-størrelse. På 1×1 km-kart blir symbolet 32 m bredt; på 10×10 km blir det 320 m bredt — samme synlige størrelse i begge tilfeller</li>
+                <li><strong>GPS-dot er nå ~14 CSS-px</strong> og retnings-kjegle ~60 CSS-px ut. Accuracy-ringen reflekterer fortsatt ekte fysisk GPS-usikkerhet (kan bli stor hvis nettleser-GPS er upresist), men har minimum-radius så den ikke kollapser inn i dot-en</li>
+                <li><strong>Re-render på pinch-zoom:</strong> <code>watch(scale, ...)</code> trigger ny renderAnnotations + updateUserDot når brukeren zoomer, så symbolene skalerer i invers takt med CSS-transformen. Hvis du zoomer inn 4×, blir symbol-meter-størrelsen 4× mindre — netto effekt: konstant skjerm-størrelse</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.11.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-200" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.11.1</span>
                 <span class="text-white/40">&mdash; Annoteringssymboler skikkelig synlige nå (unitless user-units + halo-bakgrunn)</span>

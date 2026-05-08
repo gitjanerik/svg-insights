@@ -103,6 +103,32 @@ let lastSvgString = ''      // huskes til print-eksport
 
 watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
 
+// Re-render symboler (annoteringer + bruker-pos dot) når pinch-zoom endrer
+// seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
+watch(scale, () => { renderAnnotations(); updateUserDot() })
+
+/**
+ * Konverter CSS-piksler til SVG user-units, basert på SVG-elementets
+ * faktiske on-screen rect (inkludert eventuelle parent CSS-transforms).
+ *
+ * Kart-SVG har viewBox i meter (1 user-unit = 1 m). På et 5×5 km kart
+ * vist i 380 CSS px container blir 1 m ≈ 0.076 CSS px → en r=6 m sirkel
+ * blir ~0.5 CSS px = usynlig. Ved å konvertere ønsket skjerm-størrelse
+ * dynamisk får vi symboler som alltid er lesbare uansett zoom.
+ *
+ * Bruker getBoundingClientRect() som inkluderer pinch-zoom CSS-transform
+ * fra ancestor wrapper-divv, så samme verdi gir samme skjerm-størrelse
+ * uansett om brukeren har zoomet inn eller ut.
+ */
+function pxToUserUnits(cssPx) {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return cssPx
+  const rect = svg.getBoundingClientRect()
+  const vb = svg.viewBox.baseVal
+  if (!rect.width || !vb.width) return cssPx
+  return cssPx * (vb.width / rect.width)
+}
+
 // Klikk på kart i annoteringsmodus → plasser symbol
 function onMapClick(e) {
   if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
@@ -135,13 +161,13 @@ function renderAnnotations() {
   }
   layer.replaceChildren()
 
-  // Kart-SVG har viewBox i METER (1 user-unit = 1 m). Symbol-størrelse
-  // settes derfor som unit-less user-units, ikke mm. 15 m = 1.5 mm på
-  // print ved 1:10000 — tydelig synlig uten å dominere kartet. Tidligere
-  // forsøk brukte "2mm"-attributter som ble feiltolket i kombinasjon med
-  // pinch-zoom CSS-transforms i visse browsere → symbolene havnet enten
-  // utenfor viewport eller fikk null størrelse.
-  const SYMBOL_M = 15
+  // Symbol-størrelse: ~32 CSS px på skjerm uansett zoom-nivå. ISOM-print-
+  // størrelse (1.5–2 mm = 6–7.5 px) er usynlig på telefon ved standard
+  // kart-zoom (5 km bbox i ~380 px container → 1 m ≈ 0.076 CSS px).
+  // pxToUserUnits konverterer ønsket skjerm-px til user-units (meter)
+  // basert på faktisk getBoundingClientRect — inkluderer pinch-zoom CSS-
+  // transform så symbolet holder konstant skjerm-størrelse.
+  const SYMBOL_M = pxToUserUnits(32)
   const HALF = SYMBOL_M / 2
 
   for (const a of annot.annotations.value) {
@@ -154,15 +180,17 @@ function renderAnnotations() {
     g.setAttribute('data-annot-id', a.id)
 
     // Lys ring bak symbolet så det alltid er lesbart over hvilken som
-    // helst kart-bakgrunn (skog, vann, åpen mark).
+    // helst kart-bakgrunn (skog, vann, åpen mark). vector-effect=non-
+    // scaling-stroke holder ringen 2 CSS-px tykk uansett zoom.
     const halo = document.createElementNS(ns, 'circle')
     halo.setAttribute('cx', '0')
     halo.setAttribute('cy', '0')
     halo.setAttribute('r', String(HALF * 0.95))
     halo.setAttribute('fill', '#fffef0')
-    halo.setAttribute('fill-opacity', '0.85')
+    halo.setAttribute('fill-opacity', '0.9')
     halo.setAttribute('stroke', '#7a3aa3')
-    halo.setAttribute('stroke-width', '1.5')
+    halo.setAttribute('stroke-width', '2')
+    halo.setAttribute('vector-effect', 'non-scaling-stroke')
     g.appendChild(halo)
 
     const use = document.createElementNS(ns, 'use')
@@ -294,11 +322,19 @@ function updateUserDot() {
   if (x == null || y == null) return
   const ns = 'http://www.w3.org/2000/svg'
 
+  // Dynamiske skjerm-størrelser. Dot er fast 14 CSS-px, kjegle 60 CSS-px
+  // ut fra dot. Accuracy-ringen reflekterer ekte fysisk usikkerhet (i meter)
+  // — kan bli stor hvis GPS er upresis, men det er meningen.
+  const dotR = pxToUserUnits(7)         // ~14 CSS-px diameter
+  const coneR = pxToUserUnits(30)       // ~60 CSS-px ut fra dot
+  const minRingR = pxToUserUnits(12)    // ringen blir aldri mindre enn dot+halo
+  const ringR = Math.max(minRingR, acc)
+
   const ring = document.createElementNS(ns, 'circle')
   ring.setAttribute('cx', x)
   ring.setAttribute('cy', y)
-  ring.setAttribute('r', Math.max(8, acc))
-  ring.setAttribute('fill', 'rgba(56, 189, 248, 0.18)')
+  ring.setAttribute('r', ringR)
+  ring.setAttribute('fill', 'rgba(56, 189, 248, 0.15)')
   ring.setAttribute('stroke', 'rgba(56, 189, 248, 0.55)')
   ring.setAttribute('stroke-width', '1')
   ring.setAttribute('vector-effect', 'non-scaling-stroke')
@@ -306,15 +342,14 @@ function updateUserDot() {
 
   if (Number.isFinite(heading)) {
     const cone = document.createElementNS(ns, 'path')
-    const r = Math.max(20, acc * 1.5)
     const ang = (heading - 90) * Math.PI / 180
     const ang1 = ang - 0.35
     const ang2 = ang + 0.35
-    const x1 = x + Math.cos(ang1) * r
-    const y1 = y + Math.sin(ang1) * r
-    const x2 = x + Math.cos(ang2) * r
-    const y2 = y + Math.sin(ang2) * r
-    cone.setAttribute('d', `M${x},${y} L${x1},${y1} A${r},${r} 0 0 1 ${x2},${y2} Z`)
+    const x1 = x + Math.cos(ang1) * coneR
+    const y1 = y + Math.sin(ang1) * coneR
+    const x2 = x + Math.cos(ang2) * coneR
+    const y2 = y + Math.sin(ang2) * coneR
+    cone.setAttribute('d', `M${x},${y} L${x1},${y1} A${coneR},${coneR} 0 0 1 ${x2},${y2} Z`)
     cone.setAttribute('fill', 'rgba(56, 189, 248, 0.35)')
     layer.appendChild(cone)
   }
@@ -322,10 +357,10 @@ function updateUserDot() {
   const dot = document.createElementNS(ns, 'circle')
   dot.setAttribute('cx', x)
   dot.setAttribute('cy', y)
-  dot.setAttribute('r', '6')
+  dot.setAttribute('r', dotR)
   dot.setAttribute('fill', '#0ea5e9')
   dot.setAttribute('stroke', '#fff')
-  dot.setAttribute('stroke-width', '2')
+  dot.setAttribute('stroke-width', '2.5')
   dot.setAttribute('vector-effect', 'non-scaling-stroke')
   layer.appendChild(dot)
 }
