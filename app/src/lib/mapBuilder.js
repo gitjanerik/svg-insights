@@ -46,6 +46,7 @@ export function buildOverpassQuery(bbox) {
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
   way["place"~"^(island|islet)$"];
+  way["man_made"~"^(pier|breakwater)$"];
   node["natural"="peak"];
   node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
   relation["natural"="water"];
@@ -129,9 +130,17 @@ function xmlEscape(s) {
  * @returns {Array<Array<{lat,lon}>>}  liste av sammensydde ringer
  */
 function assembleRelationRings(members, role) {
-  const segments = members
+  // Aksepter både eksplisitt rolle og tom rolle. OSM multipolygon-relations
+  // bruker konsekvent 'outer'/'inner', men place=island/islet-relations har
+  // ofte tom rolle ('') — de mangler outer/inner-distinksjon siden hele
+  // relasjonen ER én øy. Når role='outer' og ingen members har den rollen,
+  // faller vi tilbake til members med tom rolle (= alle relevante ways).
+  const explicit = members
     .filter(m => m.type === 'way' && m.role === role && Array.isArray(m.geometry) && m.geometry.length >= 2)
-    .map(m => m.geometry.slice())  // kopi så vi ikke muterer original
+  const fallback = role === 'outer' && explicit.length === 0
+    ? members.filter(m => m.type === 'way' && (m.role === '' || m.role == null) && Array.isArray(m.geometry) && m.geometry.length >= 2)
+    : []
+  const segments = [...explicit, ...fallback].map(m => m.geometry.slice())
   const eps = 1e-6  // grader (~0.1 m ved 60° N)
   const samePt = (a, b) => Math.abs(a.lat - b.lat) < eps && Math.abs(a.lon - b.lon) < eps
   const rings = []
@@ -412,11 +421,17 @@ export function buildSvg(elements, bbox, options = {}) {
   const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
-  // Samle OSM natural=coastline ways for siste-fallback sjø-rekonstruksjon.
+  // Samle OSM natural=coastline + man_made=pier/breakwater ways for siste-
+  // fallback sjø-rekonstruksjon. Pier/breakwater er ofte boundary mellom
+  // sjø og kunstig land (Sørenga, Fornebu, dock-anlegg) og må behandles
+  // som land-grense på samme måte som coastline.
   const coastlineWays = []
 
   for (const el of elements) {
-    if (el.type === 'way' && el.tags?.natural === 'coastline') {
+    const t = el.tags ?? {}
+    if (el.type === 'way' && (t.natural === 'coastline' ||
+                               t.man_made === 'pier' ||
+                               t.man_made === 'breakwater')) {
       coastlineWays.push(el)
       continue
     }

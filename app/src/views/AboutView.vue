@@ -190,10 +190,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.10.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-200" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.10.3</span>
+                <span class="text-white/40">&mdash; Bedre øy-deteksjon: pier/breakwater, place=island-relations med tom rolle, Sjøkart-diagnostikk</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Tom rolle på place=island-relations:</strong> OSM multipolygon-relations bruker konsekvent <code>role=outer/inner</code>, men <code>place=island</code>-relations har ofte tom rolle (hele relasjonen ER én øy). <code>assembleRelationRings</code> falt ut tidligere fordi filteret krevde eksplisitt <code>role=outer</code>. Nå faller vi tilbake til members med tom rolle hvis ingen er <code>outer</code>. Fikser små Bjørvika-øyer som tidligere ikke fikk kremgul bakgrunn</li>
+                <li><strong>man_made=pier og breakwater behandles som land-grense:</strong> Sørenga, Fornebu og dock-områder har ofte <code>man_made=pier</code> som boundary mellom sjø og kunstig land istedenfor <code>natural=coastline</code>. Coastline-rekonstruksjon godtar nå begge</li>
+                <li><strong>Sjøkart-WFS diagnostikk:</strong> nye <code>[Sjøkart]</code>-konsoll-logger viser hver eneste HTTP-feil og ikke-JSON-respons (Geonorge svarer noen ganger GML når GeoJSON ikke støttes — det avsløres nå istedenfor å feile stille). To nye fallback-endepunkter prøves: <code>wfs.dybdedata</code> og <code>wfs.sjokartraster_navlys</code></li>
+                <li><strong>Test-tips for sjøkart-symboler:</strong> hvis Sjøkart-WFS ikke svarer fra browser, prøv en bbox med kjent fyr-/skjær-tetthet — Drøbak (59.66, 10.62), Hvasser (59.10, 10.50), Tromøya/Arendal (58.45, 8.85). Selv om browser feiler, ser du i DevTools-konsollen om Geonorge-tjenesten faktisk er tilgjengelig fra ditt nett. Klient-CORS er det vanligste hinderet</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.10.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.10.2</span>
                 <span class="text-white/40">&mdash; Reintroduserer coastline-rekonstruksjon: blått hav i Oslo og Nesøya</span>

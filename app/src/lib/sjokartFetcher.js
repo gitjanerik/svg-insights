@@ -26,6 +26,8 @@
 const SJOKART_ENDPOINTS = [
   'https://wfs.geonorge.no/skwms1/wfs.sjokart_dybdedata',
   'https://wfs.geonorge.no/skwms1/wfs.dybdedata2',
+  'https://wfs.geonorge.no/skwms1/wfs.dybdedata',
+  'https://wfs.geonorge.no/skwms1/wfs.sjokartraster_navlys',
 ]
 
 // Kandidat-typenames per kategori. WFS-tjenesten har vekslende prefiks
@@ -91,6 +93,7 @@ const TYPENAME_CANDIDATES = {
  * }>}
  */
 export async function fetchSjokart(bbox, opts = {}) {
+  console.log(`[Sjøkart] Prøver ${SJOKART_ENDPOINTS.length} endepunkter for bbox ${bbox.south.toFixed(3)},${bbox.west.toFixed(3)} → ${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`)
   for (const endpoint of SJOKART_ENDPOINTS) {
     try {
       const result = await fetchAllCategories(endpoint, bbox, opts)
@@ -100,11 +103,14 @@ export async function fetchSjokart(bbox, opts = {}) {
       if (totals > 0) {
         console.log(`[Sjøkart] ${endpoint} → ${totals} features totalt`)
         return { ...result, source: endpoint }
+      } else {
+        console.log(`[Sjøkart] ${endpoint} svarte men 0 features (kan være feil typenames eller utenfor dekning)`)
       }
     } catch (e) {
       console.warn(`[Sjøkart] ${endpoint} feilet: ${e.message}`)
     }
   }
+  console.warn('[Sjøkart] Ingen endepunkter ga data — kart vil falle tilbake til OSM coastline-rekonstruksjon')
   return emptyResult()
 }
 
@@ -155,10 +161,30 @@ async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
     COUNT: '5000',
   })
   const url = `${endpoint}?${params}`
-  const res = await fetch(url, { signal: opts.signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status} for ${typeName}`)
-  const json = await res.json()
-  return json.features ?? []
+  let res
+  try {
+    res = await fetch(url, { signal: opts.signal })
+  } catch (e) {
+    // Network/CORS-feil — logg eksplisitt så det er synlig i DevTools
+    console.warn(`[Sjøkart] Network/CORS-feil for ${typeName} på ${endpoint}: ${e.message}`)
+    throw e
+  }
+  if (!res.ok) {
+    console.warn(`[Sjøkart] HTTP ${res.status} for ${typeName} på ${endpoint}`)
+    throw new Error(`HTTP ${res.status} for ${typeName}`)
+  }
+  const text = await res.text()
+  // Geonorge-tjenester returnerer av og til GML når GeoJSON ikke støttes,
+  // selv om OUTPUTFORMAT=application/json er bedt. Hvis svaret ikke er
+  // gyldig JSON, logg så vi vet typename er feil eller format er GML.
+  try {
+    const json = JSON.parse(text)
+    return json.features ?? []
+  } catch {
+    const head = text.slice(0, 200).replace(/\s+/g, ' ')
+    console.warn(`[Sjøkart] Ikke-JSON respons for ${typeName} (kan være GML eller ServiceException): ${head}…`)
+    throw new Error(`Ikke-JSON respons for ${typeName}`)
+  }
 }
 
 /**
