@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.14.2 -->
+          <!-- 6.14.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.14.3</span>
+                <span class="text-white/40">&mdash; Hule (ISOM 215) + gruve (ISOM 216) som point-symboler</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Hule (215):</strong> sort U-form som vender ned, 1.4 mm. Klassisk ISOM-konvensjon for cave entrance. OSM-mapping: <code>natural=cave_entrance</code></li>
+                <li><strong>Gruve / sjakt (216):</strong> sort X (krysset pikk-symbol), 1.4 mm. OSM-mapping: <code>man_made=adit</code> (horisontal inngang), <code>man_made=mineshaft</code> (vertikal sjakt), <code>historic=mine</code></li>
+                <li><strong>Lag-toggle:</strong> begge ligger under «Stein / skjær» i drawer-en (samme stein-kategori som røys og knaus)</li>
+                <li><strong>Tegnforklaring</strong> oppdatert med begge i «Stupkanter &amp; blokker»-seksjonen — sample-rendering bruker eksakt samme symbol-defs som kartet</li>
+                <li>143 tester passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.14.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.14.2</span>
                 <span class="text-white/40">&mdash; Halverte jernbane-bredder + tunnel-opacity</span>
