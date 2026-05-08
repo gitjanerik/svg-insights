@@ -285,9 +285,9 @@
         "label": "Sti — godt løp",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.11,
+          "widthMm": 0.16,
           "dasharray": [
-            1.5,
+            0.5,
             0.5
           ],
           "linejoin": "round"
@@ -297,10 +297,10 @@
         "label": "Sti — uklar",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.09,
+          "widthMm": 0.13,
           "dasharray": [
-            0.7,
-            0.4
+            0.23,
+            0.3
           ],
           "linejoin": "round"
         }
@@ -309,10 +309,10 @@
         "label": "Stitråkk — vanskelig",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.08,
+          "widthMm": 0.11,
           "dasharray": [
             0.05,
-            0.65
+            0.4
           ],
           "linecap": "round",
           "linejoin": "round"
