@@ -16,7 +16,7 @@ export function usePinchZoom(elementRef) {
   const animating = ref(false)
 
   const MIN_SCALE = 0.5
-  const MAX_SCALE = 8
+  const MAX_SCALE = 20
 
   let lastDist = 0
   let lastCenterX = 0
@@ -86,7 +86,7 @@ export function usePinchZoom(elementRef) {
       const within = Math.hypot(dx, dy) < 40
       if (now - lastTapAt < 300 && within) {
         // Doubble-tap: zoom 2x mot tap-punkt, eller reset hvis allerede zoomet
-        if (scale.value >= 3.9) {
+        if (scale.value >= 15.9) {
           // Allerede zoomet inn → reset
           animate()
           scale.value = 1
@@ -147,7 +147,7 @@ export function usePinchZoom(elementRef) {
   // Desktop: dobbeltklikk = double-tap-ekvivalent
   function onDblClick(e) {
     e.preventDefault()
-    if (scale.value >= 3.9) {
+    if (scale.value >= 15.9) {
       animate()
       scale.value = 1
       translateX.value = 0

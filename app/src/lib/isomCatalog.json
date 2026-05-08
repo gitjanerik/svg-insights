@@ -197,12 +197,13 @@
   },
 
   "labels": {
-    "place": { "fontSizeMm": 2.5, "color": "#2a2a2a", "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "peak":  { "fontSizeMm": 2.8, "color": "#7f4f24", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "kontur-tall": { "fontSizeMm": 1.6, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 },
-    "vann-navn": { "fontSizeMm": 2.0, "color": "#1f5d8a", "italic": true, "weight": 500, "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "vann-tall": { "fontSizeMm": 1.7, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 },
-    "dybde-tall": { "fontSizeMm": 1.4, "color": "#1f5d8a", "italic": false, "haloColor": "#fff", "haloWidthMm": 0.3 }
+    "place": { "fontSizeMm": 4.0, "color": "#2a2a2a", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.7 },
+    "peak":  { "fontSizeMm": 4.6, "color": "#7f4f24", "weight": 700, "haloColor": "#fff", "haloWidthMm": 0.7 },
+    "peak-ele": { "fontSizeMm": 3.4, "color": "#7f4f24", "italic": true, "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.6 },
+    "kontur-tall": { "fontSizeMm": 2.4, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.5 },
+    "vann-navn": { "fontSizeMm": 3.4, "color": "#1f5d8a", "italic": true, "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.6 },
+    "vann-tall": { "fontSizeMm": 2.6, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.5 },
+    "dybde-tall": { "fontSizeMm": 2.0, "color": "#1f5d8a", "italic": false, "haloColor": "#fff", "haloWidthMm": 0.4 }
   },
 
   "darkMode": {

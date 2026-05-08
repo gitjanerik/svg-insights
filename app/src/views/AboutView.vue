@@ -190,20 +190,23 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.13.1 -->
+          <!-- 6.13.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
             <details class="group" open>
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white/80">6.13.1</span>
-                <span class="text-white/40">&mdash; Navn på tjern + utvidet vann-merking</span>
+                <span class="font-semibold text-white/80">6.13.2</span>
+                <span class="text-white/40">&mdash; Lesbare navn-labels + utvidet zoom + flere stedsnoder</span>
                 <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
-                <li><strong>Navn på navngitte tjern og innsjøer</strong> rendres nå over vann-polygonet (ny <code>data-label="vann-navn"</code>, ISOM-blå italic 2.0 mm med hvit halo). OSM <code>name</code>-tag brukes; terskel 1500 m² (~40×40 m) for at småtjern også får sitt navn synlig</li>
-                <li><strong>Sammenstilt navn + moh</strong>: når både OSM-navn og DTM-elevasjon finnes for samme vann, stables navnet over senteret og høyden under (italic blå). Stiler etter ISOM-konvensjon for vann-toponymer</li>
-                <li><strong>Merged-water støttet</strong>: tidligere ble ikke innsjøer som var sydd sammen via <code>unionByName</code> (Setten o.l.) inkludert i label-pipelinen. Ny <code>ringAreaCentroid</code>-helper sentrerer label på største outer-ring</li>
-                <li><strong>Konsistent navn-toggle</strong>: vann-navn og vann-tall hides nå sammen med øvrige labels via «Navn»-bryteren i drawer</li>
+                <li><strong>Større tekstetiketter</strong> så stedsnavn, topp-navn og tjern-navn er lesbare ved default zoom: peak 2.8→4.6 mm (med «navn over symbol, høyde italic under»-konvensjon), place 2.5→4.0 mm, vann-navn 2.0→3.4 mm, vann-tall 1.7→2.6 mm, kontur-tall 1.6→2.4 mm. Alle har bredere hvit halo for kontrast mot tette kontur-områder</li>
+                <li><strong>Topp-symbol forstørret</strong> (1.0→1.4 mm) så markerer er synlig blant kontur-skogen</li>
+                <li><strong>Topp-label todelt</strong>: navn over (fet ISOM-brun), moh under (italic ISOM-brun). Tidligere én linje «Vardåsen 459», nå klassisk orienteringskart-utseende</li>
+                <li><strong>Max zoom utvidet 8x → 20x</strong> (<code>usePinchZoom.js</code>) så bruker kan zoome inn nok til at fontene er komfortable å lese. Double-tap-reset-terskel hevet til 16x så det tar flere dobbelt-tap før reset</li>
+                <li><strong>Flere stedsnoder fra OSM</strong>: Overpass-query utvidet med <code>place=town/city/quarter/farm</code> (rural Norge har mange <code>farm</code>-noder med navn) og <code>natural=saddle</code> (skar/pass — ofte i fjellterreng)</li>
+                <li><strong>Navn på tjern og innsjøer</strong> (videreført fra v6.13.1): OSM <code>name</code>-tag rendres som <code>data-label="vann-navn"</code>, terskel 1500 m². Når både navn og DTM-elev finnes, stables navn over og høyde under</li>
+                <li><strong>Merged-water støttet for labels</strong>: innsjøer sydd sammen via <code>unionByName</code> (Setten o.l.) får label på største outer-ring. Tidligere ble disse utelatt</li>
                 <li>143 tester passerer fortsatt</li>
               </ul>
             </details>
