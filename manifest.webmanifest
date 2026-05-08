@@ -8,8 +8,8 @@
   "scope": "/svg-insights/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0a0a0f",
-  "theme_color": "#0a0a0f",
+  "background_color": "#94a3b8",
+  "theme_color": "#0e1116",
   "categories": ["graphics", "design", "productivity"],
   "icons": [
     {
@@ -39,16 +39,23 @@
   ],
   "shortcuts": [
     {
-      "name": "Lag SVG-tegning",
-      "short_name": "SVG",
+      "name": "Lag illustrasjon",
+      "short_name": "Illustrasjon",
       "description": "Ta bilde og gjør det til interaktiv SVG",
       "url": "/svg-insights/capture",
       "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     },
     {
+      "name": "Lag turkart",
+      "short_name": "Turkart",
+      "description": "ISOM-symbolisert kart fra Kartverket og OSM",
+      "url": "/svg-insights/kart/nytt",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
       "name": "Lag webfont",
-      "short_name": "Font",
-      "description": "Ta bilde av tekst og generer en webfont",
+      "short_name": "Webfont",
+      "description": "Ekstraher vektorer fra Google-font og rediger med Bézier",
       "url": "/svg-insights/font-chooser",
       "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
