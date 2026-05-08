@@ -257,6 +257,32 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.18.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.18.0</span>
+                <span class="text-white/50">&mdash; Fem kart-temaer (lys, mørk, sepia, indigo, slate)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Tema-system i ISOM-katalogen:</strong> ny <code>themes</code>-objekt med <code>light</code>, <code>dark</code>, <code>mono-sepia</code>, <code>mono-indigo</code>, <code>mono-slate</code>. Hvert tema har egne overstyringer for bakgrunn, kategori-fyll/strøk, overlay-strøk og label-farger. Erstatter den gamle <code>darkMode</code>-strukturen</li>
+                <li><strong>Mørkt tema utvidet</strong> til full invertering: dark brown bakgrunn (#2a1f15), konturer i varm cream/gul, vegetasjon i dempede grøntoner, vann mørkeblå, stier i lys cream</li>
+                <li><strong>Tre monokrome paletter</strong> hvor stier og høydekurver pop-er i kontrast til hovedfargen:
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li><strong>Sepia:</strong> varm cream paper-map look. Stier/kurver i dyp sepia</li>
+                    <li><strong>Indigo:</strong> kjølig blueprint-look. Stier/kurver i varm gull-cream</li>
+                    <li><strong>Slate:</strong> moderne mørk-grå minimalist. Stier/kurver i varm tan</li>
+                  </ul>
+                </li>
+                <li><strong>CSS-variabel-plumbing</strong>: alle label-farger (peak/place/kontur-tall/vann-navn osv) går nå via <code>var(--label-{name}-fill, ...)</code>. Overlay-stroke på 515 (jernbane-sviller) går via <code>--iso-515-overlay-stroke</code>. Bakgrunn-rect på SVG bruker <code>var(--bg, ...)</code>. Alt overstyrbart fra MapView ved tema-bytte</li>
+                <li><strong>Tema-velger i drawer</strong>: 5 knapper i 3-grid, erstatter «Mørk modus av/på»-toggle. <code>applyTheme()</code> rydder ALLE tema-vars først, så setter kun de som er aktiv tema, slik at bytte mellom mono-paletter ikke etterlater rester</li>
+                <li>143 tester passerer</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.17.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-400" />

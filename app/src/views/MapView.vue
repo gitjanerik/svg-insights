@@ -54,7 +54,11 @@ const LAYERS = [
 ]
 
 const visibleLayers = ref(new Set(LAYERS.map(l => l.key)))
-const isDark = ref(false)
+// Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
+// isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
+const currentTheme = ref('light')
+const isDark = computed(() => currentTheme.value !== 'light')
+const THEMES = computed(() => Object.entries(isomCatalog.themes ?? {}).map(([k, v]) => ({ key: k, label: v.label ?? k })))
 const diagnose = ref(false)
 const showControls = ref(false)
 
@@ -295,7 +299,7 @@ async function loadMap() {
     loading.value = false
     await nextTick()
     applyLayerVisibility()
-    applyDarkMode()
+    applyTheme()
     userPos.recompute()
     await annot.load()
     renderAnnotations()
@@ -422,27 +426,46 @@ const scaleBar = computed(() => {
   return { px: 0, label: '', ticks: [] }
 })
 
-// Dark mode: bruk ISOM-katalog sin darkMode-overstyring til å sette
-// CSS-variabler pr ISOM-kode på SVG-roten.
-function applyDarkMode() {
+// Tema-applisering: setter CSS-variabler pr ISOM-kode + label på SVG-roten.
+// Først ryddes ALLE tema-vars (så bytte mellom mono-paletter ikke etterlater
+// rester), så settes vars for valgt tema.
+function applyTheme() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
-  if (isDark.value) {
-    svg.style.setProperty('--bg', isomCatalog.darkMode.background)
-    for (const [code, def] of Object.entries(isomCatalog.darkMode.categories ?? {})) {
-      if (def.fill?.color) svg.style.setProperty(`--iso-${code}-fill`, def.fill.color)
-      if (def.stroke?.color) svg.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
-    }
-  } else {
-    svg.style.removeProperty('--bg')
-    for (const code of Object.keys(isomCatalog.darkMode.categories ?? {})) {
-      svg.style.removeProperty(`--iso-${code}-fill`)
-      svg.style.removeProperty(`--iso-${code}-stroke`)
-    }
+  const themes = isomCatalog.themes ?? {}
+  // Samle alle koder + label-navn på tvers av temaer for grundig opprydding
+  const allCodes = new Set()
+  const allLabels = new Set()
+  for (const t of Object.values(themes)) {
+    for (const c of Object.keys(t.categories ?? {})) allCodes.add(c)
+    for (const l of Object.keys(t.labels ?? {})) allLabels.add(l)
+  }
+  svg.style.removeProperty('--bg')
+  for (const code of allCodes) {
+    svg.style.removeProperty(`--iso-${code}-fill`)
+    svg.style.removeProperty(`--iso-${code}-stroke`)
+    svg.style.removeProperty(`--iso-${code}-overlay-stroke`)
+  }
+  for (const name of allLabels) {
+    svg.style.removeProperty(`--label-${name}-fill`)
+    svg.style.removeProperty(`--label-${name}-halo`)
+  }
+  // Default-tema (light): ingen overstyringer trengs
+  const t = themes[currentTheme.value]
+  if (!t || currentTheme.value === 'light') return
+  if (t.background) svg.style.setProperty('--bg', t.background)
+  for (const [code, def] of Object.entries(t.categories ?? {})) {
+    if (def.fill?.color) svg.style.setProperty(`--iso-${code}-fill`, def.fill.color)
+    if (def.stroke?.color) svg.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
+    if (def.overlayStroke?.color) svg.style.setProperty(`--iso-${code}-overlay-stroke`, def.overlayStroke.color)
+  }
+  for (const [name, def] of Object.entries(t.labels ?? {})) {
+    if (def.color) svg.style.setProperty(`--label-${name}-fill`, def.color)
+    if (def.haloColor) svg.style.setProperty(`--label-${name}-halo`, def.haloColor)
   }
 }
 
-watch(isDark, applyDarkMode)
+watch(currentTheme, applyTheme)
 
 // Diagnose-modus: fargelegg polygoner etter data-src så vi visuelt kan
 // se om wedger kommer fra N50, OSM-way, OSM-relation, eller polygon-
@@ -698,14 +721,15 @@ onMounted(() => {
             </button>
           </div>
 
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Visning</div>
-          <div class="flex gap-2 mb-4">
-            <button @click="isDark = !isDark"
-                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                    :class="isDark
-                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/75'">
-              {{ isDark ? 'Mørk modus på' : 'Mørk modus av' }}
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Tema</div>
+          <div class="grid grid-cols-3 gap-2 mb-4">
+            <button v-for="t in THEMES" :key="t.key"
+                    @click="currentTheme = t.key"
+                    class="px-3 py-2 rounded-lg border text-[11px] active:scale-[0.98] transition text-center"
+                    :class="currentTheme === t.key
+                            ? 'bg-slate-400/25 border-slate-300/50 text-white font-medium'
+                            : 'bg-white/5 border-white/10 text-white/65'">
+              {{ t.label }}
             </button>
           </div>
 

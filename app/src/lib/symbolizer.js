@@ -350,6 +350,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   const rules = []
   const root = `.isom-map`
   rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
+  // Bakgrunn-rect bruker også --bg så mørk modus erstatter den kremgule
+  // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
+  rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)
   rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
 
   for (const cat of ['land', 'terrain', 'water', 'rock', 'contour', 'manmade']) {
@@ -378,7 +381,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
       if (def.overlayStroke) {
         const ov = def.overlayStroke
         const ovProps = ['fill: none']
-        if (ov.color) ovProps.push(`stroke: ${ov.color}`)
+        if (ov.color) ovProps.push(`stroke: var(--iso-${code}-overlay-stroke, ${ov.color})`)
         if (ov.widthMm) ovProps.push(`stroke-width: ${ov.widthMm}mm`)
         if (ov.linecap) ovProps.push(`stroke-linecap: ${ov.linecap}`)
         if (ov.linejoin) ovProps.push(`stroke-linejoin: ${ov.linejoin}`)
@@ -396,33 +399,33 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} [data-iso="515"] path.overlay[data-tunnel="yes"] { display: none }`)
   rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: 0.3mm; stroke-linecap: square; fill: none }`)
 
-  // Etiketter
+  // Etiketter — fill og halo er CSS-variabler så MapView kan overstyre i mørk modus.
   const lab = catalog.labels
-  rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
-  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; stroke: ${lab.peak.haloColor}; stroke-width: ${lab.peak.haloWidthMm}mm; paint-order: stroke; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: var(--label-place-fill, ${lab.place.color}); paint-order: stroke; stroke: var(--label-place-halo, ${lab.place.haloColor}); stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: var(--label-peak-fill, ${lab.peak.color}); font-weight: ${lab.peak.weight}; stroke: var(--label-peak-halo, ${lab.peak.haloColor}); stroke-width: ${lab.peak.haloWidthMm}mm; paint-order: stroke; stroke-linejoin: round; }`)
   if (lab['peak-ele']) {
     const pe = lab['peak-ele']
     const styleProps = [
       `font-size: ${pe.fontSizeMm}mm`,
-      `fill: ${pe.color}`,
+      `fill: var(--label-peak-ele-fill, ${pe.color})`,
       pe.italic ? 'font-style: italic' : null,
       pe.weight ? `font-weight: ${pe.weight}` : null,
-      `stroke: ${pe.haloColor}`,
+      `stroke: var(--label-peak-ele-halo, ${pe.haloColor})`,
       `stroke-width: ${pe.haloWidthMm}mm`,
       'paint-order: stroke',
       'stroke-linejoin: round',
     ].filter(Boolean).join('; ')
     rules.push(`${root} [data-label="peak-ele"] { ${styleProps} }`)
   }
-  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
+  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: var(--label-kontur-tall-fill, ${lab['kontur-tall'].color}); font-style: italic; }`)
   if (lab['vann-navn']) {
     const vn = lab['vann-navn']
     const styleProps = [
       `font-size: ${vn.fontSizeMm}mm`,
-      `fill: ${vn.color}`,
+      `fill: var(--label-vann-navn-fill, ${vn.color})`,
       vn.italic ? 'font-style: italic' : null,
       vn.weight ? `font-weight: ${vn.weight}` : null,
-      `stroke: ${vn.haloColor}`,
+      `stroke: var(--label-vann-navn-halo, ${vn.haloColor})`,
       `stroke-width: ${vn.haloWidthMm}mm`,
       'paint-order: stroke',
       'stroke-linejoin: round',
@@ -430,10 +433,10 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
     rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
   }
   if (lab['vann-tall']) {
-    rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: ${lab['vann-tall'].color}; font-style: italic; stroke: ${lab['vann-tall'].haloColor}; stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
+    rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
   }
   if (lab['dybde-tall']) {
-    rules.push(`${root} [data-label="dybde-tall"] { font-size: ${lab['dybde-tall'].fontSizeMm}mm; fill: ${lab['dybde-tall'].color}; stroke: ${lab['dybde-tall'].haloColor}; stroke-width: ${lab['dybde-tall'].haloWidthMm}mm; }`)
+    rules.push(`${root} [data-label="dybde-tall"] { font-size: ${lab['dybde-tall'].fontSizeMm}mm; fill: var(--label-dybde-tall-fill, ${lab['dybde-tall'].color}); stroke: var(--label-dybde-tall-halo, ${lab['dybde-tall'].haloColor}); stroke-width: ${lab['dybde-tall'].haloWidthMm}mm; }`)
   }
 
   return rules.join(' ')
