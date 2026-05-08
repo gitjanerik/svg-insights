@@ -742,16 +742,13 @@ export function buildSvg(elements, bbox, options = {}) {
   // og høyde over havet (når DEM er tilgjengelig). Brukes for orientering
   // og for å lese kartet ved zoom-inn.
   //
-  // Terskler:
-  //   - Navn rendres for navngitte vann ≥ NAMED_MIN_AREA (1500 m²,
-  //     ~40×40 m). Norske tjern er ofte mindre enn 5000 m², men hvis OSM
-  //     har gitt det navn er det per definisjon et stedsfeature.
-  //   - Elevasjon rendres for vann ≥ ELEV_MIN_AREA (5000 m²) når DEM er
-  //     ekte (ikke syntetisk). Krever DTM-sample i sentroid.
+  // Terskel:
+  //   - Felles MIN_AREA (1500 m², ~40×40 m). Norske tjern er ofte
+  //     mindre enn 5000 m², så vi unifiserer: alle vann over terskel
+  //     får både navn (hvis OSM har det) og moh (hvis DTM tilgjengelig).
   //
   // Skipped for saltvann (303 ≈ 0) og myr (308/309).
-  const NAMED_MIN_AREA = 1500
-  const ELEV_MIN_AREA = 5000
+  const MIN_AREA = 1500
   const lakeLabels = []
 
   const sampleDem = usableDem
@@ -801,21 +798,18 @@ export function buildSvg(elements, bbox, options = {}) {
       }
       if (!centroid) continue
 
+      if (areaM2 < MIN_AREA) continue
       const name = (el.tags?.name ?? '').trim()
-      const hasName = name.length > 0
-
-      if (!hasName && areaM2 < ELEV_MIN_AREA) continue
-      if (hasName && areaM2 < NAMED_MIN_AREA) continue
 
       let elev = null
-      if (sampleDem && areaM2 >= ELEV_MIN_AREA) {
+      if (sampleDem) {
         const utmE = centroid.x + minE
         const utmN = (heightM - centroid.y) + minN
         const v = sampleDem(utmE, utmN)
         if (v != null && Number.isFinite(v)) elev = Math.round(v)
       }
 
-      if (hasName || elev != null) {
+      if (name || elev != null) {
         lakeLabels.push({ x: centroid.x, y: centroid.y, name, elev })
       }
     }
