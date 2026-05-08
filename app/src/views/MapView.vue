@@ -433,7 +433,6 @@ function applyTheme() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
   const themes = isomCatalog.themes ?? {}
-  // Samle alle koder + label-navn på tvers av temaer for grundig opprydding
   const allCodes = new Set()
   const allLabels = new Set()
   for (const t of Object.values(themes)) {
@@ -441,6 +440,7 @@ function applyTheme() {
     for (const l of Object.keys(t.labels ?? {})) allLabels.add(l)
   }
   svg.style.removeProperty('--bg')
+  svg.style.removeProperty('--art-fill-opacity')
   for (const code of allCodes) {
     svg.style.removeProperty(`--iso-${code}-fill`)
     svg.style.removeProperty(`--iso-${code}-stroke`)
@@ -450,9 +450,14 @@ function applyTheme() {
     svg.style.removeProperty(`--label-${name}-fill`)
     svg.style.removeProperty(`--label-${name}-halo`)
   }
-  // Default-tema (light): ingen overstyringer trengs
   const t = themes[currentTheme.value]
-  if (!t || currentTheme.value === 'light') return
+  if (!t) return
+  // Fyll-opacity (subtilt mørke + art-modes) — settes selv for light=1 så
+  // tidligere art-mode-rest ikke henger igjen.
+  if (typeof t.fillOpacity === 'number' && t.fillOpacity < 1) {
+    svg.style.setProperty('--art-fill-opacity', String(t.fillOpacity))
+  }
+  if (currentTheme.value === 'light') return
   if (t.background) svg.style.setProperty('--bg', t.background)
   for (const [code, def] of Object.entries(t.categories ?? {})) {
     if (def.fill?.color) svg.style.setProperty(`--iso-${code}-fill`, def.fill.color)
@@ -465,7 +470,19 @@ function applyTheme() {
   }
 }
 
-watch(currentTheme, applyTheme)
+// Auto-hide layers når bruker velger et "kunstverk"-tema (Curves, Warhol).
+// Bare høydekurver vises som standard — brukeren kan slå på flere lag
+// manuelt fra drawer. Lag som slås på i art-mode rendres med fill-opacity.
+function onThemeChange(newTheme) {
+  applyTheme()
+  const t = isomCatalog.themes?.[newTheme]
+  if (t?.autoHideLayers) {
+    visibleLayers.value = new Set(['kontur'])
+    applyLayerVisibility()
+  }
+}
+
+watch(currentTheme, onThemeChange)
 
 // Diagnose-modus: fargelegg polygoner etter data-src så vi visuelt kan
 // se om wedger kommer fra N50, OSM-way, OSM-relation, eller polygon-

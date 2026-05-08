@@ -1177,7 +1177,10 @@
       "label": "Lys (ISOM)",
       "background": "#fefae0",
       "categories": {},
-      "labels": {}
+      "labels": {},
+      "artMode": false,
+      "fillOpacity": 1,
+      "autoHideLayers": false
     },
     "dark": {
       "$comment": "Fullstendig invertert nattvisning. Land = mørkebrun, alle features re-fargelagt.",
@@ -1417,7 +1420,10 @@
           "color": "#88c2e0",
           "haloColor": "#2a1f15"
         }
-      }
+      },
+      "artMode": false,
+      "fillOpacity": 0.85,
+      "autoHideLayers": false
     },
     "mono-sepia": {
       "$comment": "Sepia varm cream, stier og kurver i mørk sepia for kontrast. Vintage paper-map look.",
@@ -1657,7 +1663,10 @@
           "color": "#5a4a3a",
           "haloColor": "#f3e8d0"
         }
-      }
+      },
+      "artMode": false,
+      "fillOpacity": 0.7,
+      "autoHideLayers": false
     },
     "mono-indigo": {
       "$comment": "Kjølig indigo blueprint-look. Stier og kurver i varm cream gull for sterk kontrast.",
@@ -1897,7 +1906,10 @@
           "color": "#9ab8e0",
           "haloColor": "#1a2238"
         }
-      }
+      },
+      "artMode": false,
+      "fillOpacity": 0.7,
+      "autoHideLayers": false
     },
     "mono-slate": {
       "$comment": "Modern slate-grå minimalist. Stier og kurver i varm tan for kontrast.",
@@ -2137,7 +2149,982 @@
           "color": "#a8b8d0",
           "haloColor": "#2c2e35"
         }
-      }
+      },
+      "artMode": false,
+      "fillOpacity": 0.7,
+      "autoHideLayers": false
+    },
+    "mocha": {
+      "$comment": "Varm coffee/brown art-mode. Stier i bright cream, kurver i tan-cream.",
+      "label": "Mocha",
+      "artMode": false,
+      "fillOpacity": 0.7,
+      "background": "#3a2818",
+      "categories": {
+        "101": {
+          "stroke": {
+            "color": "#e8c8a0"
+          }
+        },
+        "102": {
+          "stroke": {
+            "color": "#f5d8b0"
+          }
+        },
+        "103": {
+          "stroke": {
+            "color": "#e8c8a0"
+          }
+        },
+        "104": {
+          "stroke": {
+            "color": "#e8c8a0"
+          }
+        },
+        "201": {
+          "stroke": {
+            "color": "#f0e6d0"
+          }
+        },
+        "203": {
+          "stroke": {
+            "color": "#f0e6d0"
+          }
+        },
+        "301": {
+          "fill": {
+            "color": "#2a3a4d"
+          },
+          "stroke": {
+            "color": "#5a7a98"
+          }
+        },
+        "302": {
+          "fill": {
+            "color": "#2a3a4d"
+          },
+          "stroke": {
+            "color": "#5a7a98"
+          }
+        },
+        "303": {
+          "fill": {
+            "color": "#1c2a3d"
+          },
+          "stroke": {
+            "color": "#4a6280"
+          }
+        },
+        "304": {
+          "stroke": {
+            "color": "#5a7a98"
+          }
+        },
+        "305": {
+          "stroke": {
+            "color": "#5a7a98"
+          }
+        },
+        "306": {
+          "stroke": {
+            "color": "#3a5470"
+          }
+        },
+        "307": {
+          "fill": {
+            "color": "#26384d"
+          }
+        },
+        "308": {
+          "fill": {
+            "color": "#28384d"
+          }
+        },
+        "309": {
+          "fill": {
+            "color": "#28384d"
+          }
+        },
+        "401": {
+          "fill": {
+            "color": "#6a4a28"
+          }
+        },
+        "404": {
+          "fill": {
+            "color": "#4a382a"
+          }
+        },
+        "405": {
+          "fill": {
+            "color": "#3a2818"
+          }
+        },
+        "406": {
+          "fill": {
+            "color": "#3d3a25"
+          }
+        },
+        "407": {
+          "fill": {
+            "color": "#2e2c1c"
+          }
+        },
+        "408": {
+          "fill": {
+            "color": "#1c1a10"
+          }
+        },
+        "501": {
+          "stroke": {
+            "color": "#c98a52"
+          }
+        },
+        "502": {
+          "stroke": {
+            "color": "#b8804a"
+          }
+        },
+        "503": {
+          "stroke": {
+            "color": "#a87858"
+          }
+        },
+        "504": {
+          "stroke": {
+            "color": "#f0e0c8"
+          }
+        },
+        "505": {
+          "stroke": {
+            "color": "#f0e0c8"
+          }
+        },
+        "506": {
+          "stroke": {
+            "color": "#f0e0c8"
+          }
+        },
+        "507": {
+          "stroke": {
+            "color": "#f0e0c8"
+          }
+        },
+        "508": {
+          "stroke": {
+            "color": "#e0d0b8"
+          }
+        },
+        "510": {
+          "stroke": {
+            "color": "#f0e0c8"
+          }
+        },
+        "511": {
+          "stroke": {
+            "color": "#e0d0b8"
+          }
+        },
+        "512": {
+          "fill": {
+            "color": "#5a4530"
+          },
+          "stroke": {
+            "color": "#a89058"
+          }
+        },
+        "515": {
+          "stroke": {
+            "color": "#f0e0c8"
+          },
+          "overlayStroke": {
+            "color": "#3a2818"
+          }
+        },
+        "521": {
+          "fill": {
+            "color": "#5a4030"
+          },
+          "stroke": {
+            "color": "#1a0e08"
+          }
+        },
+        "525": {
+          "stroke": {
+            "color": "#c8b8a0"
+          }
+        },
+        "528": {
+          "stroke": {
+            "color": "#c8b8a0"
+          }
+        },
+        "001": {
+          "fill": {
+            "color": "#3a2818"
+          }
+        }
+      },
+      "labels": {
+        "place": {
+          "color": "#e8d8c0",
+          "haloColor": "#3a2818"
+        },
+        "peak": {
+          "color": "#f5c97b",
+          "haloColor": "#3a2818"
+        },
+        "peak-ele": {
+          "color": "#f5c97b",
+          "haloColor": "#3a2818"
+        },
+        "kontur-tall": {
+          "color": "#e8c8a0",
+          "haloColor": "#3a2818"
+        },
+        "vann-navn": {
+          "color": "#9ab0c8",
+          "haloColor": "#3a2818"
+        },
+        "vann-tall": {
+          "color": "#88a0bc",
+          "haloColor": "#3a2818"
+        },
+        "dybde-tall": {
+          "color": "#9ab0c8",
+          "haloColor": "#3a2818"
+        }
+      },
+      "autoHideLayers": false
+    },
+    "forest": {
+      "$comment": "Mørk skog-grønn art-mode. Stier i bright cream, kurver i warm gold for kontrast.",
+      "label": "Forest",
+      "artMode": false,
+      "fillOpacity": 0.7,
+      "background": "#1a2a1a",
+      "categories": {
+        "101": {
+          "stroke": {
+            "color": "#f0e0a8"
+          }
+        },
+        "102": {
+          "stroke": {
+            "color": "#ffe8b8"
+          }
+        },
+        "103": {
+          "stroke": {
+            "color": "#f0e0a8"
+          }
+        },
+        "104": {
+          "stroke": {
+            "color": "#f0e0a8"
+          }
+        },
+        "201": {
+          "stroke": {
+            "color": "#f0e6d0"
+          }
+        },
+        "203": {
+          "stroke": {
+            "color": "#f0e6d0"
+          }
+        },
+        "301": {
+          "fill": {
+            "color": "#1a3a45"
+          },
+          "stroke": {
+            "color": "#4a8898"
+          }
+        },
+        "302": {
+          "fill": {
+            "color": "#1a3a45"
+          },
+          "stroke": {
+            "color": "#4a8898"
+          }
+        },
+        "303": {
+          "fill": {
+            "color": "#0e2a3a"
+          },
+          "stroke": {
+            "color": "#3a7090"
+          }
+        },
+        "304": {
+          "stroke": {
+            "color": "#4a8898"
+          }
+        },
+        "305": {
+          "stroke": {
+            "color": "#4a8898"
+          }
+        },
+        "306": {
+          "stroke": {
+            "color": "#386878"
+          }
+        },
+        "307": {
+          "fill": {
+            "color": "#1a3a48"
+          }
+        },
+        "308": {
+          "fill": {
+            "color": "#1f3a45"
+          }
+        },
+        "309": {
+          "fill": {
+            "color": "#1f3a45"
+          }
+        },
+        "401": {
+          "fill": {
+            "color": "#4a5a2a"
+          }
+        },
+        "404": {
+          "fill": {
+            "color": "#3a4a28"
+          }
+        },
+        "405": {
+          "fill": {
+            "color": "#1a2a1a"
+          }
+        },
+        "406": {
+          "fill": {
+            "color": "#1d3520"
+          }
+        },
+        "407": {
+          "fill": {
+            "color": "#142a17"
+          }
+        },
+        "408": {
+          "fill": {
+            "color": "#0e1d10"
+          }
+        },
+        "501": {
+          "stroke": {
+            "color": "#d09a5e"
+          }
+        },
+        "502": {
+          "stroke": {
+            "color": "#b88a52"
+          }
+        },
+        "503": {
+          "stroke": {
+            "color": "#9a8068"
+          }
+        },
+        "504": {
+          "stroke": {
+            "color": "#f0e8c8"
+          }
+        },
+        "505": {
+          "stroke": {
+            "color": "#f0e8c8"
+          }
+        },
+        "506": {
+          "stroke": {
+            "color": "#f0e8c8"
+          }
+        },
+        "507": {
+          "stroke": {
+            "color": "#f0e8c8"
+          }
+        },
+        "508": {
+          "stroke": {
+            "color": "#e0d8b8"
+          }
+        },
+        "510": {
+          "stroke": {
+            "color": "#f0e8c8"
+          }
+        },
+        "511": {
+          "stroke": {
+            "color": "#e0d8b8"
+          }
+        },
+        "512": {
+          "fill": {
+            "color": "#3a4a1c"
+          },
+          "stroke": {
+            "color": "#a89048"
+          }
+        },
+        "515": {
+          "stroke": {
+            "color": "#f0e8c8"
+          },
+          "overlayStroke": {
+            "color": "#1a2a1a"
+          }
+        },
+        "521": {
+          "fill": {
+            "color": "#3a4a30"
+          },
+          "stroke": {
+            "color": "#0a1408"
+          }
+        },
+        "525": {
+          "stroke": {
+            "color": "#c8d8b8"
+          }
+        },
+        "528": {
+          "stroke": {
+            "color": "#c8d8b8"
+          }
+        },
+        "001": {
+          "fill": {
+            "color": "#1a2a1a"
+          }
+        }
+      },
+      "labels": {
+        "place": {
+          "color": "#e8e8c8",
+          "haloColor": "#1a2a1a"
+        },
+        "peak": {
+          "color": "#f5d97b",
+          "haloColor": "#1a2a1a"
+        },
+        "peak-ele": {
+          "color": "#f5d97b",
+          "haloColor": "#1a2a1a"
+        },
+        "kontur-tall": {
+          "color": "#f0e0a8",
+          "haloColor": "#1a2a1a"
+        },
+        "vann-navn": {
+          "color": "#88c0c8",
+          "haloColor": "#1a2a1a"
+        },
+        "vann-tall": {
+          "color": "#7aa8b0",
+          "haloColor": "#1a2a1a"
+        },
+        "dybde-tall": {
+          "color": "#88c0c8",
+          "haloColor": "#1a2a1a"
+        }
+      },
+      "autoHideLayers": false
+    },
+    "curves": {
+      "$comment": "Minimalistisk kunstmodus. Mørk slate bakgrunn, høydekurver i varm gul. Tenkt å skrives ut som lite kunstverk.",
+      "label": "Curves",
+      "artMode": true,
+      "fillOpacity": 0.5,
+      "background": "#2c2e35",
+      "categories": {
+        "101": {
+          "stroke": {
+            "color": "#ffd84a"
+          }
+        },
+        "102": {
+          "stroke": {
+            "color": "#ffe066"
+          }
+        },
+        "103": {
+          "stroke": {
+            "color": "#ffd84a"
+          }
+        },
+        "104": {
+          "stroke": {
+            "color": "#ffd84a"
+          }
+        },
+        "201": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "203": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "301": {
+          "fill": {
+            "color": "#3a4258"
+          },
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "302": {
+          "fill": {
+            "color": "#3a4258"
+          },
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "303": {
+          "fill": {
+            "color": "#2a3142"
+          },
+          "stroke": {
+            "color": "#5a6680"
+          }
+        },
+        "304": {
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "305": {
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "306": {
+          "stroke": {
+            "color": "#4a5670"
+          }
+        },
+        "307": {
+          "fill": {
+            "color": "#36404f"
+          }
+        },
+        "308": {
+          "fill": {
+            "color": "#363b48"
+          }
+        },
+        "309": {
+          "fill": {
+            "color": "#363b48"
+          }
+        },
+        "401": {
+          "fill": {
+            "color": "#3a3d48"
+          }
+        },
+        "404": {
+          "fill": {
+            "color": "#363941"
+          }
+        },
+        "405": {
+          "fill": {
+            "color": "#2c2e35"
+          }
+        },
+        "406": {
+          "fill": {
+            "color": "#2e3038"
+          }
+        },
+        "407": {
+          "fill": {
+            "color": "#26282f"
+          }
+        },
+        "408": {
+          "fill": {
+            "color": "#1c1e26"
+          }
+        },
+        "501": {
+          "stroke": {
+            "color": "#c9a070"
+          }
+        },
+        "502": {
+          "stroke": {
+            "color": "#b89060"
+          }
+        },
+        "503": {
+          "stroke": {
+            "color": "#a8866a"
+          }
+        },
+        "504": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "505": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "506": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "507": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "508": {
+          "stroke": {
+            "color": "#d8c4a8"
+          }
+        },
+        "510": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "511": {
+          "stroke": {
+            "color": "#d8c4a8"
+          }
+        },
+        "512": {
+          "fill": {
+            "color": "#4a4538"
+          },
+          "stroke": {
+            "color": "#a89058"
+          }
+        },
+        "515": {
+          "stroke": {
+            "color": "#e8d5b8"
+          },
+          "overlayStroke": {
+            "color": "#2c2e35"
+          }
+        },
+        "521": {
+          "fill": {
+            "color": "#4a4d58"
+          },
+          "stroke": {
+            "color": "#1a1c22"
+          }
+        },
+        "525": {
+          "stroke": {
+            "color": "#c0c5cc"
+          }
+        },
+        "528": {
+          "stroke": {
+            "color": "#c0c5cc"
+          }
+        },
+        "001": {
+          "fill": {
+            "color": "#2c2e35"
+          }
+        }
+      },
+      "labels": {
+        "place": {
+          "color": "#e8e0d0",
+          "haloColor": "#2c2e35"
+        },
+        "peak": {
+          "color": "#e8c8a0",
+          "haloColor": "#2c2e35"
+        },
+        "peak-ele": {
+          "color": "#e8c8a0",
+          "haloColor": "#2c2e35"
+        },
+        "kontur-tall": {
+          "color": "#ffd84a",
+          "haloColor": "#2c2e35"
+        },
+        "vann-navn": {
+          "color": "#a8b8d0",
+          "haloColor": "#2c2e35"
+        },
+        "vann-tall": {
+          "color": "#90a0b8",
+          "haloColor": "#2c2e35"
+        },
+        "dybde-tall": {
+          "color": "#a8b8d0",
+          "haloColor": "#2c2e35"
+        }
+      },
+      "autoHideLayers": true
+    },
+    "warhol": {
+      "$comment": "Pop-art kunstmodus. Mørk slate bakgrunn, høydekurver i knall rød. Tenkt å skrives ut som lite kunstverk.",
+      "label": "Warhol",
+      "artMode": true,
+      "fillOpacity": 0.5,
+      "background": "#2c2e35",
+      "categories": {
+        "101": {
+          "stroke": {
+            "color": "#ff2630"
+          }
+        },
+        "102": {
+          "stroke": {
+            "color": "#ff4040"
+          }
+        },
+        "103": {
+          "stroke": {
+            "color": "#ff2630"
+          }
+        },
+        "104": {
+          "stroke": {
+            "color": "#ff2630"
+          }
+        },
+        "201": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "203": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "301": {
+          "fill": {
+            "color": "#3a4258"
+          },
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "302": {
+          "fill": {
+            "color": "#3a4258"
+          },
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "303": {
+          "fill": {
+            "color": "#2a3142"
+          },
+          "stroke": {
+            "color": "#5a6680"
+          }
+        },
+        "304": {
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "305": {
+          "stroke": {
+            "color": "#6a7898"
+          }
+        },
+        "306": {
+          "stroke": {
+            "color": "#4a5670"
+          }
+        },
+        "307": {
+          "fill": {
+            "color": "#36404f"
+          }
+        },
+        "308": {
+          "fill": {
+            "color": "#363b48"
+          }
+        },
+        "309": {
+          "fill": {
+            "color": "#363b48"
+          }
+        },
+        "401": {
+          "fill": {
+            "color": "#3a3d48"
+          }
+        },
+        "404": {
+          "fill": {
+            "color": "#363941"
+          }
+        },
+        "405": {
+          "fill": {
+            "color": "#2c2e35"
+          }
+        },
+        "406": {
+          "fill": {
+            "color": "#2e3038"
+          }
+        },
+        "407": {
+          "fill": {
+            "color": "#26282f"
+          }
+        },
+        "408": {
+          "fill": {
+            "color": "#1c1e26"
+          }
+        },
+        "501": {
+          "stroke": {
+            "color": "#c9a070"
+          }
+        },
+        "502": {
+          "stroke": {
+            "color": "#b89060"
+          }
+        },
+        "503": {
+          "stroke": {
+            "color": "#a8866a"
+          }
+        },
+        "504": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "505": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "506": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "507": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "508": {
+          "stroke": {
+            "color": "#d8c4a8"
+          }
+        },
+        "510": {
+          "stroke": {
+            "color": "#e8d5b8"
+          }
+        },
+        "511": {
+          "stroke": {
+            "color": "#d8c4a8"
+          }
+        },
+        "512": {
+          "fill": {
+            "color": "#4a4538"
+          },
+          "stroke": {
+            "color": "#a89058"
+          }
+        },
+        "515": {
+          "stroke": {
+            "color": "#e8d5b8"
+          },
+          "overlayStroke": {
+            "color": "#2c2e35"
+          }
+        },
+        "521": {
+          "fill": {
+            "color": "#4a4d58"
+          },
+          "stroke": {
+            "color": "#1a1c22"
+          }
+        },
+        "525": {
+          "stroke": {
+            "color": "#c0c5cc"
+          }
+        },
+        "528": {
+          "stroke": {
+            "color": "#c0c5cc"
+          }
+        },
+        "001": {
+          "fill": {
+            "color": "#2c2e35"
+          }
+        }
+      },
+      "labels": {
+        "place": {
+          "color": "#e8e0d0",
+          "haloColor": "#2c2e35"
+        },
+        "peak": {
+          "color": "#e8c8a0",
+          "haloColor": "#2c2e35"
+        },
+        "peak-ele": {
+          "color": "#e8c8a0",
+          "haloColor": "#2c2e35"
+        },
+        "kontur-tall": {
+          "color": "#ff4040",
+          "haloColor": "#2c2e35"
+        },
+        "vann-navn": {
+          "color": "#a8b8d0",
+          "haloColor": "#2c2e35"
+        },
+        "vann-tall": {
+          "color": "#90a0b8",
+          "haloColor": "#2c2e35"
+        },
+        "dybde-tall": {
+          "color": "#a8b8d0",
+          "haloColor": "#2c2e35"
+        }
+      },
+      "autoHideLayers": true
     }
   }
 }

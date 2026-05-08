@@ -354,6 +354,10 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
   rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)
   rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
+  // Art-mode opacity for fyll-områder (skog/vann/aker/bygning osv).
+  // Stroke-only features beholder full skarphet (fill-opacity påvirker ikke strokes).
+  // CSS-var settes av MapView ved tema-bytte; default = 1 (vanlig modus).
+  rules.push(`${root} [data-iso] { fill-opacity: var(--art-fill-opacity, 1); }`)
 
   for (const cat of ['land', 'terrain', 'water', 'rock', 'contour', 'manmade']) {
     for (const [code, def] of Object.entries(catalog.categories[cat])) {

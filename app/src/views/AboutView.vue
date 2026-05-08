@@ -257,6 +257,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.19.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.19.0</span>
+                <span class="text-white/50">&mdash; Mocha + Forest + Curves + Warhol art-mode + fyll-opacity</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Fire nye temaer</strong>: <strong>Mocha</strong> (varm coffee/brun bakgrunn, stier i bright cream), <strong>Forest</strong> (mørk skog-grønn bakgrunn, kurver i warm gold), <strong>Curves</strong> (slate bakgrunn + varm gul kurver — kunstverk-modus), <strong>Warhol</strong> (slate bakgrunn + knall rød kurver — pop-art-modus)</li>
+                <li><strong>Auto-hide-layers</strong> for Curves og Warhol: kun høydekurver vises som standard når disse temaene velges. Brukeren kan slå på flere lag manuelt fra drawer — de rendres da med fyll-opacity</li>
+                <li><strong>Fyll-opacity per tema</strong>: nytt CSS-var <code>--art-fill-opacity</code> via <code>fill-opacity</code>-property på alle <code>[data-iso]</code>-elementer. Light = 1.0 (opaque), Dark = 0.85 (subtilt), mono-paletter + Mocha + Forest = 0.7, Curves + Warhol = 0.5. Strokes (paths/kurver) beholder full skarphet siden fill-opacity ikke påvirker dem</li>
+                <li><strong>Inversering verifisert</strong>: alle ISOM-koder har eksplisitte fill/stroke-overrides per tema. Stier i alle dark/art-paletter renderes i bright cream (#f0e0c8 → #e8d5b8) for kontrast mot mørke bakgrunner</li>
+                <li>143 tester passerer</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.18.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-500" />
