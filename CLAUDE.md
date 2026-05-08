@@ -8,9 +8,42 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: **6.8.0** (release 7. mai 2026).
+Gjeldende versjon: **6.9.0** (release 8. mai 2026).
 
-## Viktig arkitektur-merknad (v6.8.0)
+## Sesjons-overlevering — hva som er status nå
+
+**Sjekk `app/src/views/AboutView.vue` for full release-historikk** — det er hovedkanalen for endringslogg, alltid mest oppdatert. Korte sammendrag av siste releases:
+
+- **v6.9.0** — ISOM-polish: sykkel-sti egen styling (ISOM 508), navn-toggle skjuler all tekst, dedikert Tegnforklaring-side (`/tegnforklaring`), zoom-polish (pinch rundt finger, dobbel-tap-zoom)
+- **v6.8.4** — **ROTÅRSAK funnet for wedger.** OSM multipolygon-relations har outer-rings splittet over flere ways. Vi rendret hver way som lukket polygon (path med Z) → segment-trekanter = wedger. Ny `assembleRelationRings(members, role)` i `mapBuilder.js` syr sammen segmenter via matchende endepunkter. **Verifisert: Hestesund og Mjøsa er nå wedge-frie.**
+- **v6.8.3** — Visuell diagnose-modus i MapView drawer (knapp under Visning-seksjon). Fargelegger polygoner etter `data-src`: cyan = N50, blå = OSM way, lilla = OSM relation, gul = polygon-clipping merged. Avgjørende verktøy som avslørte v6.8.4-rotårsaken
+- **v6.8.0–v6.8.2** — Mislykkede forsøk: fjerning av coastline-pipeline, polygon-clipping CCW-orientering, per-feature path. Adresserte ikke rotårsaken
+- **v6.5.6–v6.7.1** — Tidligere mislykkede coastline-fix-forsøk
+
+## Neste opp: Kystkart / sjøkart for «manglende blå hav»
+
+**Lovet i samtale før session-bytte.** Når N50 Havflate feiler i åpne kyst-områder mister vi sjø-rendering helt (kremgul der det skulle være vann). Løsning: bruke Kartverket sin `Sjøkart-dybdedata WFS`.
+
+- **Endpoint** (kandidat, må verifiseres mot getCapabilities): `https://wfs.geonorge.no/skwms1/wfs.sjokart_dybdedata`
+- Tilbyr dybdekurver i intervaller 2/5/10/15/20/30/40/50/100m + grunner (skerries) + kystkonturer ift. middelhøy vann (EPSG 9672)
+- **Plan v6.10.0**:
+  - `lib/sjokartFetcher.js` analogt med `lib/n50Fetcher.js`
+  - Henter kystkontur som polygoner (sjø-areal) + dybdekurver som linjer
+  - Bonus: dybdekurver gradert lyseste-til-mørkeste blå etter dyp (ISOM 304-saltvann basis)
+  - 2-trinns fallback i kyst-modus: N50 Havflate → Sjøkart kystkontur → OSM `natural=water` → ingen
+  - Grunner/skjær som ISOM-punktsymboler (kanskje 304-stein-mønster eller egendefinert)
+
+Sources for sjøkart:
+- https://register.geonorge.no/varsler/sjokart-dybdedata-wfs/f471b9c2-e385-48f3-96ad-9fc3dccb1e67
+- https://kartkatalog.geonorge.no/metadata/dybdedata-kurver-generaliserte/871960a1-0f01-4c47-8f79-5d338b65197e
+
+## Kjente issues
+
+- **N50 WFS leverer ikke i nettleser.** Klient-genererte kart faller tilbake til OSM `natural=water` (fungerer for Hestesund/Mjøsa, men gir ikke korrekt sjø/innsjø-skille). Sandkasse har ikke nett, så vi har ikke testet om CORS, axis-order, eller endpoint-URL er problemet. CI-build (Vardåsen) får full nettverkstilgang og N50 fungerer der. **Test next session:** start `npm run dev` lokalt, åpne devtools, regenerer Mjøsa-kart, sjekk console for `[N50]`-logger
+- **Diagnose-modus** finnes for å verifisere visuelt: regenerer kart, tap "Diagnose-modus" i drawer (Visning-seksjon), polygoner farges etter kilde
+- **Test-suite**: 143 tester passerer (`npm run test` i app/)
+
+## Viktig arkitektur-merknad (v6.8.0+)
 
 **Coastline-polygonisering er fjernet.** Etter fire forsøk på å gjøre den robust mot OSM-mistags (lukkede ringer for store innsjøer, wedger og land/vann-inversjon for Mjøsa, Setten, Hestesund osv.) ble hele pipelinen fjernet i v6.8.0. `lib/coastline.js` ligger fortsatt på disk men er IKKE importert lenger.
 
@@ -19,6 +52,16 @@ Vann tegnes utelukkende som eksplisitte polygoner:
 - **OSM `natural=water`** som fallback når N50 feiler
 
 Hvis N50 feiler i åpne kyst-områder uten `natural=water`-polygon i OSM, blir sjøen rett og slett IKKE tegnet (kremgul der det skulle vært vann). Det er en synlig, dokumentert degradering — vesentlig bedre enn wedger som ser ut som ekte vann men er feilplassert.
+
+## Viktig arkitektur-merknad (v6.8.4)
+
+**OSM multipolygon-relation ring-stitching.** Funksjonen `assembleRelationRings(members, role)` i `mapBuilder.js` (~linje 115) er kritisk: OSM lagrer multipolygon-relations som array av way-segmenter (ikke ferdige ringer). Hver way er bare en seksjon av en outer/inner-ring. Funksjonen greedy-joiner segmenter med matchende endepunkter (toleranse 1e-6 grader = ~0.1m, reverse-matching siden ways kan lagres i begge retninger) til ekte lukkede ringer FØR rendering.
+
+Uten denne funksjonen: 4 shore-segmenter blir til 4 trekanter (wedger). Med den: én korrekt lake-polygon.
+
+Brukes to steder:
+- `layerSvg` POLYGON_CODES rendering (det visuelle resultatet)
+- `waterPaths`-konstruksjon for land-mask
 
 ## Viktige kommandoer
 
