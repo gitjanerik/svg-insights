@@ -190,10 +190,39 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.15.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.15.0</span>
+                <span class="text-white/40">&mdash; Trigpunkter + sjømerker (lateral/cardinal/spesial) + finjustering</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Trigonometrisk punkt (ISOM 113):</strong> sort fylt trekant 1.6 mm med hvit prikk i sentrum. OSM-mapping <code>man_made=survey_point/triangulation_pillar</code> og elementer med <code>geodesic</code>-tag</li>
+                <li><strong>Sjømerker (ISOM 540-543):</strong> fire nye stake/buoy-symboler basert på OSM <code>seamark:type</code>:
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li><code>540</code> Lateral port — rød rektangel/kølle</li>
+                    <li><code>541</code> Lateral starboard — grønn trekant/kjegle</li>
+                    <li><code>542</code> Cardinal — gul/sort stripe-pattern</li>
+                    <li><code>543</code> Spesial / sikkert vann — gul sirkel</li>
+                  </ul>
+                  Lateral-merker skiller på colour-tag (<code>red</code> → 540, <code>green</code> → 541). Cardinal og safe-water/special-purpose-buoys mappes til respektive koder.
+                </li>
+                <li><strong>507 stitråkk dobbelt så tett:</strong> dasharray <code>[0.02, 0.4]</code> → <code>[0.02, 0.2]</code>. Halvert gap = ~2× tetthet av prikker per mm</li>
+                <li><strong>Innsjø-rammer smalere</strong> (60% av forrige bredde): 301/302 0.09 → 0.05 mm, 303 saltvann 0.11 → 0.07 mm. Konturen rundt vann er nå mer subtil og tjener mer som hint enn dominerende strek</li>
+                <li><strong>MapView lag-toggles:</strong> nye «Trigpunkter» og «Sjømerker / staker»</li>
+                <li><strong>Tegnforklaring</strong>: trigpunkt under «Høydekurver»-seksjonen (siden det er ISOM 1xx), sjømerker som egen «Sjømerker»-seksjon</li>
+                <li>143 tester passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.14.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.14.3</span>
                 <span class="text-white/40">&mdash; Hule (ISOM 215) + gruve (ISOM 216) som point-symboler</span>

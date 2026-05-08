@@ -144,6 +144,31 @@ export function classifyToIsom(el) {
   if (el.type === 'node' && (t.natural === 'peak' || t.natural === 'saddle')) return { code: 'peak', cat: 'point' }
   if (el.type === 'node' && t.natural === 'cave_entrance') return { code: '215', cat: 'point' }
   if (el.type === 'node' && (t.man_made === 'adit' || t.man_made === 'mineshaft' || t.historic === 'mine')) return { code: '216', cat: 'point' }
+  // Trigonometrisk punkt (ISOM 113) — `man_made=survey_point/triangulation_pillar`
+  // er standard OSM-tagging. Sjekkes også ved `geodesic`-tagger.
+  if (el.type === 'node' && (t.man_made === 'survey_point' || t.man_made === 'triangulation_pillar' || t.geodesic)) {
+    return { code: '113', cat: 'point' }
+  }
+  // Sjømerker (ISOM 540-543). OSM `seamark:type=*` med fargevariant fra
+  // colour-tag. Lateral skiller på colour=red/green; cardinal og spesial
+  // eget kode.
+  if (el.type === 'node' && t['seamark:type']) {
+    const stype = t['seamark:type']
+    if (stype === 'buoy_lateral' || stype === 'beacon_lateral') {
+      const colour = (t['seamark:buoy_lateral:colour'] ?? t['seamark:beacon_lateral:colour'] ?? t['seamark:lateral:colour'] ?? '').toLowerCase()
+      if (colour.includes('red')) return { code: '540', cat: 'point' }
+      if (colour.includes('green')) return { code: '541', cat: 'point' }
+      return { code: '543', cat: 'point' }
+    }
+    if (stype === 'buoy_cardinal' || stype === 'beacon_cardinal') return { code: '542', cat: 'point' }
+    if (stype === 'buoy_safe_water' || stype === 'beacon_safe_water' ||
+        stype === 'buoy_special_purpose' || stype === 'beacon_special_purpose' ||
+        stype === 'buoy_isolated_danger' || stype === 'beacon_isolated_danger') {
+      return { code: '543', cat: 'point' }
+    }
+    // Andre seamark-typer (lighthouse, daymark) får ingen ISOM-kode her;
+    // lighthouse fanges av lanterne-kode hvis det er på sjøkart-fetcher.
+  }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
   // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
