@@ -1,8 +1,20 @@
 <script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { APP_VERSION } from '../version.js'
 
 const router = useRouter()
+
+// Tre tabs i samme rekkefølge som CTA-knappene på forsiden:
+//   1. Illustrasjon (capture/SVG-tegning)
+//   2. Turkart (ISOM-pipeline)
+//   3. Webfont (font-builder)
+const activeTab = ref('illustrasjon')
+const TABS = [
+  { key: 'illustrasjon', label: 'Illustrasjon' },
+  { key: 'turkart',      label: 'Turkart' },
+  { key: 'webfont',      label: 'Webfont' },
+]
 </script>
 
 <template>
@@ -23,25 +35,23 @@ const router = useRouter()
 
       <!-- App title + version -->
       <div class="text-center">
-        <h2 class="text-2xl font-bold bg-gradient-to-r from-violet-400 via-sky-400 to-fuchsia-400 bg-clip-text text-transparent">
+        <h2 class="text-2xl font-semibold tracking-tight text-white">
           SVG Insights
         </h2>
         <p class="text-xs text-white/40 mt-1">Versjon {{ APP_VERSION }}</p>
       </div>
 
-      <!-- About -->
-      <section>
-        <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Om appen</h3>
-        <p class="text-sm text-white/65 leading-relaxed">
-          SVG Insights er et lekent vektor-laboratorium med tre hovedfunksjoner:
-        </p>
-        <ul class="text-sm text-white/65 mt-2 space-y-1.5 list-disc list-inside leading-relaxed">
-          <li><strong class="text-white/75">Lag SVG-tegning</strong> — konverter bilder til interaktive strektegninger</li>
-          <li><strong class="text-white/75">Lag webfont</strong> — bygg din egen .otf-font fra glyf-tegninger</li>
-          <li><strong class="text-white/75">Vis turkart</strong> — ISOM-inspirerte sportskart i SVG generert fra åpne norske data</li>
-        </ul>
-        <p class="text-sm text-white/50 mt-3">Lansert 8. april 2026 · turkart-funksjonen lagt til 6. mai 2026</p>
-      </section>
+      <!-- Tabs -->
+      <div class="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/10">
+        <button v-for="t in TABS" :key="t.key"
+                @click="activeTab = t.key"
+                class="flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition"
+                :class="activeTab === t.key
+                        ? 'bg-slate-400/25 text-white border border-slate-300/40'
+                        : 'text-white/55 active:bg-white/5 border border-transparent'">
+          {{ t.label }}
+        </button>
+      </div>
 
       <!-- Team -->
       <section>
@@ -53,8 +63,8 @@ const router = useRouter()
         </ul>
       </section>
 
-      <!-- Bilde-til-SVG: hvordan det fungerer -->
-      <section>
+      <!-- Tab: Illustrasjon (Bilde-til-SVG) -->
+      <section v-show="activeTab === 'illustrasjon'">
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Bilde til SVG — slik fungerer det</h3>
         <p class="text-sm text-white/65 leading-relaxed">
           Bildet gjennomgår en 12-trinns prosesseringspipeline, helt uten eksterne bildebiblioteker.
@@ -74,8 +84,8 @@ const router = useRouter()
         </ol>
       </section>
 
-      <!-- Turkart-pipeline -->
-      <section>
+      <!-- Tab: Turkart -->
+      <section v-show="activeTab === 'turkart'">
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Turkart — ISOM-inspirert pipeline</h3>
         <p class="text-sm text-white/65 leading-relaxed">
           Turkart-funksjonen lager print-kvalitets sportskart inspirert av ISOM 2017-2-standarden
@@ -149,6 +159,63 @@ const router = useRouter()
         </p>
       </section>
 
+      <!-- Tab: Webfont -->
+      <section v-show="activeTab === 'webfont'">
+        <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Webfont — fra glyf-tegning til .otf</h3>
+        <p class="text-sm text-white/65 leading-relaxed">
+          Webfont-funksjonen bygger din egen TrueType/OpenType-font fra håndtegnede glyfer.
+          Du tegner direkte i appen, eller tar bilde av tekst — appen sporer konturene og
+          omdanner dem til Bézier-baserte glyfer som lagres i en gyldig <code>.otf</code>-fil.
+        </p>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Arbeidsflyt</h4>
+        <ol class="text-xs text-white/50 space-y-1.5 list-decimal list-inside leading-relaxed">
+          <li>Velg en inspirasjons-Google-Font (24 kuraterte fonter i 3 kategorier — serif, sans, dekorativ) som baseline-mal</li>
+          <li>For hver glyf: enten tegn med kalligrafisk pensel direkte i editoren, eller ta bilde av en bokstav</li>
+          <li>Drag-rediger ankerpunkter, juster Bézier-håndtak, slå sammen eller del konturer</li>
+          <li>Quick-actions: <code>thicken</code> (vekt-justering med normal-offset per subpath), invertert kontur, glatting</li>
+          <li>Forhåndsvis hele alfabetet i live <code>@font-face</code>-render mens du jobber</li>
+          <li>Eksporter til <code>.otf</code> med metadata (familienavn, weight, style)</li>
+        </ol>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Algoritmer</h4>
+        <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/75">Anker-deteksjon</strong> (<code>curveFit.js</code>): <code>cornerAwareSimplify</code> klassifiserer punkter som «hjørne» eller «glatt». Anti-støy-filter for glatte kurver, smoothstep-blending mellom tangent- og chord-baserte håndtak</li>
+          <li><strong class="text-white/75">Kontur-tracing</strong> (<code>canvasGlyphRenderer.js</code>): 2-pass Moore-naboer for outer-ringer + flood-fill for hull-deteksjon. <code>pickGlyphContours</code> filtrerer foto-tracing — dropper støy &lt;0.5%, dropper ramme &gt;70%, beholder største outer som overlapper sentrum + dets hull</li>
+          <li><strong class="text-white/75">Catmull-Rom-glatting</strong> (<code>bezierSmoothing.js</code>): genererer kontroll-punkter for jevne Bézier-segmenter</li>
+          <li><strong class="text-white/75">Brush-stroke</strong> (<code>brushStroke.js</code>): elliptisk pensel rotert 35° gir kalligrafi-effekt. <code>strokeToPolygons</code> med DP-forenkling (epsilon = 15% av tykkelse), lukket-deteksjon (start/slutt innen 1.5× tykkelse → outer + inner annulus)</li>
+          <li><strong class="text-white/75">Boolean-union</strong> (<code>glyphUnion.js</code>): <code>polygon-clipping</code> for å slå sammen overlappende strøk. <code>orientPolygonRings</code> sorterer brush-strøkenes ringer etter abs(area) descending så største alltid blir outer (kritisk — ellers blir CW-tegnede former invertert)</li>
+          <li><strong class="text-white/75">OTF-bygging</strong> (<code>fontBuilder.js</code>): bruker <code>opentype.js</code> (~170 KB lazy-loaded) til å pakke glyfer + cmap + horisontale metrikker i gyldig OpenType-fil</li>
+        </ul>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Headless test-harness</h4>
+        <p class="text-xs text-white/50 leading-relaxed">
+          Font-kvaliteten testes automatisk: en headless versjon av tracing-algoritmen kjører i Node
+          via <code>@napi-rs/canvas</code> og produserer en HTML-rapport med problem-glyfer markert i rødt.
+          Metrikker: self-intersections, inter-contour crossings, anchor explosion, handle overshoot.
+          Kjør med <code>npm run test:fonts</code>.
+        </p>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Open source-bibliotek</h4>
+        <div class="grid grid-cols-2 gap-2 mt-2">
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/8">
+            <p class="text-[11px] font-medium text-white/65">opentype.js</p>
+            <p class="text-[10px] text-white/40">OTF-eksport, lazy-loaded</p>
+          </div>
+          <div class="bg-white/5 rounded-lg px-3 py-2 border border-white/8">
+            <p class="text-[11px] font-medium text-white/65">polygon-clipping</p>
+            <p class="text-[10px] text-white/40">Boolean-union ved brush-commit</p>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-white/40 mt-3 leading-relaxed">
+          Egne implementasjoner: anker-deteksjon med corner-awareness, Moore-nabo-tracing,
+          flood-fill for hull, normal-offset for thicken, ellipse-pensel, Catmull-Rom Bézier.
+          Hele webfont-pipelinen er rent JavaScript med typed arrays, ingen avhengighet til
+          DOM under tracing — kjører identisk i Node-tester og nettleser.
+        </p>
+      </section>
+
       <!-- Tech stack -->
       <section>
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Teknologi</h3>
@@ -189,6 +256,24 @@ const router = useRouter()
       <section v-if="false">
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
+
+          <!-- 6.17.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.17.0</span>
+                <span class="text-white/50">&mdash; Tabs på About + slate i drawer + «Lag turkart»</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>About-siden har nå tre tabs</strong>: Illustrasjon, Turkart, Webfont — i samme rekkefølge som CTA-knappene på forsiden. Webfont har fått eget innhold med arbeidsflyt, algoritmer (anker-deteksjon, kontur-tracing, brush-stroke, OTF-bygging) og test-harness</li>
+                <li><strong>Drawer-toggles slate i stedet for violet</strong>: alle lag-knapper (Skog/Vann/Bygninger/Sti/Jernbane osv.) i MapView bruker nå <code>bg-slate-400/25</code>. Annoteringsmodus-indikator også slate</li>
+                <li><strong>HomeView-knapp omdøpt:</strong> «Vis turkart» → «Lag turkart» (matcher innholdet — bruker lager faktisk et nytt kart, ikke bare viser et eksisterende)</li>
+                <li><strong>Gradient-tittel på About</strong> erstattet med ren <code>text-white</code> — dropper de siste violet/sky/fuchsia-restene</li>
+              </ul>
+            </details>
+          </div>
 
           <!-- 6.16.2 -->
           <div class="relative">
