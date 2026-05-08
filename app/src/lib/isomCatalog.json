@@ -40,8 +40,8 @@
       "310": { "label": "Brønn / kilde", "point": { "symbol": "brønn", "scaleMm": 1.5 } }
     },
     "rock": {
-      "201": { "label": "Loddrett stupkant — passérbar", "stroke": { "color": "#000", "widthMm": 0.35, "linecap": "round" } },
-      "203": { "label": "Stupkant — upassérbar", "stroke": { "color": "#000", "widthMm": 0.5, "linecap": "round" } },
+      "201": { "label": "Loddrett stupkant — passérbar", "stroke": { "color": "#000", "widthMm": 0.18, "linecap": "round" } },
+      "203": { "label": "Stupkant — upassérbar", "stroke": { "color": "#000", "widthMm": 0.25, "linecap": "round" } },
       "210": { "label": "Blokkmark", "fill": { "type": "pattern", "pattern": "blokkmark" } },
       "211": { "label": "Skjær / grunne — sjøkart", "point": { "symbol": "skjaer", "scaleMm": 1.0 } },
       "212": { "label": "Røys", "point": { "symbol": "stein", "scaleMm": 0.6 } },
@@ -63,6 +63,9 @@
       "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.16, "dasharray": [0.05, 0.65], "linecap": "round", "linejoin": "round" } },
       "508": { "label": "Sykkel-sti", "stroke": { "color": "#1a1a1a", "widthMm": 0.25, "dasharray": [3.0, 1.0], "linejoin": "round" } },
       "509": { "label": "Krysset — bro / overgang", "point": { "symbol": "bro", "scaleMm": 1.2 } },
+      "510": { "label": "Lysløype", "stroke": { "color": "#000", "widthMm": 0.28, "dasharray": [2.5, 0.4], "linecap": "round", "linejoin": "round" } },
+      "511": { "label": "Heistrasé / skiheis", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [3.0, 1.5], "linejoin": "round" } },
+      "512": { "label": "Slalombakke", "fill": { "color": "#fff5cc" }, "stroke": { "color": "#d4b06b", "widthMm": 0.18, "dasharray": [1.0, 0.5] } },
       "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
       "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },
       "525": { "label": "Gjerde", "stroke": { "color": "#000", "widthMm": 0.15, "dasharray": [1.0, 0.5] } },

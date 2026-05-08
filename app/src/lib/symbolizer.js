@@ -220,6 +220,23 @@ export function classifyToIsom(el) {
   if (t.highway === 'steps')                        return { code: '506', cat: 'manmade' }
   if (t.power === 'line')                           return { code: '528', cat: 'manmade' }
   if (t.barrier === 'fence' || t.barrier === 'wall') return { code: '525', cat: 'manmade' }
+
+  // Ski-infrastruktur (Norge):
+  //   aerialway=* (chair_lift, gondola, drag_lift, t-bar etc) → 511 heistrasé
+  //   piste:type=downhill (way som area) → 512 slalombakke (gulgrønn fyll)
+  //   piste:type=nordic/hike/skitour (way som linje) → 510 lysløype-style
+  //   leisure=track + sport=skiing → 510 lysløype (vanligvis langrenns-rundløype)
+  if (t.aerialway) return { code: '511', cat: 'manmade' }
+  const piste = t['piste:type']
+  if (piste === 'downhill' || piste === 'sled' || piste === 'snow_park') {
+    return { code: '512', cat: 'manmade' }
+  }
+  if (piste === 'nordic' || piste === 'hike' || piste === 'skitour' || piste === 'classic' || piste === 'skating') {
+    return { code: '510', cat: 'manmade' }
+  }
+  if (t.leisure === 'track' && t.sport === 'skiing') {
+    return { code: '510', cat: 'manmade' }
+  }
   return null
 }
 

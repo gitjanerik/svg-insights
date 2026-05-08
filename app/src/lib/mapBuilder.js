@@ -47,12 +47,16 @@ export function buildOverpassQuery(bbox) {
   way["power"="line"];
   way["place"~"^(island|islet)$"];
   way["man_made"~"^(pier|breakwater)$"];
+  way["aerialway"];
+  way["piste:type"];
+  way["leisure"="track"]["sport"="skiing"];
   node["natural"="peak"];
   node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
   relation["place"~"^(island|islet)$"];
+  relation["piste:type"];
 );
 out geom;
 `.trim()
@@ -262,7 +266,9 @@ function unionByName(elements, project) {
 // separat fra urbanMassMultiPoly mellom GROUND_CODES og WATER_CODES
 // slik at vann og høydekurver legger seg over bymassen og forblir
 // lesbare i tett bebygde områder (f.eks. Oslo sentrum).
-const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210']
+// 512 (slalombakke) er areal-feature og rendres som ground sammen med
+// vegetasjon — under vann og over skog så bakken vises tydelig.
+const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
 // Vann-stack: dybdeareal (Sjøkart) først som lyseste, så myr-pattern,
 // deretter saltvann/innsjø/tjern (lokale, mer mettete blå), så
 // dybdekontur-linjer og bekker øverst.
@@ -270,7 +276,9 @@ const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '306', '304', '3
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
-const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507', '508']
+// Veier/stier + ski-infrastruktur (510 lysløype, 511 heistrasé) i samme
+// stack som veier siden de visuelt er linjer og ofte krysser veinettet.
+const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507', '508', '510', '511']
 const UPPER_CODES  = ['521', '525', '528', '533']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
@@ -285,8 +293,8 @@ const LAYER_ORDER = [
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '525', '528', '201', '203', '101', '102', '103', '104'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -972,6 +980,9 @@ function categoryFor(code) {
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
     case '508':                                  return 'sykkel'
+    case '510':                                  return 'lysloype'
+    case '511':                                  return 'heistrase'
+    case '512':                                  return 'slalombakke'
     case '201': case '203':                     return 'stupkant'
     case '210': case '211': case '212': case '213': return 'stein'
     case '525': case '528':                     return 'linje'

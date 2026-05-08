@@ -21,6 +21,7 @@ const SECTIONS = [
   { title: 'Vann & sjøkart', codes: ['301', '302', '303', '304', '305', '306', '307', '308', '309'], category: 'water' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
+  { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger & navigasjon', codes: ['521', '522', '525', '528', '533'], category: 'manmade' },
 ]
 

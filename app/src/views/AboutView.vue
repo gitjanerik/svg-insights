@@ -190,10 +190,37 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.13.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.13.0</span>
+                <span class="text-white/40">&mdash; Vinter-pakke: lysløyper, heistrasé, slalombakker + halverte stupkant-bredder</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Stupkant-bredder halvert:</strong> 201 fra 0.35→0.18 mm, 203 fra 0.5→0.25 mm. De små tverrgående tann-strekene (cliff teeth som indikerer hvilken side som er nedside) blir nå tydeligere mot den tynnere spine-linjen — tidligere ble de slukt av en tykk rand</li>
+                <li><strong>Tre nye ISOM-koder for vinter-infrastruktur:</strong>
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li><code>510 Lysløype</code> — solid svart linje 0.28 mm med <code>round</code>-cap dasharray [2.5, 0.4] som gir «pille-aktig» rosenkrans-look. Mappes fra OSM <code>piste:type=nordic/hike/skitour/classic/skating</code> og <code>leisure=track + sport=skiing</code></li>
+                    <li><code>511 Heistrasé</code> — tynn svart linje 0.18 mm med dasharray [3.0, 1.5]. Mappes fra OSM <code>aerialway=*</code> (chair_lift, gondola, drag_lift, t-bar osv)</li>
+                    <li><code>512 Slalombakke</code> — lys-gul polygon (#fff5cc) med stiplet okeroransje randstrek for alpinsk område. Mappes fra OSM <code>piste:type=downhill/sled/snow_park</code></li>
+                  </ul>
+                </li>
+                <li><strong>Overpass-spørringen utvidet</strong> til å hente <code>way["aerialway"]</code>, <code>way["piste:type"]</code>, <code>relation["piste:type"]</code> og <code>way["leisure"="track"]["sport"="skiing"]</code></li>
+                <li><strong>Tegnforklaringen</strong> har en ny seksjon «Vinter & ski» med eksempler på alle tre koder</li>
+                <li><strong>MapView lag-toggle</strong> har nye knapper for «Lysløype», «Heistrasé» og «Slalombakke» så brukeren kan slå dem av/på individuelt</li>
+                <li>Slalombakker (512) plasseres i ground-laget sammen med vegetasjon — så vann/konturer/stier rendres tydelig over. Lysløyper og heistrasé i road-stack</li>
+                <li>Vardåsen-demokart oppdatert</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.12.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-600" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.12.2</span>
                 <span class="text-white/40">&mdash; Tynnere stier + bedre OSM-klassifisering: Sognsvann/Marka skiller nå mellom DNT-merket sti og knapt synlig tråkk</span>
