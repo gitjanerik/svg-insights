@@ -183,14 +183,40 @@ export function classifyToIsom(el) {
   if (t.highway === 'tertiary' || t.highway === 'residential' || t.highway === 'unclassified') return { code: '503', cat: 'manmade' }
   if (t.highway === 'service' || t.highway === 'living_street') return { code: '503', cat: 'manmade' }
   if (t.highway === 'track')                        return { code: '504', cat: 'manmade' }
-  // Sykkel-sti (508) før gang-sti (505) så cycleway ikke blir behandlet
-  // som vanlig sti. Også OSM highway=path med bicycle=designated/yes.
+  // Sykkel-sti (508) før gang-sti så cycleway ikke blir behandlet som
+  // vanlig sti. Også OSM highway=path/footway med bicycle=designated/yes.
   if (t.highway === 'cycleway')                     return { code: '508', cat: 'manmade' }
-  if (t.highway === 'path' && (t.bicycle === 'designated' || t.bicycle === 'yes')) {
+  if ((t.highway === 'path' || t.highway === 'footway') &&
+      (t.bicycle === 'designated' || t.bicycle === 'yes')) {
     return { code: '508', cat: 'manmade' }
   }
-  if (t.highway === 'path' || t.highway === 'footway') return { code: '505', cat: 'manmade' }
-  if (t.highway === 'bridleway')                    return { code: '505', cat: 'manmade' }
+  // Sti-differensiering basert på OSM-tagger:
+  //   trail_visibility (excellent|good|intermediate|bad|horrible|no)
+  //   path:visibility (alternativ skrivemåte)
+  //   informal=yes (uoffisielt tråkk uten skilting)
+  //   sac_scale (T1=hiking, T2=mountain_hiking, T3+=demanding/alpine)
+  // Faller tilbake til 505 (sti godt løp) for vanlige path/footway/bridleway
+  // når ingen kvalitets-tags finnes. Tidligere ble ALLE sliket kodet 505,
+  // så ingen skille mellom DNT-merket sti og knapt synlig stitråkk.
+  if (t.highway === 'path' || t.highway === 'footway' || t.highway === 'bridleway') {
+    const tv = t.trail_visibility ?? t['path:visibility']
+    // 507 — knapt synlig stitråkk
+    if (tv === 'horrible' || tv === 'no' ||
+        t.sac_scale === 'demanding_mountain_hiking' ||
+        t.sac_scale === 'alpine_hiking' ||
+        t.sac_scale === 'demanding_alpine_hiking' ||
+        t.sac_scale === 'difficult_alpine_hiking') {
+      return { code: '507', cat: 'manmade' }
+    }
+    // 506 — sti uklar (DNT-trasé som ikke er ryddet, off-trail-tråkk)
+    if (tv === 'intermediate' || tv === 'bad' ||
+        t.informal === 'yes' ||
+        t.sac_scale === 'mountain_hiking') {
+      return { code: '506', cat: 'manmade' }
+    }
+    // 505 — sti godt løp (default for tagget path/footway/bridleway)
+    return { code: '505', cat: 'manmade' }
+  }
   if (t.highway === 'steps')                        return { code: '506', cat: 'manmade' }
   if (t.power === 'line')                           return { code: '528', cat: 'manmade' }
   if (t.barrier === 'fence' || t.barrier === 'wall') return { code: '525', cat: 'manmade' }

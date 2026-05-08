@@ -190,10 +190,35 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.12.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-600" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.12.2</span>
+                <span class="text-white/40">&mdash; Tynnere stier + bedre OSM-klassifisering: Sognsvann/Marka skiller nå mellom DNT-merket sti og knapt synlig tråkk</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>v6.11.0 sti-widthene var for tykke:</strong> 0.18→0.28 mm bumpet på 505 så strøkene tok overhånd på skjerm. Sognsvann-test viste alle stier som tykke svarte striper. Tilbake til ISOM-1:15000-spec: 505=0.22, 506=0.18, 507=0.16 mm. Veifargene 501/502/503 også tynnere (0.5/0.4/0.3 mm)</li>
+                <li><strong>linecap:round på dashes spiste gap-ene</strong> så dash-mønstrene så ut som solid linje. Byttet til <code>butt</code> caps på 505/506/508 for crisp dash-look. Beholdt <code>round</code> på 507 (dots) og solide veier (501-504)</li>
+                <li><strong>Bedre OSM-sti-klassifisering:</strong> tidligere ble ALLE <code>highway=path/footway/bridleway</code> kodet som 505 (sti godt løp) — derfor ingen visuell forskjell. Nå brukes OSM-tagger:
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li><code>trail_visibility=horrible/no</code> eller <code>sac_scale=alpine_hiking+</code> → <strong>507</strong> stitråkk (dots)</li>
+                    <li><code>trail_visibility=intermediate/bad</code>, <code>informal=yes</code>, eller <code>sac_scale=mountain_hiking</code> → <strong>506</strong> sti uklar (korte dashes)</li>
+                    <li>Default → <strong>505</strong> sti godt løp (lange dashes)</li>
+                  </ul>
+                </li>
+                <li>Marka og DNT-områder er ofte velmappet med <code>sac_scale</code> + <code>trail_visibility</code>, så fjell-tråkk skiller seg nå klart fra ryddet kjerrevei. Urbane footways forblir 505 som default</li>
+                <li>Vardåsen-demokart oppdatert med nye sti-widths (regenerert <code>&lt;style&gt;</code>-blokk)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.12.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.12.1</span>
                 <span class="text-white/40">&mdash; «Confirmed inland»-deteksjon: stopper sjøblå-lekkasje i Drammen, Hokksund og andre fjord-hode-områder</span>
