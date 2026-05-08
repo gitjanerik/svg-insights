@@ -375,7 +375,7 @@ onMounted(() => {
                placeholder="f.eks. Sognsvann, 0855, Vardåsen Asker"
                class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
-                      focus:border-amber-500/50 transition" />
+                      focus:border-slate-300/50 transition" />
         <div v-if="isSearching"
              class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15
                     border-t-white/70 rounded-full animate-spin" />
@@ -398,7 +398,7 @@ onMounted(() => {
         </div>
       </Transition>
 
-      <div v-if="searchError" class="mt-2 text-[11px] text-amber-300">{{ searchError }}</div>
+      <div v-if="searchError" class="mt-2 text-[11px] text-slate-300">{{ searchError }}</div>
     </div>
 
     <!-- Valgt sted -->
@@ -444,7 +444,7 @@ onMounted(() => {
 
         <!-- Kvadratisk frame fast i sentrum. Brukeren drar kartet UNDER
              rammen for å velge utsnitt. Pinch / scroll endrer størrelse. -->
-        <div class="absolute pointer-events-none border-2 border-amber-500 rounded-sm
+        <div class="absolute pointer-events-none border-2 border-slate-300 rounded-sm
                     shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
              :style="{
                width:  bboxOverlayPx.w + 'px',
@@ -453,11 +453,11 @@ onMounted(() => {
                top:    (previewSize.h - bboxOverlayPx.h) / 2 + 'px',
                transition: 'width 200ms cubic-bezier(0.2,0.8,0.2,1), height 200ms cubic-bezier(0.2,0.8,0.2,1)',
              }">
-          <div class="absolute inset-0 border border-violet-300/60 rounded-sm pointer-events-none"></div>
+          <div class="absolute inset-0 border border-slate-200/60 rounded-sm pointer-events-none"></div>
           <!-- Senter-kryss -->
           <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none">
-            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-amber-500 -translate-y-1/2"></div>
-            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-500 -translate-x-1/2"></div>
+            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-400 -translate-y-1/2"></div>
+            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-slate-400 -translate-x-1/2"></div>
           </div>
         </div>
 
@@ -478,7 +478,7 @@ onMounted(() => {
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
         <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
-               class="w-full accent-amber-500" />
+               class="w-full accent-slate-400" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
           <span>1 km</span><span>4 km</span><span>10 km</span>
         </div>
@@ -495,8 +495,8 @@ onMounted(() => {
                   @click="equidistanceM = opt.value"
                   class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition"
                   :class="equidistanceM === opt.value
-                          ? 'bg-amber-500/20 border-amber-400/60 text-amber-100'
-                          : 'bg-white border-white/10 text-white/65'">
+                          ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
+                          : 'bg-white/5 border-white/10 text-white/65'">
             {{ opt.label }}
           </button>
         </div>
@@ -509,7 +509,7 @@ onMounted(() => {
     <!-- Bygg-knapp -->
     <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
-              class="w-full py-4 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-violet-900/50
+              class="w-full py-4 rounded-xl bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800
                      disabled:opacity-60 text-white font-semibold flex items-center justify-center gap-2
                      active:scale-[0.99] transition">
         <div v-if="buildState !== 'idle' && buildState !== 'error'"
@@ -517,8 +517,8 @@ onMounted(() => {
         <span>{{ buildState === 'idle' || buildState === 'error' ? 'Lag turkart' : buildProgress }}</span>
       </button>
       <div v-if="buildError"
-           class="mt-3 px-3 py-2 rounded-lg bg-amber-600/30 border border-amber-300/30
-                  text-amber-100 text-[11px]">
+           class="mt-3 px-3 py-2 rounded-lg bg-slate-500/20 border border-slate-300/30
+                  text-slate-100 text-[11px]">
         {{ buildError }}
       </div>
       <div class="mt-3 text-[10px] text-white/40 text-center">

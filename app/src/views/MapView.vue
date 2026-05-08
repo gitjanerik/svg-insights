@@ -615,12 +615,12 @@ onMounted(() => {
     <!-- Posisjons-status -->
     <div v-if="!loading && userPos.error"
          class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-600/95 border border-amber-300/40 text-white text-[12px] shadow-lg">
+                bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
       {{ userPos.error }}
     </div>
     <div v-else-if="!loading && userPos.isOutsideMap"
          class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-600/95 border border-amber-300/40 text-white text-[12px] shadow-lg">
+                bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
       Du er utenfor dette kartet.
     </div>
 
@@ -721,7 +721,7 @@ onMounted(() => {
             <button @click="diagnose = !diagnose"
                     class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
                     :class="diagnose
-                            ? 'bg-amber-500/20 border-amber-400/50 text-white'
+                            ? 'bg-slate-400/20 border-slate-300/50 text-white'
                             : 'bg-white/5 border-white/10 text-white/75'">
               {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
             </button>
