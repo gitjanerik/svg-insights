@@ -583,7 +583,7 @@ onMounted(() => {
 
     <!-- Annoteringsmodus indikator -->
     <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value"
-         class="absolute top-[16rem] right-3 z-20 px-2.5 py-1.5 rounded-md bg-violet-600
+         class="absolute top-[16rem] right-3 z-20 px-2.5 py-1.5 rounded-md bg-slate-600
                 text-white text-[11px] font-medium shadow-lg pointer-events-none">
       Trykk på kartet for å plassere
       <div class="text-[9px] text-white/80 mt-0.5">
@@ -692,7 +692,7 @@ onMounted(() => {
                     @click="toggleLayer(lay.key)"
                     class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
                     :class="visibleLayers.has(lay.key)
-                            ? 'bg-violet-500/20 border-violet-400/50 text-white'
+                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
                             : 'bg-white/5 border-white/10 text-white/45'">
               <span class="text-[12px]">{{ lay.label }}</span>
             </button>
@@ -703,7 +703,7 @@ onMounted(() => {
             <button @click="isDark = !isDark"
                     class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
                     :class="isDark
-                            ? 'bg-violet-500/20 border-violet-400/50 text-white'
+                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
                             : 'bg-white/5 border-white/10 text-white/75'">
               {{ isDark ? 'Mørk modus på' : 'Mørk modus av' }}
             </button>
@@ -743,7 +743,7 @@ onMounted(() => {
                       @click="selectSymbol(s.symbolKey)"
                       class="px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] transition flex items-center gap-2"
                       :class="annot.selectedSymbol.value === s.symbolKey
-                              ? 'bg-violet-500/30 border-violet-300/60 text-white'
+                              ? 'bg-slate-400/30 border-slate-200/60 text-white'
                               : 'bg-white/5 border-white/10 text-white/70'">
                 <svg viewBox="-1 -1 2 2" class="w-4 h-4">
                   <use :href="`#iso-sym-${s.symbolKey}`"/>
