@@ -442,6 +442,8 @@ function applyDiagnoseMode() {
       .isom-map [data-src="way"]      { fill: hsl(220, 80%, 60%) !important; opacity: 0.85 !important; }
       .isom-map [data-src="relation"] { fill: hsl(300, 80%, 60%) !important; opacity: 0.85 !important; }
       .isom-map [data-src="merged"]   { fill: hsl(45, 90%, 55%) !important; opacity: 0.85 !important; }
+      .isom-map [data-src="sjokart"]  { fill: hsl(160, 70%, 50%) !important; opacity: 0.85 !important; }
+      .isom-map [data-src="kystlinje"] { fill: hsl(20, 80%, 55%) !important; opacity: 0.85 !important; }
     `
   } else if (style) {
     style.remove()

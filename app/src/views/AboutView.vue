@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.12.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.12.1</span>
+                <span class="text-white/40">&mdash; «Confirmed inland»-deteksjon: stopper sjøblå-lekkasje i Drammen, Hokksund og andre fjord-hode-områder</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Bug:</strong> Gulskogen-kart (Drammen) viste store horisontale sjøblå striper som dekket bygninger og ren land. Diagnose-modus avslørte: en bred OSM-RELATION (magenta) gjennom midten + flere lyseblå polygoner uten diagnostisk farge → Sjøkart-WFS-data. Drammensfjorden er tagget som relation som strekker seg helt forbi Drammen Sentrum og inn i Gulskogen, og Sjøkart-WFS returnerer fjord-hode-data som lekker inn i bbox-en når man velger et inland-utsnitt</li>
+                <li><strong>Fix: «confirmed-inland»-deteksjon.</strong> Hvis N50 har ferskvann (innsjø/elv), N50 har INGEN sjø (Havflate), OG ingen OSM coastline finnes i bbox, så er vi trygt inland. Da: drop OSM-saltvann (relations + ways tagget place=sea/natural=bay/strait/fjord) OG drop alle Sjøkart-features (dybdeareal, dybdekontur, lanterne, skjær). N50 Havflate er den eneste 100% autoritative sjø-detektor — Sjøkart selv kan være lekkasje-kilden så vi kan ikke bruke den som signal for «her er det faktisk sjø»</li>
+                <li><strong>Tilfeller dette dekker:</strong> Drammen-Gulskogen (Drammensfjord-relation strekker seg vestover), Hokksund / Mjøndalen (samme relation når den fortsetter videre opp Drammenselva), generelt alle fjord-hode-områder hvor OSM tagger elveos som «sea» og Sjøkart-WFS bbox-clip lekker inn</li>
+                <li><strong>Diagnose-modus utvidet</strong> med farger for <code>data-src=sjokart</code> (grønn) og <code>data-src=kystlinje</code> (orange), så det blir lettere å identifisere lekkasje fra disse kildene i fremtiden</li>
+                <li><strong>Konsoll-logg:</strong> <code>[Vann]</code>-meldingen viser nå <code>confirmed-inland=true/false</code> + antall Sjøkart-features droppet inland</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.12.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.12.0</span>
                 <span class="text-white/40">&mdash; ISOM-symbol-pakke: tydelige sti-typer, print-faithful tegnforklaring, synlige annoteringer + GPS-dot</span>

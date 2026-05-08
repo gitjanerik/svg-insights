@@ -103,7 +103,22 @@ async function generateMap() {
     )
     const useCoastlineFallback = hasCoastline && !haveAuthoritativeSea
 
+    // v6.12.1: «Confirmed inland»-deteksjon. Hvis N50 har ferskvann
+    // (innsjø/elv), N50 har INGEN sjø (Havflate), OG ingen OSM coastline,
+    // så er vi trygt inne i innland. OSM-relations som er tagget
+    // place=sea/natural=bay/etc kan strekke seg langt opp i elveos-
+    // områder (Drammensfjorden-relationen dekker Drammenselva forbi
+    // Drammen Sentrum og inn i Gulskogen) → de blør sjøblå over ren
+    // land. Tilsvarende kan Sjøkart Dybdeareal returnere bbox-overlapp
+    // fra fjord-hodet selv om actual bbox er inland.
+    //
+    // Merk: vi bruker n50HasSea (ikke haveAuthoritativeSea) som
+    // sjø-signal, fordi Sjøkart selv kan være kilden til lekkasjen.
+    // N50 Havflate er den eneste 100% autoritative sjø-detektoren.
+    const isConfirmedInland = n50HasFreshwater && !n50HasSea && !hasCoastline
+
     let removedSaltwater = 0
+    let removedInlandSjokart = 0
     const elements = osmData.elements.filter(el => {
       const t = el.tags ?? {}
       const isWaterPolygon = t.natural === 'water' || !!t.water ||
@@ -111,11 +126,10 @@ async function generateMap() {
                              t.place === 'sea' || t.place === 'ocean'
       if (isWaterPolygon) {
         if (isOsmWaterSalty(t)) {
-          // I coastline-mode bygger vi sjø/land fra natural=coastline-ways.
-          // OSM saltvann-polygoner er da redundant — og verre, de mangler
-          // ofte inner-holes for mainland-bukter, så de blør blått over
-          // land-masken. Filtrer bort.
-          if (useCoastlineFallback) { removedSaltwater++; return false }
+          // Drop OSM-saltvann i coastline-mode ELLER når bbox er
+          // bekreftet inland — i begge tilfeller er saltvann-tagget
+          // OSM-data feil eller redundant her.
+          if (useCoastlineFallback || isConfirmedInland) { removedSaltwater++; return false }
           return !haveAuthoritativeSea
         }
         return !n50HasFreshwater
@@ -126,10 +140,22 @@ async function generateMap() {
       return true
     })
     if (n50Water.length > 0) elements.push(...n50Water)
-    if (sjokartEls.length > 0) elements.push(...sjokartEls)
 
-    const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartEls.length)
-    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | filtrerte ${filteredOsmCount} OSM-vann-elementer (${removedSaltwater} saltvann i coastline-mode)`)
+    // Filtrer Sjøkart-polygoner i confirmed-inland-bbox. Sjøkart-WFS kan
+    // returnere bbox-clipped fjord-data som strekker seg inn i innland
+    // (særlig ved fjord-hoder som Drammen). Lanterner/skjær er sjø-only
+    // features og dropper også. Beholder dybdepunkt-tekst som er
+    // tilnærmet harmløst hvis det skulle dukke opp.
+    let sjokartFiltered = sjokartEls
+    if (isConfirmedInland && sjokartEls.length > 0) {
+      const before = sjokartEls.length
+      sjokartFiltered = sjokartEls.filter(el => !el.tags?.sjokart)
+      removedInlandSjokart = before - sjokartFiltered.length
+    }
+    if (sjokartFiltered.length > 0) elements.push(...sjokartFiltered)
+
+    const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartFiltered.length)
+    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | confirmed-inland=${isConfirmedInland} | filtrerte ${filteredOsmCount} OSM-vann-elementer (${removedSaltwater} saltvann i coastline/inland-mode), ${removedInlandSjokart} Sjøkart-features inland`)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
