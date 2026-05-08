@@ -120,6 +120,25 @@ function nameLooksSalty(name) {
   )
 }
 
+/**
+ * Heuristikk for om et OSM-vann-element representerer saltvann (sjø, fjord,
+ * bay, strait osv) snarere enn ferskvann (innsjø, tjern, dam). Brukes både
+ * til ISOM-koding (303 vs 301) og til granulært filter når vi velger mellom
+ * autoritative kilder (N50 Havflate vs Innsjø).
+ */
+export function isOsmWaterSalty(tags) {
+  const t = tags ?? {}
+  if (t.salt === 'yes' || t.tidal === 'yes') return true
+  if (t.place === 'sea' || t.place === 'ocean') return true
+  if (t.natural === 'bay' || t.natural === 'strait') return true
+  const saltyWaterTypes = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
+  if (saltyWaterTypes.has(t.water)) return true
+  if (nameLooksSalty(t.name)) return true
+  if (nameLooksSalty(t['name:no'])) return true
+  if (nameLooksSalty(t['name:nb'])) return true
+  return false
+}
+
 export function classifyToIsom(el) {
   const t = el.tags ?? {}
   if (el.type === 'node' && t.natural === 'peak') return { code: 'peak', cat: 'point' }
@@ -145,22 +164,9 @@ export function classifyToIsom(el) {
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
   // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
   // som mangler subtype-tag (svært vanlig for Oslofjord, Sognefjord osv.)
-  const saltyWaterTypes = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
   const isSeaPlace = t.place === 'sea' || t.place === 'ocean'
   if (t.natural === 'water' || t.water || t.natural === 'bay' || t.natural === 'strait' || isSeaPlace) {
-    if (
-      t.salt === 'yes' ||
-      t.tidal === 'yes' ||
-      isSeaPlace ||
-      t.natural === 'bay' ||
-      t.natural === 'strait' ||
-      saltyWaterTypes.has(t.water) ||
-      nameLooksSalty(t.name) ||
-      nameLooksSalty(t['name:no']) ||
-      nameLooksSalty(t['name:nb'])
-    ) {
-      return { code: '303', cat: 'water' }
-    }
+    if (isOsmWaterSalty(t)) return { code: '303', cat: 'water' }
     return { code: '301', cat: 'water' }
   }
   if (t.waterway === 'stream' || t.waterway === 'ditch') return { code: '305', cat: 'water' }

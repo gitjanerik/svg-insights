@@ -190,10 +190,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.10.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.10.1</span>
+                <span class="text-white/40">&mdash; Granulært vann-filter: behold OSM Oslofjord når N50 bare har innsjøer</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Bug-fix for v6.10.0 vann-filter:</strong> Oslo-kart endte kremgul der Oslofjorden skulle være. Filteret skrudde AV all OSM <code>natural=water</code> så snart N50 hadde NOE — også når N50 bare hadde noen små innsjøer i bbox-en. Da forsvant OSM Oslofjord-relationen, Sjøkart fyllte ikke inn (CORS/typename-mismatch), og fjorden ble usynlig</li>
+                <li><strong>Nytt: granulært filter pr vann-type.</strong> OSM-ferskvann (innsjø/tjern/elv) filtreres bare hvis N50 har ferskvann. OSM-saltvann (sjø/fjord/bay/strait) filtreres bare hvis N50 har Havflate ELLER Sjøkart har Dybdeareal. Hvis ingen autoritativ sjø-kilde svarer, beholdes OSM Oslofjord/Indre Oslofjord som fallback</li>
+                <li><strong>Delt salt-deteksjon:</strong> ny <code>isOsmWaterSalty(tags)</code> i <code>symbolizer.js</code>, eksportert og brukt både av <code>classifyToIsom</code> (303 vs 301 ISOM-koding) og av MapPickerView-filteret. Konsistent håndtering av sea/fjord/bay/strait + name-suffiks-heuristikk</li>
+                <li><strong>Diagnostikk:</strong> ny <code>[Vann]</code>-konsoll-logg viser akkurat hvilke kilder som ble brukt og hvor mange OSM-elementer som ble filtrert. Hjelper å feilsøke fra DevTools uten å lese kildekode</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.10.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.10.0</span>
                 <span class="text-white/40">&mdash; Kystkart: Sjøkart-WFS gir blått hav, dybdekurver, skjær og lanterner</span>

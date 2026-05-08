@@ -5,6 +5,7 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
+import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
@@ -74,27 +75,46 @@ async function generateMap() {
         return null
       }),
     ])
-    const useN50 = n50Water.length > 0
     const sjokartEls = sjokart ? sjokartToElements(sjokart) : []
-    const sjokartHasWater = sjokartEls.some(el =>
+    // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
+    // (innsjø/tjern/elv) og saltvann (sjø/fjord). Tidligere filter (v6.10.0)
+    // skrudde av ALL OSM natural=water så snart N50 hadde noen ting — også
+    // hvis N50 bare hadde innsjøer i et bbox med fjord. Da forsvant
+    // Oslofjord-relationen og kart endte kremgul i Oslo. Nå filtreres OSM
+    // pr type bare hvis tilsvarende autoritativ kilde finnes.
+    const n50HasFreshwater = n50Water.some(el =>
+      (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
+      el.tags?.waterway === 'stream'
+    )
+    const n50HasSea = n50Water.some(el =>
+      el.tags?.water === 'sea' || el.tags?.salt === 'yes'
+    )
+    const sjokartHasSea = sjokartEls.some(el =>
       el.type === 'way' && el.tags?.sjokart === 'dybdeareal'
     )
-    // Hvis N50 ELLER Sjøkart lyktes: filtrer OSM natural=water
-    // (autoritative kilder vinner). Hvis ingen: behold OSM som fallback.
-    const useAuthoritativeWater = useN50 || sjokartHasWater
-    const elements = useAuthoritativeWater
-      ? osmData.elements.filter(el => {
-          const t = el.tags ?? {}
-          if (t.natural === 'water') return false
-          if (t.water) return false
-          if (t.waterway === 'stream' || t.waterway === 'ditch') return false
-          return true
-        })
-      : osmData.elements
-    if (useN50) elements.push(...n50Water)
+    const haveAuthoritativeSea = n50HasSea || sjokartHasSea
+
+    const elements = osmData.elements.filter(el => {
+      const t = el.tags ?? {}
+      const isWaterPolygon = t.natural === 'water' || !!t.water ||
+                             t.natural === 'bay' || t.natural === 'strait' ||
+                             t.place === 'sea' || t.place === 'ocean'
+      if (isWaterPolygon) {
+        return isOsmWaterSalty(t) ? !haveAuthoritativeSea : !n50HasFreshwater
+      }
+      if (t.waterway === 'stream' || t.waterway === 'ditch') {
+        return !n50HasFreshwater
+      }
+      return true
+    })
+    if (n50Water.length > 0) elements.push(...n50Water)
     if (sjokartEls.length > 0) elements.push(...sjokartEls)
+
+    const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartEls.length)
+    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | filtrerte ${filteredOsmCount} OSM-vann-elementer`)
+
     const sourceParts = ['OSM']
-    if (useN50) sourceParts.push(`N50 (${n50Water.length} vann)`)
+    if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
     if (sjokart && sjokart.source) {
       const sjk = (sjokart.dybdeareal?.length ?? 0)
       const dyb = (sjokart.dybdekontur?.length ?? 0)
@@ -102,7 +122,7 @@ async function generateMap() {
       const lnt = (sjokart.lanterne?.length ?? 0)
       sourceParts.push(`Sjøkart (${sjk} sjø, ${dyb} dybdekurver, ${grn} grunner, ${lnt} lanterner)`)
     }
-    if (!useAuthoritativeWater) sourceParts.push('kun OSM natural=water — fallback')
+    if (!haveAuthoritativeSea) sourceParts.push('OSM natural=water beholdt for sjø')
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
