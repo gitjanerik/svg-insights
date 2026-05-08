@@ -257,6 +257,23 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.19.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.19.1</span>
+                <span class="text-white/50">&mdash; Drawer 45vh + FAB synlig + tema-overgang fixet</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Drawer-h&oslash;yde 55vh &rarr; 45vh</strong> som standard. Mer plass til kartet, drawer-en er fortsatt drag-bar opp og ned</li>
+                <li><strong>FAB-stack synlig n&aring;r drawer er &aring;pen.</strong> z-index hevet til 40 (over drawer 30) og bottom-posisjon flyttes opp til <code>45dvh + 0.75rem</code> n&aring;r drawer er &aring;pen, slik at zoom-knappene flyter over drawer-toppen i stedet for &aring; gj&oslash;mmes bak</li>
+                <li><strong>Tema-overgang fixet:</strong> <code>applyLayerVisibility()</code> kalles n&aring; ubetinget etter hvert tema-bytte, slik at DOM er garantert i sync med state. Tidligere kunne et art-mode-bytte etterlate <code>display:none</code> p&aring; lag som skulle vises etter overgang til vanlig tema</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.19.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-500" />

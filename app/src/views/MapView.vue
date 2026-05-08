@@ -62,7 +62,7 @@ const THEMES = computed(() => Object.entries(isomCatalog.themes ?? {}).map(([k, 
 const diagnose = ref(false)
 const showControls = ref(false)
 
-const drawer = useDraggableDrawer({ expandedHeight: 0.55, minimizedPeek: 32 })
+const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
@@ -470,16 +470,23 @@ function applyTheme() {
   }
 }
 
-// Auto-hide layers når bruker velger et "kunstverk"-tema (Curves, Warhol).
-// Bare høydekurver vises som standard — brukeren kan slå på flere lag
-// manuelt fra drawer. Lag som slås på i art-mode rendres med fill-opacity.
-function onThemeChange(newTheme) {
+// Auto-hide / restore layers ved tema-bytte:
+//   - Inn til Curves/Warhol → bare høydekurver vises
+//   - Ut fra Curves/Warhol → alle lag restaureres
+//   - Mellom andre temaer → ingen endring (brukerens manuelle valg beholdes)
+// applyLayerVisibility kalles ubetinget på slutten så DOM er garantert
+// i sync med state — fjerner mulighet for stuck display=none fra forrige
+// art-mode.
+function onThemeChange(newTheme, oldTheme) {
   applyTheme()
-  const t = isomCatalog.themes?.[newTheme]
-  if (t?.autoHideLayers) {
+  const newT = isomCatalog.themes?.[newTheme]
+  const oldT = isomCatalog.themes?.[oldTheme]
+  if (newT?.autoHideLayers) {
     visibleLayers.value = new Set(['kontur'])
-    applyLayerVisibility()
+  } else if (oldT?.autoHideLayers) {
+    visibleLayers.value = new Set(LAYERS.map(l => l.key))
   }
+  applyLayerVisibility()
 }
 
 watch(currentTheme, onThemeChange)
@@ -575,9 +582,16 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- FAB-stack: zoom inn / zoom ut / sentrer (nede til høyre, over drawer-peek) -->
-    <div class="absolute right-3 z-20 flex flex-col gap-2 pointer-events-auto select-none"
-         style="bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem)">
+    <!-- FAB-stack: zoom inn / zoom ut / sentrer. Synlig både når drawer er
+         åpen og lukket. Når drawer er åpen flyttes FAB-en opp over drawer-
+         toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
+         ligger over drawer (z-30). -->
+    <div class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
+         :style="{
+           bottom: showControls
+             ? 'calc(45dvh + 0.75rem)'
+             : 'calc(env(safe-area-inset-bottom, 0px) + 5rem)'
+         }">
       <button @click="zoomIn()" aria-label="Zoom inn"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
                      flex items-center justify-center active:scale-95 transition">
