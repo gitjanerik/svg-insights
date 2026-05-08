@@ -109,6 +109,68 @@ function xmlEscape(s) {
 }
 
 /**
+ * Sy sammen OSM-multipolygon relation-medlemmer til lukkede ringer.
+ *
+ * OSM lagrer multipolygon-relations som array av ways, der hver way er
+ * et SEGMENT av en ring (ikke nødvendigvis lukket polygon). For å
+ * rendre korrekt må vi greedy-joine segmenter med matchende endepunkter
+ * til lukkede ringer.
+ *
+ * Tidligere bug: vi rendret hver way som sin egen polygon (path med Z),
+ * så et lake-relation med 4 shore-segmenter ble 4 trekanter (wedger!).
+ *
+ * @param {Array<{type, geometry, role}>} members  relation.members
+ * @param {string} role  'outer' eller 'inner'
+ * @returns {Array<Array<{lat,lon}>>}  liste av sammensydde ringer
+ */
+function assembleRelationRings(members, role) {
+  const segments = members
+    .filter(m => m.type === 'way' && m.role === role && Array.isArray(m.geometry) && m.geometry.length >= 2)
+    .map(m => m.geometry.slice())  // kopi så vi ikke muterer original
+  const eps = 1e-6  // grader (~0.1 m ved 60° N)
+  const samePt = (a, b) => Math.abs(a.lat - b.lat) < eps && Math.abs(a.lon - b.lon) < eps
+  const rings = []
+  while (segments.length > 0) {
+    let chain = segments.shift()
+    // Allerede lukket?
+    if (samePt(chain[0], chain[chain.length - 1])) {
+      rings.push(chain)
+      continue
+    }
+    // Greedy: prøv å append/prepend andre segmenter til chain blir lukket
+    let merged = true
+    while (merged) {
+      merged = false
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i]
+        const head = chain[0], tail = chain[chain.length - 1]
+        const sHead = seg[0], sTail = seg[seg.length - 1]
+        if (samePt(tail, sHead)) {
+          chain = chain.concat(seg.slice(1))
+          segments.splice(i, 1); merged = true; break
+        }
+        if (samePt(tail, sTail)) {
+          chain = chain.concat(seg.slice(0, -1).reverse())
+          segments.splice(i, 1); merged = true; break
+        }
+        if (samePt(head, sTail)) {
+          chain = seg.slice(0, -1).concat(chain)
+          segments.splice(i, 1); merged = true; break
+        }
+        if (samePt(head, sHead)) {
+          chain = seg.slice(1).reverse().concat(chain)
+          segments.splice(i, 1); merged = true; break
+        }
+      }
+      // Lukket?
+      if (samePt(chain[0], chain[chain.length - 1])) break
+    }
+    if (chain.length >= 3) rings.push(chain)
+  }
+  return rings
+}
+
+/**
  * Slå sammen ways som har samme `name`-tag til én polygon. Bruker
  * polygon-clipping union på SVG-projiserte ringer. Returnerer en
  * blanding av originale (unike eller navnløse) ways og syntetiske
@@ -482,13 +544,17 @@ export function buildSvg(elements, bbox, options = {}) {
           if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) continue
           d = pathFromGeometry(el.geometry, true, filter.simplifyM)
         } else if (el.type === 'relation' && el.members) {
-          // Relation med outer + inner medlemmer: rendres som én path med
-          // evenodd så holes virker. Antakelse: outer-rings i samme
-          // relation overlapper ikke (ellers OSM data-feil).
-          d = el.members
-            .filter(m => m.type === 'way' && m.geometry && (m.role === 'outer' || m.role === 'inner'))
-            .map(m => pathFromGeometry(m.geometry, true, filter.simplifyM))
-            .join(' ')
+          // OSM multipolygon: outer/inner-rings er splittet over flere
+          // ways. Sy sammen først (greedy join på matchende endepunkter)
+          // så vi får ekte lukkede ringer i stedet for segment-trekanter.
+          const outerRings = assembleRelationRings(el.members, 'outer')
+          const innerRings = assembleRelationRings(el.members, 'inner')
+          const subpaths = []
+          for (const ring of [...outerRings, ...innerRings]) {
+            const sd = pathFromGeometry(ring, true, filter.simplifyM)
+            if (sd) subpaths.push(sd)
+          }
+          d = subpaths.join(' ')
         }
         if (d) {
           pathElements.push(
@@ -547,10 +613,12 @@ export function buildSvg(elements, bbox, options = {}) {
       } else if (el.type === 'way' && el.geometry) {
         waterPaths.push(pathFromGeometry(el.geometry, true))
       } else if (el.type === 'relation' && el.members) {
-        for (const m of el.members) {
-          if (m.type === 'way' && m.geometry) {
-            waterPaths.push(pathFromGeometry(m.geometry, true))
-          }
+        // Sy sammen multipolygon-ringer før vi pusher (samme bug ville
+        // ellers gi land-mask med segment-trekanter i stedet for lake)
+        const outerRings = assembleRelationRings(el.members, 'outer')
+        const innerRings = assembleRelationRings(el.members, 'inner')
+        for (const ring of [...outerRings, ...innerRings]) {
+          waterPaths.push(pathFromGeometry(ring, true))
         }
       }
     }
