@@ -185,10 +185,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.9.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.9.0</span>
+                <span class="text-white/40">&mdash; ISOM-polish: sykkel-sti, navn-toggle, Tegnforklaring-side, zoom</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Sykkel-sti egen styling (ISOM 508):</strong> tidligere mappet til 505 (sti) sammen med vanlig gangsti. Nå dedikert kode med kraftigere strek og lengre dasharray. OSM <code>highway=cycleway</code> + <code>highway=path</code> med <code>bicycle=designated/yes</code> klassifiseres som 508. Lagt til som egen togglelig lag «Sykkel-sti» i drawer</li>
+                <li><strong>Navn-toggle utvidet:</strong> «Navn»-laget i drawer-en skjuler nå ALL tekst (stedsnavn, peak-navn, vannhøyder, kurvetall) for et rent kart-uttrykk. Samme bryter som før, bare bredere virkning</li>
+                <li><strong>Dedikert Tegnforklaring-side:</strong> ny rute <code>/tegnforklaring</code> som rendrer hele ISOM-katalogen visuelt, gruppert i tematiske seksjoner (Vann, Vegetasjon, Veier, etc). Linket fra MapHomeView og fra MapView-drawer. Datadrevet fra <code>isomCatalog.json</code> så endringer reflekteres automatisk</li>
+                <li><strong>Zoom-polish:</strong> pinch zoomer nå rundt finger-senter (tidligere rundt element-midt = uvant), wheel zoomer rundt mus-pos, dobbeltklikk/dobbel-tap zoomer 2x på treffpunkt med kort glatt transition. Maks-zoom 8x; nytt dobbeltklikk når ≥4x = reset</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.8.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.8.4</span>
                 <span class="text-white/40">&mdash; ROTÅRSAKEN funnet: OSM multipolygon-relations syes nå sammen til lukkede ringer</span>

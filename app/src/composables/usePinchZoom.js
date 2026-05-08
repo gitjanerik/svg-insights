@@ -1,13 +1,22 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 /**
- * Multi-touch pinch-to-zoom and pan for an element.
- * Returns reactive transform values.
+ * Multi-touch pinch-to-zoom + pan + double-tap-to-zoom-on-point.
+ *
+ * v6.9.0-polish: pinch zoomer rundt finger-senter (tidligere zoomet rundt
+ * elementets midt = uvant for brukeren), wheel zoomer rundt mus-pos, og
+ * dobbeltklikk/dobbel-tap zoomer 2x på treffpunkt med kort transition.
  */
 export function usePinchZoom(elementRef) {
   const scale = ref(1)
   const translateX = ref(0)
   const translateY = ref(0)
+  // Når denne er true setter MapView en kort CSS transition så
+  // double-tap zoomen blir glatt
+  const animating = ref(false)
+
+  const MIN_SCALE = 0.5
+  const MAX_SCALE = 8
 
   let lastDist = 0
   let lastCenterX = 0
@@ -16,6 +25,10 @@ export function usePinchZoom(elementRef) {
   let isPanning = false
   let startX = 0
   let startY = 0
+  let lastTapAt = 0
+  let lastTapX = 0
+  let lastTapY = 0
+  let animTimer = null
 
   function dist(t1, t2) {
     const dx = t1.clientX - t2.clientX
@@ -30,6 +43,32 @@ export function usePinchZoom(elementRef) {
     }
   }
 
+  // Zoom rundt et fokuspunkt (fx, fy) i client-koord, så punktet
+  // forblir under fingeren mens skalaen endres.
+  function zoomAtPoint(newScale, fx, fy) {
+    const el = elementRef.value
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    // Posisjon i element-rom (uten transform): client - rect.origin - translate
+    const localX = fx - rect.left - translateX.value
+    const localY = fy - rect.top - translateY.value
+    const ratio = newScale / scale.value
+    // Etter zoom skal local punkt fortsatt være under (fx, fy)
+    translateX.value = fx - rect.left - localX * ratio
+    translateY.value = fy - rect.top - localY * ratio
+    scale.value = newScale
+  }
+
+  function clampScale(s) {
+    return Math.max(MIN_SCALE, Math.min(MAX_SCALE, s))
+  }
+
+  function animate() {
+    animating.value = true
+    if (animTimer) clearTimeout(animTimer)
+    animTimer = setTimeout(() => { animating.value = false }, 220)
+  }
+
   function onTouchStart(e) {
     if (e.touches.length === 2) {
       isPinching = true
@@ -38,10 +77,36 @@ export function usePinchZoom(elementRef) {
       const c = center(e.touches[0], e.touches[1])
       lastCenterX = c.x
       lastCenterY = c.y
-    } else if (e.touches.length === 1 && scale.value > 1) {
-      isPanning = true
-      startX = e.touches[0].clientX - translateX.value
-      startY = e.touches[0].clientY - translateY.value
+    } else if (e.touches.length === 1) {
+      // Double-tap detection
+      const now = Date.now()
+      const t = e.touches[0]
+      const dx = t.clientX - lastTapX
+      const dy = t.clientY - lastTapY
+      const within = Math.hypot(dx, dy) < 40
+      if (now - lastTapAt < 300 && within) {
+        // Doubble-tap: zoom 2x mot tap-punkt, eller reset hvis allerede zoomet
+        if (scale.value >= 3.9) {
+          // Allerede zoomet inn → reset
+          animate()
+          scale.value = 1
+          translateX.value = 0
+          translateY.value = 0
+        } else {
+          animate()
+          zoomAtPoint(clampScale(scale.value * 2), t.clientX, t.clientY)
+        }
+        lastTapAt = 0
+        return
+      }
+      lastTapAt = now
+      lastTapX = t.clientX
+      lastTapY = t.clientY
+      if (scale.value > 1) {
+        isPanning = true
+        startX = t.clientX - translateX.value
+        startY = t.clientY - translateY.value
+      }
     }
   }
 
@@ -50,12 +115,14 @@ export function usePinchZoom(elementRef) {
       e.preventDefault()
       const d = dist(e.touches[0], e.touches[1])
       const ratio = d / lastDist
-      scale.value = Math.max(0.5, Math.min(8, scale.value * ratio))
-      lastDist = d
-
       const c = center(e.touches[0], e.touches[1])
+      // Zoom rundt finger-senter i stedet for element-senter
+      const newScale = clampScale(scale.value * ratio)
+      zoomAtPoint(newScale, c.x, c.y)
+      // Pan med center-bevegelse mellom frames
       translateX.value += c.x - lastCenterX
       translateY.value += c.y - lastCenterY
+      lastDist = d
       lastCenterX = c.x
       lastCenterY = c.y
     } else if (isPanning && e.touches.length === 1) {
@@ -70,14 +137,29 @@ export function usePinchZoom(elementRef) {
     if (e.touches.length < 1) isPanning = false
   }
 
-  // Desktop: scroll to zoom
+  // Desktop: scroll to zoom rundt mus-pos
   function onWheel(e) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    scale.value = Math.max(0.5, Math.min(8, scale.value * delta))
+    zoomAtPoint(clampScale(scale.value * delta), e.clientX, e.clientY)
+  }
+
+  // Desktop: dobbeltklikk = double-tap-ekvivalent
+  function onDblClick(e) {
+    e.preventDefault()
+    if (scale.value >= 3.9) {
+      animate()
+      scale.value = 1
+      translateX.value = 0
+      translateY.value = 0
+    } else {
+      animate()
+      zoomAtPoint(clampScale(scale.value * 2), e.clientX, e.clientY)
+    }
   }
 
   function reset() {
+    animate()
     scale.value = 1
     translateX.value = 0
     translateY.value = 0
@@ -90,6 +172,7 @@ export function usePinchZoom(elementRef) {
     el.addEventListener('touchmove', onTouchMove, { passive: false })
     el.addEventListener('touchend', onTouchEnd)
     el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('dblclick', onDblClick)
   })
 
   onUnmounted(() => {
@@ -99,7 +182,9 @@ export function usePinchZoom(elementRef) {
     el.removeEventListener('touchmove', onTouchMove)
     el.removeEventListener('touchend', onTouchEnd)
     el.removeEventListener('wheel', onWheel)
+    el.removeEventListener('dblclick', onDblClick)
+    if (animTimer) clearTimeout(animTimer)
   })
 
-  return { scale, translateX, translateY, reset }
+  return { scale, translateX, translateY, reset, animating }
 }

@@ -37,6 +37,7 @@ const LAYERS = [
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'sti',        label: 'Sti' },
+  { key: 'sykkel',     label: 'Sykkel-sti' },
   { key: 'stein',      label: 'Stein' },
   { key: 'stupkant',   label: 'Stupkant' },
   { key: 'linje',      label: 'Gjerde / kraft' },
@@ -70,13 +71,22 @@ function applyLayerVisibility() {
       g.style.display = visibleLayers.value.has(lay.key) ? '' : 'none'
     }
   }
+  // Hvis 'navn' er av, skjul også vann-/kontur-tall (data-label) som
+  // ligger inni andre lag-grupper. Da blir Navn-toggle en konsistent
+  // "all text on/off"-bryter.
+  const showLabels = visibleLayers.value.has('navn')
+  const labelEls = root.querySelectorAll('[data-label]')
+  for (const el of labelEls) {
+    el.style.display = showLabels ? '' : 'none'
+  }
 }
 
-const { scale, translateX, translateY, reset } = usePinchZoom(wrapperRef)
+const { scale, translateX, translateY, reset, animating } = usePinchZoom(wrapperRef)
 
 const transformStyle = computed(() => ({
   transform: `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
-  transformOrigin: '50% 50%',
+  transformOrigin: '0 0',
+  transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
 }))
 
 const userPos = useUserPosition(() => meta.value)
@@ -595,6 +605,14 @@ onMounted(() => {
               Sentrer
             </button>
           </div>
+
+          <button @click="router.push('/tegnforklaring')"
+                  class="w-full mb-4 px-3 py-2 rounded-lg bg-white/5 border border-white/10
+                         text-white/75 text-[12px] active:scale-[0.98] flex items-center
+                         justify-between">
+            <span>Tegnforklaring</span>
+            <span class="text-white/40">→</span>
+          </button>
 
           <div class="flex gap-2 mb-4">
             <button @click="diagnose = !diagnose"

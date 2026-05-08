@@ -1,0 +1,140 @@
+<script setup>
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import isomCatalog from '../lib/isomCatalog.json'
+import { buildIsomDefs, buildIsomCss } from '../lib/symbolizer.js'
+
+const router = useRouter()
+
+// Bygg pattern-defs + CSS som mapBuilder gjør, så samples i tegnforklaringen
+// får eksakt samme visuelle uttrykk som ekte kart
+const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
+const isomCss = buildIsomCss(isomCatalog, patternIds)
+
+const isDark = ref(false)
+const bgColor = computed(() => isDark.value ? isomCatalog.background.darkColor : isomCatalog.background.color)
+
+// Grupper koder i tematiske seksjoner for hjelp til lesing
+const SECTIONS = [
+  { title: 'Høydekurver', codes: ['101', '102', '103', '104'], category: 'contour' },
+  { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '213'], category: 'rock' },
+  { title: 'Vann', codes: ['301', '302', '303', '304', '305', '308', '309'], category: 'water' },
+  { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
+  { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
+  { title: 'Bygninger & kunstige elementer', codes: ['521', '522', '525', '528'], category: 'manmade' },
+]
+
+function defForCode(category, code) {
+  return isomCatalog.categories?.[category]?.[code]
+}
+
+function darkForCode(code) {
+  return isomCatalog.darkMode?.categories?.[code]
+}
+
+// Sample-rendering: 60×24 SVG som viser ISOM-koden i kontekst
+function sampleSvg(category, code) {
+  const def = defForCode(category, code)
+  if (!def) return ''
+  const dark = isDark.value ? darkForCode(code) : null
+  const bg = isDark.value ? isomCatalog.background.darkColor : isomCatalog.background.color
+  const W = 60, H = 24
+  const fill = dark?.fill ?? def.fill
+  const stroke = dark?.stroke ?? def.stroke
+  if (def.point) {
+    const symId = symbolIds.get(def.point.symbol)
+    const s = (def.point.scaleMm ?? 1.0) * 4  // ~4 px per mm i dette samples-rommet
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="isom-map" style="background:${bg}">
+      <rect width="${W}" height="${H}" fill="${bg}"/>
+      ${symId ? `<use href="#${symId}" x="${W/2 - s/2}" y="${H/2 - s/2}" width="${s}" height="${s}"/>` : ''}
+    </svg>`
+  }
+  if (stroke && !fill) {
+    // Linje
+    const w = (stroke.widthMm ?? 0.2) * 2
+    const dash = stroke.dasharray ? stroke.dasharray.map(d => d * 2).join(' ') : 'none'
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:${bg}">
+      <rect width="${W}" height="${H}" fill="${bg}"/>
+      <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}"
+        stroke="${stroke.color}" stroke-width="${w}" stroke-dasharray="${dash}"/>
+    </svg>`
+  }
+  if (fill) {
+    // Polygon
+    let fillAttr = fill.color ?? '#ccc'
+    if (fill.type === 'pattern') {
+      const pid = patternIds.get(fill.pattern)
+      if (pid) fillAttr = `url(#${pid})`
+    }
+    const strokeAttr = stroke?.color ?? 'none'
+    const strokeW = stroke ? (stroke.widthMm ?? 0.15) * 2 : 0
+    return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="isom-map" style="background:${bg}">
+      <defs>${isomDefs}</defs>
+      <style>${isomCss}</style>
+      <rect width="${W}" height="${H}" fill="${bg}"/>
+      <rect x="3" y="3" width="${W-6}" height="${H-6}" fill="${fillAttr}"
+        stroke="${strokeAttr}" stroke-width="${strokeW}"/>
+    </svg>`
+  }
+  return ''
+}
+</script>
+
+<template>
+  <div class="min-h-screen" :class="isDark ? 'bg-zinc-950 text-white/85' : 'bg-stone-100 text-zinc-900'">
+    <header class="sticky top-0 z-10 backdrop-blur"
+            :class="isDark ? 'bg-zinc-950/85 border-b border-white/10' : 'bg-stone-100/85 border-b border-zinc-300'">
+      <div class="px-4 py-3 flex items-center gap-3">
+        <button @click="router.back()"
+                class="rounded-full w-9 h-9 flex items-center justify-center"
+                :class="isDark ? 'bg-white/10' : 'bg-zinc-800/10'">
+          ←
+        </button>
+        <h1 class="text-lg font-semibold flex-1">Tegnforklaring</h1>
+        <button @click="isDark = !isDark"
+                class="px-3 py-1.5 rounded-lg text-xs"
+                :class="isDark ? 'bg-violet-500/20 text-white' : 'bg-zinc-800/10 text-zinc-700'">
+          {{ isDark ? 'Lys' : 'Mørk' }}
+        </button>
+      </div>
+      <p class="px-4 pb-3 text-xs leading-snug" :class="isDark ? 'text-white/55' : 'text-zinc-600'">
+        ISOM 2017-2 inspirerte symboler brukt i turkartene. Print-kvalitet, 1:10000.
+      </p>
+    </header>
+
+    <div class="px-4 py-4 space-y-6">
+      <section v-for="section in SECTIONS" :key="section.title">
+        <h2 class="text-sm font-semibold uppercase tracking-wide mb-2"
+            :class="isDark ? 'text-white/55' : 'text-zinc-500'">
+          {{ section.title }}
+        </h2>
+        <div class="space-y-1.5">
+          <div v-for="code in section.codes" :key="code"
+               class="flex items-center gap-3 rounded-lg px-3 py-2"
+               :class="isDark ? 'bg-white/5' : 'bg-white border border-zinc-200'">
+            <div class="w-15 h-6 shrink-0 rounded overflow-hidden ring-1"
+                 :class="isDark ? 'ring-white/10' : 'ring-zinc-200'"
+                 v-html="sampleSvg(section.category, code)" />
+            <div class="flex-1 min-w-0">
+              <div class="text-sm leading-tight">
+                {{ defForCode(section.category, code)?.label ?? '—' }}
+              </div>
+              <div class="text-[10px] mt-0.5"
+                   :class="isDark ? 'text-white/45' : 'text-zinc-500'">
+                ISOM {{ code }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <p class="text-[11px] pt-4 pb-8" :class="isDark ? 'text-white/40' : 'text-zinc-500'">
+        Tegnforklaring er datadrevet fra <code>isomCatalog.json</code>. Endringer i katalogen reflekteres her automatisk.
+      </p>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.w-15 { width: 60px; }
+</style>

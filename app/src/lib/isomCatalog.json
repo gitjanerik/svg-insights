@@ -55,6 +55,7 @@
       "505": { "label": "Sti — godt løp", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
       "506": { "label": "Sti — uklar", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.8, 0.6] } },
       "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.4, 0.8] } },
+      "508": { "label": "Sykkel-sti", "stroke": { "color": "#1a1a1a", "widthMm": 0.32, "dasharray": [3.0, 1.0] } },
       "509": { "label": "Krysset — bro / overgang", "point": { "symbol": "bro", "scaleMm": 1.2 } },
       "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
       "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },

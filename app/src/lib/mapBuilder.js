@@ -250,7 +250,7 @@ function unionByName(elements, project) {
 // lesbare i tett bebygde områder (f.eks. Oslo sentrum).
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210']
 const WATER_CODES  = ['308', '309', '301', '302', '303', '304', '305']
-const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507']
+const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507', '508']
 const UPPER_CODES  = ['521', '525', '528']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
@@ -265,7 +265,7 @@ const LAYER_ORDER = [
 ]
 
 const POLYGON_CODES = new Set(['401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '308', '309', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '525', '528', '201', '203', '101', '102', '103', '104'])
+const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '508', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -858,6 +858,7 @@ function categoryFor(code) {
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
+    case '508':                                  return 'sykkel'
     case '201': case '203':                     return 'stupkant'
     case '210': case '212': case '213':         return 'stein'
     case '525': case '528':                     return 'linje'

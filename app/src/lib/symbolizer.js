@@ -161,8 +161,14 @@ export function classifyToIsom(el) {
   if (t.highway === 'tertiary' || t.highway === 'residential' || t.highway === 'unclassified') return { code: '503', cat: 'manmade' }
   if (t.highway === 'service' || t.highway === 'living_street') return { code: '503', cat: 'manmade' }
   if (t.highway === 'track')                        return { code: '504', cat: 'manmade' }
+  // Sykkel-sti (508) før gang-sti (505) så cycleway ikke blir behandlet
+  // som vanlig sti. Også OSM highway=path med bicycle=designated/yes.
+  if (t.highway === 'cycleway')                     return { code: '508', cat: 'manmade' }
+  if (t.highway === 'path' && (t.bicycle === 'designated' || t.bicycle === 'yes')) {
+    return { code: '508', cat: 'manmade' }
+  }
   if (t.highway === 'path' || t.highway === 'footway') return { code: '505', cat: 'manmade' }
-  if (t.highway === 'bridleway' || t.highway === 'cycleway') return { code: '505', cat: 'manmade' }
+  if (t.highway === 'bridleway')                    return { code: '505', cat: 'manmade' }
   if (t.highway === 'steps')                        return { code: '506', cat: 'manmade' }
   if (t.power === 'line')                           return { code: '528', cat: 'manmade' }
   if (t.barrier === 'fence' || t.barrier === 'wall') return { code: '525', cat: 'manmade' }

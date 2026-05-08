@@ -82,6 +82,30 @@ function formatDate(ts) {
         </svg>
       </button>
 
+      <!-- Tegnforklaring -->
+      <button @click="router.push('/tegnforklaring')"
+              class="w-full mb-4 rounded-2xl p-3 flex items-center gap-3
+                     bg-white/5 border border-white/10 active:scale-[0.99] transition">
+        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/10 border border-white/15
+                    flex items-center justify-center text-white/80">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2"/>
+            <line x1="7" y1="9" x2="17" y2="9"/>
+            <line x1="7" y1="13" x2="17" y2="13"/>
+            <line x1="7" y1="17" x2="13" y2="17"/>
+          </svg>
+        </div>
+        <div class="flex-1 text-left">
+          <div class="text-white/90 text-sm font-medium">Tegnforklaring</div>
+          <div class="text-[11px] text-white/55 mt-0.5">ISOM-symboler brukt i kartene</div>
+        </div>
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/40" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
       <!-- Innebygde kart -->
       <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
       <button v-for="m in builtin" :key="m.id"
