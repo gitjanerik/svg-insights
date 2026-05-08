@@ -11,7 +11,7 @@ const router = useRouter()
 const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
 const isomCss = buildIsomCss(isomCatalog, patternIds)
 
-const isDark = ref(false)
+const isDark = ref(true)
 const bgColor = computed(() => isDark.value ? isomCatalog.background.darkColor : isomCatalog.background.color)
 
 // Grupper koder i tematiske seksjoner for hjelp til lesing
@@ -113,7 +113,7 @@ function sampleSvg(category, code) {
         <h1 class="text-lg font-semibold flex-1">Tegnforklaring</h1>
         <button @click="isDark = !isDark"
                 class="px-3 py-1.5 rounded-lg text-xs"
-                :class="isDark ? 'bg-violet-500/20 text-white' : 'bg-zinc-800/10 text-zinc-700'">
+                :class="isDark ? 'bg-slate-400/25 text-white' : 'bg-zinc-800/10 text-zinc-700'">
           {{ isDark ? 'Lys' : 'Mørk' }}
         </button>
       </div>

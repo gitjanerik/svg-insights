@@ -103,7 +103,7 @@ async function onInstallClick() {
             </div>
             <div class="flex-1">
               <div class="text-white font-medium">Lag webfont</div>
-              <div class="text-[12px] text-white/50 mt-0.5">Ta bilde av tekst og generer en .otf-font</div>
+              <div class="text-[12px] text-white/50 mt-0.5">Ekstraher vektorer fra Google-font og rediger med Bézier</div>
             </div>
             <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
