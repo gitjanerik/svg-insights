@@ -332,6 +332,20 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
   rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; }`)
   rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
+  if (lab['vann-navn']) {
+    const vn = lab['vann-navn']
+    const styleProps = [
+      `font-size: ${vn.fontSizeMm}mm`,
+      `fill: ${vn.color}`,
+      vn.italic ? 'font-style: italic' : null,
+      vn.weight ? `font-weight: ${vn.weight}` : null,
+      `stroke: ${vn.haloColor}`,
+      `stroke-width: ${vn.haloWidthMm}mm`,
+      'paint-order: stroke',
+      'stroke-linejoin: round',
+    ].filter(Boolean).join('; ')
+    rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
+  }
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: ${lab['vann-tall'].color}; font-style: italic; stroke: ${lab['vann-tall'].haloColor}; stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
   }

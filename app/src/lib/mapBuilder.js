@@ -723,35 +723,86 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── Elevasjons-labels på innsjøer ────────────────────────────────────
-  // Sample DTM i polygon-sentroid for hver innsjø/tjern (301/302) og vis
-  // høyde over havet som italic blå tekst. Skipped for saltvann (303 ≈ 0)
-  // og myr (308/309 — typisk for små polygoner). Krever ekte DEM, ikke
-  // syntetisk, ellers gir tallet falsk informasjon. Min-areal 5000 m²
-  // for å unngå clutter på små vannhull.
+  // ── Navn og elevasjon på innsjøer/tjern ──────────────────────────────
+  // For hver innsjø/tjern (301/302): rendrer navn (når OSM har `name`-tag)
+  // og høyde over havet (når DEM er tilgjengelig). Brukes for orientering
+  // og for å lese kartet ved zoom-inn.
+  //
+  // Terskler:
+  //   - Navn rendres for navngitte vann ≥ NAMED_MIN_AREA (1500 m²,
+  //     ~40×40 m). Norske tjern er ofte mindre enn 5000 m², men hvis OSM
+  //     har gitt det navn er det per definisjon et stedsfeature.
+  //   - Elevasjon rendres for vann ≥ ELEV_MIN_AREA (5000 m²) når DEM er
+  //     ekte (ikke syntetisk). Krever DTM-sample i sentroid.
+  //
+  // Skipped for saltvann (303 ≈ 0) og myr (308/309).
+  const NAMED_MIN_AREA = 1500
+  const ELEV_MIN_AREA = 5000
   const lakeLabels = []
-  if (usableDem) {
-    const t = usableDem.transform
-    const sampleDem = (utmE, utmN) => {
-      const col = Math.round((utmE - t.originX) / t.pixelWidth)
-      const row = Math.round((utmN - t.originY) / t.pixelHeight)
-      if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
-      const v = usableDem.data[row * usableDem.cols + col]
-      if (v === usableDem.noData) return null
-      return v
+
+  const sampleDem = usableDem
+    ? (utmE, utmN) => {
+        const t = usableDem.transform
+        const col = Math.round((utmE - t.originX) / t.pixelWidth)
+        const row = Math.round((utmN - t.originY) / t.pixelHeight)
+        if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
+        const v = usableDem.data[row * usableDem.cols + col]
+        if (v === usableDem.noData) return null
+        return v
+      }
+    : null
+
+  // Areal og sentroid fra en SVG-projisert ring (brukes for merged-water).
+  const ringAreaCentroid = (ring) => {
+    if (!ring || ring.length < 3) return null
+    let a = 0, cx = 0, cy = 0
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const j = (i + 1) % n
+      const cr = ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+      a += cr
+      cx += (ring[i][0] + ring[j][0]) * cr
+      cy += (ring[i][1] + ring[j][1]) * cr
     }
-    for (const code of ['301', '302']) {
-      for (const el of buckets[code] ?? []) {
-        if (el.type !== 'way' || !el.geometry) continue
-        if (polygonAreaM2(el.geometry) < 5000) continue
-        const c = polygonCentroid(el.geometry)
-        if (!c) continue
-        // Konverter SVG-sentroid tilbake til UTM for DEM-sampling
-        const utmE = c.x + minE
-        const utmN = (heightM - c.y) + minN
-        const elev = sampleDem(utmE, utmN)
-        if (elev == null || !Number.isFinite(elev)) continue
-        lakeLabels.push({ x: c.x, y: c.y, elev: Math.round(elev) })
+    if (Math.abs(a) < 1e-6) return null
+    return { areaM2: Math.abs(a) / 2, x: cx / (3 * a), y: cy / (3 * a) }
+  }
+
+  for (const code of ['301', '302']) {
+    for (const el of buckets[code] ?? []) {
+      let areaM2 = 0
+      let centroid = null
+
+      if (el.type === 'merged-water' && el._mergedRings && el._mergedRings.length) {
+        // Bruk største outer-ring (første polygon, første ring) som proxy
+        const ring = el._mergedRings[0]?.[0]
+        const ac = ringAreaCentroid(ring)
+        if (!ac) continue
+        areaM2 = ac.areaM2
+        centroid = { x: ac.x, y: ac.y }
+      } else if (el.type === 'way' && el.geometry) {
+        areaM2 = polygonAreaM2(el.geometry)
+        centroid = polygonCentroid(el.geometry)
+      } else {
+        continue
+      }
+      if (!centroid) continue
+
+      const name = (el.tags?.name ?? '').trim()
+      const hasName = name.length > 0
+
+      if (!hasName && areaM2 < ELEV_MIN_AREA) continue
+      if (hasName && areaM2 < NAMED_MIN_AREA) continue
+
+      let elev = null
+      if (sampleDem && areaM2 >= ELEV_MIN_AREA) {
+        const utmE = centroid.x + minE
+        const utmN = (heightM - centroid.y) + minN
+        const v = sampleDem(utmE, utmN)
+        if (v != null && Number.isFinite(v)) elev = Math.round(v)
+      }
+
+      if (hasName || elev != null) {
+        lakeLabels.push({ x: centroid.x, y: centroid.y, name, elev })
       }
     }
   }
@@ -904,8 +955,22 @@ export function buildSvg(elements, bbox, options = {}) {
     : ''
 
   const lakeLabelLayer = lakeLabels.length
-    ? `  <g data-layer="vann">\n    <g data-label="vann-tall">\n${lakeLabels.map(l =>
-        `      <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n    </g>\n  </g>\n`
+    ? `  <g data-layer="vann">\n${lakeLabels.map(l => {
+        const lines = []
+        // Når både navn og elev finnes: stack name over senteret, elev under.
+        // Når bare ett finnes: plasser sentrert. dy i mm via SVG-attributt så
+        // posisjonen er print-skalert (1 mm = 1 mm på papir, uavhengig av
+        // viewBox-meter).
+        if (l.name) {
+          const dyMm = l.elev != null ? -0.4 : 0.4
+          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${dyMm}mm" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`)
+        }
+        if (l.elev != null) {
+          const dyMm = l.name ? 1.5 : 0.4
+          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${dyMm}mm" text-anchor="middle" data-label="vann-tall">${l.elev}</text>`)
+        }
+        return lines.join('\n')
+      }).join('\n')}\n  </g>\n`
     : ''
 
   const knauserLayerSvg = knauserSvg
