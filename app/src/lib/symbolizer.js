@@ -141,7 +141,7 @@ export function isOsmWaterSalty(tags) {
 
 export function classifyToIsom(el) {
   const t = el.tags ?? {}
-  if (el.type === 'node' && t.natural === 'peak') return { code: 'peak', cat: 'point' }
+  if (el.type === 'node' && (t.natural === 'peak' || t.natural === 'saddle')) return { code: 'peak', cat: 'point' }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
   // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
@@ -330,7 +330,21 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   // Etiketter
   const lab = catalog.labels
   rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
-  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; }`)
+  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: ${lab.peak.color}; font-weight: ${lab.peak.weight}; stroke: ${lab.peak.haloColor}; stroke-width: ${lab.peak.haloWidthMm}mm; paint-order: stroke; stroke-linejoin: round; }`)
+  if (lab['peak-ele']) {
+    const pe = lab['peak-ele']
+    const styleProps = [
+      `font-size: ${pe.fontSizeMm}mm`,
+      `fill: ${pe.color}`,
+      pe.italic ? 'font-style: italic' : null,
+      pe.weight ? `font-weight: ${pe.weight}` : null,
+      `stroke: ${pe.haloColor}`,
+      `stroke-width: ${pe.haloWidthMm}mm`,
+      'paint-order: stroke',
+      'stroke-linejoin: round',
+    ].filter(Boolean).join('; ')
+    rules.push(`${root} [data-label="peak-ele"] { ${styleProps} }`)
+  }
   rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
   if (lab['vann-navn']) {
     const vn = lab['vann-navn']

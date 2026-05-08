@@ -51,7 +51,8 @@ export function buildOverpassQuery(bbox) {
   way["piste:type"];
   way["leisure"="track"]["sport"="skiing"];
   node["natural"="peak"];
-  node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
+  node["natural"="saddle"];
+  node["place"~"^(locality|hamlet|village|town|city|suburb|neighbourhood|quarter|isolated_dwelling|farm)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -651,13 +652,26 @@ export function buildSvg(elements, bbox, options = {}) {
       const name = xmlEscape(el.tags?.name ?? '')
       const ele = el.tags?.ele ?? ''
       const eleNum = parseFloat(ele)
-      const label = name + (Number.isFinite(eleNum) ? ` ${Math.round(eleNum)}` : '')
-      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${symbolIds.get('peak')}" x="-0.5mm" y="-0.5mm" width="1mm" height="1mm"/><text x="1.5mm" y="0.5mm" data-label="peak">${label}</text></g>`)
+      // Vis navn over og høyde under separat når begge finnes; ellers
+      // bare navn. Dette matcher orienteringskart-konvensjon (navn over
+      // toppsymbol, høyde italic under). Krever mer plass enn én linje
+      // men gir bedre lesbarhet ved zoom.
+      const symbol = `<use href="#${symbolIds.get('peak')}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/>`
+      const lines = []
+      if (name) {
+        lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}</text>`)
+        if (Number.isFinite(eleNum)) {
+          lines.push(`<text x="2mm" y="3.6mm" data-label="peak-ele">${Math.round(eleNum)}</text>`)
+        }
+      } else if (Number.isFinite(eleNum)) {
+        lines.push(`<text x="2mm" y="1.4mm" data-label="peak">${Math.round(eleNum)}</text>`)
+      }
+      parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})">${symbol}${lines.join('')}</g>`)
     }
     for (const el of places) {
       if (!el.tags?.name) continue
       const p = project(el.lat, el.lon)
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" data-label="place">${xmlEscape(el.tags.name)}</text>`)
+      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="place">${xmlEscape(el.tags.name)}</text>`)
     }
     if (!parts.length) return '  <g data-layer="navn"></g>\n'
     return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
