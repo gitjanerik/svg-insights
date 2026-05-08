@@ -48,6 +48,7 @@ export function buildOverpassQuery(bbox) {
   way["place"~"^(island|islet)$"];
   way["man_made"~"^(pier|breakwater)$"];
   way["aerialway"];
+  way["railway"~"^(rail|tram|narrow_gauge|light_rail|subway|funicular|monorail)$"];
   way["piste:type"];
   way["leisure"="track"]["sport"="skiing"];
   node["natural"="peak"];
@@ -279,7 +280,7 @@ const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '306', '304', '3
 const LAND_OVERLAY_CODES = ['001']
 // Veier/stier + ski-infrastruktur (510 lysløype, 511 heistrasé) i samme
 // stack som veier siden de visuelt er linjer og ofte krysser veinettet.
-const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507', '508', '510', '511']
+const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '508', '510', '511']
 const UPPER_CODES  = ['521', '525', '528', '533']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
@@ -295,7 +296,7 @@ const LAYER_ORDER = [
 ]
 
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '525', '528', '201', '203', '101', '102', '103', '104'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -416,6 +417,7 @@ export function buildSvg(elements, bbox, options = {}) {
     'vei-liten': 2.5,
     sti:         2.5,
     bekk:        2.0,
+    tog:         2.0,
   }
 
   // Bucket pr ISOM-kode
@@ -640,6 +642,14 @@ export function buildSvg(elements, bbox, options = {}) {
     if (LINE_CODES.has(code)) {
       const tol = LINE_SIMPLIFY[cat] ?? 0
       const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
+      // Jernbane (515) trenger to paths per geometri: solid sort base +
+      // hvit dasharray-overlay som danner ladder-stripes (sviller).
+      // CSS-regelen for `.overlay` settes opp i symbolizer.js.
+      if (code === '515') {
+        return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d =>
+          `    <path d="${d}"/>\n    <path d="${d}" class="overlay"/>`
+        ).join('\n')}\n  </g>\n`
+      }
       return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
     }
     return ''
@@ -1056,6 +1066,7 @@ function categoryFor(code) {
     case '510':                                  return 'lysloype'
     case '511':                                  return 'heistrase'
     case '512':                                  return 'slalombakke'
+    case '515':                                  return 'tog'
     case '201': case '203':                     return 'stupkant'
     case '210': case '211': case '212': case '213': return 'stein'
     case '525': case '528':                     return 'linje'

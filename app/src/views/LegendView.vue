@@ -21,6 +21,7 @@ const SECTIONS = [
   { title: 'Vann & sjøkart', codes: ['301', '302', '303', '304', '305', '306', '307', '308', '309'], category: 'water' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
+  { title: 'Jernbane', codes: ['515'], category: 'manmade' },
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger & navigasjon', codes: ['521', '522', '525', '528', '533'], category: 'manmade' },
 ]
@@ -66,10 +67,17 @@ function sampleSvg(category, code) {
     </svg>`
   }
   if (stroke && !fill) {
-    // Linje — bruk mm-units og inkluder linecap/linejoin slik kartet gjør
+    // Linje — bruk mm-units og inkluder linecap/linejoin slik kartet gjør.
+    // Hvis def har overlayStroke (f.eks. jernbane med ladder-stripes),
+    // rendres en ekstra linje på toppen for å matche kartet.
+    const overlay = def.overlayStroke
+    const overlayLine = overlay
+      ? `<line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}" fill="none" ${strokeAttrs(overlay)}/>`
+      : ''
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:${bg}">
       <rect width="${W}" height="${H}" fill="${bg}"/>
       <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}" fill="none" ${strokeAttrs(stroke)}/>
+      ${overlayLine}
     </svg>`
   }
   if (fill) {

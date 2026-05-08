@@ -37,6 +37,7 @@ const LAYERS = [
   { key: 'bygning',    label: 'Bygninger' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
+  { key: 'tog',        label: 'Jernbane' },
   { key: 'sti',        label: 'Sti' },
   { key: 'sykkel',     label: 'Sykkel-sti' },
   { key: 'lysloype',   label: 'Lysløype' },
