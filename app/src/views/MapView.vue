@@ -44,9 +44,11 @@ const LAYERS = [
   { key: 'heistrase',  label: 'Heistrasé' },
   { key: 'slalombakke', label: 'Slalombakke' },
   { key: 'stein',      label: 'Stein / skjær' },
+  { key: 'trig',       label: 'Trigpunkter' },
   { key: 'stupkant',   label: 'Stupkant' },
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'sjokart',    label: 'Lanterner / fyr' },
+  { key: 'staker',     label: 'Sjømerker / staker' },
   { key: 'dybde',      label: 'Dybdetall' },
   { key: 'navn',       label: 'Navn' },
 ]

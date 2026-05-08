@@ -16,7 +16,7 @@ const bgColor = computed(() => isDark.value ? isomCatalog.background.darkColor :
 
 // Grupper koder i tematiske seksjoner for hjelp til lesing
 const SECTIONS = [
-  { title: 'Høydekurver', codes: ['101', '102', '103', '104'], category: 'contour' },
+  { title: 'Høydekurver', codes: ['101', '102', '103', '104', '113'], category: 'contour' },
   { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '211', '213', '215', '216'], category: 'rock' },
   { title: 'Vann & sjøkart', codes: ['301', '302', '303', '304', '305', '306', '307', '308', '309'], category: 'water' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
@@ -24,6 +24,7 @@ const SECTIONS = [
   { title: 'Jernbane', codes: ['515'], category: 'manmade' },
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger & navigasjon', codes: ['521', '522', '525', '528', '533'], category: 'manmade' },
+  { title: 'Sjømerker', codes: ['540', '541', '542', '543'], category: 'manmade' },
 ]
 
 function defForCode(category, code) {
