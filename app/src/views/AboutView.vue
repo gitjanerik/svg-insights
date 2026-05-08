@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.13.0 -->
+          <!-- 6.13.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.13.1</span>
+                <span class="text-white/40">&mdash; Navn på tjern + utvidet vann-merking</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Navn på navngitte tjern og innsjøer</strong> rendres nå over vann-polygonet (ny <code>data-label="vann-navn"</code>, ISOM-blå italic 2.0 mm med hvit halo). OSM <code>name</code>-tag brukes; terskel 1500 m² (~40×40 m) for at småtjern også får sitt navn synlig</li>
+                <li><strong>Sammenstilt navn + moh</strong>: når både OSM-navn og DTM-elevasjon finnes for samme vann, stables navnet over senteret og høyden under (italic blå). Stiler etter ISOM-konvensjon for vann-toponymer</li>
+                <li><strong>Merged-water støttet</strong>: tidligere ble ikke innsjøer som var sydd sammen via <code>unionByName</code> (Setten o.l.) inkludert i label-pipelinen. Ny <code>ringAreaCentroid</code>-helper sentrerer label på største outer-ring</li>
+                <li><strong>Konsistent navn-toggle</strong>: vann-navn og vann-tall hides nå sammen med øvrige labels via «Navn»-bryteren i drawer</li>
+                <li>143 tester passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.13.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.13.0</span>
                 <span class="text-white/40">&mdash; Vinter-pakke: lysløyper, heistrasé, slalombakker + halverte stupkant-bredder</span>
