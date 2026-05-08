@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.11.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-200" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.11.1</span>
+                <span class="text-white/40">&mdash; Annoteringssymboler skikkelig synlige nå (unitless user-units + halo-bakgrunn)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>v6.11.0 mm-fix var ikke nok:</strong> selv etter at koordinatene ble fixet til <code>transform=translate</code> isf <code>x="${a.x}mm"</code>, var symbolene fortsatt usynlige. Mistanke: <code>width="2mm"</code> på <code>&lt;use&gt;</code> oppfører seg uforutsigbart i kombinasjon med pinch-zoom sin CSS-transform på wrapper-divv → noen browsere får null størrelse, andre plasserer symbolet utenfor viewport</li>
+                <li><strong>Fix: kun unit-less user-units.</strong> Kart-SVG har <code>viewBox</code> i meter (1 user-unit = 1 m). Symbol-størrelse er nå satt som rene tall (15 user-units = 15 m = 1.5 mm på print ved 1:10000). Ingen mm-konvertering, ingen overraskelser uansett zoom-nivå</li>
+                <li><strong>Halo-ring bak symbolet:</strong> kremgul fyll med lilla outline rundt selve symbolet, så det er synlig over alle bakgrunner (skog, vann, åpen mark). Noen ISOM-pointSymbols har bare stroke (knaus, brønn) og kan blende med mørkere bakgrunner — haloen sikrer kontrast</li>
+                <li><code>xlink:href</code>-fallback lagt til på <code>&lt;use&gt;</code> for eldre browsere</li>
+                <li><code>pointer-events="none"</code> på annoteringslaget så fremtidige klikk for å plassere flere symboler ikke blokkeres av eksisterende</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.11.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.11.0</span>
                 <span class="text-white/40">&mdash; ISOM-polish: tydeligere skille mellom sti-typer, høydekurver matcher tegnforklaring eksakt, annoteringssymboler virker igjen</span>

@@ -123,35 +123,58 @@ function onMapClick(e) {
 function renderAnnotations() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  const xlink = 'http://www.w3.org/1999/xlink'
   let layer = svg.querySelector('#annotation-layer')
   if (!layer) {
-    const ns = 'http://www.w3.org/2000/svg'
     layer = document.createElementNS(ns, 'g')
     layer.setAttribute('id', 'annotation-layer')
     layer.setAttribute('data-layer', 'annotering')
+    layer.setAttribute('pointer-events', 'none')
     svg.appendChild(layer)
   }
   layer.replaceChildren()
-  const ns = 'http://www.w3.org/2000/svg'
+
+  // Kart-SVG har viewBox i METER (1 user-unit = 1 m). Symbol-størrelse
+  // settes derfor som unit-less user-units, ikke mm. 15 m = 1.5 mm på
+  // print ved 1:10000 — tydelig synlig uten å dominere kartet. Tidligere
+  // forsøk brukte "2mm"-attributter som ble feiltolket i kombinasjon med
+  // pinch-zoom CSS-transforms i visse browsere → symbolene havnet enten
+  // utenfor viewport eller fikk null størrelse.
+  const SYMBOL_M = 15
+  const HALF = SYMBOL_M / 2
+
   for (const a of annot.annotations.value) {
     if (a.type !== 'point') continue
     const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
     if (!sym) continue
-    // a.x / a.y er i SVG viewBox-units (meter for kart-SVG). Plasser
-    // symbolet via translate på en wrapper-g, og bruk mm-units kun for
-    // selve symbol-størrelsen (samme mønster som mapBuilder bruker for
-    // peaks/lanterner). Symbol-bredde 2mm = ~7.5m på bakken ved 1:10000
-    // → tydelig synlig uten å dominere underliggende kart.
+
     const g = document.createElementNS(ns, 'g')
     g.setAttribute('transform', `translate(${a.x},${a.y})`)
     g.setAttribute('data-annot-id', a.id)
+
+    // Lys ring bak symbolet så det alltid er lesbart over hvilken som
+    // helst kart-bakgrunn (skog, vann, åpen mark).
+    const halo = document.createElementNS(ns, 'circle')
+    halo.setAttribute('cx', '0')
+    halo.setAttribute('cy', '0')
+    halo.setAttribute('r', String(HALF * 0.95))
+    halo.setAttribute('fill', '#fffef0')
+    halo.setAttribute('fill-opacity', '0.85')
+    halo.setAttribute('stroke', '#7a3aa3')
+    halo.setAttribute('stroke-width', '1.5')
+    g.appendChild(halo)
+
     const use = document.createElementNS(ns, 'use')
-    use.setAttribute('href', `#iso-sym-${sym.symbolKey}`)
-    use.setAttribute('x', '-1mm')
-    use.setAttribute('y', '-1mm')
-    use.setAttribute('width', '2mm')
-    use.setAttribute('height', '2mm')
+    const href = `#iso-sym-${sym.symbolKey}`
+    use.setAttribute('href', href)
+    use.setAttributeNS(xlink, 'xlink:href', href)
+    use.setAttribute('x', String(-HALF))
+    use.setAttribute('y', String(-HALF))
+    use.setAttribute('width', String(SYMBOL_M))
+    use.setAttribute('height', String(SYMBOL_M))
     g.appendChild(use)
+
     layer.appendChild(g)
   }
 }
