@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.10.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.10.2</span>
+                <span class="text-white/40">&mdash; Reintroduserer coastline-rekonstruksjon: blått hav i Oslo og Nesøya</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Rotårsaken endelig identifisert:</strong> OSM tagger fjorder/sjø som <code>natural=coastline</code>-LINJER, ikke som <code>natural=water</code>-polygoner. Selve havet er bare «alt utenfor coastline». N50 dekker ikke Indre Oslofjord eller Asker-skjærgård fra browser. Sjøkart-WFS svarer 0 (CORS/typename). Resultat: ingen sjø-polygon, kremgul der det skulle være blått</li>
+                <li><strong>Coastline-rekonstruksjon reintrodusert</strong> som siste-fallback (var fjernet i v6.8.0 pga wedger-bug). <code>buildLandPolygonsFromCoastline</code> klipper ways til bbox, syr sammen kjeder og lukker åpne arcer langs bbox-omkrets — gir LAND-polygoner som males kremgul over en sjø-blå bakgrunn</li>
+                <li><strong>Aktiveres bare når nødvendig:</strong> hvis bbox har <code>natural=coastline</code>-ways OG hverken N50 Havflate eller Sjøkart Dybdeareal returnerer sjø, settes <code>useCoastlineFallback=true</code> i <code>buildSvg</code>. mapBuilder bytter da bg til <code>#9ec9de</code> sjø-blå og rendrer land-polygoner i kremgul over bg. Vegetasjon, bygninger osv rendres over land som vanlig</li>
+                <li><strong>Wedger-beskyttelse:</strong> 50% bbox-areal-filter på lukkede ringer (sannsynlig lake-mistag som Mjøsa/Setten) + v6.8.4 ring-stitching for relations + kun aktiv som last-resort gjør risiko mye mindre enn v6.5–v6.7. Hvis lake-mistag treffer, vises diagnose-modus i drawer for visuell verifikasjon</li>
+                <li><strong>Diagnostikk-loggen utvidet:</strong> <code>[Vann]</code>-loggen viser nå også <code>OSM coastline=N | coastline-fallback=true/false</code>. <code>[Kystlinje]</code>-logg viser hvor mange ways som ble til hvor mange land-polygoner</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.10.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.10.1</span>
                 <span class="text-white/40">&mdash; Granulært vann-filter: behold OSM Oslofjord når N50 bare har innsjøer</span>

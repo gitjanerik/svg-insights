@@ -110,8 +110,17 @@ async function generateMap() {
     if (n50Water.length > 0) elements.push(...n50Water)
     if (sjokartEls.length > 0) elements.push(...sjokartEls)
 
+    // Detekter siste-fallback-modus: bbox er kyst-orientert (har OSM
+    // natural=coastline) men hverken N50 Havflate eller Sjøkart Dybdeareal
+    // ga oss sjø-polygon. Da må mapBuilder rekonstruere LAND fra coastline-
+    // ways og bytte bakgrunn til sjø-blå.
+    const hasCoastline = elements.some(el =>
+      el.type === 'way' && el.tags?.natural === 'coastline'
+    )
+    const useCoastlineFallback = hasCoastline && !haveAuthoritativeSea
+
     const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartEls.length)
-    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | filtrerte ${filteredOsmCount} OSM-vann-elementer`)
+    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | filtrerte ${filteredOsmCount} OSM-vann-elementer`)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
@@ -123,6 +132,7 @@ async function generateMap() {
       sourceParts.push(`Sjøkart (${sjk} sjø, ${dyb} dybdekurver, ${grn} grunner, ${lnt} lanterner)`)
     }
     if (!haveAuthoritativeSea) sourceParts.push('OSM natural=water beholdt for sjø')
+    if (useCoastlineFallback) sourceParts.push('coastline-rekonstruksjon aktiv')
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
@@ -147,6 +157,7 @@ async function generateMap() {
       // Hvis WCS faller tilbake til syntetisk: ingen falske konsentriske
       // ringer i kartet. Bedre uten konturer enn villedende konturer.
       skipContoursIfSynthetic: true,
+      useCoastlineFallback,
     })
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'

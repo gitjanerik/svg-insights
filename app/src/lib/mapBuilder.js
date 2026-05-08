@@ -17,11 +17,13 @@ import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
-// coastline.js (sjø-rekonstruksjon fra OSM natural=coastline) er fjernet
-// fra v6.8.0. Vi bruker N50 Havflate (autoritativ) og OSM natural=water
-// som vannkilder direkte, og rekonstruerer ikke sjø-polygoner fra
-// kystlinje-linjer. Dette eliminerer wedger og land/vann-inversjon
-// som plaget v6.5.x–v6.7.x.
+// coastline.js: rekonstruerer LAND-polygoner fra OSM natural=coastline
+// linjer. Brukes KUN som siste fallback i kyst-områder der hverken N50
+// Havflate eller Sjøkart Dybdeareal returnerer sjø-polygoner. Ble fjernet
+// i v6.8.0 pga wedger-bug på lake-mistags (Mjøsa, Setten); reintrodusert
+// i v6.10.2 med strikt 50% bbox-areal-filter + kun aktiv når andre vann-
+// kilder feiler. v6.8.4 ring-stitching reduserer wedger-risiko ytterligere.
+import { buildLandPolygonsFromCoastline } from './coastline.js'
 import polygonClipping from 'polygon-clipping'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
@@ -33,6 +35,7 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
   way["natural"="water"];
+  way["natural"="coastline"];
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
@@ -301,6 +304,10 @@ export function buildSvg(elements, bbox, options = {}) {
     includeKnauser = true,
     includeCliffs = true,
     skipContoursIfSynthetic = false,
+    // v6.10.2: hvis kysten må rekonstrueres fra OSM natural=coastline (ingen
+    // Havflate/Dybdeareal), settes denne til true av MapPickerView. mapBuilder
+    // bytter da bakgrunn til sjø-blå og maler land-polygoner kremgul oppe.
+    useCoastlineFallback = false,
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -405,7 +412,14 @@ export function buildSvg(elements, bbox, options = {}) {
   const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
+  // Samle OSM natural=coastline ways for siste-fallback sjø-rekonstruksjon.
+  const coastlineWays = []
+
   for (const el of elements) {
+    if (el.type === 'way' && el.tags?.natural === 'coastline') {
+      coastlineWays.push(el)
+      continue
+    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
@@ -419,6 +433,23 @@ export function buildSvg(elements, bbox, options = {}) {
     if (buckets[cls.code]) {
       buckets[cls.code].push(el)
       counts[cls.code]++
+    }
+  }
+
+  // ── Sjø-rekonstruksjon fra OSM natural=coastline (siste fallback) ─────
+  // Når useCoastlineFallback er aktiv (ingen N50 Havflate, ingen Sjøkart
+  // Dybdeareal i bbox, men det finnes coastline-ways): bygg LAND-polygoner
+  // og bytt SVG-bakgrunn til sjø-blå.
+  let coastlineLandRings = []
+  let coastlineMode = false
+  if (useCoastlineFallback && coastlineWays.length > 0) {
+    try {
+      const result = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
+      coastlineLandRings = result.rings
+      coastlineMode = coastlineLandRings.length > 0
+      console.log(`[Kystlinje] ${coastlineWays.length} coastline-ways → ${coastlineLandRings.length} land-polygoner (${result.closedRingsCount} lukkede øyer + ${result.openArcsCount} bbox-lukkede mainland)`)
+    } catch (e) {
+      console.warn(`[Kystlinje] Land-rekonstruksjon feilet: ${e.message}`)
     }
   }
 
@@ -812,6 +843,8 @@ export function buildSvg(elements, bbox, options = {}) {
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
+    coastlineMode: coastlineMode || null,
+    coastlineLandRings: coastlineMode ? coastlineLandRings.length : null,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
@@ -877,20 +910,32 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
-  // Bakgrunn: alltid kremgul (land) som default. Vann rendres som
-  // eksplisitte polygoner fra N50 (Havflate, Innsjø, ElvBekk) eller OSM
-  // (natural=water). Vi rekonstruerer IKKE sjø fra OSM coastline-linjer
-  // lenger — det skapte wedger og inversjon når OSM mistagget innlands-
-  // innsjøer. Hvis N50 feiler i kyst-områder vises ingen sjø (synlig
-  // degradering, ikke wedge-magi).
-  const bgFill = isomCatalog.background.color
+  // Bakgrunn: kremgul (land) som default. Hvis coastlineMode er aktivert
+  // (siste-fallback rekonstruksjon fra OSM natural=coastline), bytter vi
+  // bakgrunn til sjø-blå og maler land-polygoner kremgul over. Resten av
+  // pipelinen (vegetasjon, bygninger osv) renders så normalt på land.
+  const SEA_BLUE = '#9ec9de'  // matcher ISOM 307 dybdeareal-farge
+  const landFill = isomCatalog.background.color
+  const bgFill = coastlineMode ? SEA_BLUE : landFill
+
+  const coastlineLandSvg = coastlineMode && coastlineLandRings.length
+    ? `  <g id="kyst-land" data-layer="land" data-iso="001">\n` +
+      coastlineLandRings.map(ring => {
+        if (ring.length < 3) return ''
+        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+        d += 'Z'
+        return `    <path d="${d}" fill="${landFill}" data-src="kystlinje"/>`
+      }).filter(Boolean).join('\n') +
+      `\n  </g>\n`
+    : ''
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
