@@ -32,31 +32,43 @@ function darkForCode(code) {
   return isomCatalog.darkMode?.categories?.[code]
 }
 
-// Sample-rendering: 60×24 SVG som viser ISOM-koden i kontekst
+// Sample-rendering: bredt SVG (mm-basert) som viser ISOM-koden eksakt slik
+// den blir tegnet i kartet — samme stroke-bredder, dasharrays og linecap.
+// Container er 120×32 px så 1mm ≈ 3.78px (samme som print ved 96 dpi).
 function sampleSvg(category, code) {
   const def = defForCode(category, code)
   if (!def) return ''
   const dark = isDark.value ? darkForCode(code) : null
   const bg = isDark.value ? isomCatalog.background.darkColor : isomCatalog.background.color
-  const W = 60, H = 24
+  const W = 120, H = 32
   const fill = dark?.fill ?? def.fill
   const stroke = dark?.stroke ?? def.stroke
+
+  // Bygg stroke-attributter som MATCHER det mapBuilder/symbolizer
+  // produserer — mm-units, eksplisitt linecap/linejoin og dasharray.
+  const strokeAttrs = (s) => {
+    if (!s) return ''
+    const parts = [`stroke="${s.color}"`, `stroke-width="${s.widthMm ?? 0.2}mm"`]
+    if (s.linecap) parts.push(`stroke-linecap="${s.linecap}"`)
+    if (s.linejoin) parts.push(`stroke-linejoin="${s.linejoin}"`)
+    if (s.dasharray) parts.push(`stroke-dasharray="${s.dasharray.map(d => `${d}mm`).join(' ')}"`)
+    return parts.join(' ')
+  }
+
   if (def.point) {
     const symId = symbolIds.get(def.point.symbol)
-    const s = (def.point.scaleMm ?? 1.0) * 4  // ~4 px per mm i dette samples-rommet
+    const s = (def.point.scaleMm ?? 1.0) * 6
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="isom-map" style="background:${bg}">
+      <defs>${isomDefs}</defs>
       <rect width="${W}" height="${H}" fill="${bg}"/>
       ${symId ? `<use href="#${symId}" x="${W/2 - s/2}" y="${H/2 - s/2}" width="${s}" height="${s}"/>` : ''}
     </svg>`
   }
   if (stroke && !fill) {
-    // Linje
-    const w = (stroke.widthMm ?? 0.2) * 2
-    const dash = stroke.dasharray ? stroke.dasharray.map(d => d * 2).join(' ') : 'none'
+    // Linje — bruk mm-units og inkluder linecap/linejoin slik kartet gjør
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="background:${bg}">
       <rect width="${W}" height="${H}" fill="${bg}"/>
-      <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}"
-        stroke="${stroke.color}" stroke-width="${w}" stroke-dasharray="${dash}"/>
+      <line x1="4" y1="${H/2}" x2="${W-4}" y2="${H/2}" fill="none" ${strokeAttrs(stroke)}/>
     </svg>`
   }
   if (fill) {
@@ -66,14 +78,12 @@ function sampleSvg(category, code) {
       const pid = patternIds.get(fill.pattern)
       if (pid) fillAttr = `url(#${pid})`
     }
-    const strokeAttr = stroke?.color ?? 'none'
-    const strokeW = stroke ? (stroke.widthMm ?? 0.15) * 2 : 0
+    const strokeStr = stroke ? strokeAttrs(stroke) : ''
     return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" class="isom-map" style="background:${bg}">
       <defs>${isomDefs}</defs>
       <style>${isomCss}</style>
       <rect width="${W}" height="${H}" fill="${bg}"/>
-      <rect x="3" y="3" width="${W-6}" height="${H-6}" fill="${fillAttr}"
-        stroke="${strokeAttr}" stroke-width="${strokeW}"/>
+      <rect x="3" y="3" width="${W-6}" height="${H-6}" fill="${fillAttr}" ${strokeStr}/>
     </svg>`
   }
   return ''
@@ -112,7 +122,7 @@ function sampleSvg(category, code) {
           <div v-for="code in section.codes" :key="code"
                class="flex items-center gap-3 rounded-lg px-3 py-2"
                :class="isDark ? 'bg-white/5' : 'bg-white border border-zinc-200'">
-            <div class="w-15 h-6 shrink-0 rounded overflow-hidden ring-1"
+            <div class="w-30 h-8 shrink-0 rounded overflow-hidden ring-1"
                  :class="isDark ? 'ring-white/10' : 'ring-zinc-200'"
                  v-html="sampleSvg(section.category, code)" />
             <div class="flex-1 min-w-0">
@@ -136,5 +146,5 @@ function sampleSvg(category, code) {
 </template>
 
 <style scoped>
-.w-15 { width: 60px; }
+.w-30 { width: 120px; }
 </style>
