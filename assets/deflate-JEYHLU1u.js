@@ -1,0 +1,1 @@
+import{n as e}from"./pako.esm-7NsQoulP.js";import{t}from"./basedecoder-C1FHhNu4.js";var n=class extends t{decodeBlock(t){return e(new Uint8Array(t)).buffer}};export{n as default};
