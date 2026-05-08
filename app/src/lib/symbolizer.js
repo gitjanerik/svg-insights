@@ -344,6 +344,14 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
     }
   }
 
+  // Jernbane (515) tunnel-fantom: grå dashed linje uten sviller.
+  // Datapath har attributt `data-tunnel="yes"` på både base og overlay.
+  // Overlay skjules; base får ny stroke. Tunnel-portal: tverrstrek ved
+  // start/slutt av tunnel-way.
+  rules.push(`${root} [data-iso="515"] path[data-tunnel="yes"] { stroke: #555; stroke-width: 0.35mm; stroke-dasharray: 1mm 0.4mm; fill: none }`)
+  rules.push(`${root} [data-iso="515"] path.overlay[data-tunnel="yes"] { display: none }`)
+  rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: 0.6mm; stroke-linecap: square; fill: none }`)
+
   // Etiketter
   const lab = catalog.labels
   rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: ${lab.place.color}; paint-order: stroke; stroke: ${lab.place.haloColor}; stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
