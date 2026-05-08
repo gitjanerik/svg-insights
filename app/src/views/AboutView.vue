@@ -85,16 +85,21 @@ const router = useRouter()
 
         <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Datakilder (alle CC BY 4.0 / ODbL)</h4>
         <ul class="text-xs text-white/45 space-y-1.5 list-disc list-inside leading-relaxed">
-          <li><strong class="text-white/65">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn</li>
+          <li><strong class="text-white/65">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn, øy-overlay</li>
+          <li><strong class="text-white/65">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
+          <li><strong class="text-white/65">Kartverket Sjøkart Dybdedata</strong> via WFS — kystkonturer, dybdeareal, dybdekurver, skjær, lanterner</li>
           <li><strong class="text-white/65">Kartverket DTM 1m/10m</strong> via WCS — terrengmodell for høydekurver og stupkanter</li>
           <li><strong class="text-white/65">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
           <li><strong class="text-white/65">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 
-        <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Pipeline (fra OSM/DEM til ISOM-SVG)</h4>
+        <h4 class="text-xs font-semibold text-white/55 mt-4 mb-2">Pipeline (fra OSM/N50/Sjøkart/DEM til ISOM-SVG)</h4>
         <ol class="text-xs text-white/45 space-y-1.5 list-decimal list-inside leading-relaxed">
           <li>Bbox velges i picker (UTM 32N, 1×10 km bredde, 5/10/20/50/100 m ekvidistanse)</li>
           <li>OSM-features hentes via Overpass for valgt bbox; reprojiseres med håndskrevet UTM-formel</li>
+          <li>Vann-data hentes parallelt fra tre kilder med fallback-prioritet: N50 Havflate/Innsjø/ElvBekk → Sjøkart Dybdeareal (kyst-fyll) → OSM <code>natural=water</code></li>
+          <li>Sjøkart-data inkluderer dybdekurver (ISOM 306, lyseste til mørkeste blå), skjær/grunner (ISOM 211), lanterner/fyr (ISOM 533) og dybdetall (soundings)</li>
+          <li>OSM <code>place=island/islet</code> renderes som kremgul land-overlay (ISOM 001) etter vann-laget for å maskere bort feilplassert OSM-vann i kyst-arkipel</li>
           <li>DTM hentes som GeoTIFF fra Kartverket WCS, parses med <code>geotiff.js</code></li>
           <li>Høydekurver: <code>d3-contour</code> marching squares → Chaikin-glatting → DP-forenkling</li>
           <li>Stupkanter: terrenghelling &gt; 45° → morfologisk lukking → Zhang-Suen skeletonization → vectorisering</li>
@@ -185,10 +190,32 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.10.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.10.0</span>
+                <span class="text-white/40">&mdash; Kystkart: Sjøkart-WFS gir blått hav, dybdekurver, skjær og lanterner</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Kartverket Sjøkart-Dybdedata WFS som autoritativ kyst-kilde.</strong> Ny <code>lib/sjokartFetcher.js</code> henter Dybdeareal (sjø-polygoner med riktige hull for hver øy), Dybdekontur (isobather) og navigasjons-symboler. Fyller Nesøya-typetilfellet der N50 Havflate ikke dekker åpne kyst-områder og kart endte kremgul der havet skulle være</li>
+                <li><strong>Tre-trinns vann-fallback:</strong> N50 Havflate/Innsjø → Sjøkart Dybdeareal → OSM <code>natural=water</code>. Alle tre kjøres parallelt og prioriteres etter autoritet. Sjøkart hopper inn når N50 svikter — typisk åpen kyst</li>
+                <li><strong>Land-overlay-fix for Landøya-typetilfellet:</strong> OSM <code>place=island/islet</code> hentes nå med Overpass og rendres som kremgul polygon-overlay (ny ISOM-kode 001) ETTER vann-laget. Maskerer bort feilplassert OSM-vann som ellers smitter blått inn på land — kremgul vinner over blått der det er øy</li>
+                <li><strong>Nye ISOM-koder for sjøkart-symbolisering:</strong> 306 dybdekontur (tynn blå linje), 307 dybdeareal (lyse-blå polygon), 211 skjær/grunne (blå ring med kryss), 533 lanterne/fyr (lilla 8-takket stjerne). Dybdetall (soundings) renderes som diskrete blå tall over vann</li>
+                <li><strong>Dybde-til-farge-helper</strong> (<code>depthToColor</code>): graderer fra <code>#b6daee</code> ved overflaten til <code>#1f5d8a</code> ved 100m dyp. Gjør at kartet visuelt formidler havbunnen analogt med ISOM 304 saltvanns-konvensjon</li>
+                <li><strong>Tegnforklaring oppdatert</strong> med ny seksjon «Vann &amp; sjøkart» som inkluderer 306, 307 og 211, samt «Bygninger &amp; navigasjon» som inkluderer 533. Datadrevet fra <code>isomCatalog.json</code> som vanlig</li>
+                <li><strong>Drawer-toggle utvidet</strong> med tre nye lag: «Land-overlay (øyer)», «Lanterner / fyr» og «Dybdetall» — slik at orienterings-løpere kan slå av sjøkart-detaljer for et renere print</li>
+                <li><strong>Multi-endpoint-strategi for Sjøkart-WFS</strong>: prøver både <code>wfs.sjokart_dybdedata</code> og <code>wfs.dybdedata2</code>, samt fler kandidat-typenames per kategori (app:Dybdeareal, dybdedata:Dybdeareal etc) siden navngivningen varierer mellom dataset-versjoner</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.9.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.9.0</span>
                 <span class="text-white/40">&mdash; ISOM-polish: sykkel-sti, navn-toggle, Tegnforklaring-side, zoom</span>

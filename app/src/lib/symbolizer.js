@@ -10,7 +10,7 @@ import isomCatalogDefault from './isomCatalog.json' with { type: 'json' }
 
 const ISOM_CATEGORY_BY_CODE = (() => {
   const map = {}
-  for (const cat of ['terrain', 'water', 'rock', 'contour', 'manmade']) {
+  for (const cat of ['land', 'terrain', 'water', 'rock', 'contour', 'manmade']) {
     for (const code of Object.keys(isomCatalogDefault.categories[cat])) {
       map[code] = { cat, def: isomCatalogDefault.categories[cat][code] }
     }
@@ -124,6 +124,22 @@ export function classifyToIsom(el) {
   const t = el.tags ?? {}
   if (el.type === 'node' && t.natural === 'peak') return { code: 'peak', cat: 'point' }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
+
+  // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
+  // Disse settes av sjokartFetcher.sjokartToElements() og må mappes
+  // før de generelle natural=water-reglene under (siden Dybdeareal også
+  // har natural=water + water=sea satt for backward-kompatibilitet).
+  if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
+  if (t.sjokart === 'grunne' && el.type === 'node') return { code: '211', cat: 'point' }
+  if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
+  if (t.sjokart === 'dybdekontur') return { code: '306', cat: 'water' }
+  if (t.sjokart === 'dybdeareal')  return { code: '307', cat: 'water' }
+
+  // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
+  // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har
+  // riktige inner-rings for hver øy → blå smitter inn på land). Renders
+  // som kremgul polygon ETTER vann-laget, før konturer/veier.
+  if (t.place === 'island' || t.place === 'islet') return { code: '001', cat: 'land' }
 
   if (t.building)                                   return { code: '521', cat: 'manmade' }
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
@@ -239,7 +255,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
   rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
 
-  for (const cat of ['terrain', 'water', 'rock', 'contour', 'manmade']) {
+  for (const cat of ['land', 'terrain', 'water', 'rock', 'contour', 'manmade']) {
     for (const [code, def] of Object.entries(catalog.categories[cat])) {
       const sel = `${root} [data-iso="${code}"]`
       const props = []
@@ -269,6 +285,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: ${lab['kontur-tall'].color}; font-style: italic; }`)
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: ${lab['vann-tall'].color}; font-style: italic; stroke: ${lab['vann-tall'].haloColor}; stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
+  }
+  if (lab['dybde-tall']) {
+    rules.push(`${root} [data-label="dybde-tall"] { font-size: ${lab['dybde-tall'].fontSizeMm}mm; fill: ${lab['dybde-tall'].color}; stroke: ${lab['dybde-tall'].haloColor}; stroke-width: ${lab['dybde-tall'].haloWidthMm}mm; }`)
   }
 
   return rules.join(' ')

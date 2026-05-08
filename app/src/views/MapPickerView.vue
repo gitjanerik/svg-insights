@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
+import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
@@ -54,22 +55,34 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    // 1. Hent OSM (rik data) + N50-vann (autoritativ kilde for sjø/innsjø).
-    //    Kjør parallelt for fart. N50 erstatter OSMs natural=water siden
-    //    OSM har dokumenterte mistags på store norske innsjøer (Mjøsa osv).
-    const [osmData, n50Water] = await Promise.all([
+    // 1. Hent OSM (rik data) + N50-vann + Sjøkart (kyst/dybdedata).
+    //    Tre parallelle kilder. Vann-prioritet i fallende rekkefølge:
+    //      a) N50 Havflate / Innsjø / ElvBekk (autoritativt for innland)
+    //      b) Sjøkart Dybdeareal (autoritativt for kyst — fyller hull
+    //         der N50 Havflate mangler i åpne hav-områder)
+    //      c) OSM `natural=water` som siste fallback
+    //    Sjøkart gir dessuten dybdekonturer, skjær/grunner og lanterner
+    //    som vi rendrer med dedikerte ISOM-koder.
+    const [osmData, n50Water, sjokart] = await Promise.all([
       fetchOverpass(bbox.value),
       fetchN50Water(bbox.value).catch(e => {
         console.warn('N50-vann ikke tilgjengelig:', e.message)
         return []
       }),
+      fetchSjokart(bbox.value).catch(e => {
+        console.warn('Sjøkart ikke tilgjengelig:', e.message)
+        return null
+      }),
     ])
     const useN50 = n50Water.length > 0
-    // Hvis N50 lyktes: filtrer OSM natural=water (N50 er autoritativ).
-    // Hvis ikke: behold OSM natural=water som fallback. mapBuilder fra
-    // v6.8.0 fetcher ikke OSM coastline lenger, så vi har ingen wedge-
-    // bug å frykte uansett.
-    const elements = useN50
+    const sjokartEls = sjokart ? sjokartToElements(sjokart) : []
+    const sjokartHasWater = sjokartEls.some(el =>
+      el.type === 'way' && el.tags?.sjokart === 'dybdeareal'
+    )
+    // Hvis N50 ELLER Sjøkart lyktes: filtrer OSM natural=water
+    // (autoritative kilder vinner). Hvis ingen: behold OSM som fallback.
+    const useAuthoritativeWater = useN50 || sjokartHasWater
+    const elements = useAuthoritativeWater
       ? osmData.elements.filter(el => {
           const t = el.tags ?? {}
           if (t.natural === 'water') return false
@@ -79,9 +92,18 @@ async function generateMap() {
         })
       : osmData.elements
     if (useN50) elements.push(...n50Water)
-    const source = useN50
-      ? `OSM + N50 (${n50Water.length} vann)`
-      : 'OSM (N50 utilgjengelig — kun OSM natural=water)'
+    if (sjokartEls.length > 0) elements.push(...sjokartEls)
+    const sourceParts = ['OSM']
+    if (useN50) sourceParts.push(`N50 (${n50Water.length} vann)`)
+    if (sjokart && sjokart.source) {
+      const sjk = (sjokart.dybdeareal?.length ?? 0)
+      const dyb = (sjokart.dybdekontur?.length ?? 0)
+      const grn = (sjokart.grunne?.length ?? 0)
+      const lnt = (sjokart.lanterne?.length ?? 0)
+      sourceParts.push(`Sjøkart (${sjk} sjø, ${dyb} dybdekurver, ${grn} grunner, ${lnt} lanterner)`)
+    }
+    if (!useAuthoritativeWater) sourceParts.push('kun OSM natural=water — fallback')
+    const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
 

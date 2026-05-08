@@ -17,11 +17,11 @@ const bgColor = computed(() => isDark.value ? isomCatalog.background.darkColor :
 // Grupper koder i tematiske seksjoner for hjelp til lesing
 const SECTIONS = [
   { title: 'Høydekurver', codes: ['101', '102', '103', '104'], category: 'contour' },
-  { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '213'], category: 'rock' },
-  { title: 'Vann', codes: ['301', '302', '303', '304', '305', '308', '309'], category: 'water' },
+  { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '211', '213'], category: 'rock' },
+  { title: 'Vann & sjøkart', codes: ['301', '302', '303', '304', '305', '306', '307', '308', '309'], category: 'water' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
-  { title: 'Bygninger & kunstige elementer', codes: ['521', '522', '525', '528'], category: 'manmade' },
+  { title: 'Bygninger & navigasjon', codes: ['521', '522', '525', '528', '533'], category: 'manmade' },
 ]
 
 function defForCode(category, code) {

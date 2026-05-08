@@ -14,6 +14,9 @@
   },
 
   "categories": {
+    "land": {
+      "001": { "label": "Land — øy-overlay", "fill": { "color": "#fefae0" } }
+    },
     "terrain": {
       "401": { "label": "Åpen mark — fast", "fill": { "color": "#ffd966" } },
       "403": { "label": "Halv-åpen mark", "fill": { "type": "pattern", "pattern": "halv-aapen" } },
@@ -30,6 +33,8 @@
       "303": { "label": "Saltvann / fjord", "fill": { "color": "#6fb6da" }, "stroke": { "color": "#1f7aa3", "widthMm": 0.22 } },
       "304": { "label": "Bekk", "stroke": { "color": "#0099cc", "widthMm": 0.25, "linecap": "round" } },
       "305": { "label": "Liten bekk", "stroke": { "color": "#0099cc", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
+      "306": { "label": "Dybdekontur — sjøkart", "stroke": { "color": "#3a8db8", "widthMm": 0.12 } },
+      "307": { "label": "Dybdeareal — sjøkart", "fill": { "color": "#9ec9de" } },
       "308": { "label": "Myr — fast", "fill": { "type": "pattern", "pattern": "myr" } },
       "309": { "label": "Myr — utrygg", "fill": { "type": "pattern", "pattern": "myr-utrygg" } },
       "310": { "label": "Brønn / kilde", "point": { "symbol": "brønn", "scaleMm": 1.5 } }
@@ -38,6 +43,7 @@
       "201": { "label": "Loddrett stupkant — passérbar", "stroke": { "color": "#000", "widthMm": 0.35, "linecap": "round" } },
       "203": { "label": "Stupkant — upassérbar", "stroke": { "color": "#000", "widthMm": 0.5, "linecap": "round" } },
       "210": { "label": "Blokkmark", "fill": { "type": "pattern", "pattern": "blokkmark" } },
+      "211": { "label": "Skjær / grunne — sjøkart", "point": { "symbol": "skjaer", "scaleMm": 1.0 } },
       "212": { "label": "Røys", "point": { "symbol": "stein", "scaleMm": 0.6 } },
       "213": { "label": "Knaus", "point": { "symbol": "knaus", "scaleMm": 1.2 } }
     },
@@ -60,7 +66,8 @@
       "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
       "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },
       "525": { "label": "Gjerde", "stroke": { "color": "#000", "widthMm": 0.15, "dasharray": [1.0, 0.5] } },
-      "528": { "label": "Kraftledning", "stroke": { "color": "#000", "widthMm": 0.18 } }
+      "528": { "label": "Kraftledning", "stroke": { "color": "#000", "widthMm": 0.18 } },
+      "533": { "label": "Lanterne / fyr — sjøkart", "point": { "symbol": "lanterne", "scaleMm": 1.6 } }
     }
   },
 
@@ -166,6 +173,23 @@
       "elements": [
         { "type": "circle", "cx": 0, "cy": 0, "r": 0.5, "fill": "#7f4f24" }
       ]
+    },
+    "skjaer": {
+      "$comment": "Sjøkart-skjær: liten ring med kryss i blå (ISO 6.1)",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "circle", "cx": 0, "cy": 0, "r": 0.55, "stroke": "#1f5d8a", "widthMm": 0.18, "fill": "#fff" },
+        { "type": "line", "x1": -0.45, "y1": -0.45, "x2": 0.45, "y2": 0.45, "stroke": "#1f5d8a", "widthMm": 0.18 },
+        { "type": "line", "x1": -0.45, "y1": 0.45, "x2": 0.45, "y2": -0.45, "stroke": "#1f5d8a", "widthMm": 0.18 }
+      ]
+    },
+    "lanterne": {
+      "$comment": "Sjøkart-lanterne: violet stjerne med prikk (forenklet IALA Q-symbol)",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        { "type": "circle", "cx": 0, "cy": 0, "r": 0.18, "fill": "#a23ec3" },
+        { "type": "polygon", "points": "0,-0.85 0.18,-0.18 0.85,0 0.18,0.18 0,0.85 -0.18,0.18 -0.85,0 -0.18,-0.18", "fill": "#a23ec3" }
+      ]
     }
   },
 
@@ -173,7 +197,8 @@
     "place": { "fontSizeMm": 2.5, "color": "#2a2a2a", "haloColor": "#fff", "haloWidthMm": 0.5 },
     "peak":  { "fontSizeMm": 2.8, "color": "#7f4f24", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.5 },
     "kontur-tall": { "fontSizeMm": 1.6, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 },
-    "vann-tall": { "fontSizeMm": 1.7, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 }
+    "vann-tall": { "fontSizeMm": 1.7, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.4 },
+    "dybde-tall": { "fontSizeMm": 1.4, "color": "#1f5d8a", "italic": false, "haloColor": "#fff", "haloWidthMm": 0.3 }
   },
 
   "darkMode": {

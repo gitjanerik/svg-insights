@@ -42,11 +42,13 @@ export function buildOverpassQuery(bbox) {
   way["leisure"~"^(park|pitch|playground)$"];
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
+  way["place"~"^(island|islet)$"];
   node["natural"="peak"];
   node["place"~"^(locality|hamlet|village|suburb|neighbourhood|isolated_dwelling)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
+  relation["place"~"^(island|islet)$"];
 );
 out geom;
 `.trim()
@@ -249,23 +251,30 @@ function unionByName(elements, project) {
 // slik at vann og høydekurver legger seg over bymassen og forblir
 // lesbare i tett bebygde områder (f.eks. Oslo sentrum).
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210']
-const WATER_CODES  = ['308', '309', '301', '302', '303', '304', '305']
+// Vann-stack: dybdeareal (Sjøkart) først som lyseste, så myr-pattern,
+// deretter saltvann/innsjø/tjern (lokale, mer mettete blå), så
+// dybdekontur-linjer og bekker øverst.
+const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '306', '304', '305']
+// Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
+// over feilplassert OSM-vann. Renders ETTER vann-stacken.
+const LAND_OVERLAY_CODES = ['001']
 const ROAD_CODES   = ['501', '502', '503', '504', '505', '506', '507', '508']
-const UPPER_CODES  = ['521', '525', '528']
+const UPPER_CODES  = ['521', '525', '528', '533']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
-const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
+const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203', '211']
 const LAYER_ORDER = [
   ...GROUND_CODES,
   ...WATER_CODES,
+  ...LAND_OVERLAY_CODES,
   ...PLACEHOLDER_CODES,
   ...ROAD_CODES,
   ...UPPER_CODES,
   '522',
 ]
 
-const POLYGON_CODES = new Set(['401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '308', '309', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '508', '525', '528', '201', '203', '101', '102', '103', '104'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '521', '522'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -389,8 +398,11 @@ export function buildSvg(elements, bbox, options = {}) {
   for (const code of LAYER_ORDER) buckets[code] = []
   const peaks = []
   const places = []
+  const skjaer = []        // ISOM 211 (sjøkart-grunner)
+  const lanterner = []     // ISOM 533 (sjøkart-lanterner)
+  const dybdepunkter = []  // sjøkart-soundings (tekst-label)
 
-  const counts = { peak: 0, place: 0 }
+  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
@@ -399,6 +411,9 @@ export function buildSvg(elements, bbox, options = {}) {
     if (cls.cat === 'point') {
       if (cls.code === 'peak') { peaks.push(el); counts.peak++ }
       else if (cls.code === 'place') { places.push(el); counts.place++ }
+      else if (cls.code === '211') { skjaer.push(el); counts.skjaer++ }
+      else if (cls.code === '533') { lanterner.push(el); counts.lanterne++ }
+      else if (cls.code === 'dybdepunkt') { dybdepunkter.push(el); counts.dybdepunkt++ }
       continue
     }
     if (buckets[cls.code]) {
@@ -692,6 +707,34 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
   }).join('\n')
 
+  // ── Sjøkart: skjær (211), lanterner (533), dybdepunkter ──────────────
+  // Rendres som <use> mot point-symbols i defs. Dybdepunkter rendres som
+  // tekst-label med dybde-tall (paint-order: stroke for halo).
+  const skjaerSvg = skjaer.map(el => {
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('skjaer')
+    if (!sid) return ''
+    return `    <use href="#${sid}" x="${fmt(p.x - 0.5)}mm" y="${fmt(p.y - 0.5)}mm" width="1mm" height="1mm"/>`
+  }).filter(Boolean).join('\n')
+
+  const lanterneSvg = lanterner.map(el => {
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('lanterne')
+    if (!sid) return ''
+    const name = xmlEscape(el.tags?.name ?? '')
+    const labelPart = name
+      ? `<text x="1mm" y="0.4mm" data-label="lanterne-tall">${name}</text>`
+      : ''
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>${labelPart}</g>`
+  }).filter(Boolean).join('\n')
+
+  const dybdepunktSvg = dybdepunkter.map(el => {
+    const p = project(el.lat, el.lon)
+    const dybde = el.tags?.dybde
+    if (!dybde) return ''
+    return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" text-anchor="middle" data-label="dybde-tall">${xmlEscape(dybde)}</text>`
+  }).filter(Boolean).join('\n')
+
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
   // ekte DEM, sampler vi høyde på begge sider av spine for å velge
   // riktig side; ellers default til høyre. Spacing ~20m (~2mm @ 1:10k),
@@ -787,6 +830,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const renderCodes = (codes) => codes.map(layerSvg).join('')
   const groundLayers = renderCodes(GROUND_CODES)
   const waterLayers  = renderCodes(WATER_CODES)
+  const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
   const roadLayers   = renderCodes(ROAD_CODES)
   const upperLayers  = renderCodes(UPPER_CODES)
   const placeholderLayers = renderCodes(PLACEHOLDER_CODES)
@@ -814,6 +858,14 @@ export function buildSvg(elements, bbox, options = {}) {
   const cliffsLayerSvg = cliffsSvg
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
+  // Sjøkart-punkter (skjær, lanterner) og dybdepunkt-labels.
+  const skjaerLayerSvg = skjaerSvg
+    ? `  <g data-layer="stein" data-iso="211">\n${skjaerSvg}\n  </g>\n` : ''
+  const lanterneLayerSvg = lanterneSvg
+    ? `  <g data-layer="sjokart" data-iso="533">\n${lanterneSvg}\n  </g>\n` : ''
+  const dybdepunktLayerSvg = dybdepunktSvg
+    ? `  <g data-layer="dybde">\n${dybdepunktSvg}\n  </g>\n` : ''
+
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
   // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
@@ -838,7 +890,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -848,20 +900,22 @@ function categoryFor(code) {
   // Mapping fra ISOM-kode til UI-kategori (for lag-toggling i MapView).
   // Flere koder kan ende i samme kategori (skog samler 406-409 osv).
   switch (code) {
+    case '001':                                  return 'land'
     case '401': case '403':                     return 'aapen'
     case '404':                                  return 'aker'
     case '406': case '407': case '408': case '409': return 'skog'
     case '308': case '309':                     return 'myr'
-    case '301': case '302': case '303':         return 'vann'
-    case '304': case '305':                     return 'bekk'
+    case '301': case '302': case '303': case '307': return 'vann'
+    case '304': case '305': case '306':         return 'bekk'
     case '521': case '522':                     return 'bygning'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
     case '508':                                  return 'sykkel'
     case '201': case '203':                     return 'stupkant'
-    case '210': case '212': case '213':         return 'stein'
+    case '210': case '211': case '212': case '213': return 'stein'
     case '525': case '528':                     return 'linje'
+    case '533':                                  return 'sjokart'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
   }
