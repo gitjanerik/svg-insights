@@ -18,9 +18,6 @@ const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
 
 const center = ref({ ...DEFAULT_CENTER })
 const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*halfKm
-// Pixel-offset for bbox-frame innenfor preview. Bruker kan dra rammen
-// vertikalt/horisontalt for å velge utsnitt uten å endre søke-senter.
-const bboxOffsetPx = ref({ x: 0, y: 0 })
 const equidistanceM = ref(20)  // høydekurve-intervall, 10/20/50/100 m
 const customName = ref('')
 
@@ -43,28 +40,9 @@ function selectResult(r) {
   customName.value = r.shortName
   query.value = ''
   results.value = []
-  // Nytt søk → nullstill drag-offset
-  bboxOffsetPx.value = { x: 0, y: 0 }
 }
 
-// Effektivt bbox-senter inkluderer drag-offset i lat/lon-rom.
-const effectiveCenter = computed(() => {
-  if (bboxOffsetPx.value.x === 0 && bboxOffsetPx.value.y === 0) return center.value
-  const mPerPx = metersPerPixel(center.value.lat, previewZoom.value)
-  const dx_m = bboxOffsetPx.value.x * mPerPx
-  const dy_m = bboxOffsetPx.value.y * mPerPx
-  // Tile-rom: y øker nedover. Lat øker nordover (oppover). Så positiv dy
-  // = sørover = lat synker.
-  const dLat = -dy_m / 111111
-  const dLon = dx_m / (111111 * Math.cos(center.value.lat * Math.PI / 180))
-  return {
-    ...center.value,
-    lat: center.value.lat + dLat,
-    lon: center.value.lon + dLon,
-  }
-})
-
-const bbox = computed(() => bboxFromCenter(effectiveCenter.value.lat, effectiveCenter.value.lon, halfKm.value))
+const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value))
 
 const sizeKm = computed(() => (halfKm.value * 2).toFixed(1))
 
@@ -270,71 +248,95 @@ const bboxOverlayPx = computed(() => {
   }
 })
 
+// Pan + pinch på preview-en. Bruker drar kartet under den faste rammen.
+// 1-touch (eller mus) = pan kartet (oppdaterer center.lat/lon). 2-touch
+// = pinch-zoom (oppdaterer halfKm).
 let lastDist = 0
 let pinching = false
-const bboxDragging = ref(false)
-let bboxDragStart = null
+let panning = false
+let panStart = null
 
-function onBboxPointerDown(e) {
-  // 1-touch / 1-mouse drag for å panne rammen. 2-touch lar parent håndtere
-  // pinch (vi bobler ikke opp ved single pointer).
-  if (e.pointerType === 'touch' && e.isPrimary === false) return
-  bboxDragging.value = true
-  bboxDragStart = {
-    x: e.clientX,
-    y: e.clientY,
-    offX: bboxOffsetPx.value.x,
-    offY: bboxOffsetPx.value.y,
-  }
-  e.target.setPointerCapture?.(e.pointerId)
-  e.stopPropagation()
-}
-function onBboxPointerMove(e) {
-  if (!bboxDragging.value || !bboxDragStart) return
-  e.preventDefault()
-  e.stopPropagation()
-  // Begrens offset så rammen ikke kan dras helt ut av preview-vinduet.
-  const halfW = bboxOverlayPx.value.w / 2
-  const halfH = bboxOverlayPx.value.h / 2
-  const maxX = (previewSize.value.w / 2) - halfW * 0.4
-  const maxY = (previewSize.value.h / 2) - halfH * 0.4
-  const nx = bboxDragStart.offX + (e.clientX - bboxDragStart.x)
-  const ny = bboxDragStart.offY + (e.clientY - bboxDragStart.y)
-  bboxOffsetPx.value = {
-    x: Math.max(-maxX, Math.min(maxX, nx)),
-    y: Math.max(-maxY, Math.min(maxY, ny)),
-  }
-}
-function onBboxPointerUp(e) {
-  if (!bboxDragging.value) return
-  bboxDragging.value = false
-  bboxDragStart = null
-  e.target.releasePointerCapture?.(e.pointerId)
+function panShiftToCenter(dxPx, dyPx) {
+  // Når kartet flyttes høyre med dxPx skal sentrum-punktet flyttes
+  // VENSTRE i geografisk rom (kartet under flyttes til venstre).
+  // I tile-rom: y øker nedover = lat synker.
+  const mPerPx = metersPerPixel(center.value.lat, previewZoom.value)
+  const dLat = (dyPx * mPerPx) / 111111
+  const dLon = -(dxPx * mPerPx) / (111111 * Math.cos(center.value.lat * Math.PI / 180))
+  return { dLat, dLon }
 }
 
 function onPreviewTouchStart(e) {
   if (e.touches.length === 2) {
     pinching = true
+    panning = false
     lastDist = touchDist(e)
     e.preventDefault()
+  } else if (e.touches.length === 1) {
+    panning = true
+    pinching = false
+    panStart = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      lat: center.value.lat,
+      lon: center.value.lon,
+    }
   }
 }
 function onPreviewTouchMove(e) {
-  if (!pinching || e.touches.length !== 2) return
-  e.preventDefault()
-  const d = touchDist(e)
-  const ratio = d / lastDist
-  const next = halfKm.value / ratio
-  halfKm.value = Math.max(0.5, Math.min(5, next))
-  lastDist = d
+  if (pinching && e.touches.length === 2) {
+    e.preventDefault()
+    const d = touchDist(e)
+    const ratio = d / lastDist
+    const next = halfKm.value / ratio
+    halfKm.value = Math.max(0.5, Math.min(5, next))
+    lastDist = d
+  } else if (panning && e.touches.length === 1 && panStart) {
+    e.preventDefault()
+    const dxPx = e.touches[0].clientX - panStart.x
+    const dyPx = e.touches[0].clientY - panStart.y
+    const { dLat, dLon } = panShiftToCenter(dxPx, dyPx)
+    center.value = { ...center.value, lat: panStart.lat + dLat, lon: panStart.lon + dLon }
+  }
 }
 function onPreviewTouchEnd(e) {
   if (e.touches.length < 2) pinching = false
+  if (e.touches.length < 1) { panning = false; panStart = null }
 }
 function touchDist(e) {
   const dx = e.touches[0].clientX - e.touches[1].clientX
   const dy = e.touches[0].clientY - e.touches[1].clientY
   return Math.sqrt(dx * dx + dy * dy)
+}
+
+// Desktop: musedrag = pan
+function onPreviewMouseDown(e) {
+  if (e.button !== 0) return
+  panning = true
+  panStart = {
+    x: e.clientX, y: e.clientY,
+    lat: center.value.lat, lon: center.value.lon,
+  }
+  e.preventDefault()
+}
+function onPreviewMouseMove(e) {
+  if (!panning || !panStart) return
+  e.preventDefault()
+  const dxPx = e.clientX - panStart.x
+  const dyPx = e.clientY - panStart.y
+  const { dLat, dLon } = panShiftToCenter(dxPx, dyPx)
+  center.value = { ...center.value, lat: panStart.lat + dLat, lon: panStart.lon + dLon }
+}
+function onPreviewMouseUp() {
+  panning = false
+  panStart = null
+}
+// Desktop: scroll-hjul = zoom (pinch-ekvivalent)
+function onPreviewWheel(e) {
+  e.preventDefault()
+  const delta = e.deltaY > 0 ? 1.1 : 0.9
+  const next = halfKm.value * delta
+  halfKm.value = Math.max(0.5, Math.min(5, next))
 }
 
 onMounted(() => {
@@ -344,14 +346,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full min-h-[100dvh] flex flex-col bg-stone-50 text-zinc-900">
+  <div class="relative w-full min-h-[100dvh] flex flex-col bg-[#0e1116] text-white/90">
 
     <!-- Toppbar -->
     <div class="relative shrink-0 px-3 py-3 flex items-center justify-between
-                bg-white border-b border-zinc-200 z-30">
+                bg-zinc-900/80 border-b border-white/10 z-30">
       <button @click="router.push('/kart')"
               class="rounded-full w-10 h-10 flex items-center justify-center
-                     bg-white border border-zinc-200 active:scale-95 transition">
+                     bg-white/[0.04] border border-white/10 active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
@@ -363,19 +365,19 @@ onMounted(() => {
 
     <!-- Søkefelt -->
     <div class="px-4 pt-4 pb-3 relative z-20">
-      <label class="text-zinc-600 text-[11px] uppercase tracking-wide block mb-2">Sted, postnummer eller adresse</label>
+      <label class="text-white/65 text-[11px] uppercase tracking-wide block mb-2">Sted, postnummer eller adresse</label>
       <div class="relative">
-        <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500"
+        <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
         </svg>
         <input v-model="query" type="search" autocomplete="off" autocorrect="off"
                placeholder="f.eks. Sognsvann, 0855, Vardåsen Asker"
-               class="w-full pl-10 pr-3 py-3 rounded-xl bg-white border border-zinc-300
+               class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
-                      focus:border-amber-700/50 transition" />
+                      focus:border-amber-500/50 transition" />
         <div v-if="isSearching"
-             class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-zinc-300
+             class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15
                     border-t-white/70 rounded-full animate-spin" />
       </div>
 
@@ -383,15 +385,15 @@ onMounted(() => {
       <Transition name="fade">
         <div v-if="showResults"
              class="absolute left-4 right-4 mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
-                    border border-zinc-200 shadow-2xl max-h-[50dvh] overflow-y-auto z-30">
+                    border border-white/10 shadow-2xl max-h-[50dvh] overflow-y-auto z-30">
           <div v-if="results.length === 0 && !isSearching"
-               class="px-4 py-3 text-[13px] text-zinc-500">Ingen treff</div>
+               class="px-4 py-3 text-[13px] text-white/50">Ingen treff</div>
           <button v-for="r in results" :key="r.id"
                   @click="selectResult(r)"
-                  class="w-full text-left px-4 py-2.5 active:bg-zinc-100 transition border-b
-                         border-zinc-100 last:border-0">
+                  class="w-full text-left px-4 py-2.5 active:bg-white/10 transition border-b
+                         border-white/8 last:border-0">
             <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
-            <div class="text-[11px] text-zinc-500 truncate">{{ r.name }}</div>
+            <div class="text-[11px] text-white/50 truncate">{{ r.name }}</div>
           </button>
         </div>
       </Transition>
@@ -401,14 +403,14 @@ onMounted(() => {
 
     <!-- Valgt sted -->
     <div class="px-4 pb-2">
-      <div class="rounded-xl bg-white border border-zinc-200 px-4 py-3">
-        <div class="text-[11px] text-zinc-500 uppercase tracking-wide mb-1">Sentrum av kart</div>
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+        <div class="text-[11px] text-white/50 uppercase tracking-wide mb-1">Sentrum av kart</div>
         <div class="flex items-baseline justify-between gap-3">
           <input v-model="customName"
                  type="text" placeholder="Navn på kart"
                  class="flex-1 bg-transparent text-[15px] font-semibold focus:outline-none
                         placeholder-white/25" />
-          <div class="text-[10px] text-zinc-500 tabular-nums shrink-0">
+          <div class="text-[10px] text-white/50 tabular-nums shrink-0">
             {{ center.lat.toFixed(4) }}°N, {{ center.lon.toFixed(4) }}°E
           </div>
         </div>
@@ -417,74 +419,75 @@ onMounted(() => {
 
     <!-- Mini-preview + bbox -->
     <div class="flex-1 px-4 pb-3 flex flex-col gap-3 min-h-0">
-      <div class="text-zinc-600 text-[11px] uppercase tracking-wide">
-        Forhåndsvisning — dra rammen for å flytte, pinch for størrelse
+      <div class="text-white/65 text-[11px] uppercase tracking-wide">
+        Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse
       </div>
       <div ref="previewRef"
-           class="flex-1 min-h-[220px] rounded-xl bg-stone-200 border border-zinc-200 overflow-hidden
-                  relative touch-none"
+           class="flex-1 min-h-[220px] rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
+                  relative touch-none cursor-move"
            @touchstart="onPreviewTouchStart"
            @touchmove="onPreviewTouchMove"
            @touchend="onPreviewTouchEnd"
-           @touchcancel="onPreviewTouchEnd">
-        <!-- Ekte Kartverket-tiler som bakgrunn -->
+           @touchcancel="onPreviewTouchEnd"
+           @mousedown="onPreviewMouseDown"
+           @mousemove="onPreviewMouseMove"
+           @mouseup="onPreviewMouseUp"
+           @mouseleave="onPreviewMouseUp"
+           @wheel="onPreviewWheel">
+        <!-- Ekte Kartverket-tiler som bakgrunn. Tiles flyttes når bruker drar
+             (center oppdateres → tile-mosaikken regenereres rundt ny lat/lon). -->
         <img v-for="t in tiles" :key="t.url"
              :src="t.url" alt=""
              class="absolute pointer-events-none select-none"
              :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
              draggable="false" />
 
-        <!-- Bbox-overlegg, draggable. Brukeren kan flytte rammen fritt
-             vertikalt og horisontalt for å velge utsnittet. -->
-        <div class="absolute border-2 border-amber-700 rounded-sm cursor-move
+        <!-- Kvadratisk frame fast i sentrum. Brukeren drar kartet UNDER
+             rammen for å velge utsnitt. Pinch / scroll endrer størrelse. -->
+        <div class="absolute pointer-events-none border-2 border-amber-500 rounded-sm
                     shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
              :style="{
                width:  bboxOverlayPx.w + 'px',
                height: bboxOverlayPx.h + 'px',
-               left:   ((previewSize.w - bboxOverlayPx.w) / 2 + bboxOffsetPx.x) + 'px',
-               top:    ((previewSize.h - bboxOverlayPx.h) / 2 + bboxOffsetPx.y) + 'px',
-               transition: bboxDragging ? 'none' : 'width 200ms cubic-bezier(0.2,0.8,0.2,1), height 200ms cubic-bezier(0.2,0.8,0.2,1)',
-               touchAction: 'none',
-             }"
-             @pointerdown="onBboxPointerDown"
-             @pointermove="onBboxPointerMove"
-             @pointerup="onBboxPointerUp"
-             @pointercancel="onBboxPointerUp">
+               left:   (previewSize.w - bboxOverlayPx.w) / 2 + 'px',
+               top:    (previewSize.h - bboxOverlayPx.h) / 2 + 'px',
+               transition: 'width 200ms cubic-bezier(0.2,0.8,0.2,1), height 200ms cubic-bezier(0.2,0.8,0.2,1)',
+             }">
           <div class="absolute inset-0 border border-violet-300/60 rounded-sm pointer-events-none"></div>
           <!-- Senter-kryss -->
           <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none">
-            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-amber-700 -translate-y-1/2"></div>
-            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-700 -translate-x-1/2"></div>
+            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-amber-500 -translate-y-1/2"></div>
+            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-amber-500 -translate-x-1/2"></div>
           </div>
         </div>
 
         <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-zinc-900 text-[11px]
-                    text-white border border-zinc-400 font-medium shadow-lg z-10">
+                    text-white border border-white/30 font-medium shadow-lg z-10">
           {{ sizeKm }} × {{ sizeKm }} km
         </div>
-        <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-zinc-100/95 text-zinc-700 text-[8px]
-                    text-zinc-700 border border-zinc-300 leading-tight pointer-events-none">
+        <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/70 text-[8px]
+                    text-white/75 border border-white/15 leading-tight pointer-events-none">
           © Kartverket
         </div>
       </div>
 
       <!-- Slider for størrelse -->
-      <div class="rounded-xl bg-white border border-zinc-200 px-4 py-3">
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
         <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] text-zinc-500 uppercase tracking-wide">Bredde</div>
+          <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
         <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
-               class="w-full accent-amber-700" />
-        <div class="flex justify-between text-[10px] text-zinc-400 mt-1">
+               class="w-full accent-amber-500" />
+        <div class="flex justify-between text-[10px] text-white/40 mt-1">
           <span>1 km</span><span>4 km</span><span>10 km</span>
         </div>
       </div>
 
       <!-- Ekvidistanse-velger -->
-      <div class="rounded-xl bg-white border border-zinc-200 px-4 py-3">
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
         <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] text-zinc-500 uppercase tracking-wide">Høydekurver</div>
+          <div class="text-[11px] text-white/50 uppercase tracking-wide">Høydekurver</div>
           <div class="text-[13px] font-medium tabular-nums">hver {{ equidistanceM }} m</div>
         </div>
         <div class="grid grid-cols-5 gap-1.5">
@@ -492,25 +495,25 @@ onMounted(() => {
                   @click="equidistanceM = opt.value"
                   class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition"
                   :class="equidistanceM === opt.value
-                          ? 'bg-amber-100 border-amber-400 text-amber-900'
-                          : 'bg-white border-zinc-200 text-zinc-600'">
+                          ? 'bg-amber-500/20 border-amber-400/60 text-amber-100'
+                          : 'bg-white border-white/10 text-white/65'">
             {{ opt.label }}
           </button>
         </div>
-        <div class="text-[10px] text-zinc-400 mt-1.5">
+        <div class="text-[10px] text-white/40 mt-1.5">
           {{ EQUIDISTANCE_OPTIONS.find(o => o.value === equidistanceM)?.desc }}
         </div>
       </div>
     </div>
 
     <!-- Bygg-knapp -->
-    <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-zinc-200">
+    <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
               class="w-full py-4 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-violet-900/50
                      disabled:opacity-60 text-white font-semibold flex items-center justify-center gap-2
                      active:scale-[0.99] transition">
         <div v-if="buildState !== 'idle' && buildState !== 'error'"
-             class="w-4 h-4 border-2 border-zinc-400 border-t-white rounded-full animate-spin"/>
+             class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
         <span>{{ buildState === 'idle' || buildState === 'error' ? 'Lag turkart' : buildProgress }}</span>
       </button>
       <div v-if="buildError"
@@ -518,7 +521,7 @@ onMounted(() => {
                   text-amber-100 text-[11px]">
         {{ buildError }}
       </div>
-      <div class="mt-3 text-[10px] text-zinc-400 text-center">
+      <div class="mt-3 text-[10px] text-white/40 text-center">
         Henter data fra OpenStreetMap (ODbL) via Overpass API.
       </div>
     </div>
