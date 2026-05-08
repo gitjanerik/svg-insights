@@ -190,10 +190,32 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.12.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.12.0</span>
+                <span class="text-white/40">&mdash; ISOM-symbol-pakke: tydelige sti-typer, print-faithful tegnforklaring, synlige annoteringer + GPS-dot</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Sti- og veityper (ISOM 501–508) er nå tydelig distinkte:</strong> 504 Skogsbilvei = solid svart linje, 505/506/507 har gradert dash-mønster (lange→korte→prikker), 508 Sykkel-sti har lange chunky dashes. Alle med <code>linecap: round</code>. Veifargene 501/502/503 har mer kontrast (mettet orange / lys orange / tan)</li>
+                <li><strong>Høydekurver tykkere og mer lesbare</strong> — 101: 0.10→0.14 mm, 102: 0.16→0.25 mm, <code>linejoin: round</code> for glattere svinger</li>
+                <li><strong>Tegnforklaringen er print-faithful:</strong> bruker mm-units og inkluderer linecap/linejoin akkurat slik kartet rendrer. Du ser nå nøyaktig hva du får i print 1:10000</li>
+                <li><strong>Annoteringssymboler virker endelig.</strong> Iterert tre ganger gjennom rotårsakene: (1) <code>x="${a.x}mm"</code>-bug der koordinaten allerede er i meter, (2) <code>width="2mm"</code>-bug i kombinasjon med pinch-zoom CSS-transform, (3) selv 15 m i user-units er bare ~1 px på et 5 km kart. Endelig fix: <code>pxToUserUnits(cssPx)</code>-helper som beregner symbol-størrelsen dynamisk fra <code>getBoundingClientRect</code> + <code>viewBox</code>, slik at symbolet alltid er ~32 CSS-px på skjerm uansett zoom eller bbox-størrelse</li>
+                <li><strong>Halo-ring</strong> (kremgul fyll, lilla outline) bak hvert annoterings-symbol så det er synlig over alle kart-bakgrunner</li>
+                <li><strong>GPS-dot er også synlig nå.</strong> Var tidligere r=6 m → 0.5 px på skjerm = usynlig (det brukeren så som «GPS funksjonell» var bare den store accuracy-ringen). Nå: dot ~14 CSS-px, retnings-kjegle ~60 CSS-px ut, accuracy-ring beholder fysisk meter-radius men har minimum-størrelse</li>
+                <li><strong>Dynamisk skalering re-rendres på pinch-zoom</strong> via <code>watch(scale)</code> så symboler holder konstant skjerm-størrelse uansett hvor du zoomer</li>
+                <li>Vardåsen-demokart oppdatert med ny ISOM-styling (regenerert <code>&lt;style&gt;</code>-blokk i <code>vardasen.svg</code>; full re-build skjer automatisk i CI)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.11.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-100" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.11.2</span>
                 <span class="text-white/40">&mdash; Dynamisk skjerm-skalering: annoteringer + GPS-dot er nå alltid synlig (skala-uavhengig)</span>
