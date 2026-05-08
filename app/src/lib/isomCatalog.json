@@ -5,100 +5,474 @@
   "intendedScale": 10000,
   "magneticNorth": {
     "$comment": "Deklinasjon for Sør-Norge ca 3°E (varierer 1-5°). Hentes egentlig fra IGRF.",
-    "defaultDeclinationDeg": 3.0
+    "defaultDeclinationDeg": 3
   },
-
   "background": {
     "color": "#fefae0",
     "darkColor": "#0e1116"
   },
-
   "categories": {
     "land": {
-      "001": { "label": "Land — øy-overlay", "fill": { "color": "#fefae0" } }
+      "001": {
+        "label": "Land — øy-overlay",
+        "fill": {
+          "color": "#fefae0"
+        }
+      }
     },
     "terrain": {
-      "401": { "label": "Åpen mark — fast", "fill": { "color": "#ffd966" } },
-      "403": { "label": "Halv-åpen mark", "fill": { "type": "pattern", "pattern": "halv-aapen" } },
-      "404": { "label": "Råtne / nyhugst", "fill": { "type": "pattern", "pattern": "hugst" } },
-      "405": { "label": "Skog — normal", "fill": { "color": "#ffffff" } },
-      "406": { "label": "Skog — sakte løp", "fill": { "color": "#cae8a3" } },
-      "407": { "label": "Skog — vanskelig løp", "fill": { "color": "#94d473" } },
-      "408": { "label": "Tett skog — kjempe-vanskelig", "fill": { "color": "#5cb348" } },
-      "409": { "label": "Tett kratt", "fill": { "color": "#3e8c2c", "type": "pattern", "pattern": "kratt" } }
+      "401": {
+        "label": "Åpen mark — fast",
+        "fill": {
+          "color": "#ffd966"
+        }
+      },
+      "403": {
+        "label": "Halv-åpen mark",
+        "fill": {
+          "type": "pattern",
+          "pattern": "halv-aapen"
+        }
+      },
+      "404": {
+        "label": "Råtne / nyhugst",
+        "fill": {
+          "type": "pattern",
+          "pattern": "hugst"
+        }
+      },
+      "405": {
+        "label": "Skog — normal",
+        "fill": {
+          "color": "#ffffff"
+        }
+      },
+      "406": {
+        "label": "Skog — sakte løp",
+        "fill": {
+          "color": "#cae8a3"
+        }
+      },
+      "407": {
+        "label": "Skog — vanskelig løp",
+        "fill": {
+          "color": "#94d473"
+        }
+      },
+      "408": {
+        "label": "Tett skog — kjempe-vanskelig",
+        "fill": {
+          "color": "#5cb348"
+        }
+      },
+      "409": {
+        "label": "Tett kratt",
+        "fill": {
+          "color": "#3e8c2c",
+          "type": "pattern",
+          "pattern": "kratt"
+        }
+      }
     },
     "water": {
-      "301": { "label": "Innsjø", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
-      "302": { "label": "Tjern", "fill": { "color": "#a8d4e8" }, "stroke": { "color": "#0099cc", "widthMm": 0.18 } },
-      "303": { "label": "Saltvann / fjord", "fill": { "color": "#6fb6da" }, "stroke": { "color": "#1f7aa3", "widthMm": 0.22 } },
-      "304": { "label": "Bekk", "stroke": { "color": "#0099cc", "widthMm": 0.25, "linecap": "round" } },
-      "305": { "label": "Liten bekk", "stroke": { "color": "#0099cc", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
-      "306": { "label": "Dybdekontur — sjøkart", "stroke": { "color": "#3a8db8", "widthMm": 0.12 } },
-      "307": { "label": "Dybdeareal — sjøkart", "fill": { "color": "#9ec9de" } },
-      "308": { "label": "Myr — fast", "fill": { "type": "pattern", "pattern": "myr" } },
-      "309": { "label": "Myr — utrygg", "fill": { "type": "pattern", "pattern": "myr-utrygg" } },
-      "310": { "label": "Brønn / kilde", "point": { "symbol": "brønn", "scaleMm": 1.5 } }
+      "301": {
+        "label": "Innsjø",
+        "fill": {
+          "color": "#a8d4e8"
+        },
+        "stroke": {
+          "color": "#0099cc",
+          "widthMm": 0.09
+        }
+      },
+      "302": {
+        "label": "Tjern",
+        "fill": {
+          "color": "#a8d4e8"
+        },
+        "stroke": {
+          "color": "#0099cc",
+          "widthMm": 0.09
+        }
+      },
+      "303": {
+        "label": "Saltvann / fjord",
+        "fill": {
+          "color": "#6fb6da"
+        },
+        "stroke": {
+          "color": "#1f7aa3",
+          "widthMm": 0.11
+        }
+      },
+      "304": {
+        "label": "Bekk",
+        "stroke": {
+          "color": "#0099cc",
+          "widthMm": 0.13,
+          "linecap": "round"
+        }
+      },
+      "305": {
+        "label": "Liten bekk",
+        "stroke": {
+          "color": "#0099cc",
+          "widthMm": 0.09,
+          "dasharray": [
+            1.5,
+            0.6
+          ]
+        }
+      },
+      "306": {
+        "label": "Dybdekontur — sjøkart",
+        "stroke": {
+          "color": "#3a8db8",
+          "widthMm": 0.06
+        }
+      },
+      "307": {
+        "label": "Dybdeareal — sjøkart",
+        "fill": {
+          "color": "#9ec9de"
+        }
+      },
+      "308": {
+        "label": "Myr — fast",
+        "fill": {
+          "type": "pattern",
+          "pattern": "myr"
+        }
+      },
+      "309": {
+        "label": "Myr — utrygg",
+        "fill": {
+          "type": "pattern",
+          "pattern": "myr-utrygg"
+        }
+      },
+      "310": {
+        "label": "Brønn / kilde",
+        "point": {
+          "symbol": "brønn",
+          "scaleMm": 1.5
+        }
+      }
     },
     "rock": {
-      "201": { "label": "Loddrett stupkant — passérbar", "stroke": { "color": "#000", "widthMm": 0.18, "linecap": "round" } },
-      "203": { "label": "Stupkant — upassérbar", "stroke": { "color": "#000", "widthMm": 0.25, "linecap": "round" } },
-      "210": { "label": "Blokkmark", "fill": { "type": "pattern", "pattern": "blokkmark" } },
-      "211": { "label": "Skjær / grunne — sjøkart", "point": { "symbol": "skjaer", "scaleMm": 1.0 } },
-      "212": { "label": "Røys", "point": { "symbol": "stein", "scaleMm": 0.6 } },
-      "213": { "label": "Knaus", "point": { "symbol": "knaus", "scaleMm": 1.2 } }
+      "201": {
+        "label": "Loddrett stupkant — passérbar",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.09,
+          "linecap": "round"
+        }
+      },
+      "203": {
+        "label": "Stupkant — upassérbar",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.13,
+          "linecap": "round"
+        }
+      },
+      "210": {
+        "label": "Blokkmark",
+        "fill": {
+          "type": "pattern",
+          "pattern": "blokkmark"
+        }
+      },
+      "211": {
+        "label": "Skjær / grunne — sjøkart",
+        "point": {
+          "symbol": "skjaer",
+          "scaleMm": 1
+        }
+      },
+      "212": {
+        "label": "Røys",
+        "point": {
+          "symbol": "stein",
+          "scaleMm": 0.6
+        }
+      },
+      "213": {
+        "label": "Knaus",
+        "point": {
+          "symbol": "knaus",
+          "scaleMm": 1.2
+        }
+      }
     },
     "contour": {
-      "101": { "label": "Høydekurve",          "stroke": { "color": "#dc2626", "widthMm": 0.14, "linejoin": "round" } },
-      "102": { "label": "Indeks-høydekurve",   "stroke": { "color": "#dc2626", "widthMm": 0.25, "linejoin": "round" } },
-      "103": { "label": "Hjelpekurve (punktet)", "stroke": { "color": "#dc2626", "widthMm": 0.14, "dasharray": [2.0, 0.8], "linecap": "round", "linejoin": "round" } },
-      "104": { "label": "Skråstrek (kurve ned)", "stroke": { "color": "#dc2626", "widthMm": 0.14, "linecap": "round" } }
+      "101": {
+        "label": "Høydekurve",
+        "stroke": {
+          "color": "#dc2626",
+          "widthMm": 0.07,
+          "linejoin": "round"
+        }
+      },
+      "102": {
+        "label": "Indeks-høydekurve",
+        "stroke": {
+          "color": "#dc2626",
+          "widthMm": 0.13,
+          "linejoin": "round"
+        }
+      },
+      "103": {
+        "label": "Hjelpekurve (punktet)",
+        "stroke": {
+          "color": "#dc2626",
+          "widthMm": 0.07,
+          "dasharray": [
+            2,
+            0.8
+          ],
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "104": {
+        "label": "Skråstrek (kurve ned)",
+        "stroke": {
+          "color": "#dc2626",
+          "widthMm": 0.07,
+          "linecap": "round"
+        }
+      }
     },
     "manmade": {
-      "501": { "label": "Motorvei", "stroke": { "color": "#dc6d3a", "widthMm": 0.5, "linecap": "round", "linejoin": "round" } },
-      "502": { "label": "Hovedvei", "stroke": { "color": "#e89570", "widthMm": 0.4, "linecap": "round", "linejoin": "round" } },
-      "503": { "label": "Småvei", "stroke": { "color": "#d8b797", "widthMm": 0.3, "linecap": "round", "linejoin": "round" } },
-      "504": { "label": "Skogsbilvei", "stroke": { "color": "#000", "widthMm": 0.25, "linecap": "round", "linejoin": "round" } },
-      "505": { "label": "Sti — godt løp", "stroke": { "color": "#000", "widthMm": 0.22, "dasharray": [1.5, 0.5], "linejoin": "round" } },
-      "506": { "label": "Sti — uklar", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [0.7, 0.4], "linejoin": "round" } },
-      "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.16, "dasharray": [0.05, 0.65], "linecap": "round", "linejoin": "round" } },
-      "508": { "label": "Sykkel-sti", "stroke": { "color": "#1a1a1a", "widthMm": 0.25, "dasharray": [3.0, 1.0], "linejoin": "round" } },
-      "509": { "label": "Krysset — bro / overgang", "point": { "symbol": "bro", "scaleMm": 1.2 } },
-      "510": { "label": "Lysløype", "stroke": { "color": "#000", "widthMm": 0.28, "dasharray": [2.5, 0.4], "linecap": "round", "linejoin": "round" } },
-      "511": { "label": "Heistrasé / skiheis", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [3.0, 1.5], "linejoin": "round" } },
-      "512": { "label": "Slalombakke", "fill": { "color": "#fff5cc" }, "stroke": { "color": "#d4b06b", "widthMm": 0.18, "dasharray": [1.0, 0.5] } },
-      "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
-      "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },
-      "525": { "label": "Gjerde", "stroke": { "color": "#000", "widthMm": 0.15, "dasharray": [1.0, 0.5] } },
-      "528": { "label": "Kraftledning", "stroke": { "color": "#000", "widthMm": 0.18 } },
-      "533": { "label": "Lanterne / fyr — sjøkart", "point": { "symbol": "lanterne", "scaleMm": 1.6 } }
+      "501": {
+        "label": "Motorvei",
+        "stroke": {
+          "color": "#dc6d3a",
+          "widthMm": 0.25,
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "502": {
+        "label": "Hovedvei",
+        "stroke": {
+          "color": "#e89570",
+          "widthMm": 0.2,
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "503": {
+        "label": "Småvei",
+        "stroke": {
+          "color": "#d8b797",
+          "widthMm": 0.15,
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "504": {
+        "label": "Skogsbilvei",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.13,
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "505": {
+        "label": "Sti — godt løp",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.11,
+          "dasharray": [
+            1.5,
+            0.5
+          ],
+          "linejoin": "round"
+        }
+      },
+      "506": {
+        "label": "Sti — uklar",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.09,
+          "dasharray": [
+            0.7,
+            0.4
+          ],
+          "linejoin": "round"
+        }
+      },
+      "507": {
+        "label": "Stitråkk — vanskelig",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.08,
+          "dasharray": [
+            0.05,
+            0.65
+          ],
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "508": {
+        "label": "Sykkel-sti",
+        "stroke": {
+          "color": "#1a1a1a",
+          "widthMm": 0.13,
+          "dasharray": [
+            3,
+            1
+          ],
+          "linejoin": "round"
+        }
+      },
+      "509": {
+        "label": "Krysset — bro / overgang",
+        "point": {
+          "symbol": "bro",
+          "scaleMm": 1.2
+        }
+      },
+      "510": {
+        "label": "Lysløype",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.14,
+          "dasharray": [
+            2.5,
+            0.4
+          ],
+          "linecap": "round",
+          "linejoin": "round"
+        }
+      },
+      "511": {
+        "label": "Heistrasé / skiheis",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.09,
+          "dasharray": [
+            3,
+            1.5
+          ],
+          "linejoin": "round"
+        }
+      },
+      "512": {
+        "label": "Slalombakke",
+        "fill": {
+          "color": "#fff5cc"
+        },
+        "stroke": {
+          "color": "#d4b06b",
+          "widthMm": 0.09,
+          "dasharray": [
+            1,
+            0.5
+          ]
+        }
+      },
+      "521": {
+        "label": "Bygning",
+        "fill": {
+          "color": "#7a5a3a"
+        },
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.08
+        }
+      },
+      "522": {
+        "label": "Tett bebyggelse",
+        "fill": {
+          "type": "pattern",
+          "pattern": "bebyggelse"
+        }
+      },
+      "525": {
+        "label": "Gjerde",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.08,
+          "dasharray": [
+            1,
+            0.5
+          ]
+        }
+      },
+      "528": {
+        "label": "Kraftledning",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.09
+        }
+      },
+      "533": {
+        "label": "Lanterne / fyr — sjøkart",
+        "point": {
+          "symbol": "lanterne",
+          "scaleMm": 1.6
+        }
+      }
     }
   },
-
   "patterns": {
     "myr": {
       "$comment": "Horisontale blå streker — våtmark fast",
       "widthMm": 1.5,
       "heightMm": 1.2,
       "elements": [
-        { "type": "line", "x1": 0, "y1": 0.6, "x2": 1.5, "y2": 0.6, "stroke": "#0099cc", "widthMm": 0.18 }
+        {
+          "type": "line",
+          "x1": 0,
+          "y1": 0.6,
+          "x2": 1.5,
+          "y2": 0.6,
+          "stroke": "#0099cc",
+          "widthMm": 0.09
+        }
       ]
     },
     "myr-utrygg": {
       "$comment": "Horisontale blå streker, tettere — våtmark utrygg",
-      "widthMm": 1.0,
+      "widthMm": 1,
       "heightMm": 0.6,
       "elements": [
-        { "type": "line", "x1": 0, "y1": 0.3, "x2": 1.0, "y2": 0.3, "stroke": "#0099cc", "widthMm": 0.18 }
+        {
+          "type": "line",
+          "x1": 0,
+          "y1": 0.3,
+          "x2": 1,
+          "y2": 0.3,
+          "stroke": "#0099cc",
+          "widthMm": 0.09
+        }
       ]
     },
     "kratt": {
       "$comment": "Mørkegrønn med små blader",
-      "widthMm": 2.0,
-      "heightMm": 2.0,
+      "widthMm": 2,
+      "heightMm": 2,
       "background": "#94d473",
       "elements": [
-        { "type": "circle", "cx": 0.5, "cy": 0.5, "r": 0.18, "fill": "#3e8c2c" },
-        { "type": "circle", "cx": 1.4, "cy": 1.5, "r": 0.18, "fill": "#3e8c2c" }
+        {
+          "type": "circle",
+          "cx": 0.5,
+          "cy": 0.5,
+          "r": 0.18,
+          "fill": "#3e8c2c"
+        },
+        {
+          "type": "circle",
+          "cx": 1.4,
+          "cy": 1.5,
+          "r": 0.18,
+          "fill": "#3e8c2c"
+        }
       ]
     },
     "halv-aapen": {
@@ -107,16 +481,30 @@
       "heightMm": 2.5,
       "background": "#ffd966",
       "elements": [
-        { "type": "circle", "cx": 1.25, "cy": 1.25, "r": 0.18, "fill": "#cae8a3" }
+        {
+          "type": "circle",
+          "cx": 1.25,
+          "cy": 1.25,
+          "r": 0.18,
+          "fill": "#cae8a3"
+        }
       ]
     },
     "hugst": {
       "$comment": "Diagonale grønne tikker",
-      "widthMm": 2.0,
-      "heightMm": 2.0,
+      "widthMm": 2,
+      "heightMm": 2,
       "background": "#cae8a3",
       "elements": [
-        { "type": "line", "x1": 0.5, "y1": 0.3, "x2": 0.7, "y2": 1.7, "stroke": "#5cb348", "widthMm": 0.2 }
+        {
+          "type": "line",
+          "x1": 0.5,
+          "y1": 0.3,
+          "x2": 0.7,
+          "y2": 1.7,
+          "stroke": "#5cb348",
+          "widthMm": 0.1
+        }
       ]
     },
     "blokkmark": {
@@ -124,7 +512,11 @@
       "widthMm": 2.5,
       "heightMm": 2.5,
       "elements": [
-        { "type": "polygon", "points": "1.25,0.7 1.7,1.5 0.8,1.5", "fill": "#000" }
+        {
+          "type": "polygon",
+          "points": "1.25,0.7 1.7,1.5 0.8,1.5",
+          "fill": "#000"
+        }
       ]
     },
     "bebyggelse": {
@@ -133,98 +525,305 @@
       "heightMm": 1.5,
       "background": "#d9b89a",
       "elements": [
-        { "type": "rect", "x": 0.2, "y": 0.2, "w": 1.1, "h": 1.1, "fill": "#7a5a3a" }
+        {
+          "type": "rect",
+          "x": 0.2,
+          "y": 0.2,
+          "w": 1.1,
+          "h": 1.1,
+          "fill": "#7a5a3a"
+        }
       ]
     }
   },
-
   "pointSymbols": {
     "knaus": {
       "$comment": "Liten halvmåne for knaus / liten knatte",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "path", "d": "M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4", "stroke": "#7f4f24", "widthMm": 0.14, "fill": "none" }
+        {
+          "type": "path",
+          "d": "M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4",
+          "stroke": "#7f4f24",
+          "widthMm": 0.07,
+          "fill": "none"
+        }
       ]
     },
     "stein": {
       "$comment": "Solid svart trekant",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "polygon", "points": "0,-0.6 0.6,0.5 -0.6,0.5", "fill": "#000" }
+        {
+          "type": "polygon",
+          "points": "0,-0.6 0.6,0.5 -0.6,0.5",
+          "fill": "#000"
+        }
       ]
     },
     "brønn": {
       "$comment": "Sirkel med kryss",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "circle", "cx": 0, "cy": 0, "r": 0.6, "stroke": "#0099cc", "widthMm": 0.18, "fill": "none" },
-        { "type": "line", "x1": -0.6, "y1": 0, "x2": 0.6, "y2": 0, "stroke": "#0099cc", "widthMm": 0.18 },
-        { "type": "line", "x1": 0, "y1": -0.6, "x2": 0, "y2": 0.6, "stroke": "#0099cc", "widthMm": 0.18 }
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": 0,
+          "r": 0.6,
+          "stroke": "#0099cc",
+          "widthMm": 0.09,
+          "fill": "none"
+        },
+        {
+          "type": "line",
+          "x1": -0.6,
+          "y1": 0,
+          "x2": 0.6,
+          "y2": 0,
+          "stroke": "#0099cc",
+          "widthMm": 0.09
+        },
+        {
+          "type": "line",
+          "x1": 0,
+          "y1": -0.6,
+          "x2": 0,
+          "y2": 0.6,
+          "stroke": "#0099cc",
+          "widthMm": 0.09
+        }
       ]
     },
     "bro": {
       "$comment": "To parallelle streker — bro / klopp",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "line", "x1": -0.6, "y1": -0.3, "x2": 0.6, "y2": -0.3, "stroke": "#000", "widthMm": 0.2 },
-        { "type": "line", "x1": -0.6, "y1": 0.3, "x2": 0.6, "y2": 0.3, "stroke": "#000", "widthMm": 0.2 }
+        {
+          "type": "line",
+          "x1": -0.6,
+          "y1": -0.3,
+          "x2": 0.6,
+          "y2": -0.3,
+          "stroke": "#000",
+          "widthMm": 0.1
+        },
+        {
+          "type": "line",
+          "x1": -0.6,
+          "y1": 0.3,
+          "x2": 0.6,
+          "y2": 0.3,
+          "stroke": "#000",
+          "widthMm": 0.1
+        }
       ]
     },
     "peak": {
       "$comment": "Sort prikk for topp / høyde",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "circle", "cx": 0, "cy": 0, "r": 0.5, "fill": "#7f4f24" }
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": 0,
+          "r": 0.5,
+          "fill": "#7f4f24"
+        }
       ]
     },
     "skjaer": {
       "$comment": "Sjøkart-skjær: liten ring med kryss i blå (ISO 6.1)",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "circle", "cx": 0, "cy": 0, "r": 0.55, "stroke": "#1f5d8a", "widthMm": 0.18, "fill": "#fff" },
-        { "type": "line", "x1": -0.45, "y1": -0.45, "x2": 0.45, "y2": 0.45, "stroke": "#1f5d8a", "widthMm": 0.18 },
-        { "type": "line", "x1": -0.45, "y1": 0.45, "x2": 0.45, "y2": -0.45, "stroke": "#1f5d8a", "widthMm": 0.18 }
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": 0,
+          "r": 0.55,
+          "stroke": "#1f5d8a",
+          "widthMm": 0.09,
+          "fill": "#fff"
+        },
+        {
+          "type": "line",
+          "x1": -0.45,
+          "y1": -0.45,
+          "x2": 0.45,
+          "y2": 0.45,
+          "stroke": "#1f5d8a",
+          "widthMm": 0.09
+        },
+        {
+          "type": "line",
+          "x1": -0.45,
+          "y1": 0.45,
+          "x2": 0.45,
+          "y2": -0.45,
+          "stroke": "#1f5d8a",
+          "widthMm": 0.09
+        }
       ]
     },
     "lanterne": {
       "$comment": "Sjøkart-lanterne: violet stjerne med prikk (forenklet IALA Q-symbol)",
       "viewBox": "-1 -1 2 2",
       "elements": [
-        { "type": "circle", "cx": 0, "cy": 0, "r": 0.18, "fill": "#a23ec3" },
-        { "type": "polygon", "points": "0,-0.85 0.18,-0.18 0.85,0 0.18,0.18 0,0.85 -0.18,0.18 -0.85,0 -0.18,-0.18", "fill": "#a23ec3" }
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": 0,
+          "r": 0.18,
+          "fill": "#a23ec3"
+        },
+        {
+          "type": "polygon",
+          "points": "0,-0.85 0.18,-0.18 0.85,0 0.18,0.18 0,0.85 -0.18,0.18 -0.85,0 -0.18,-0.18",
+          "fill": "#a23ec3"
+        }
       ]
     }
   },
-
   "labels": {
-    "place": { "fontSizeMm": 4.0, "color": "#2a2a2a", "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.7 },
-    "peak":  { "fontSizeMm": 4.6, "color": "#7f4f24", "weight": 700, "haloColor": "#fff", "haloWidthMm": 0.7 },
-    "peak-ele": { "fontSizeMm": 3.4, "color": "#7f4f24", "italic": true, "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.6 },
-    "kontur-tall": { "fontSizeMm": 2.4, "color": "#dc2626", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "vann-navn": { "fontSizeMm": 3.4, "color": "#1f5d8a", "italic": true, "weight": 600, "haloColor": "#fff", "haloWidthMm": 0.6 },
-    "vann-tall": { "fontSizeMm": 2.6, "color": "#1f7aa3", "italic": true, "haloColor": "#fff", "haloWidthMm": 0.5 },
-    "dybde-tall": { "fontSizeMm": 2.0, "color": "#1f5d8a", "italic": false, "haloColor": "#fff", "haloWidthMm": 0.4 }
+    "place": {
+      "fontSizeMm": 4,
+      "color": "#2a2a2a",
+      "weight": 600,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.7
+    },
+    "peak": {
+      "fontSizeMm": 4.6,
+      "color": "#7f4f24",
+      "weight": 700,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.7
+    },
+    "peak-ele": {
+      "fontSizeMm": 3.4,
+      "color": "#7f4f24",
+      "italic": true,
+      "weight": 600,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.6
+    },
+    "kontur-tall": {
+      "fontSizeMm": 2.4,
+      "color": "#dc2626",
+      "italic": true,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.5
+    },
+    "vann-navn": {
+      "fontSizeMm": 3.4,
+      "color": "#1f5d8a",
+      "italic": true,
+      "weight": 600,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.6
+    },
+    "vann-tall": {
+      "fontSizeMm": 2.6,
+      "color": "#1f7aa3",
+      "italic": true,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.5
+    },
+    "dybde-tall": {
+      "fontSizeMm": 2,
+      "color": "#1f5d8a",
+      "italic": false,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.4
+    }
   },
-
   "darkMode": {
     "$comment": "Overstyringer for nattvisning. Kun for skjerm — print bruker alltid lys.",
     "background": "#0e1116",
     "categories": {
-      "405": { "fill": { "color": "#0e1116" } },
-      "406": { "fill": { "color": "#1f3b1f" } },
-      "407": { "fill": { "color": "#2c4a2c" } },
-      "408": { "fill": { "color": "#3a5a3a" } },
-      "401": { "fill": { "color": "#3a2e1c" } },
-      "301": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
-      "302": { "fill": { "color": "#1e3a5f" }, "stroke": { "color": "#5aa9d8" } },
-      "303": { "fill": { "color": "#0f2a45" }, "stroke": { "color": "#3a8db8" } },
-      "501": { "stroke": { "color": "#d97a5a" } },
-      "502": { "stroke": { "color": "#d97a5a" } },
-      "503": { "stroke": { "color": "#a08568" } },
-      "505": { "stroke": { "color": "#d4a47a" } },
-      "521": { "fill": { "color": "#5a4a3c" } },
-      "101": { "stroke": { "color": "#b88a52" } },
-      "102": { "stroke": { "color": "#d4a47a" } }
+      "101": {
+        "stroke": {
+          "color": "#b88a52"
+        }
+      },
+      "102": {
+        "stroke": {
+          "color": "#d4a47a"
+        }
+      },
+      "301": {
+        "fill": {
+          "color": "#1e3a5f"
+        },
+        "stroke": {
+          "color": "#5aa9d8"
+        }
+      },
+      "302": {
+        "fill": {
+          "color": "#1e3a5f"
+        },
+        "stroke": {
+          "color": "#5aa9d8"
+        }
+      },
+      "303": {
+        "fill": {
+          "color": "#0f2a45"
+        },
+        "stroke": {
+          "color": "#3a8db8"
+        }
+      },
+      "401": {
+        "fill": {
+          "color": "#3a2e1c"
+        }
+      },
+      "405": {
+        "fill": {
+          "color": "#0e1116"
+        }
+      },
+      "406": {
+        "fill": {
+          "color": "#1f3b1f"
+        }
+      },
+      "407": {
+        "fill": {
+          "color": "#2c4a2c"
+        }
+      },
+      "408": {
+        "fill": {
+          "color": "#3a5a3a"
+        }
+      },
+      "501": {
+        "stroke": {
+          "color": "#d97a5a"
+        }
+      },
+      "502": {
+        "stroke": {
+          "color": "#d97a5a"
+        }
+      },
+      "503": {
+        "stroke": {
+          "color": "#a08568"
+        }
+      },
+      "505": {
+        "stroke": {
+          "color": "#d4a47a"
+        }
+      },
+      "521": {
+        "fill": {
+          "color": "#5a4a3c"
+        }
+      }
     }
   }
 }
