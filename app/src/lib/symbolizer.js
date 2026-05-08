@@ -220,6 +220,10 @@ export function classifyToIsom(el) {
   if (t.highway === 'steps')                        return { code: '506', cat: 'manmade' }
   if (t.power === 'line')                           return { code: '528', cat: 'manmade' }
   if (t.barrier === 'fence' || t.barrier === 'wall') return { code: '525', cat: 'manmade' }
+  // Jernbane (ISOM 515) — solid sort linje med hvite ladder-stripes
+  if (t.railway && ['rail', 'tram', 'narrow_gauge', 'light_rail', 'subway', 'funicular', 'monorail'].includes(t.railway)) {
+    return { code: '515', cat: 'manmade' }
+  }
 
   // Ski-infrastruktur (Norge):
   //   aerialway=* (chair_lift, gondola, drag_lift, t-bar etc) → 511 heistrasé
@@ -324,6 +328,19 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
       }
       if (!def.fill) props.push('fill: none')
       if (props.length) rules.push(`${sel} { ${props.join('; ')} }`)
+      // Overlay-stroke (f.eks. jernbane-sviller). Kun strokes som har
+      // overlayStroke får dette ekstra path-laget — selektor matcher
+      // path med klasse "overlay" inni samme data-iso.
+      if (def.overlayStroke) {
+        const ov = def.overlayStroke
+        const ovProps = ['fill: none']
+        if (ov.color) ovProps.push(`stroke: ${ov.color}`)
+        if (ov.widthMm) ovProps.push(`stroke-width: ${ov.widthMm}mm`)
+        if (ov.linecap) ovProps.push(`stroke-linecap: ${ov.linecap}`)
+        if (ov.linejoin) ovProps.push(`stroke-linejoin: ${ov.linejoin}`)
+        if (ov.dasharray) ovProps.push(`stroke-dasharray: ${ov.dasharray.map(d => `${d}mm`).join(' ')}`)
+        rules.push(`${sel} path.overlay { ${ovProps.join('; ')} }`)
+      }
     }
   }
 

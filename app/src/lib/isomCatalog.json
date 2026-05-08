@@ -309,9 +309,9 @@
         "label": "Stitråkk — vanskelig",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.11,
+          "widthMm": 0.08,
           "dasharray": [
-            0.05,
+            0.02,
             0.4
           ],
           "linecap": "round",
@@ -373,6 +373,23 @@
           "dasharray": [
             1,
             0.5
+          ]
+        }
+      },
+      "515": {
+        "label": "Jernbane",
+        "$comment": "Tradisjonell jernbane-symbolikk: solid sort linje (rail) med hvite ladder-stripes (sviller) overlaid via overlayStroke. Begge paths rendres for samme geometri når overlayStroke finnes.",
+        "stroke": {
+          "color": "#000",
+          "widthMm": 0.5,
+          "linejoin": "round"
+        },
+        "overlayStroke": {
+          "color": "#fff",
+          "widthMm": 0.32,
+          "dasharray": [
+            0.6,
+            0.6
           ]
         }
       },
