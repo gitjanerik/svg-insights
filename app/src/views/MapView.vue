@@ -45,6 +45,7 @@ const LAYERS = [
 
 const visibleLayers = ref(new Set(LAYERS.map(l => l.key)))
 const isDark = ref(false)
+const diagnose = ref(false)
 const showControls = ref(false)
 
 const drawer = useDraggableDrawer({ expandedHeight: 0.55, minimizedPeek: 32 })
@@ -344,6 +345,31 @@ function applyDarkMode() {
 
 watch(isDark, applyDarkMode)
 
+// Diagnose-modus: fargelegg polygoner etter data-src så vi visuelt kan
+// se om wedger kommer fra N50, OSM-way, OSM-relation, eller polygon-
+// clipping merge. Kjør, ta screenshot, del med Claude.
+function applyDiagnoseMode() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  let style = svg.querySelector('style[data-diagnose]')
+  if (diagnose.value) {
+    if (!style) {
+      style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+      style.setAttribute('data-diagnose', '1')
+      svg.appendChild(style)
+    }
+    style.textContent = `
+      .isom-map [data-src="n50"]      { fill: hsl(180, 80%, 55%) !important; opacity: 0.85 !important; }
+      .isom-map [data-src="way"]      { fill: hsl(220, 80%, 60%) !important; opacity: 0.85 !important; }
+      .isom-map [data-src="relation"] { fill: hsl(300, 80%, 60%) !important; opacity: 0.85 !important; }
+      .isom-map [data-src="merged"]   { fill: hsl(45, 90%, 55%) !important; opacity: 0.85 !important; }
+    `
+  } else if (style) {
+    style.remove()
+  }
+}
+watch(diagnose, applyDiagnoseMode)
+
 // Magnetisk nord-pil: konstant skjerm-størrelse i øvre høyre.
 // Deklinasjon hentes fra ISOM-katalog (statisk for nå; senere fra IGRF).
 const magneticDeclination = computed(() => isomCatalog.magneticNorth.defaultDeclinationDeg)
@@ -568,6 +594,24 @@ onMounted(() => {
                            text-[12px] active:scale-[0.98]">
               Sentrer
             </button>
+          </div>
+
+          <div class="flex gap-2 mb-4">
+            <button @click="diagnose = !diagnose"
+                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
+                    :class="diagnose
+                            ? 'bg-amber-500/20 border-amber-400/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
+            </button>
+          </div>
+          <div v-if="diagnose" class="text-[10px] text-white/55 leading-relaxed -mt-2 mb-4 px-1">
+            Polygon-fargen viser kilden:
+            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(180, 80%, 55%);"></span> N50,
+            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(220, 80%, 60%);"></span> OSM way,
+            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
+            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
+            Ta skjermbilde og del.
           </div>
 
           <div v-if="!mapId.startsWith('vardasen')"
