@@ -190,10 +190,33 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 6.13.3 -->
+          <!-- 6.13.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
             <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.13.4</span>
+                <span class="text-white/40">&mdash; Fremhevede stier med staccato-dash + dotted stitråkk</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Stier fremhevet</strong> siden de er det viktigste navigasjons-elementet i et turkart. Bredder økt over halvert baseline (men fortsatt under originalen):
+                  <ul class="ml-4 mt-1 list-disc list-inside">
+                    <li>505 «Sti — godt løp»: 0.11→0.16 mm, dash <code>[0.5, 0.5]</code> (1/3 av original 1.5 mm dash) for tett <strong>dashed</strong>-staccato</li>
+                    <li>506 «Sti — uklar»: 0.09→0.13 mm, dash <code>[0.23, 0.3]</code> (1/3 av 0.7 mm) for finere staccato</li>
+                    <li>507 «Stitråkk — vanskelig»: 0.08→0.11 mm, dash <code>[0.05, 0.4]</code> med <code>linecap: round</code> = <strong>dotted</strong> småprikker som tegner en kontinuerlig sammenhengende sti-linje</li>
+                  </ul>
+                </li>
+                <li><strong>Visuelt resultat</strong>: med <code>vector-effect: non-scaling-stroke</code> beholdes pixel-bredden ved zoom — så ved 8-20× zoom-inn ser du klart om det er godt løp (markante korte dashes), uklar sti (smale staccato-dashes), eller knapt synlig tråkk (perlerader av prikker)</li>
+                <li>143 tester passerer fortsatt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 6.13.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.13.3</span>
                 <span class="text-white/40">&mdash; Halverte strektykkelser + moh på alle tjern</span>
