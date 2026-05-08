@@ -45,6 +45,9 @@ jobs:
       - name: Deploy to gh-pages
         run: |
           set -e
+          APP_VERSION=$(node -p "require('./app/package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          SOURCE_MSG=$(git log -1 --pretty=%s)
           git fetch origin gh-pages || true
           if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
             git worktree add /tmp/ghp gh-pages
@@ -64,7 +67,7 @@ jobs:
           else
             git -c commit.gpgsign=false commit \
               --author="Deploy <deploy@svg-insights>" \
-              -m "deploy: v5.1.0 turkart-spor"
+              -m "deploy v${APP_VERSION} (${SHORT_SHA}): ${SOURCE_MSG}"
             git push -u origin gh-pages
-            echo "Deployet til gh-pages"
+            echo "Deployet v${APP_VERSION} til gh-pages"
           fi

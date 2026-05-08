@@ -195,8 +195,20 @@ LAYER_ORDER i `mapBuilder.js` følger ISOM 2017-2-stack (bunn → topp): vegetas
 - Bruker `gitjanerik` GitHub-konto
 - `vite.config.js` har `base: '/svg-insights/'`
 - Router bruker `createWebHistory(import.meta.env.BASE_URL)`
-- Deploy: bygg, kopier `dist/` innhold til `gh-pages`-branch med `.nojekyll` og `404.html`
-- IKKE bruk `npx gh-pages` — den cacher gammel data. Deploy manuelt med git init i dist/.
+
+**Auto-deploy via GitHub Actions** — `.github/workflows/build-vardasen-map.yml` trigges på hver push til `master`:
+1. Bygger Vardåsen-demokart fra ekte Kartverket WCS (workflow har full nettverkstilgang)
+2. Kjører `npm run build`
+3. Kopierer `app/dist/.` inn i en gh-pages-worktree, committer og pusher til `gh-pages`-branch
+
+**Fremgangsmåte for deploy = bare push til master.** Gh-pages følger commit-tilstand automatisk.
+- For en typisk release: `git push origin master`, ferdig. Live i løpet av ~2 min.
+- Manuell trigger: `Actions`-fanen på GitHub, kjør «Build map and deploy» → workflow_dispatch.
+- Følg status: workflow-listen i GitHub UI, eller `gh run list` lokalt om GH-CLI er installert.
+
+**Ikke deploy manuelt.** Tidligere prosedyre var å bygge lokalt og git-pushe `dist/` til `gh-pages` — det er overflødig nå (workflow gjør det) og kan race-overskrive en frisk Vardåsen-SVG som workflowen bygger fra ekte WCS-data. Hvis workflowen feiler, fiks den heller enn å hoppe over den.
+
+`npx gh-pages` skal **ikke** brukes — den cacher gammel data og produserer rar diff. Workflowen bruker `git worktree add` mot gh-pages og kopierer `dist/` inn → ren commit hver gang.
 
 ## Konvensjoner
 
