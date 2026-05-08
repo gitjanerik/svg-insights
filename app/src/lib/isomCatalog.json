@@ -48,20 +48,20 @@
       "213": { "label": "Knaus", "point": { "symbol": "knaus", "scaleMm": 1.2 } }
     },
     "contour": {
-      "101": { "label": "Høydekurve",          "stroke": { "color": "#dc2626", "widthMm": 0.10 } },
-      "102": { "label": "Indeks-høydekurve",   "stroke": { "color": "#dc2626", "widthMm": 0.16 } },
-      "103": { "label": "Hjelpekurve (punktet)", "stroke": { "color": "#dc2626", "widthMm": 0.10, "dasharray": [1.5, 1.0] } },
-      "104": { "label": "Skråstrek (kurve ned)", "stroke": { "color": "#dc2626", "widthMm": 0.10, "linecap": "round" } }
+      "101": { "label": "Høydekurve",          "stroke": { "color": "#dc2626", "widthMm": 0.14, "linejoin": "round" } },
+      "102": { "label": "Indeks-høydekurve",   "stroke": { "color": "#dc2626", "widthMm": 0.25, "linejoin": "round" } },
+      "103": { "label": "Hjelpekurve (punktet)", "stroke": { "color": "#dc2626", "widthMm": 0.14, "dasharray": [2.0, 0.8], "linecap": "round", "linejoin": "round" } },
+      "104": { "label": "Skråstrek (kurve ned)", "stroke": { "color": "#dc2626", "widthMm": 0.14, "linecap": "round" } }
     },
     "manmade": {
-      "501": { "label": "Motorvei", "stroke": { "color": "#d97a5a", "widthMm": 0.6 } },
-      "502": { "label": "Hovedvei", "stroke": { "color": "#d97a5a", "widthMm": 0.5 } },
-      "503": { "label": "Småvei", "stroke": { "color": "#d4b08a", "widthMm": 0.35 } },
-      "504": { "label": "Skogsbilvei", "stroke": { "color": "#000", "widthMm": 0.25, "dasharray": [2.0, 0.8] } },
-      "505": { "label": "Sti — godt løp", "stroke": { "color": "#000", "widthMm": 0.18, "dasharray": [1.5, 0.6] } },
-      "506": { "label": "Sti — uklar", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.8, 0.6] } },
-      "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.14, "dasharray": [0.4, 0.8] } },
-      "508": { "label": "Sykkel-sti", "stroke": { "color": "#1a1a1a", "widthMm": 0.32, "dasharray": [3.0, 1.0] } },
+      "501": { "label": "Motorvei", "stroke": { "color": "#dc6d3a", "widthMm": 0.7, "linecap": "round", "linejoin": "round" } },
+      "502": { "label": "Hovedvei", "stroke": { "color": "#e89570", "widthMm": 0.55, "linecap": "round", "linejoin": "round" } },
+      "503": { "label": "Småvei", "stroke": { "color": "#d8b797", "widthMm": 0.4, "linecap": "round", "linejoin": "round" } },
+      "504": { "label": "Skogsbilvei", "stroke": { "color": "#000", "widthMm": 0.32, "linecap": "round", "linejoin": "round" } },
+      "505": { "label": "Sti — godt løp", "stroke": { "color": "#000", "widthMm": 0.28, "dasharray": [1.8, 0.6], "linecap": "round", "linejoin": "round" } },
+      "506": { "label": "Sti — uklar", "stroke": { "color": "#000", "widthMm": 0.22, "dasharray": [0.9, 0.7], "linecap": "round", "linejoin": "round" } },
+      "507": { "label": "Stitråkk — vanskelig", "stroke": { "color": "#000", "widthMm": 0.2, "dasharray": [0.05, 0.7], "linecap": "round", "linejoin": "round" } },
+      "508": { "label": "Sykkel-sti", "stroke": { "color": "#1a1a1a", "widthMm": 0.32, "dasharray": [3.5, 1.2], "linecap": "round", "linejoin": "round" } },
       "509": { "label": "Krysset — bro / overgang", "point": { "symbol": "bro", "scaleMm": 1.2 } },
       "521": { "label": "Bygning", "fill": { "color": "#7a5a3a" }, "stroke": { "color": "#000", "widthMm": 0.15 } },
       "522": { "label": "Tett bebyggelse", "fill": { "type": "pattern", "pattern": "bebyggelse" } },

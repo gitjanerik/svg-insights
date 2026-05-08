@@ -132,19 +132,27 @@ function renderAnnotations() {
     svg.appendChild(layer)
   }
   layer.replaceChildren()
+  const ns = 'http://www.w3.org/2000/svg'
   for (const a of annot.annotations.value) {
     if (a.type !== 'point') continue
-    const ns = 'http://www.w3.org/2000/svg'
     const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
     if (!sym) continue
+    // a.x / a.y er i SVG viewBox-units (meter for kart-SVG). Plasser
+    // symbolet via translate på en wrapper-g, og bruk mm-units kun for
+    // selve symbol-størrelsen (samme mønster som mapBuilder bruker for
+    // peaks/lanterner). Symbol-bredde 2mm = ~7.5m på bakken ved 1:10000
+    // → tydelig synlig uten å dominere underliggende kart.
+    const g = document.createElementNS(ns, 'g')
+    g.setAttribute('transform', `translate(${a.x},${a.y})`)
+    g.setAttribute('data-annot-id', a.id)
     const use = document.createElementNS(ns, 'use')
     use.setAttribute('href', `#iso-sym-${sym.symbolKey}`)
-    use.setAttribute('x', `${a.x - 0.6}mm`)
-    use.setAttribute('y', `${a.y - 0.6}mm`)
-    use.setAttribute('width', '1.4mm')
-    use.setAttribute('height', '1.4mm')
-    use.setAttribute('data-annot-id', a.id)
-    layer.appendChild(use)
+    use.setAttribute('x', '-1mm')
+    use.setAttribute('y', '-1mm')
+    use.setAttribute('width', '2mm')
+    use.setAttribute('height', '2mm')
+    g.appendChild(use)
+    layer.appendChild(g)
   }
 }
 

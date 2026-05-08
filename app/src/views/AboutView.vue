@@ -190,10 +190,29 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.11.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.11.0</span>
+                <span class="text-white/40">&mdash; ISOM-polish: tydeligere skille mellom sti-typer, høydekurver matcher tegnforklaring eksakt, annoteringssymboler virker igjen</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Sti- og veityper har fått klarere skiller (ISOM 501–508):</strong> 504 Skogsbilvei rendres nå som SOLID svart linje (var feilaktig dashet) — det er en <em>kjørbar</em> vei og skal være kontinuerlig per ISOM. 505 Sti godt løp har tydelig lange dashes (1.8/0.6mm), 506 Sti uklar har medium-korte dashes (0.9/0.7mm), 507 Stitråkk er tydelig prikkete (0.05/0.7mm med round-caps). 508 Sykkel-sti har lange chunky dashes (3.5/1.2mm) som klart skiller seg fra alle andre. Alle stityper bruker nå <code>linecap: round</code> for organisk turkart-look</li>
+                <li><strong>Veifarger har fått mer kontrast:</strong> 501 Motorvei (mettet orange #dc6d3a 0.7mm), 502 Hovedvei (lys orange #e89570 0.55mm), 503 Småvei (tan #d8b797 0.4mm). De var tidligere nesten samme orange-farge — vanskelig å skille fra hverandre på utskrift</li>
+                <li><strong>Høydekurver tykkere og bedre lesbare:</strong> 101 normal-kurve fra 0.10mm → 0.14mm, 102 indeks-kurve fra 0.16mm → 0.25mm. Skiller seg nå klart selv ved liten zoom. <code>linejoin: round</code> gir glattere svinger på alle kurvene</li>
+                <li><strong>Tegnforklaring er nå print-faithful:</strong> sample-rendering i <code>LegendView</code> bruker nå mm-units for stroke-bredder og dasharrays (var pixel-skalert med faktor 2 før, alt for tynt for å se forskjellen). Inkluderer <code>linecap</code>/<code>linejoin</code> akkurat slik kartet rendrer dem. Sample-bredden økt fra 60×24px til 120×32px så tynne strekninger blir leselige. Det du ser i tegnforklaringen er nå nøyaktig det du får i print 1:10000</li>
+                <li><strong>Annoteringssymboler virker:</strong> Bug i <code>MapView.renderAnnotations()</code> brukte <code>x="${a.x}mm"</code> selv om <code>a.x</code> allerede er i SVG-viewBox-units (meter, ikke mm). Resultat: symboler ble plassert ~3.78× lengre vekk enn klikkpunktet, så de havnet utenfor viewport — ble tellet, men ikke synlige. Fixet ved å bruke <code>transform="translate(x,y)"</code> på en wrapper-g (samme mønster som mapBuilder bruker for peaks/lanterner) og kun bruke mm-units for symbol-størrelsen (2mm = ~7.5m på bakken). Symbolet blir nå plassert nøyaktig der man klikker</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.10.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-100" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.10.4</span>
                 <span class="text-white/40">&mdash; Filtrer OSM saltvann-relations i coastline-mode (de blødde over mainland)</span>
