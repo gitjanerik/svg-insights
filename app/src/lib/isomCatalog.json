@@ -381,12 +381,12 @@
         "$comment": "Tradisjonell jernbane-symbolikk: solid sort linje (rail) med hvite ladder-stripes (sviller) overlaid via overlayStroke. Begge paths rendres for samme geometri når overlayStroke finnes.",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.5,
+          "widthMm": 0.25,
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#fff",
-          "widthMm": 0.32,
+          "widthMm": 0.16,
           "dasharray": [
             0.6,
             0.6
