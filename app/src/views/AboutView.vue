@@ -190,10 +190,28 @@ const router = useRouter()
         <h3 class="text-sm font-semibold text-white/60 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.10.4 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-100" />
+            <details class="group" open>
+              <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/80">6.10.4</span>
+                <span class="text-white/40">&mdash; Filtrer OSM saltvann-relations i coastline-mode (de blødde over mainland)</span>
+                <span class="ml-auto text-[10px] text-white/20 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/40 space-y-1 list-disc list-inside">
+                <li><strong>Diagnose-modus avslørte rotårsaken:</strong> Hvalstrand/Holmen-kart hadde lilla flekker spredt over mainland — OSM-RELATIONS rendret som vann-polygoner (Vestfjorden/Indre Oslofjord-multipolygons med inner-rings som ikke matcher mainland-bukter perfekt). De blødde blått tilbake over coastline-rekonstruert kremgul mainland</li>
+                <li><strong>Fix: filtrer OSM saltvann i coastline-mode.</strong> Coastline-rekonstruksjon ER autoritativt for sjø/land-skille når den aktiverer; OSM saltvann-polygoner er da redundant og verre, ofte fulle av topologi-feil. Filteret skroter dem konsistent</li>
+                <li><strong>Diagnose-loggen utvidet:</strong> <code>[Vann]</code>-loggen viser nå hvor mange saltvann-elementer som ble fjernet i coastline-mode (<code>filtrerte X OSM-vann-elementer (Y saltvann i coastline-mode)</code>), gjør det enkelt å verifisere fix-en fungerer</li>
+                <li>Ferskvann-relations (Bondivann osv) påvirkes ikke — de filtreres bare hvis N50 har dekning, samme som før</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.10.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-200" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/60 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white/80">6.10.3</span>
                 <span class="text-white/40">&mdash; Bedre øy-deteksjon: pier/breakwater, place=island-relations med tom rolle, Sjøkart-diagnostikk</span>

@@ -94,13 +94,31 @@ async function generateMap() {
     )
     const haveAuthoritativeSea = n50HasSea || sjokartHasSea
 
+    // Detekter om vi må falle tilbake til coastline-rekonstruksjon. Må
+    // beregnes FØR filteret slik at vi kan ekskludere OSM-saltvann-
+    // polygoner i coastline-mode (de er da redundant og kan bløde blå
+    // over mainland-masken hvis de mangler riktige inner-holes).
+    const hasCoastline = osmData.elements.some(el =>
+      el.type === 'way' && el.tags?.natural === 'coastline'
+    )
+    const useCoastlineFallback = hasCoastline && !haveAuthoritativeSea
+
+    let removedSaltwater = 0
     const elements = osmData.elements.filter(el => {
       const t = el.tags ?? {}
       const isWaterPolygon = t.natural === 'water' || !!t.water ||
                              t.natural === 'bay' || t.natural === 'strait' ||
                              t.place === 'sea' || t.place === 'ocean'
       if (isWaterPolygon) {
-        return isOsmWaterSalty(t) ? !haveAuthoritativeSea : !n50HasFreshwater
+        if (isOsmWaterSalty(t)) {
+          // I coastline-mode bygger vi sjø/land fra natural=coastline-ways.
+          // OSM saltvann-polygoner er da redundant — og verre, de mangler
+          // ofte inner-holes for mainland-bukter, så de blør blått over
+          // land-masken. Filtrer bort.
+          if (useCoastlineFallback) { removedSaltwater++; return false }
+          return !haveAuthoritativeSea
+        }
+        return !n50HasFreshwater
       }
       if (t.waterway === 'stream' || t.waterway === 'ditch') {
         return !n50HasFreshwater
@@ -110,17 +128,8 @@ async function generateMap() {
     if (n50Water.length > 0) elements.push(...n50Water)
     if (sjokartEls.length > 0) elements.push(...sjokartEls)
 
-    // Detekter siste-fallback-modus: bbox er kyst-orientert (har OSM
-    // natural=coastline) men hverken N50 Havflate eller Sjøkart Dybdeareal
-    // ga oss sjø-polygon. Da må mapBuilder rekonstruere LAND fra coastline-
-    // ways og bytte bakgrunn til sjø-blå.
-    const hasCoastline = elements.some(el =>
-      el.type === 'way' && el.tags?.natural === 'coastline'
-    )
-    const useCoastlineFallback = hasCoastline && !haveAuthoritativeSea
-
     const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartEls.length)
-    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | filtrerte ${filteredOsmCount} OSM-vann-elementer`)
+    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | filtrerte ${filteredOsmCount} OSM-vann-elementer (${removedSaltwater} saltvann i coastline-mode)`)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
