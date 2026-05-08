@@ -71,10 +71,10 @@ function formatDate(ts) {
       <!-- "Nytt kart"-CTA -->
       <button @click="router.push('/kart/nytt')"
               class="w-full mb-4 rounded-xl p-4 flex items-center gap-4 text-left
-                     bg-amber-600/20 border border-amber-500/40
-                     active:bg-amber-600/25 active:scale-[0.99] transition">
-        <div class="shrink-0 w-11 h-11 rounded-lg bg-amber-500/20 border border-amber-400/30
-                    flex items-center justify-center text-amber-300">
+                     bg-slate-500/25 border border-slate-300/40
+                     active:bg-slate-500/30 active:scale-[0.99] transition">
+        <div class="shrink-0 w-11 h-11 rounded-lg bg-slate-400/20 border border-slate-300/30
+                    flex items-center justify-center text-slate-300">
           <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -126,8 +126,8 @@ function formatDate(ts) {
            class="mb-2 rounded-lg bg-white/[0.04] border border-white/10 overflow-hidden">
         <div class="flex items-center gap-3 px-4 py-3 active:bg-white/[0.07]"
              @click="openMap(m.id)">
-          <div class="shrink-0 w-10 h-10 rounded-lg bg-amber-600/15 border border-amber-500/25
-                      flex items-center justify-center text-amber-400">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-slate-500/15 border border-slate-300/25
+                      flex items-center justify-center text-slate-300">
             <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
