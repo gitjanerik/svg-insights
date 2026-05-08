@@ -48,14 +48,14 @@ function formatDate(ts) {
 </script>
 
 <template>
-  <div class="relative w-full min-h-[100dvh] flex flex-col bg-stone-50 text-zinc-900">
+  <div class="relative w-full min-h-[100dvh] flex flex-col bg-[#0e1116] text-white/90">
 
     <!-- Toppbar -->
     <div class="shrink-0 px-3 py-3 flex items-center justify-between
-                bg-white border-b border-zinc-200">
+                bg-zinc-900/80 border-b border-white/10">
       <button @click="router.push('/')"
               class="rounded-full w-10 h-10 flex items-center justify-center
-                     bg-zinc-100 border border-zinc-200 text-zinc-700 active:bg-zinc-200 active:scale-95 transition">
+                     bg-white/5 border border-white/10 active:bg-white/10 active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
           <polyline points="15 18 9 12 15 6"/>
@@ -71,9 +71,10 @@ function formatDate(ts) {
       <!-- "Nytt kart"-CTA -->
       <button @click="router.push('/kart/nytt')"
               class="w-full mb-4 rounded-xl p-4 flex items-center gap-4 text-left
-                     bg-zinc-900 active:bg-zinc-800 active:scale-[0.99] transition shadow-sm">
-        <div class="shrink-0 w-11 h-11 rounded-lg bg-white/10 border border-white/15
-                    flex items-center justify-center text-white">
+                     bg-amber-600/20 border border-amber-500/40
+                     active:bg-amber-600/25 active:scale-[0.99] transition">
+        <div class="shrink-0 w-11 h-11 rounded-lg bg-amber-500/20 border border-amber-400/30
+                    flex items-center justify-center text-amber-300">
           <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -90,13 +91,13 @@ function formatDate(ts) {
       </button>
 
       <!-- Innebygde kart -->
-      <div class="text-zinc-500 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
+      <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
       <button v-for="m in builtin" :key="m.id"
               @click="openMap(m.id)"
               class="w-full mb-2 rounded-lg px-4 py-3 flex items-center gap-3 text-left
-                     bg-white border border-zinc-200 active:bg-zinc-50 active:scale-[0.99] transition">
-        <div class="shrink-0 w-10 h-10 rounded-lg bg-amber-50 border border-amber-200/70
-                    flex items-center justify-center text-amber-700">
+                     bg-white/[0.04] border border-white/10 active:bg-white/[0.07] active:scale-[0.99] transition">
+        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
+                    flex items-center justify-center text-white/70">
           <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
@@ -104,10 +105,10 @@ function formatDate(ts) {
           </svg>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="font-medium text-[14px] truncate text-zinc-900">{{ m.navn }}</div>
-          <div class="text-[12px] text-zinc-500">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
+          <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
+          <div class="text-[12px] text-white/50">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
         </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor"
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
@@ -115,18 +116,18 @@ function formatDate(ts) {
 
       <!-- Brukergenererte kart -->
       <div v-if="maps.length > 0 || loading"
-           class="mt-6 mb-2 text-zinc-500 text-[11px] uppercase tracking-wide">Mine kart</div>
+           class="mt-6 mb-2 text-white/45 text-[11px] uppercase tracking-wide">Mine kart</div>
 
       <div v-if="loading" class="flex justify-center py-6">
-        <div class="w-5 h-5 border-2 border-zinc-200 border-t-zinc-500 rounded-full animate-spin"/>
+        <div class="w-5 h-5 border-2 border-white/15 border-t-white/60 rounded-full animate-spin"/>
       </div>
 
       <div v-for="m in maps" :key="m.id"
-           class="mb-2 rounded-lg bg-white border border-zinc-200 overflow-hidden">
-        <div class="flex items-center gap-3 px-4 py-3 active:bg-zinc-50"
+           class="mb-2 rounded-lg bg-white/[0.04] border border-white/10 overflow-hidden">
+        <div class="flex items-center gap-3 px-4 py-3 active:bg-white/[0.07]"
              @click="openMap(m.id)">
-          <div class="shrink-0 w-10 h-10 rounded-lg bg-amber-50 border border-amber-200/70
-                      flex items-center justify-center text-amber-700">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-amber-600/15 border border-amber-500/25
+                      flex items-center justify-center text-amber-400">
             <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                  stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
@@ -134,16 +135,16 @@ function formatDate(ts) {
             </svg>
           </div>
           <div class="flex-1 min-w-0">
-            <div class="font-medium text-[14px] truncate text-zinc-900">{{ m.navn }}</div>
-            <div class="text-[12px] text-zinc-500 flex items-center gap-2 truncate">
+            <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
+            <div class="text-[12px] text-white/50 flex items-center gap-2 truncate">
               <span>{{ (m.halfKm * 2).toFixed(1) }} × {{ (m.halfKm * 2).toFixed(1) }} km</span>
               <span>·</span>
               <span>{{ formatDate(m.opprettet) }}</span>
             </div>
           </div>
           <button @click.stop="onDelete(m.id, m.navn)"
-                  class="w-9 h-9 rounded-lg flex items-center justify-center text-zinc-400
-                         active:bg-zinc-100 active:text-zinc-700">
+                  class="w-9 h-9 rounded-lg flex items-center justify-center text-white/35
+                         active:bg-white/10 active:text-white/70">
             <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"/>
@@ -155,8 +156,8 @@ function formatDate(ts) {
       </div>
 
       <div v-if="!loading && maps.length === 0"
-           class="mt-6 px-4 py-6 rounded-lg bg-white border border-zinc-200
-                  text-zinc-500 text-[13px] text-center">
+           class="mt-6 px-4 py-6 rounded-lg bg-white/[0.04] border border-white/10
+                  text-white/45 text-[13px] text-center">
         Ingen egne kart ennå. Trykk «Lag nytt turkart» for å komme i gang.
       </div>
 
@@ -164,17 +165,17 @@ function formatDate(ts) {
       <button v-if="!loading && maps.length > 0"
               @click="onDeleteAll"
               class="w-full mt-3 rounded-lg px-4 py-2.5 text-[13px] font-medium
-                     text-rose-700 border border-rose-200 bg-rose-50
-                     active:bg-rose-100 active:scale-[0.99] transition">
+                     text-rose-300 border border-rose-400/25 bg-rose-500/10
+                     active:bg-rose-500/15 active:scale-[0.99] transition">
         Slett alle ({{ maps.length }}) kart
       </button>
 
       <!-- Tegnforklaring (nederst på siden) -->
       <button @click="router.push('/tegnforklaring')"
               class="w-full mt-6 rounded-lg p-3 flex items-center gap-3 text-left
-                     bg-white border border-zinc-200 active:bg-zinc-50 active:scale-[0.99] transition">
-        <div class="shrink-0 w-10 h-10 rounded-lg bg-zinc-100 border border-zinc-200
-                    flex items-center justify-center text-zinc-600">
+                     bg-white/[0.04] border border-white/10 active:bg-white/[0.07] active:scale-[0.99] transition">
+        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
+                    flex items-center justify-center text-white/65">
           <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="4" width="18" height="16" rx="2"/>
@@ -184,10 +185,10 @@ function formatDate(ts) {
           </svg>
         </div>
         <div class="flex-1 text-left">
-          <div class="text-zinc-900 text-sm font-medium">Tegnforklaring</div>
-          <div class="text-[12px] text-zinc-500 mt-0.5">ISOM-symboler brukt i kartene</div>
+          <div class="text-white text-sm font-medium">Tegnforklaring</div>
+          <div class="text-[12px] text-white/50 mt-0.5">ISOM-symboler brukt i kartene</div>
         </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor"
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>

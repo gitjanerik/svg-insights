@@ -804,8 +804,7 @@ onMounted(() => {
           <div class="text-white/40 text-[10px] leading-relaxed mt-4">
             ISOM 2017-2 inspirert symbolisering med mm-baserte streker for print-kvalitet.
             Kartdata © OpenStreetMap-bidragsytere (ODbL). Reprojisert til UTM 32N
-            (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m. Magnetisk deklinasjon
-            {{ magneticDeclination > 0 ? '+' : '' }}{{ magneticDeclination.toFixed(1) }}°.
+            (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
           </div>
         </div>
       </div>
