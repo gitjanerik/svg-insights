@@ -62,7 +62,7 @@ async function onInstallClick() {
               </svg>
             </div>
             <div class="flex-1">
-              <div class="text-white font-medium">Lag SVG-tegning</div>
+              <div class="text-white font-medium">Lag illustrasjon</div>
               <div class="text-[12px] text-white/50 mt-0.5">Ta bilde og gjør det til interaktiv SVG</div>
             </div>
             <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"

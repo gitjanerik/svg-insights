@@ -53,16 +53,6 @@ const TABS = [
         </button>
       </div>
 
-      <!-- Team -->
-      <section>
-        <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Utviklere</h3>
-        <ul class="text-sm text-white/65 space-y-1">
-          <li>Claude van Damme</li>
-          <li>Claudia Schiffer</li>
-          <li>Claude Monet</li>
-        </ul>
-      </section>
-
       <!-- Tab: Illustrasjon (Bilde-til-SVG) -->
       <section v-show="activeTab === 'illustrasjon'">
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Bilde til SVG — slik fungerer det</h3>
@@ -256,6 +246,24 @@ const TABS = [
       <section v-if="false">
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
+
+          <!-- 6.20.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.20.0</span>
+                <span class="text-white/50">&mdash; Nytt PWA-ikon + tekst-justeringer</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">8. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Nytt PWA-ikon</strong> — slate-400 bakgrunn (#94a3b8) med hvit kurve. Erstatter neon violet/sky-gradient. Generert i alle størrelser: <code>favicon.svg</code>, <code>icon.svg</code>, <code>icon-192.png</code>, <code>icon-512.png</code>, <code>icon-maskable-512.png</code>, <code>apple-touch-icon.png</code> (180×180)</li>
+                <li><strong>Manifest oppdatert</strong>: <code>background_color</code> &rarr; slate-400. Snarveier omdøpt til &laquo;Lag illustrasjon&raquo; / &laquo;Lag turkart&raquo; / &laquo;Lag webfont&raquo;</li>
+                <li><strong>«Lag SVG-tegning» &rarr; «Lag illustrasjon»</strong> p&aring; HomeView</li>
+                <li><strong>«Utviklere»-seksjonen fjernet</strong> fra About-siden (placeholder-navn fra v1)</li>
+              </ul>
+            </details>
+          </div>
 
           <!-- 6.19.1 -->
           <div class="relative">
