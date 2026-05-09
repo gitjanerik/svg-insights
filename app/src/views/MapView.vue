@@ -490,13 +490,11 @@ function applyTheme() {
   }
   svg.style.removeProperty('--bg')
   svg.style.removeProperty('--art-fill-opacity')
-  // v7.1.3: re-applisér bg-farge etter theme-reset. Sjø-blå brukes når
-  // bg skal være sjø — enten fordi brukeren valgte sjø-modus, eller
-  // fordi bbox-en er kyst (coastline-rekonstruerte ringer finnes).
-  // mapBuilder setter meta.useSeaBg basert på begge betingelser.
-  // v7.1.7 backwards-compat: kart laget før v7.1.3 har ikke useSeaBg
-  // i meta. Falle tilbake på mapType='sea' så de fortsatt får blå bg.
-  if (meta.value?.useSeaBg || meta.value?.mapType === 'sea') {
+  // v7.1.15: bg respekterer mapType strengt. Tidligere v7.1.3-logikk
+  // (useSeaBg basert på coastline-rekonstruksjon) ga uventet blå bg på
+  // kyst-Land-kart der bare en fjordarm passerer. Nå: mapType='sea' →
+  // blå, ellers kremgul (catalog-fallback).
+  if (meta.value?.mapType === 'sea') {
     svg.style.setProperty('--bg', '#9ec9de')
   }
   for (const code of allCodes) {

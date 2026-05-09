@@ -247,6 +247,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.15 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.15</span>
+                <span class="text-white/50">&mdash; Land-kart får alltid kremgul bg (mapType strikt)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerrapport:</strong> Drammen-omegn-Land-kart fikk bl&aring; bg fordi Drammensfjorden krysser bbox fra venstre. Det &oslash;delegger den klassiske turkart-look-en der man forventer kremgul terreng</li>
+                <li><strong>Rotårsak:</strong> v7.1.3 satte <code>useSeaBg = mapType === 'sea' || coastlineLandRings &gt; 0</code> for å gi kyst-Land-kart blå sj&oslash;-utsikt. Det skapte motsatt problem: en hvilken som helst fjordarm i bbox triggret bl&aring; bg</li>
+                <li><strong>Fix:</strong> <code>useSeaBg = mapType === 'sea'</code> — strikt brukerintensjon. Land-kart = kremgul (alltid). Sj&oslash;kart = bl&aring; (alltid)</li>
+                <li><strong>UX-modell:</strong> brukeren m&aring; velge ut fra prim&aelig;rt fokus. Vil du ha bl&aring; sj&oslash; rundt &oslash;ya, velg Sj&oslash;kart. Vil du ha kremgul terreng selv om en fjordarm krysser, velg Land-kart</li>
+                <li>OSM-vannpolygoner (innsj&oslash;er, fjord-relations) rendres fortsatt bl&aring; over kremgul bg i Land-mode &mdash; man ser fortsatt at det er sj&oslash; der det er polygon-data</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.14 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
