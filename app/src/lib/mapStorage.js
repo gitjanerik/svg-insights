@@ -53,14 +53,15 @@ export async function loadMap(id) {
 }
 
 /**
- * Liste alle kart med metadata, men UTEN svg-feltet (kan være stort).
+ * Liste alle kart med metadata, men UTEN svg- og dem-feltene (kan være store —
+ * dem er ~160 KB ArrayBuffer per kart).
  * Sortert nyeste først.
  */
 export async function listMaps() {
   const store = await tx()
   const all = await asPromise(store.getAll())
   return all
-    .map(({ svg, ...rest }) => rest)
+    .map(({ svg, dem, ...rest }) => ({ ...rest, hasDem: !!dem }))
     .sort((a, b) => b.opprettet - a.opprettet)
 }
 

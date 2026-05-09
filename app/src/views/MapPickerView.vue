@@ -7,6 +7,7 @@ import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
+import { findHighestPoint, packDem } from '../lib/demSampling.js'
 import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
@@ -276,6 +277,14 @@ async function proceedWithMapType(mapType) {
 
     const id = generateMapId()
     const navn = customName.value.trim() || center.value.name || 'Uten navn'
+
+    // v7.2.0: Persistere DEM med kartet (for Flippkart-fysikk og fremtidige
+    // DEM-baserte features). Hopper over for syntetisk DEM siden den ikke
+    // representerer ekte terreng.
+    const isRealDem = dem && !dem.source?.startsWith('synthetic')
+    const packedDem = isRealDem ? packDem(dem) : null
+    const highestPoint = isRealDem ? findHighestPoint(dem) : null
+
     const entry = {
       id,
       navn,
@@ -287,6 +296,8 @@ async function proceedWithMapType(mapType) {
       svg,
       source,
       annotations: [],
+      dem: packedDem,         // v7.2.0: ArrayBuffer + meta, eller null
+      highestPoint,           // v7.2.0: {svgX, svgY, elevation} eller null
       opprettet: Date.now(),
     }
     await saveMap(entry)
