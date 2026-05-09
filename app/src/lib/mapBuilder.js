@@ -483,10 +483,15 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── Sjø-rekonstruksjon fra OSM natural=coastline (siste fallback) ─────
-  // Når useCoastlineFallback er aktiv (ingen N50 Havflate, ingen Sjøkart
-  // Dybdeareal i bbox, men det finnes coastline-ways): bygg LAND-polygoner
-  // og bytt SVG-bakgrunn til sjø-blå.
+  // ── Sjø-rekonstruksjon fra OSM natural=coastline (standard for kyst) ──
+  // Når useCoastlineFallback er aktiv (alle bboxer der OSM har coastline-
+  // ways): bygg LAND-polygoner og bytt SVG-bakgrunn til sjø-blå. Sjøkart
+  // og N50 Havflate maler dybdetonet detalj OVER den blå bakgrunnen.
+  //
+  // v6.21.0: ikke lenger «siste fallback». Tidligere ble coastline-modus
+  // bare aktivert hvis Sjøkart og N50 begge manglet — men de har ofte
+  // sparse dekning som gir kremgul-flekk-sjø i stedet for kontinuerlig
+  // blå. Coastline-rekonstruksjon er det eneste som garanterer sjø-fyll.
   let coastlineLandRings = []
   let coastlineMode = false
   if (useCoastlineFallback && coastlineWays.length > 0) {
