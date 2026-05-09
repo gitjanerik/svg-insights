@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.20.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-yellow-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.20.1</span>
+                <span class="text-white/50">&mdash; Kontur-tall i riktig retning + UI-polish</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Bug-fix: kontur-h&oslash;ydetall var speilvendt nord-s&oslash;r.</strong> P&aring; Pukerud&ndash;Konnerudkollen ble 200 moh tegnet i nord (Drammenselva, ~10 moh) og 125 moh i s&oslash;r (Konnerudkollen-toppen). R&oslash;t&aring;rsak: <code>demProject</code> i <code>mapBuilder.js</code> y-flippet en gang for mye &mdash; DEM-transformen (<code>demFetcher</code>) gir allerede world-koord der GeoTIFF row 0 (nord) lander p&aring; y=0, samme konvensjon som OSM-<code>project</code>. Den andre flippen ga vertikal speiling. Fikset til identitet</li>
+                <li><strong>Bonus-fix: <code>sampleDem</code> og <code>cliffSampleDem</code></strong> brukte hele UTM-koord ned mot <code>originX/Y=0</code>-transform &mdash; ga alltid out-of-bounds og dermed null elev p&aring; innsj&oslash;-labels og null DTM-info til stupkant-tannretning. Begge tar n&aring; bbox-relativt koord som er det transformen forventer</li>
+                <li><strong>Slidere &amp; toggles renset</strong> i bilde-til-svg (CaptureView, ViewerView): violet/pink/sky-gradient-tema erstattet med slate/white-aksenter for &aring; matche HomeView. CTA-knapper g&aring;r fra neon-gradient til ren hvit p&aring; m&oslash;rk bakgrunn</li>
+                <li><strong>Nytt PWA-ikon: slate-200 (#e2e8f0) bakgrunn + gul (#facc15) vektor.</strong> Tidligere slate-400 + hvit ble litt kjedelig p&aring; launchere. Manifest <code>background_color</code> oppdatert. PNG-er regenerert i alle st&oslash;rrelser</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.20.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-slate-400" />

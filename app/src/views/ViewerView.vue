@@ -831,7 +831,7 @@ onMounted(() => {
             <button v-for="tab in tabs" :key="tab.id"
               @click="activeTab = tab.id"
               class="flex-1 min-w-0 px-2 py-2.5 text-[10px] uppercase tracking-wider text-center transition-colors whitespace-nowrap"
-              :class="activeTab === tab.id ? 'text-violet-400 border-b-2 border-violet-400' : 'text-white/40'">
+              :class="activeTab === tab.id ? 'text-white border-b-2 border-slate-200' : 'text-white/40'">
               {{ tab.label }}
             </button>
           </div>
@@ -844,7 +844,7 @@ onMounted(() => {
               <div class="grid grid-cols-2 gap-2">
                 <button v-for="(p, name) in filterPresets" :key="name" @click="applyPreset(name)"
                   class="px-3 py-3 text-xs rounded-lg border transition-all active:scale-95 text-left"
-                  :class="currentPreset === name ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                  :class="currentPreset === name ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                   <div class="font-medium">{{ p.label }}</div>
                   <div class="text-[10px] mt-0.5 opacity-60">{{ p.description }}</div>
                 </button>
@@ -875,7 +875,7 @@ onMounted(() => {
                   <span class="text-[10px] text-white/30 shrink-0">0.25</span>
                   <input v-model.number="strokeScale" type="range" min="0.25" max="5" step="0.25"
                     @input="currentPreset = null"
-                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="text-[10px] text-white/30 shrink-0">5.0</span>
                 </div>
                 <p class="text-[10px] text-white/30 mt-1 text-center">{{ strokeScale.toFixed(2) }}×</p>
@@ -886,7 +886,7 @@ onMounted(() => {
                 <div class="flex gap-1.5">
                   <button v-for="(_, name) in dashPatterns" :key="name" @click="dashPattern = name; currentPreset = null"
                     class="flex-1 py-1.5 text-xs rounded-lg border transition-all"
-                    :class="dashPattern === name ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                    :class="dashPattern === name ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                     {{ name === 'solid' ? 'Hel' : name === 'dashed' ? 'Strek' : name === 'dotted' ? 'Prikk' : 'Skisse' }}
                   </button>
                 </div>
@@ -897,7 +897,7 @@ onMounted(() => {
                 <div class="flex gap-1.5">
                   <button v-for="lc in ['round', 'butt', 'square']" :key="lc" @click="linecapStyle = lc; currentPreset = null"
                     class="flex-1 py-1.5 text-xs rounded-lg border transition-all"
-                    :class="linecapStyle === lc ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                    :class="linecapStyle === lc ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                     {{ lc === 'round' ? 'Rund' : lc === 'butt' ? 'Flat' : 'Firkant' }}
                   </button>
                 </div>
@@ -906,7 +906,7 @@ onMounted(() => {
               <label class="flex items-center justify-between">
                 <span class="text-xs text-white/70">Glatte kurver</span>
                 <button @click="isSmooth = !isSmooth; currentPreset = null"
-                  class="w-10 h-5 rounded-full transition-colors" :class="isSmooth ? 'bg-violet-600' : 'bg-white/10'">
+                  class="w-10 h-5 rounded-full transition-colors" :class="isSmooth ? 'bg-white/30' : 'bg-white/10'">
                   <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
                     :class="isSmooth ? 'translate-x-5' : 'translate-x-0.5'" />
                 </button>
@@ -922,7 +922,7 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <button @click="trimEnabled = !trimEnabled; currentPreset = null"
                               class="w-9 h-5 rounded-full transition-colors shrink-0"
-                              :class="trimEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                              :class="trimEnabled ? 'bg-white/30' : 'bg-white/10'">
                         <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
                              :class="trimEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
                       </button>
@@ -934,7 +934,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="trimAmount" type="range" min="0.1" max="0.9" step="0.05"
                          :disabled="!trimEnabled"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !trimEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Fjerner streker &mdash; skru av for å få alt tilbake</p>
                 </div>
@@ -945,7 +945,7 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <button @click="simplifyEnabled = !simplifyEnabled; currentPreset = null"
                               class="w-9 h-5 rounded-full transition-colors shrink-0"
-                              :class="simplifyEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                              :class="simplifyEnabled ? 'bg-white/30' : 'bg-white/10'">
                         <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
                              :class="simplifyEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
                       </button>
@@ -957,7 +957,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="simplifyAmount" type="range" min="0.05" max="0.95" step="0.05"
                          :disabled="!simplifyEnabled"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !simplifyEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">F&aelig;rre ankerpunkter per strek</p>
                 </div>
@@ -968,7 +968,7 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <button @click="spaghettiEnabled = !spaghettiEnabled; currentPreset = null"
                               class="w-9 h-5 rounded-full transition-colors shrink-0"
-                              :class="spaghettiEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                              :class="spaghettiEnabled ? 'bg-white/30' : 'bg-white/10'">
                         <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
                              :class="spaghettiEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
                       </button>
@@ -980,7 +980,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="spaghettiAmount" type="range" min="0.1" max="1.0" step="0.05"
                          :disabled="!spaghettiEnabled"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !spaghettiEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Glatter ut snirkler og skjelvinger</p>
                 </div>
@@ -991,7 +991,7 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <button @click="calligraphyEnabled = !calligraphyEnabled; currentPreset = null"
                               class="w-9 h-5 rounded-full transition-colors shrink-0"
-                              :class="calligraphyEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                              :class="calligraphyEnabled ? 'bg-white/30' : 'bg-white/10'">
                         <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
                              :class="calligraphyEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
                       </button>
@@ -1003,7 +1003,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="calligraphyAmount" type="range" min="-1" max="1" step="0.1"
                          :disabled="!calligraphyEnabled"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !calligraphyEnabled }" />
                   <div class="flex justify-between text-[10px] text-white/30 mt-0.5">
                     <span>konkav</span><span>flat</span><span>konveks</span>
@@ -1016,7 +1016,7 @@ onMounted(() => {
                     <div class="flex items-center gap-2">
                       <button @click="kurvaturEnabled = !kurvaturEnabled; currentPreset = null"
                               class="w-9 h-5 rounded-full transition-colors shrink-0"
-                              :class="kurvaturEnabled ? 'bg-violet-600' : 'bg-white/10'">
+                              :class="kurvaturEnabled ? 'bg-white/30' : 'bg-white/10'">
                         <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-sm"
                              :class="kurvaturEnabled ? 'translate-x-4' : 'translate-x-0.5'" />
                       </button>
@@ -1028,7 +1028,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="kurvaturAmount" type="range" min="0" max="1" step="0.05"
                          :disabled="!kurvaturEnabled"
-                         class="w-full h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !kurvaturEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Gjør kurver rette &mdash; som en norsk tegneserieskaper</p>
                 </div>
@@ -1054,7 +1054,7 @@ onMounted(() => {
                 <label class="flex items-center justify-between mt-3">
                   <span class="text-xs text-white/70">Inkluder bakgrunn ved lagring</span>
                   <button @click="exportWithBg = !exportWithBg"
-                    class="w-10 h-5 rounded-full transition-colors" :class="exportWithBg ? 'bg-violet-600' : 'bg-white/10'">
+                    class="w-10 h-5 rounded-full transition-colors" :class="exportWithBg ? 'bg-white/30' : 'bg-white/10'">
                     <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
                       :class="exportWithBg ? 'translate-x-5' : 'translate-x-0.5'" />
                   </button>
@@ -1064,19 +1064,19 @@ onMounted(() => {
                 <label class="flex items-center gap-2">
                   <span class="w-16 shrink-0">Kanter</span>
                   <input v-model.number="opacities.edges" type="range" min="0" max="100" step="5"
-                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="w-8 text-right text-white/40">{{ opacities.edges }}</span>
                 </label>
                 <label class="flex items-center gap-2">
                   <span class="w-16 shrink-0">Konturer</span>
                   <input v-model.number="opacities.contours" type="range" min="0" max="100" step="5"
-                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="w-8 text-right text-white/40">{{ opacities.contours }}</span>
                 </label>
                 <label class="flex items-center gap-2">
                   <span class="w-16 shrink-0">Skravering</span>
                   <input v-model.number="opacities.hatching" type="range" min="0" max="100" step="5"
-                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="w-8 text-right text-white/40">{{ opacities.hatching }}</span>
                 </label>
               </div>
@@ -1090,7 +1090,7 @@ onMounted(() => {
                 <div class="flex items-center gap-2">
                   <span class="text-[10px] text-white/30 shrink-0">0</span>
                   <input v-model.number="wobbleIntensity" type="range" min="0" max="3" step="0.5"
-                    class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none"
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                     @input="currentPreset = null" />
                   <span class="text-[10px] text-white/30 shrink-0">3</span>
                 </div>
@@ -1101,13 +1101,13 @@ onMounted(() => {
                 <div class="grid grid-cols-2 gap-1.5">
                   <button @click="svgFilter = null; currentPreset = null"
                     class="py-2 text-xs rounded-lg border transition-all"
-                    :class="!svgFilter ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                    :class="!svgFilter ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                     Ingen
                   </button>
                   <button v-for="f in ['blur', 'glow', 'shadow', 'charcoal', 'emboss']" :key="f"
                     @click="svgFilter = f; currentPreset = null"
                     class="py-2 text-xs rounded-lg border transition-all"
-                    :class="svgFilter === f ? 'bg-violet-600 border-violet-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                    :class="svgFilter === f ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                     {{ f === 'blur' ? 'Uskarp' : f === 'glow' ? 'Glod' : f === 'shadow' ? 'Skygge' : f === 'charcoal' ? 'Kull' : 'Preging' }}
                   </button>
                 </div>
@@ -1117,7 +1117,7 @@ onMounted(() => {
                 <label class="flex items-center justify-between mb-3">
                   <span class="text-xs text-white/70">Rasterpunkter</span>
                   <button @click="halftone = !halftone"
-                    class="w-10 h-5 rounded-full transition-colors" :class="halftone ? 'bg-sky-600' : 'bg-white/10'">
+                    class="w-10 h-5 rounded-full transition-colors" :class="halftone ? 'bg-white/30' : 'bg-white/10'">
                     <div class="w-4 h-4 bg-white rounded-full transition-transform shadow-md"
                       :class="halftone ? 'translate-x-5' : 'translate-x-0.5'" />
                   </button>
@@ -1127,7 +1127,7 @@ onMounted(() => {
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-white/30 shrink-0">Sma</span>
                     <input v-model.number="halftoneScale" type="range" min="0.3" max="1.5" step="0.1"
-                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                      class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                     <span class="text-[10px] text-white/30 shrink-0">Store</span>
                   </div>
                   <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneScale.toFixed(1) }}x</p>
@@ -1137,7 +1137,7 @@ onMounted(() => {
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] text-white/30 shrink-0">Ingen</span>
                     <input v-model.number="halftoneMerge" type="range" min="0" max="0.5" step="0.05"
-                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                      class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                     <span class="text-[10px] text-white/30 shrink-0">Mye</span>
                   </div>
                   <p class="text-[10px] text-white/30 mt-1 text-center">{{ halftoneMerge === 0 ? 'Av' : halftoneMerge.toFixed(1) }}</p>
@@ -1153,7 +1153,7 @@ onMounted(() => {
                     ]" :key="b.v"
                       @click="halftoneBlend = b.v"
                       class="py-1.5 text-[11px] rounded-lg border transition-all"
-                      :class="halftoneBlend === b.v ? 'bg-sky-600 border-sky-500 text-white' : 'bg-white/5 border-white/10 text-white/60'">
+                      :class="halftoneBlend === b.v ? 'bg-white/15 border-white/40 text-white' : 'bg-white/5 border-white/10 text-white/60'">
                       {{ b.label }}
                     </button>
                   </div>
@@ -1166,7 +1166,7 @@ onMounted(() => {
                       :aria-expanded="showInteractivityInfo"
                       aria-label="Vis info om interaktive modi"
                       class="w-4 h-4 inline-flex items-center justify-center rounded-full transition-colors"
-                      :class="showInteractivityInfo ? 'bg-violet-500 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'">
+                      :class="showInteractivityInfo ? 'bg-white/30 text-white' : 'bg-white/10 text-white/60 hover:bg-white/20 hover:text-white'">
                       <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="11" x2="12" y2="17"/>
                         <circle cx="12" cy="7.5" r="0.5" fill="currentColor"/>
@@ -1183,9 +1183,9 @@ onMounted(() => {
                       Kombiner med å flytte sirkelen for å forsterke effekten.
                     </p>
                     <ul class="space-y-1 list-disc list-inside marker:text-white/40">
-                      <li><strong class="text-sky-300">Gravitasjon</strong> &mdash; trekker mindre sirkler mot den du holder</li>
-                      <li><strong class="text-pink-300">Antistoff</strong> &mdash; støter mindre sirkler unna</li>
-                      <li><strong class="text-violet-300">Sort hull</strong> &mdash; sluker mindre sirkler, vokser for hver som spises</li>
+                      <li><strong class="text-white/85">Gravitasjon</strong> &mdash; trekker mindre sirkler mot den du holder</li>
+                      <li><strong class="text-white/85">Antistoff</strong> &mdash; støter mindre sirkler unna</li>
+                      <li><strong class="text-white/85">Sort hull</strong> &mdash; sluker mindre sirkler, vokser for hver som spises</li>
                     </ul>
                     <p class="mt-2 text-[10px] text-white/40">
                       Tips: Jo lenger du holder, jo sterkere blir kraften.
@@ -1201,7 +1201,7 @@ onMounted(() => {
                       @click="gameMode = m.v"
                       class="py-1.5 text-[11px] rounded-lg border transition-all"
                       :class="gameMode === m.v
-                        ? (m.v === 'off' ? 'bg-white/10 border-white/20 text-white/80' : 'bg-pink-600 border-pink-500 text-white')
+                        ? (m.v === 'off' ? 'bg-white/10 border-white/20 text-white/80' : 'bg-white border-white text-slate-900')
                         : 'bg-white/5 border-white/10 text-white/60'">
                       {{ m.label }}
                     </button>
@@ -1224,7 +1224,7 @@ onMounted(() => {
                   <label class="text-[10px] text-white/40 uppercase tracking-wider mb-2 mt-4 block">Raster (gjennomsiktighet)</label>
                   <div class="flex items-center gap-2">
                     <input v-model.number="halftoneOpacity" type="range" min="0" max="100" step="5"
-                      class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                      class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                     <span class="w-8 text-right text-white/40 text-[10px]">{{ halftoneOpacity }}</span>
                   </div>
 
@@ -1254,7 +1254,7 @@ onMounted(() => {
                 <div class="flex items-center gap-2">
                   <span class="text-[10px] text-white/30 shrink-0">0</span>
                   <input v-model.number="fillDelay" type="range" min="0" max="1" step="0.1"
-                    class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="text-[10px] text-white/30 shrink-0">1s</span>
                 </div>
                 <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillDelay === 0 ? 'Umiddelbart' : (fillDelay * 1000) + 'ms mellom hver gruppe' }}</p>
@@ -1266,7 +1266,7 @@ onMounted(() => {
                 <div class="flex items-center gap-2">
                   <span class="text-[10px] text-white/30 shrink-0">1</span>
                   <input v-model.number="fillBatch" type="range" min="1" max="100" step="1"
-                    class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none" />
+                    class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none" />
                   <span class="text-[10px] text-white/30 shrink-0">100</span>
                 </div>
                 <p class="text-[10px] text-white/30 mt-1 text-center">{{ fillBatch }} omrade{{ fillBatch > 1 ? 'r' : '' }} samtidig</p>
@@ -1278,7 +1278,7 @@ onMounted(() => {
                   class="flex-1 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]"
                   :class="colorized
                     ? 'bg-white/10 border border-white/20 text-white/70'
-                    : 'bg-gradient-to-r from-sky-600 to-violet-600 text-white shadow-[0_0_20px_rgba(56,189,248,0.2)]'">
+                    : 'bg-white text-slate-900'">
                   <span v-if="colorizing">Fargelegger...</span>
                   <span v-else-if="colorized">Fjern farger</span>
                   <span v-else>Auto-fargelegg</span>
@@ -1320,7 +1320,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="fillSimplifyAmount" type="range" min="0.1" max="1" step="0.05"
                          :disabled="!fillSimplifyEnabled"
-                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillSimplifyEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Sl&aring;r sammen n&aelig;rliggende fargede felt</p>
                 </div>
@@ -1343,7 +1343,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="fillRoundAmount" type="range" min="0.1" max="1" step="0.05"
                          :disabled="!fillRoundEnabled"
-                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillRoundEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Runder av hj&oslash;rner i fargefelt (ekte geometri)</p>
                 </div>
@@ -1366,7 +1366,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="fillGradientAmount" type="range" min="0.1" max="1" step="0.05"
                          :disabled="!fillGradientEnabled"
-                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillGradientEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Tofarget gradient fra lysere til m&oslash;rkere nyanse</p>
                 </div>
@@ -1389,7 +1389,7 @@ onMounted(() => {
                   </div>
                   <input v-model.number="fillFragmentAmount" type="range" min="0.1" max="1" step="0.05"
                          :disabled="!fillFragmentEnabled"
-                         class="w-full h-1 accent-sky-500 bg-white/10 rounded-full appearance-none"
+                         class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillFragmentEnabled }" />
                   <p class="text-[10px] text-white/30 mt-0.5">Knust-glass-effekt (fractal noise displacement)</p>
                 </div>
