@@ -8,9 +8,10 @@ const props = defineProps({
   mapRect: { type: Object, default: null },
 })
 
-// Tykkelse på flipper (perpendikulært til kant), i CSS-piksler.
-// 70px > 60px-kravet: finger dekker ikke hele paddla.
-const PAD_THICKNESS = 70
+// Tykkelse på flipper (perpendikulært til kant), i CSS-piksler. Halvert
+// fra v7.2.2 sitt 70px etter brukerfeedback — fortsatt nok til at finger
+// får tak (CSS-pixel-bredde ≠ touch-target-bredde i praksis).
+const PAD_THICKNESS = 35
 
 const dragState = ref(null)
 
@@ -23,9 +24,15 @@ function paddleStyle(edge) {
   const padLen = totalLen * f.length
   const padCenter = totalLen * f.position
 
+  // INSET i CSS-piksler — paddla sin INNER edge (mot midt av kart) sitter
+  // her, og paddla strekker seg utover (mot kart-kanten). Fysikk-collision-
+  // planet ligger på INNER edge.
+  const insetM = props.flipp.FLIPPER_INSET_M ?? 150
+  const insetPx = (r.pxPerM ?? 0.3) * insetM
+
   if (edge === 'top') {
     return {
-      top:    `${r.top - PAD_THICKNESS}px`,
+      top:    `${r.top + insetPx - PAD_THICKNESS}px`,
       left:   `${r.left + padCenter - padLen / 2}px`,
       width:  `${padLen}px`,
       height: `${PAD_THICKNESS}px`,
@@ -33,7 +40,7 @@ function paddleStyle(edge) {
   }
   if (edge === 'bottom') {
     return {
-      top:    `${r.top + r.height}px`,
+      top:    `${r.top + r.height - insetPx}px`,
       left:   `${r.left + padCenter - padLen / 2}px`,
       width:  `${padLen}px`,
       height: `${PAD_THICKNESS}px`,
@@ -42,7 +49,7 @@ function paddleStyle(edge) {
   if (edge === 'left') {
     return {
       top:    `${r.top + padCenter - padLen / 2}px`,
-      left:   `${r.left - PAD_THICKNESS}px`,
+      left:   `${r.left + insetPx - PAD_THICKNESS}px`,
       width:  `${PAD_THICKNESS}px`,
       height: `${padLen}px`,
     }
@@ -50,7 +57,7 @@ function paddleStyle(edge) {
   // right
   return {
     top:    `${r.top + padCenter - padLen / 2}px`,
-    left:   `${r.left + r.width}px`,
+    left:   `${r.left + r.width - insetPx}px`,
     width:  `${PAD_THICKNESS}px`,
     height: `${padLen}px`,
   }

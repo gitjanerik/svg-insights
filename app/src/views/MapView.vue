@@ -71,6 +71,7 @@ function updateMapRect() {
     left:   r.left + offsetX,
     width:  contentW,
     height: contentH,
+    pxPerM: contentW / meta.value.widthM,    // CSS-px per viewBox-meter
   }
 }
 
