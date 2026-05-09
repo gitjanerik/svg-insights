@@ -450,6 +450,14 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   if (lab['dybde-tall']) {
     rules.push(`${root} [data-label="dybde-tall"] { font-size: ${lab['dybde-tall'].fontSizeMm}mm; fill: var(--label-dybde-tall-fill, ${lab['dybde-tall'].color}); stroke: var(--label-dybde-tall-halo, ${lab['dybde-tall'].haloColor}); stroke-width: ${lab['dybde-tall'].haloWidthMm}mm; }`)
   }
+  // v7.1.5: dybde-kontur-tall (meter-tall på Sjøkart-konturer). Mindre
+  // enn vann-tall, samme blå-farge som dybdekontur-strek for visuell
+  // sammenheng. Bruker dybde-tall-config hvis den finnes, ellers
+  // hardkodet ISOM-default.
+  const dyk = lab['dybde-kontur-tall'] ?? lab['dybde-tall'] ?? {
+    fontSizeMm: 1.6, color: '#1f5d8a', haloColor: '#fff', haloWidthMm: 0.5,
+  }
+  rules.push(`${root} [data-label="dybde-kontur-tall"] text { font-size: ${dyk.fontSizeMm}mm; fill: var(--label-dybde-kontur-tall-fill, ${dyk.color}); paint-order: stroke; stroke: ${dyk.haloColor}; stroke-width: ${dyk.haloWidthMm}mm; stroke-linejoin: round; font-style: italic; }`)
 
   return rules.join(' ')
 }

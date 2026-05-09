@@ -247,6 +247,31 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.5 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.5</span>
+                <span class="text-white/50">&mdash; Sjøkart-WFS-diagnose + dybdekontur-tall + ny Tegnforklaring-seksjon</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Synlig diagnose for Sjøkart-WFS-feil:</strong> <code>sjokartFetcher.js</code> samler n&aring; per-endepunkt-feil (CORS/nettverk, HTTP, GML/XML-svar, tom respons). Lagres i meta og vises i MapView attribusjons-boks som "⚠ Sjøkart-WFS feilet: CORS/nettfeil (4)" n&aring;r WFS er nede. Skiller endelig data-mangel fra rendering-bug</li>
+                <li><strong>Dybdekontur-meter-tall (samme som land-konturer):</strong> hvert lengre dybdekontur-segment (>200m) f&aring;r meter-tall midt p&aring; linjen. Italic blå tall med hvit halo, samme stil som ISOM 102 indekskontur. Synlig n&aring;r Sj&oslash;kart-WFS leverer data</li>
+                <li><strong>Tegnforklaring oppgradert:</strong>
+                  <ul class="ml-4 mt-1 space-y-0.5 text-white/45">
+                    <li>Ny dedikert seksjon "Sj&oslash;kart 🌊 — for padling/båt" (307 dybdeareal, 306 dybdekontur, 211 skjær, 533 lanterne, 540-543 sjømerker)</li>
+                    <li>Tidligere "Vann & sjøkart" delt opp i "Innlandsvann" og dedikert sjø-seksjon</li>
+                    <li>Forklarende note pr seksjon (sjø-noten advarer om WFS-avhengighet)</li>
+                    <li><code>categoryMap</code>-st&oslash;tte for seksjoner som mikser ulike ISOM-kategorier (sj&oslash;kart spenner water/rock/manmade)</li>
+                  </ul>
+                </li>
+                <li><strong>Forarbeid for v7.2.0+:</strong> robust OSM-fallback for sjømerker og hovedled, padle-spesifikke features (slipway, beach), pre-byggede sj&oslash;kart for kjente padle-omr&aring;der</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />

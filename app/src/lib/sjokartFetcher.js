@@ -94,24 +94,41 @@ const TYPENAME_CANDIDATES = {
  */
 export async function fetchSjokart(bbox, opts = {}) {
   console.log(`[Sjøkart] Prøver ${SJOKART_ENDPOINTS.length} endepunkter for bbox ${bbox.south.toFixed(3)},${bbox.west.toFixed(3)} → ${bbox.north.toFixed(3)},${bbox.east.toFixed(3)}`)
+  // v7.1.5: samle feilmeldinger per endepunkt så vi kan eksponere dem
+  // i kart-meta og MapView. CORS, HTTP-fail, og non-JSON-svar separeres.
+  const fetchErrors = []
   for (const endpoint of SJOKART_ENDPOINTS) {
     try {
-      const result = await fetchAllCategories(endpoint, bbox, opts)
+      const result = await fetchAllCategories(endpoint, bbox, opts, fetchErrors)
       const totals = Object.values(result).reduce(
         (a, v) => a + (Array.isArray(v) ? v.length : 0), 0
       )
       if (totals > 0) {
         console.log(`[Sjøkart] ${endpoint} → ${totals} features totalt`)
-        return { ...result, source: endpoint }
+        return { ...result, source: endpoint, fetchErrors }
       } else {
         console.log(`[Sjøkart] ${endpoint} svarte men 0 features (kan være feil typenames eller utenfor dekning)`)
+        fetchErrors.push({ endpoint, kind: 'zero-features', message: '0 features for alle typenames' })
       }
     } catch (e) {
       console.warn(`[Sjøkart] ${endpoint} feilet: ${e.message}`)
+      fetchErrors.push({ endpoint, kind: classifyFetchError(e), message: e.message })
     }
   }
   console.warn('[Sjøkart] Ingen endepunkter ga data — kart vil falle tilbake til OSM coastline-rekonstruksjon')
-  return emptyResult()
+  return { ...emptyResult(), fetchErrors }
+}
+
+// Kategoriser fetch-feil for synlig diagnose. Nettverks-feil i nettleser
+// er typisk CORS-relatert, men kan også være DNS, TLS osv. — uten dyp
+// network-API-tilgang er det vanskelig å skille, så vi bruker bredt navn.
+function classifyFetchError(e) {
+  const msg = (e?.message || '').toLowerCase()
+  if (msg.includes('failed to fetch') || msg.includes('networkerror')) return 'network-or-cors'
+  if (msg.includes('aborted')) return 'aborted'
+  if (msg.includes('http ')) return 'http-error'
+  if (msg.includes('ikke-json')) return 'not-json'
+  return 'unknown'
 }
 
 function emptyResult() {
@@ -119,16 +136,18 @@ function emptyResult() {
     kystkontur: [], dybdeareal: [], dybdekontur: [],
     grunne: [], lanterne: [], dybdepunkt: [],
     source: null,
+    fetchErrors: [],
   }
 }
 
-async function fetchAllCategories(endpoint, bbox, opts) {
+async function fetchAllCategories(endpoint, bbox, opts, fetchErrors = []) {
   const out = emptyResult()
   delete out.source
+  delete out.fetchErrors
   const tasks = []
   for (const [cat, candidates] of Object.entries(TYPENAME_CANDIDATES)) {
     tasks.push(
-      fetchFirstWorkingTypename(endpoint, candidates, bbox, opts)
+      fetchFirstWorkingTypename(endpoint, candidates, bbox, opts, fetchErrors)
         .then(features => { out[cat] = features })
         .catch(() => { out[cat] = [] })
     )
@@ -137,13 +156,19 @@ async function fetchAllCategories(endpoint, bbox, opts) {
   return out
 }
 
-async function fetchFirstWorkingTypename(endpoint, candidates, bbox, opts) {
+async function fetchFirstWorkingTypename(endpoint, candidates, bbox, opts, fetchErrors = []) {
   for (const typeName of candidates) {
     try {
       const features = await fetchTypeName(endpoint, typeName, bbox, opts)
       if (features.length > 0) return features
     } catch (e) {
-      // Prøv neste kandidat
+      // Prøv neste kandidat. Logg første feil per typename-set så vi
+      // har noe å vise i UI hvis alle kandidater feiler.
+      fetchErrors.push({
+        endpoint, typeName,
+        kind: classifyFetchError(e),
+        message: e.message,
+      })
     }
   }
   return []

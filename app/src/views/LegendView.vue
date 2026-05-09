@@ -17,18 +17,27 @@ const bgColor = computed(() => isDark.value ? isomCatalog.background.darkColor :
 // Grupper koder i tematiske seksjoner for hjelp til lesing
 const SECTIONS = [
   { title: 'Høydekurver', codes: ['101', '102', '103', '104', '113'], category: 'contour' },
-  { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '211', '213', '215', '216'], category: 'rock' },
-  { title: 'Vann & sjøkart', codes: ['301', '302', '303', '304', '305', '306', '307', '308', '309'], category: 'water' },
+  { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '213', '215', '216'], category: 'rock' },
+  { title: 'Innlandsvann', codes: ['301', '302', '303', '304', '305', '308', '309'], category: 'water',
+    note: 'Innsjø, tjern, bekk, myr. 303 saltvann der OSM tagger fjord.' },
+  { title: 'Sjøkart 🌊 — for padling/båt', codes: ['307', '306', '211', '533', '540', '541', '542', '543'], categoryMap: { '307': 'water', '306': 'water', '211': 'rock', '533': 'manmade', '540': 'manmade', '541': 'manmade', '542': 'manmade', '543': 'manmade' },
+    note: 'Dybdeareal får per-polygon-shading basert på dybde (lys = grunt, mørk = dypt). Krever at Kartverket Sjøkart-WFS svarer i nettleser — ellers vises kun OSM-baserte sjømerker.' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
   { title: 'Jernbane', codes: ['515'], category: 'manmade' },
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
-  { title: 'Bygninger & navigasjon', codes: ['521', '522', '525', '528', '533'], category: 'manmade' },
-  { title: 'Sjømerker', codes: ['540', '541', '542', '543'], category: 'manmade' },
+  { title: 'Bygninger', codes: ['521', '522', '525', '528'], category: 'manmade' },
 ]
 
 function defForCode(category, code) {
   return isomCatalog.categories?.[category]?.[code]
+}
+
+// v7.1.5: Sjøkart-seksjonen mikser koder fra ulike kategorier (water,
+// rock, manmade) — vi har en categoryMap pr seksjon for slike tilfeller.
+function catFor(section, code) {
+  if (section.categoryMap) return section.categoryMap[code] ?? section.category
+  return section.category
 }
 
 function darkForCode(code) {
@@ -128,16 +137,20 @@ function sampleSvg(category, code) {
             :class="isDark ? 'text-white/55' : 'text-zinc-500'">
           {{ section.title }}
         </h2>
+        <p v-if="section.note" class="text-[11px] mb-2 leading-relaxed"
+           :class="isDark ? 'text-white/45' : 'text-zinc-500'">
+          {{ section.note }}
+        </p>
         <div class="space-y-1.5">
           <div v-for="code in section.codes" :key="code"
                class="flex items-center gap-3 rounded-lg px-3 py-2"
                :class="isDark ? 'bg-white/5' : 'bg-white border border-zinc-200'">
             <div class="w-30 h-8 shrink-0 rounded overflow-hidden ring-1"
                  :class="isDark ? 'ring-white/10' : 'ring-zinc-200'"
-                 v-html="sampleSvg(section.category, code)" />
+                 v-html="sampleSvg(catFor(section, code), code)" />
             <div class="flex-1 min-w-0">
               <div class="text-sm leading-tight">
-                {{ defForCode(section.category, code)?.label ?? '—' }}
+                {{ defForCode(catFor(section, code), code)?.label ?? '—' }}
               </div>
               <div class="text-[10px] mt-0.5"
                    :class="isDark ? 'text-white/45' : 'text-zinc-500'">

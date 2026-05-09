@@ -341,6 +341,10 @@ export function buildSvg(elements, bbox, options = {}) {
     // for kyst-områder. v7.0.0 duomap-mask-arkitekturen er erstattet av
     // dette valget — én rendering per kart, brukeren bestemmer fokus.
     mapType = 'land',
+    // v7.1.5: feilmeldinger fra Sjøkart-WFS som ikke svarte. Eksponeres
+    // i meta så MapView UI kan vise "WFS feilet (CORS)" når sjøkart-
+    // counts er 0 — skiller data-mangel fra rendering-bug.
+    sjokartFetchErrors = [],
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -854,6 +858,27 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Dybdekontur-labels (Sjøkart 306) ─────────────────────────────────
+  // v7.1.5: meter-tall på sjø-kontur-linjer, samme stil som land-konturer.
+  // Vi tegner kun på lengre dybdekontur-strekninger (>200m i SVG-koord)
+  // for å unngå overcrowding. tags.dybde er i meter (positiv = under
+  // havflaten).
+  const dybdeKonturLabels = []
+  for (const el of buckets['306'] ?? []) {
+    if (el.type !== 'way' || !el.geometry || el.geometry.length < 4) continue
+    const dybde = Number(el.tags?.dybde)
+    if (!Number.isFinite(dybde)) continue
+    const pts = el.geometry.map(g => project(g.lat, g.lon))
+    // Estimere total lengde i SVG-meter
+    let len = 0
+    for (let i = 1; i < pts.length; i++) {
+      len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+    }
+    if (len < 200) continue  // kort segment — skip label
+    const mid = pts[Math.floor(pts.length / 2)]
+    dybdeKonturLabels.push({ x: mid.x, y: mid.y, dybde: Math.round(dybde) })
+  }
+
   // ── Navn og elevasjon på innsjøer/tjern ──────────────────────────────
   // For hver innsjø/tjern (301/302): rendrer navn (når OSM har `name`-tag)
   // og høyde over havet (når DEM er tilgjengelig). Brukes for orientering
@@ -1086,6 +1111,9 @@ export function buildSvg(elements, bbox, options = {}) {
     // v7.1.4: synlig sjøkart-feature-diagnose i kart-UI. Hvis alle 0 →
     // WFS feilet (CORS/nett), ikke rendering-problem.
     sjokartCounts,
+    // v7.1.5: feilmeldinger fra Sjøkart-WFS — gjør UI i stand til å
+    // vise konkret årsak (CORS, HTTP-feil, ikke-JSON-svar) når counts=0.
+    sjokartFetchErrors,
     coastlineLandRings: coastlineLandRings.length || null,
     coastlineWaysCount: coastlineWays.length,
     useCoastlineFallback: !!useCoastlineFallback,
@@ -1171,6 +1199,13 @@ export function buildSvg(elements, bbox, options = {}) {
   const dybdepunktLayerSvg = dybdepunktSvg
     ? `  <g data-layer="dybde">\n${dybdepunktSvg}\n  </g>\n` : ''
 
+  // v7.1.5: dybdekontur-meter-tall (samme stil som land-kontur). Tekst-
+  // farge matcher dybde-kontur-stroke (#3a8db8) for visuell sammenheng.
+  const dybdeKonturLabelSvg = dybdeKonturLabels.length
+    ? `  <g data-label="dybde-kontur-tall">\n${dybdeKonturLabels.slice(0, 80).map(l =>
+        `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.dybde}</text>`).join('\n')}\n  </g>\n`
+    : ''
+
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
   // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
@@ -1213,7 +1248,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }

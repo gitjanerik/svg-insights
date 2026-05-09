@@ -301,6 +301,7 @@ async function loadMap() {
       mapType: m.mapType ?? null,
       useSeaBg: !!m.useSeaBg,
       sjokartCounts: m.sjokartCounts ?? null,
+      sjokartFetchErrors: Array.isArray(m.sjokartFetchErrors) ? m.sjokartFetchErrors : [],
       coastlineLandRings: m.coastlineLandRings ?? null,
       coastlineWaysCount: m.coastlineWaysCount,
     }
@@ -404,6 +405,27 @@ const equidistanceLabel = computed(() => {
   if (eq) return `Høydekurver pr ${eq} m`
   if (meta.value.contoursSkipped) return 'Høydekurver: kun på innebygde kart'
   return 'Høydekurver ikke tilgjengelig'
+})
+
+// v7.1.5: oppsummer Sjøkart-WFS-feil til kort tekst for attribusjons-
+// boksen. Hvis fetcher fanget exceptions, vis dominerende feiltype så
+// brukeren ser at det er WFS-side, ikke app-side.
+const sjokartFetchErrorSummary = computed(() => {
+  const errs = meta.value?.sjokartFetchErrors
+  if (!Array.isArray(errs) || errs.length === 0) return null
+  // Tell pr type, vis mest vanlige
+  const counts = {}
+  for (const e of errs) counts[e.kind] = (counts[e.kind] ?? 0) + 1
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  const labels = {
+    'network-or-cors': 'CORS/nettfeil',
+    'http-error': 'HTTP-feil',
+    'not-json': 'GML/XML-svar',
+    'zero-features': 'tom respons',
+    'aborted': 'avbrutt',
+    'unknown': 'ukjent feil',
+  }
+  return sorted.slice(0, 2).map(([k, n]) => `${labels[k] ?? k} (${n})`).join(', ')
 })
 
 const wrapperSize = ref({ w: 0, h: 0 })
@@ -741,6 +763,9 @@ onMounted(() => {
         </button>
         <template v-if="meta.mapType === 'sea' && meta.sjokartCounts">
           <br><span class="text-sky-300/70">Sjøkart: omr={{ meta.sjokartCounts.dybdeareal }} kontur={{ meta.sjokartCounts.dybdekontur }} lan={{ meta.sjokartCounts.lanterne }} skj={{ meta.sjokartCounts.grunne }} dyb={{ meta.sjokartCounts.dybdepunkt }}</span>
+        </template>
+        <template v-if="meta.mapType === 'sea' && sjokartFetchErrorSummary">
+          <br><span class="text-amber-300/85">⚠ Sjøkart-WFS feilet: {{ sjokartFetchErrorSummary }}</span>
         </template>
       </template>
       <template v-else-if="meta?.coastlineWaysCount !== undefined">
