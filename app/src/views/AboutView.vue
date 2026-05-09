@@ -247,6 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.11 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.11</span>
+                <span class="text-rose-300/85">&mdash; Akutt-fix: SVG-parse brakk pga XML-tegn i sjokart-samples</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Akutt-fix etter v7.1.10:</strong> alle nye kart (b&aring;de land og sj&oslash;) feilet med "Kunne ikke laste kartet — Ugyldig SVG"</li>
+                <li><strong>Rotårsak:</strong> v7.1.10 lagret r&aring; XML-snippets fra Sj&oslash;kart-WFS i <code>meta.sjokartDebugSamples</code>. JSON-stringify-en i SVG <code>data-meta='...'</code>-attributtet beholdt <code>&lt;</code> og <code>&gt;</code>-tegnene som er inn-tolket som tag-start/slutt &rarr; SVG-parser feilet</li>
+                <li><strong>To fikser:</strong>
+                  <ul class="ml-4 mt-1 space-y-0.5 text-white/45">
+                    <li><code>sjokartFetcher</code>: <code>&lt;</code> og <code>&gt;</code> i sample-strenger erstattes med <code>‹</code> og <code>›</code> f&oslash;r lagring (synlig diagnose, ugyldig XML-syntaks)</li>
+                    <li><code>mapBuilder</code>: defense-in-depth — JSON-string fra meta f&aring;r <code>&lt;</code> og <code>&gt;</code> escapet til <code><</code>/<code>></code> f&oslash;r innfletting i <code>data-meta</code>. Beskytter alle fremtidige meta-felter mot XML-attribut-injection</li>
+                  </ul>
+                </li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.10 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
