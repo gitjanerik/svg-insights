@@ -39,16 +39,21 @@ function trailRadius(age, base) {
 }
 
 const splashTiles = computed(() => {
-  // 8-bit pixel-eksplosjon: 8 fliser i ring rundt drown-punktet
+  // 8-bit pixel-eksplosjon. Drown: 8 fliser, blå-tone. Explode: 16 fliser,
+  // dobbel-radius, oransj-tone (større dramatikk når ballen detonerer).
   const t = props.flipp.splash.t       // 0..1
   if (!props.flipp.splash.active) return []
   const r = ballRadius.value
-  const baseSize = r * 0.45
-  const radius = r * 0.4 + t * r * 4
+  const isExplode = props.flipp.splash.kind === 'explode'
+  const tileCount = isExplode ? 16 : 8
+  const sizeMult = isExplode ? 0.7 : 0.45
+  const radiusMult = isExplode ? 8 : 4
+  const baseSize = r * sizeMult
+  const radius = r * 0.4 + t * r * radiusMult
   const fade = 1 - t
   const tiles = []
-  for (let i = 0; i < 8; i++) {
-    const ang = (i / 8) * Math.PI * 2
+  for (let i = 0; i < tileCount; i++) {
+    const ang = (i / tileCount) * Math.PI * 2
     const x = Math.cos(ang) * radius
     const y = Math.sin(ang) * radius
     tiles.push({
@@ -90,8 +95,8 @@ function onClick() {
       </filter>
     </defs>
 
-    <!-- Trail: faded tail bak ballen -->
-    <g v-if="flipp.ball.visible">
+    <!-- Trail: faded tail bak primary ball (balls[0]) -->
+    <g v-if="flipp.balls.length > 0">
       <circle v-for="(t, i) in flipp.trail" :key="`trail-${i}`"
               :cx="t.x" :cy="t.y"
               :r="trailRadius(t.age, ballRadius)"
@@ -100,14 +105,31 @@ function onClick() {
               pointer-events="none"/>
     </g>
 
-    <!-- Marble -->
-    <circle v-if="flipp.ball.visible"
-            :cx="flipp.ball.x" :cy="flipp.ball.y" :r="ballRadius"
-            fill="url(#flipp-chrome)"
-            filter="url(#flipp-shadow)"
-            pointer-events="none"/>
+    <!-- Baller (multi-ball-støtte). Charging-pulse-ring renderes UNDER ballen
+         når chargeT > 0 (rød advarsel om snarlig eksplosjon). -->
+    <g v-for="(b, i) in flipp.balls" :key="`ball-${i}`" pointer-events="none">
+      <!-- Charging warning ring -->
+      <circle v-if="b.chargeT > 0"
+              :cx="b.x" :cy="b.y"
+              :r="ballRadius * (1.15 + b.chargeT * 0.6)"
+              :fill="`rgba(239, 68, 68, ${0.15 + b.chargeT * 0.25})`"
+              :stroke="b.chargeT >= 0.95 ? '#fde047' : '#ef4444'"
+              :stroke-width="3 + b.chargeT * 6"
+              :stroke-dasharray="b.chargeT >= 0.5 ? '8 4' : 'none'">
+        <animate v-if="b.chargeT >= 0.5"
+                 attributeName="r"
+                 :values="`${ballRadius * (1.15 + b.chargeT * 0.6)};${ballRadius * (1.4 + b.chargeT * 0.6)};${ballRadius * (1.15 + b.chargeT * 0.6)}`"
+                 dur="0.3s"
+                 repeatCount="indefinite"/>
+      </circle>
+      <!-- Marble -->
+      <circle :cx="b.x" :cy="b.y" :r="ballRadius"
+              fill="url(#flipp-chrome)"
+              filter="url(#flipp-shadow)"
+              :style="{ filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '' }"/>
+    </g>
 
-    <!-- Splash -->
+    <!-- Splash / explosion -->
     <g v-if="flipp.splash.active"
        :transform="`translate(${flipp.splash.x} ${flipp.splash.y})`"
        pointer-events="none">
@@ -115,7 +137,7 @@ function onClick() {
             :x="tile.x" :y="tile.y"
             :width="tile.size" :height="tile.size"
             :opacity="tile.opacity"
-            fill="#38bdf8"/>
+            :fill="flipp.splash.kind === 'explode' ? '#fb923c' : '#38bdf8'"/>
     </g>
   </svg>
 </template>

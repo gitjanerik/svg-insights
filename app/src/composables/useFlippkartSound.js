@@ -157,5 +157,37 @@ export function playSmash() {
   playTone(N.G5, 0.18, 'square', 0.22, 0.15)
 }
 
+/** Warning-beep mens ball står stille — pitch stiger med charge-niv. */
+export function playStillWarning(stepIndex) {
+  // 0..3 — stigende pitch, signaliserer at noe stort skal skje.
+  // Bruker dissonant intervall for å bygge spenning.
+  const freq = N.A4 * Math.pow(1.18921, stepIndex)   // halvtonesteg
+  playTone(freq, 0.10, 'sawtooth', 0.14)
+  // Layer in et pulserende lavt tone for ekstra dramatikk
+  if (stepIndex >= 2) {
+    playTone(freq / 2, 0.12, 'square', 0.10, 0.02)
+  }
+}
+
+/** Eksplosjon når ballen detonerer i multi-ball. */
+export function playExplosion() {
+  const ctx = ensureCtx()
+  if (!ctx) return
+  // Stort BOOM: glide ned fra høy pitch + støy via sawtooth
+  playGlide(N.A5 * 2, N.C4 / 2, 0.45, 'sawtooth', 0.22)
+  playGlide(N.E5, N.A4, 0.30, 'square', 0.16)
+  // Etterklang — kort metallisk
+  playTone(N.G6, 0.08, 'triangle', 0.10, 0.05)
+  playTone(N.C6, 0.06, 'triangle', 0.10, 0.10)
+}
+
+/** Multi-ball spawn — kvint-gnist når 3 baller spretter ut. */
+export function playMultiSpawn() {
+  playTone(N.C5, 0.06, 'square', 0.18, 0.00)
+  playTone(N.E5, 0.06, 'square', 0.18, 0.04)
+  playTone(N.G5, 0.06, 'square', 0.18, 0.08)
+  playTone(N.C6, 0.12, 'square', 0.20, 0.12)
+}
+
 export function setMuted(m) { muted = !!m }
 export function isMuted() { return muted }
