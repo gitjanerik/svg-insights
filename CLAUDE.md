@@ -1,19 +1,47 @@
 # CLAUDE.md — Prosjektkontekst for Claude Code
 
-## Sesjons-oppstart — ALLTID gjør dette først
+## Sync-modell — origin er sannheten
 
-**Synk lokal master mot remote** før noe annet skjer i en ny sesjon:
+Dette er et lite, privat prosjekt der eieren mest jobber fra mobil/web. Hver Claude Code-sesjon kjører i en fersk sandkasse — alt som ikke er pushet til origin er borte. Derfor: **origin/master er alltid kilden, lokal state følger.** Ingen lange-levende lokale commits utenfor en feature-branch.
+
+### Sesjons-oppstart — ALLTID, før noe annet
+
+Trygt å kjøre uansett hvilken branch du står på (rører ikke working tree, rører ikke feature-branchen):
 
 ```bash
-git fetch origin master
-git rev-list --left-right --count master...origin/master
-# Hvis output er noe annet enn "0\t0" → resync:
-git checkout -B master origin/master   # (fra master, ev. checkout til feature-branch etter)
+git fetch origin
+git branch -f master origin/master   # tving lokal master til å matche origin/master
 ```
 
-Lokal master har historisk drevet bort fra origin/master (eks. v6.3.x lokalt, v6.20.x på origin) fordi gh-pages auto-deployer fra origin og lokal-state ikke alltid følger med. Dette gir villedende state ved merge/branch-base og må fikses umiddelbart.
+Hvis du står på en feature-branch og den er basert på stale master, rebase mot ferskt origin/master før du gjør endringer:
 
-Tilsvarende: når en feature-branch er klar til release, sjekk om base-branchen er oppdatert før merge — `git fetch origin master` + verifiser at lokal master ligger på samme commit.
+```bash
+git fetch origin
+git rebase origin/master
+```
+
+### Når du oppretter en ny feature-branch
+
+ALLTID base fra `origin/master`, aldri fra lokal master:
+
+```bash
+git fetch origin
+git checkout -b claude/<navn> origin/master
+```
+
+### Sesjons-avslutning — ALLTID push
+
+Ingenting er trygt før det er på origin. Sandkassen rives, og brukeren neste gang sitter sannsynligvis på mobil og kan ikke gjenopprette lokal state. Push før sesjonen lukkes:
+
+```bash
+git push -u origin <branch>
+```
+
+Hvis du har commits på `master` lokalt — det er en bug, du skulle vært på en feature-branch. Stopp og spør brukeren før du pusher master.
+
+### Bakgrunn (hvorfor dette trengs)
+
+gh-pages auto-deployer fra origin/master via GitHub Actions. Brukeren jobber ofte fra Claude Code på web/mobil, der hver sesjon er en ny sandkasse. Tidligere har lokal master drevet flere _major-versjoner_ bak (v6.3.x lokalt vs v7.1.18 på origin) fordi ingen sync-disiplin var håndhevet. Det gir villedende merge-bases, falsk konfliktdeteksjon og tap av endringer.
 
 ## Hva er dette?
 
@@ -23,7 +51,7 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: **6.10.0** (release 8. mai 2026).
+Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versjons-omtale roter når master beveger seg fortere enn dokumentet. Per 9. mai 2026 er prosjektet på **v7.1.18**.
 
 ## Sesjons-overlevering — hva som er status nå
 
