@@ -5,29 +5,60 @@ const props = defineProps({
   flipp: { type: Object, required: true },
 })
 
-const emit = defineEmits(['restart', 'exit'])
+const emit = defineEmits(['restart', 'exit', 'continue'])
 
 const levelStr = computed(() => `LEVEL ${String(props.flipp.level.value).padStart(2, '0')}`)
-const scoreStr = computed(() => `SCORE ${String(props.flipp.score.value).padStart(5, '0')}`)
+const scoreStr = computed(() => {
+  const s = String(props.flipp.score.value).padStart(4, '0')
+  const t = String(props.flipp.levelTarget.value).padStart(4, '0')
+  return `${s}/${t}`
+})
 const heartCount = computed(() => Math.max(0, props.flipp.lives.value))
 
 const overlay = computed(() => {
   const s = props.flipp.status.value
-  if (s === 'gameover') return { text: 'GAME OVER', sub: 'TAP TO RESTART', color: 'red' }
+  if (s === 'gameover') {
+    const hs = props.flipp.highscore.value
+    return {
+      text: 'GAME OVER',
+      sub: `HIGHSCORE: ${String(hs).padStart(5, '0')}`,
+      tapText: 'TAP TO RESTART',
+      color: 'red',
+    }
+  }
   if (s === 'won') return { text: 'LEVEL CLEAR!', sub: '', color: 'yellow' }
   if (s === 'sunk') return { text: 'MISS!', sub: '', color: 'cyan' }
-  if (s === 'idle' && props.flipp.lives.value === 3 && props.flipp.score.value === 0 && props.flipp.level.value === 1) {
-    return { text: '', sub: 'TAP MAP TO DROP MARBLE', color: 'cyan' }
+  if (s === 'countdown') {
+    const n = props.flipp.countdown.value
+    return { text: n > 0 ? String(n) : 'GO!', sub: '', color: 'yellow', big: true }
   }
   if (s === 'idle' && props.flipp.lives.value > 0) {
-    return { text: '', sub: 'TAP MAP TO CONTINUE', color: 'cyan' }
+    const isFresh = props.flipp.lives.value === 3 &&
+                    props.flipp.score.value === 0 &&
+                    props.flipp.level.value === 1
+    return {
+      text: '',
+      sub: isFresh ? 'TAP TO START' : 'TAP TO CONTINUE',
+      color: 'cyan',
+      tappable: true,
+    }
   }
   return null
 })
 
 function onOverlayTap() {
-  if (props.flipp.status.value === 'gameover') emit('restart')
+  const s = props.flipp.status.value
+  if (s === 'gameover') emit('restart')
+  else if (s === 'idle' && props.flipp.lives.value > 0) emit('continue')
 }
+
+// Smash-flash: vises kort når lastEvent.kind === 'smash'
+const smashFlash = computed(() => {
+  const e = props.flipp.lastEvent.value
+  if (!e || e.kind !== 'smash') return null
+  if (Date.now() - e.at > 1500) return null
+  return e
+})
 </script>
 
 <template>
@@ -38,7 +69,6 @@ function onOverlayTap() {
       <div class="flipp-cell flipp-yellow">{{ scoreStr }}</div>
       <div class="flipp-cell flipp-hearts">
         <svg v-for="i in heartCount" :key="`h-${i}`" viewBox="0 0 9 8" class="flipp-heart">
-          <!-- 8-bit heart, 9×8 px -->
           <rect x="1" y="1" width="2" height="1" fill="#ff3b3b"/>
           <rect x="6" y="1" width="2" height="1" fill="#ff3b3b"/>
           <rect x="0" y="2" width="9" height="2" fill="#ff3b3b"/>
@@ -59,23 +89,33 @@ function onOverlayTap() {
       </div>
     </div>
 
+    <!-- Smash-bonus flash -->
+    <div v-if="smashFlash" class="flipp-smash-flash">
+      <div class="flipp-smash-text">SMASH!</div>
+      <div class="flipp-smash-sub">+{{ smashFlash.bonus }}</div>
+    </div>
+
     <!-- Bottom-right: exit-knapp -->
     <button class="flipp-exit" @click="emit('exit')">EXIT</button>
 
-    <!-- Center overlay: GAME OVER / LEVEL CLEAR / TAP TO START -->
+    <!-- Center overlay -->
     <div v-if="overlay"
          class="flipp-overlay"
-         :class="{ 'flipp-tappable': flipp.status.value === 'gameover' }"
+         :class="{ 'flipp-tappable': overlay.tappable || flipp.status.value === 'gameover' }"
          @click="onOverlayTap">
       <div v-if="overlay.text"
            class="flipp-overlay-main"
-           :class="`flipp-${overlay.color}`">
+           :class="[`flipp-${overlay.color}`, overlay.big ? 'flipp-overlay-huge' : '']">
         {{ overlay.text }}
       </div>
       <div v-if="overlay.sub"
            class="flipp-overlay-sub"
            :class="`flipp-${overlay.color}`">
         {{ overlay.sub }}
+      </div>
+      <div v-if="overlay.tapText"
+           class="flipp-overlay-sub flipp-cyan">
+        {{ overlay.tapText }}
       </div>
     </div>
   </div>
@@ -172,6 +212,11 @@ function onOverlayTap() {
   text-shadow: 4px 4px 0 #000;
   animation: flipp-blink 0.6s steps(2, end) infinite;
 }
+.flipp-overlay-huge {
+  font-size: 96px;
+  text-shadow: 6px 6px 0 #000;
+  animation: flipp-pulse 0.4s ease-out;
+}
 
 .flipp-overlay-sub {
   font-size: 10px;
@@ -183,5 +228,37 @@ function onOverlayTap() {
   0% { opacity: 1; }
   50% { opacity: 0.4; }
   100% { opacity: 1; }
+}
+@keyframes flipp-pulse {
+  0%   { transform: scale(0.4); opacity: 0; }
+  50%  { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1.0); opacity: 1; }
+}
+
+/* Smash bonus flash midt på skjermen */
+.flipp-smash-flash {
+  position: absolute;
+  top: 30%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: flipp-smash-rise 1.5s ease-out forwards;
+}
+.flipp-smash-text {
+  font-size: 36px;
+  color: #ffe24d;
+  text-shadow: 4px 4px 0 #b91c1c, 8px 8px 0 #000;
+}
+.flipp-smash-sub {
+  font-size: 16px;
+  color: #ff3b3b;
+  margin-top: 0.4em;
+  text-shadow: 3px 3px 0 #000;
+}
+@keyframes flipp-smash-rise {
+  0%   { transform: translate(-50%, 50%); opacity: 0; }
+  20%  { transform: translate(-50%, -50%); opacity: 1; }
+  80%  { transform: translate(-50%, -80%); opacity: 1; }
+  100% { transform: translate(-50%, -120%); opacity: 0; }
 }
 </style>

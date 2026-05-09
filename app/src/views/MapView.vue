@@ -130,16 +130,10 @@ function onThemeTap(key) {
 
 function startFlippkart() {
   if (!storedDem.value || !meta.value) return
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  const lakePaths = Array.from(svg.querySelectorAll(
-    'path[data-iso="301"], path[data-iso="302"], path[data-iso="303"], path[data-iso="304"], polygon[data-iso="301"], polygon[data-iso="302"], polygon[data-iso="303"], polygon[data-iso="304"]'
-  ))
   flippkart.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
-    lakePaths,
-    highestPoint: storedHighestPoint.value,
+    equidistanceM: meta.value.equidistance ?? 20,
   })
   flippkart.restart()
   // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
@@ -152,8 +146,9 @@ function stopFlippkart() {
   flippkart.deactivate()
 }
 
-function onFlippDrop({ x, y }) {
-  flippkart.dropBall(x, y)
+// Tap på kart eller HUD-overlay → start nedtelling. Auto-drop ved 0.
+function onFlippContinue() {
+  flippkart.startCountdown()
 }
 
 function toggleLayer(key) {
@@ -819,7 +814,7 @@ onMounted(() => {
           <FlippkartLayer
             :flipp="flippkart"
             :view-box="flippViewBox"
-            @drop="onFlippDrop"/>
+            @drop="onFlippContinue"/>
         </div>
       </div>
     </div>
@@ -1092,7 +1087,10 @@ onMounted(() => {
     </Transition>
 
     <!-- Flippkart-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
-    <FlippkartHUD :flipp="flippkart" @restart="flippkart.restart" @exit="stopFlippkart"/>
+    <FlippkartHUD :flipp="flippkart"
+                  @restart="flippkart.restart"
+                  @continue="onFlippContinue"
+                  @exit="stopFlippkart"/>
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
     <FlippkartFlippers :flipp="flippkart" :map-rect="mapRect"/>
