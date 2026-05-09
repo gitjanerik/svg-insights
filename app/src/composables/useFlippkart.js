@@ -36,6 +36,19 @@ export function useFlippkart() {
     t: 0,                       // 0..1 progresjon for animasjon
   })
 
+  // Pong-flippere på alle fire kart-kanter. position er 0..1 langs kanten
+  // (sentrert), length er fraksjon av kant-lengden (default 0.2 = 20%).
+  // Ball som treffer kant utenfor en flipper-coverage drukner.
+  const flippers = reactive({
+    top:    { position: 0.5, length: 0.2 },
+    bottom: { position: 0.5, length: 0.2 },
+    left:   { position: 0.5, length: 0.2 },
+    right:  { position: 0.5, length: 0.2 },
+  })
+
+  const BALL_RADIUS_M = 60       // viewBox-meter (5× v1-størrelse)
+  const BOUNCE_DAMPING = 0.85
+
   // Trail (ringbuffer)
   const TRAIL_LEN = 14
   const trail = reactive(
@@ -54,8 +67,9 @@ export function useFlippkart() {
   let lastTime = 0
 
   function levelParams(n) {
+    // Level 1 base er 3× v1-fart. Hvert level: litt mer fart, litt mindre friksjon.
     return {
-      kGravity: 5 + 0.4 * (n - 1),
+      kGravity: 15 + 1.2 * (n - 1),
       friction: Math.max(0.1, 0.6 - 0.05 * (n - 1)),
     }
   }
@@ -71,10 +85,7 @@ export function useFlippkart() {
     ball.x += ball.vx * dt
     ball.y += ball.vy * dt
 
-    if (ball.x < 0 || ball.x > bounds.width || ball.y < 0 || ball.y > bounds.height) {
-      drown(ball.x, ball.y)
-      return
-    }
+    if (!handleEdges()) return
     if (isOverWater(ball.x, ball.y)) {
       drown(ball.x, ball.y)
       return
@@ -87,6 +98,70 @@ export function useFlippkart() {
         win()
       }
     }
+  }
+
+  /**
+   * Sjekk hver kart-kant: hvis ballen er på vei ut, bounce mot flipper hvis
+   * den dekker, ellers drukn. Returnerer false hvis ballen druknet (caller
+   * skal stoppe physics-stepet).
+   */
+  function handleEdges() {
+    const w = bounds.width, h = bounds.height
+    const r = BALL_RADIUS_M
+
+    // Top-edge
+    if (ball.y - r < 0 && ball.vy < 0) {
+      const f = flippers.top
+      const c = f.position * w
+      const half = f.length * w * 0.5
+      if (ball.x >= c - half && ball.x <= c + half) {
+        ball.y = r
+        ball.vy = Math.abs(ball.vy) * BOUNCE_DAMPING
+      } else {
+        drown(ball.x, 0)
+        return false
+      }
+    }
+    // Bottom-edge
+    if (ball.y + r > h && ball.vy > 0) {
+      const f = flippers.bottom
+      const c = f.position * w
+      const half = f.length * w * 0.5
+      if (ball.x >= c - half && ball.x <= c + half) {
+        ball.y = h - r
+        ball.vy = -Math.abs(ball.vy) * BOUNCE_DAMPING
+      } else {
+        drown(ball.x, h)
+        return false
+      }
+    }
+    // Left-edge
+    if (ball.x - r < 0 && ball.vx < 0) {
+      const f = flippers.left
+      const c = f.position * h
+      const half = f.length * h * 0.5
+      if (ball.y >= c - half && ball.y <= c + half) {
+        ball.x = r
+        ball.vx = Math.abs(ball.vx) * BOUNCE_DAMPING
+      } else {
+        drown(0, ball.y)
+        return false
+      }
+    }
+    // Right-edge
+    if (ball.x + r > w && ball.vx > 0) {
+      const f = flippers.right
+      const c = f.position * h
+      const half = f.length * h * 0.5
+      if (ball.y >= c - half && ball.y <= c + half) {
+        ball.x = w - r
+        ball.vx = -Math.abs(ball.vx) * BOUNCE_DAMPING
+      } else {
+        drown(w, ball.y)
+        return false
+      }
+    }
+    return true
   }
 
   function isOverWater(x, y) {
@@ -188,6 +263,10 @@ export function useFlippkart() {
     status.value = 'idle'
     ball.visible = false
     splash.active = false
+    flippers.top.position = 0.5
+    flippers.bottom.position = 0.5
+    flippers.left.position = 0.5
+    flippers.right.position = 0.5
   }
 
   function init(ctx) {
@@ -217,7 +296,7 @@ export function useFlippkart() {
   return {
     // state
     active, status, level, lives, score,
-    ball, splash, trail,
+    ball, splash, trail, flippers,
     // computed-ish
     levelParams,
     // actions
@@ -225,5 +304,6 @@ export function useFlippkart() {
     dropBall, restart,
     // constants
     WIN_RADIUS_M,
+    BALL_RADIUS_M,
   }
 }
