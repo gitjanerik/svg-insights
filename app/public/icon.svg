@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Slate-200 bakgrunn (full bleed for maskable safe zone) -->
-  <rect width="512" height="512" fill="#e2e8f0"/>
+  <!-- Slate-800 bakgrunn (full bleed for maskable safe zone) -->
+  <rect width="512" height="512" fill="#1e293b"/>
   <!-- Sentrert logo i 80% safe zone -->
   <g transform="translate(96, 96)">
     <!-- Sirkel-ring i gul (subtilt) -->

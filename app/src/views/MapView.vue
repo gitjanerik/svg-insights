@@ -785,7 +785,10 @@ onMounted(() => {
           Nullstill
         </button>
         <template v-if="meta.mapType === 'sea' && meta.sjokartCounts">
-          <br><span class="text-sky-300/70">Sjøkart: omr={{ meta.sjokartCounts.dybdeareal }} kontur={{ meta.sjokartCounts.dybdekontur }} lan={{ meta.sjokartCounts.lanterne }} skj={{ meta.sjokartCounts.grunne }} dyb={{ meta.sjokartCounts.dybdepunkt }}</span>
+          <br><span class="text-sky-300/70">Sjøkart: omr={{ meta.sjokartCounts.dybdeareal }} kontur={{ meta.sjokartCounts.dybdekontur }} skj={{ meta.sjokartCounts.grunne }} dyb={{ meta.sjokartCounts.dybdepunkt }} lan={{ meta.sjokartCounts.lanterne }}</span>
+          <template v-if="(meta.sjokartCounts.slipp ?? 0) + (meta.sjokartCounts.havnestruktur ?? 0) + (meta.sjokartCounts.fareomraade ?? 0) > 0">
+            <br><span class="text-sky-300/70">Padle: slipp={{ meta.sjokartCounts.slipp ?? 0 }} hav={{ meta.sjokartCounts.havnestruktur ?? 0 }} fare={{ meta.sjokartCounts.fareomraade ?? 0 }}</span>
+          </template>
         </template>
         <template v-if="meta.mapType === 'sea' && sjokartFetchErrorSummary">
           <br><span class="text-amber-300/85">⚠ Sjøkart-WFS feilet: {{ sjokartFetchErrorSummary }}</span>

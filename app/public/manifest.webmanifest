@@ -8,7 +8,7 @@
   "scope": "/svg-insights/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#e2e8f0",
+  "background_color": "#1e293b",
   "theme_color": "#0e1116",
   "categories": ["graphics", "design", "productivity"],
   "icons": [

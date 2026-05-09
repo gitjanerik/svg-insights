@@ -247,6 +247,32 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.18 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.1.18</span>
+                <span class="text-emerald-300/85">&mdash; Sjøkart-polish + Fase 2 + Fase 3 + slate-800 PWA-ikon</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Sjøkart-polish (etter zoom-test):</strong>
+                  <ul class="ml-4 mt-1 space-y-0.5 text-white/45">
+                    <li>Dybdekontur 0.13 &rarr; 0.07mm (matcher 101 vanlig høydekurve, langt mindre dominerende ved zoom-inn)</li>
+                    <li>Dybde-tall fontStørrelse 2.0 &rarr; 2.6mm (lesbar ved alle zoom-niv&aring;er)</li>
+                    <li>NY ISOM 214 — skjær/grunne areal-polygon med subtilt lys-blå outline. Tidligere: polygon-skjær fra Sjøkart fikk <code>natural=rock</code> &rarr; rendret som svart 210-blokkmark-pattern (brukerrapport: "store sorte flekker"). Nå: dropper <code>natural=rock</code>-tagging, 214 dedikert til polygon-skjær</li>
+                    <li>Attribusjons-boks viser <code>Padle: slipp=N hav=M fare=K</code>-linje når noen padle-features finnes</li>
+                  </ul>
+                </li>
+                <li><strong>Fase 2 — lanterner via OSM:</strong> <code>man_made=lighthouse</code>, <code>man_made=light</code>, <code>seamark:type=light_major/minor/float/vessel</code> mappes nå til ISOM 533 (lanterne-symbol). Fyller gapet etter <code>app:Lanterne</code>-typenamen som ikke finnes i wfs.dybdedata. Overpass-spørringen utvidet</li>
+                <li><strong>Fase 3 — hovedled / skipsled:</strong> ny ISOM-kode 545. <code>way["seamark:type"="fairway"]</code> rendres som mørk-blå (#1f3a5c) stiplet linje (0.32mm bredde, 2-1mm dash). Kanskje få bbox-er har dette i OSM, men der det er, gir det skipsled-orientering for båtbruk</li>
+                <li><strong>PWA-ikon:</strong> bakgrunn fra slate-200 (#e2e8f0) &rarr; slate-800 (#1e293b). M&oslash;rkere look matcher app-temaet. PNG-er regenerert i alle st&oslash;rrelser</li>
+                <li><strong>Tegnforklaring:</strong> 214, 533 (oppdatert note), 545 lagt til Sjøkart-seksjon</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.17 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
