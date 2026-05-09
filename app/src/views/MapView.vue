@@ -423,6 +423,7 @@ const sjokartFetchErrorSummary = computed(() => {
     'not-json': 'GML/XML-svar',
     'zero-features': 'tom respons',
     'aborted': 'avbrutt',
+    'endpoint-deprecated': 'utdatert endepunkt',
     'unknown': 'ukjent feil',
   }
   return sorted.slice(0, 2).map(([k, n]) => `${labels[k] ?? k} (${n})`).join(', ')

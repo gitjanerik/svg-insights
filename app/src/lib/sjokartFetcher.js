@@ -23,10 +23,13 @@
 //
 // Vi prøver primær først, faller tilbake til alternativ ved feil.
 
+// v7.1.8: brukerverifisering 9. mai 2026 viste at sjokart_dybdedata-
+// endepunktet er DØDT (returnerer ServiceException "ukjent applikasjon").
+// wfs.dybdedata er live og bør prøves først. De andre endepunktene
+// beholdes som fallback inntil verifisert.
 const SJOKART_ENDPOINTS = [
-  'https://wfs.geonorge.no/skwms1/wfs.sjokart_dybdedata',
-  'https://wfs.geonorge.no/skwms1/wfs.dybdedata2',
   'https://wfs.geonorge.no/skwms1/wfs.dybdedata',
+  'https://wfs.geonorge.no/skwms1/wfs.dybdedata2',
   'https://wfs.geonorge.no/skwms1/wfs.sjokartraster_navlys',
 ]
 
@@ -126,6 +129,7 @@ function classifyFetchError(e) {
   const msg = (e?.message || '').toLowerCase()
   if (msg.includes('failed to fetch') || msg.includes('networkerror')) return 'network-or-cors'
   if (msg.includes('aborted')) return 'aborted'
+  if (msg.includes('endpoint utdatert')) return 'endpoint-deprecated'
   if (msg.includes('http ')) return 'http-error'
   if (msg.includes('ikke-json')) return 'not-json'
   return 'unknown'
@@ -252,9 +256,13 @@ async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
   if (text.trim().startsWith('<') && /gml|xml/i.test(outputFormat)) {
     return parseGmlFeatures(text, typeName)
   }
-  // ServiceException eller annet uventet
+  // ServiceException — server svarte med XML-feilmelding. Hvis det er
+  // "UKJENT APPLIKASJON" er hele endpointet dødt; ingen vits å prøve
+  // andre format-varianter. Ellers (annen ServiceException) prøv neste.
   if (text.includes('ServiceException')) {
-    // Gi opp denne format-varianten stille, prøv neste
+    if (/UKJENT APPLIKASJON|kan ikke rutes/i.test(text)) {
+      throw new Error(`Endpoint utdatert: ${endpoint?.split('/').pop() ?? '?'} returnerer ServiceException "ukjent applikasjon"`)
+    }
     return null
   }
   throw new Error(`Ikke-JSON respons for ${typeName}`)
