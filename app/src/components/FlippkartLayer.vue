@@ -95,48 +95,64 @@ function onClick() {
       </filter>
     </defs>
 
-    <!-- Bumpers: hus-formede stationary-kollisjons-objekter. Rendres FØR
-         baller så ball-circles tegnes oppå. Hver bumper viser hits-counter
-         som lit/unlit firkanter på taket (4 hits = 4 firkanter, lyser grønn). -->
+    <!-- Bumpers: kart-annoterings-symboler (knaus / stein / brønn / bro)
+         med kremgul halo + lilla ring (matcher annotation-styling i appen).
+         Hits-counter som LED-rad over symbolet (4 firkanter, lyser grønn). -->
     <g v-for="(bp, i) in flipp.bumpers" :key="`bumper-${i}`" pointer-events="none">
       <g :transform="`translate(${bp.x} ${bp.y})`">
-        <!-- Skygge -->
-        <ellipse cx="3" :cy="ballRadius * 0.95"
-                 :rx="ballRadius * 0.85" ry="6"
-                 fill="rgba(0,0,0,0.4)"/>
-        <!-- Vegg-flate -->
-        <rect :x="-ballRadius * 0.85" :y="-ballRadius * 0.2"
-              :width="ballRadius * 1.7" :height="ballRadius * 1.1"
-              fill="#8b4513"
-              stroke="#fff"
-              stroke-width="3"/>
-        <!-- Tak (triangel) -->
-        <polygon
-          :points="`${-ballRadius * 1.0},${-ballRadius * 0.2} 0,${-ballRadius * 0.95} ${ballRadius * 1.0},${-ballRadius * 0.2}`"
-          fill="#dc2626"
-          stroke="#fff"
-          stroke-width="3"/>
-        <!-- Dør -->
-        <rect :x="-ballRadius * 0.18" :y="ballRadius * 0.45"
-              :width="ballRadius * 0.36" :height="ballRadius * 0.45"
-              fill="#451a03"/>
-        <!-- Vindu -->
-        <rect :x="ballRadius * 0.25" :y="ballRadius * 0.1"
-              :width="ballRadius * 0.32" :height="ballRadius * 0.32"
-              fill="#fbbf24"
-              stroke="#7c2d12"
-              stroke-width="2"/>
-        <!-- Hits-counter på taket: 4 firkanter, lyser opp etter hvert som
-             treff samles. Når alle 4 lyser → multiball. -->
-        <g :transform="`translate(${-ballRadius * 0.6}, ${-ballRadius * 0.55})`">
+        <!-- Halo: kremgul fyll, lilla 2px ring (matcher annoterings-stil) -->
+        <circle cx="0" cy="0"
+                :r="ballRadius * 0.95"
+                fill="#fffef0"
+                fill-opacity="0.92"
+                stroke="#7a3aa3"
+                :stroke-width="ballRadius * 0.04"/>
+
+        <!-- Knaus: brun halvmåne -->
+        <path v-if="bp.kind === 'knaus'"
+              :d="`M${-ballRadius*0.6} ${ballRadius*0.4} A${ballRadius*0.6} ${ballRadius*0.4} 0 0 0 ${ballRadius*0.6} ${ballRadius*0.4}`"
+              stroke="#7f4f24"
+              :stroke-width="ballRadius * 0.10"
+              stroke-linecap="round"
+              fill="none"/>
+
+        <!-- Stein: solid svart trekant -->
+        <polygon v-else-if="bp.kind === 'stein'"
+                 :points="`0,${-ballRadius*0.6} ${ballRadius*0.6},${ballRadius*0.5} ${-ballRadius*0.6},${ballRadius*0.5}`"
+                 fill="#000"/>
+
+        <!-- Brønn: cyan sirkel med kryss -->
+        <g v-else-if="bp.kind === 'brønn'">
+          <circle cx="0" cy="0" :r="ballRadius * 0.6"
+                  fill="none"
+                  stroke="#0099cc"
+                  :stroke-width="ballRadius * 0.10"/>
+          <line :x1="-ballRadius*0.6" y1="0" :x2="ballRadius*0.6" y2="0"
+                stroke="#0099cc" :stroke-width="ballRadius * 0.10"/>
+          <line x1="0" :y1="-ballRadius*0.6" x2="0" :y2="ballRadius*0.6"
+                stroke="#0099cc" :stroke-width="ballRadius * 0.10"/>
+        </g>
+
+        <!-- Bro / klopp: to parallelle svarte streker -->
+        <g v-else-if="bp.kind === 'bro'">
+          <line :x1="-ballRadius*0.6" :y1="-ballRadius*0.3"
+                :x2="ballRadius*0.6"  :y2="-ballRadius*0.3"
+                stroke="#000" :stroke-width="ballRadius * 0.12"/>
+          <line :x1="-ballRadius*0.6" :y1="ballRadius*0.3"
+                :x2="ballRadius*0.6"  :y2="ballRadius*0.3"
+                stroke="#000" :stroke-width="ballRadius * 0.12"/>
+        </g>
+
+        <!-- Hits-counter: 4 LED-firkanter over halo (matcher annotation-stil)  -->
+        <g :transform="`translate(${-ballRadius * 0.55}, ${-ballRadius * 1.25})`">
           <rect v-for="n in flipp.BUMPER_HITS_TO_MULTIBALL"
                 :key="`hit-${n}`"
-                :x="(n - 1) * ballRadius * 0.32"
+                :x="(n - 1) * ballRadius * 0.30"
                 y="0"
                 :width="ballRadius * 0.22"
-                :height="ballRadius * 0.18"
-                :fill="n <= bp.hits ? '#22c55e' : 'rgba(0,0,0,0.4)'"
-                stroke="#fff"
+                :height="ballRadius * 0.16"
+                :fill="n <= bp.hits ? '#22c55e' : 'rgba(0,0,0,0.35)'"
+                stroke="#fffef0"
                 stroke-width="1.5"/>
         </g>
       </g>
