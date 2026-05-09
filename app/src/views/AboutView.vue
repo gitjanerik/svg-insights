@@ -247,6 +247,23 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.7 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.7</span>
+                <span class="text-white/50">&mdash; Bg-backcompat: gamle Sj&oslash;kart f&aring;r ogs&aring; bl&aring; bakgrunn</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerrapport:</strong> bg ble kremgul i Sj&oslash;kart-modus etter v7.1.6. Tegnforklaringen i attribusjons-boks viste "🌊 Sjøkart" men bg fulgte ikke etter</li>
+                <li><strong>Rotårsak:</strong> applyTheme sjekket bare <code>meta.useSeaBg</code> (lagt til i v7.1.3). Kart laget f&oslash;r v7.1.3 har ikke det feltet i meta — så <code>--bg</code> ble aldri satt</li>
+                <li><strong>Fix:</strong> applyTheme sjekker n&aring; b&aring;de <code>meta.useSeaBg</code> OG <code>meta.mapType === 'sea'</code>. Eldre kart med kun mapType-felt får fortsatt bl&aring; bg</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.6 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
