@@ -39,8 +39,14 @@
 export function buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM) {
   const W = widthM
   const H = heightM
-  const eps = 5.0      // 5 meter for å matche endepunkter mellom ways
-  const edgeEps = 5.0  // 5m fra bbox-kant regnes som "på kanten"
+  // v6.21.1: bumped fra 5m → 20m. OSM coastline-noder kan ligge 10-30m
+  // fra hverandre, og ulike ways i samme kystkjede har ofte endepunkter
+  // som ikke er bit-eksakt like (forskjellige bidragsytere har plassert
+  // dem litt forskjellig). 5m var for stramt og kunne hindre kjeding av
+  // konsekutive ways → resultat: 0 lukkede land-polygoner i bbox-er som
+  // åpenbart har sammenhengende kystlinje (Nesøya, Asker rapportert).
+  const eps = 20.0      // 20m for å matche endepunkter mellom ways
+  const edgeEps = 20.0  // 20m fra bbox-kant regnes som "på kanten"
   const bboxArea = W * H
 
   // Projiser ways
