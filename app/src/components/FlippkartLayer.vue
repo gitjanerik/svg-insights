@@ -61,16 +61,11 @@ const splashTiles = computed(() => {
   return tiles
 })
 
-function onClick(e) {
+function onClick() {
+  // v7.2.5: emit-en starter nedtelling. Drop-posisjon er randomisert i
+  // composable, ikke fra tap-koord lenger.
   if (props.flipp.status.value !== 'idle') return
-  const svg = e.currentTarget
-  const pt = svg.createSVGPoint()
-  pt.x = e.clientX
-  pt.y = e.clientY
-  const ctm = svg.getScreenCTM()
-  if (!ctm) return
-  const local = pt.matrixTransform(ctm.inverse())
-  emit('drop', { x: local.x, y: local.y })
+  emit('drop')
 }
 </script>
 
