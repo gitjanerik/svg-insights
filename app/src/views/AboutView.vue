@@ -247,6 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.13 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.13</span>
+                <span class="text-emerald-200/85">&mdash; Elegant dybdepunkt-filter (kajakk-egnet, ikke 50fot yacht)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Sjøkart endelig leverer data</strong> 🎉 — v7.1.12 URN-CRS-fixen ga 1754 dybdeareal, 1882 konturer, 178 skjær, 5000 dybdepunkt for Oslofjord</li>
+                <li><strong>Brukerrapport:</strong> &laquo;Det er litt voldsomt mange dybdeangivelser. Kan det gjøres mer elegant? Jeg disk jo ikke kjøre 50fot yacht&raquo; — 5000 dybdetall hvert 5. meter er fint for skipper, kaos for kajakk</li>
+                <li><strong>Fix:</strong> grid-basert filtrering i mapBuilder. 400m × 400m celler i SVG-koord. Per celle: behold dybdepunktet med MIN dybde (grunneste = mest sikkerhetsrelevant). For 5km bbox: max ~150 punkter i stedet for 5000</li>
+                <li><strong>Bonus:</strong> &laquo;grunneste vinner&raquo;-strategien gir padleren det mest kritiske automatisk — dybdetall ved skj&aelig;r, undervanns-grunne osv. blir bevart, mens ensartet dyp-vann blir &laquo;rensket&raquo;</li>
+                <li><code>sjokartCounts.dybdepunkt</code> i UI viser n&aring; antall faktisk vist (ikke mottatt). Console logger b&aring;de tall</li>
+                <li>Skj&aelig;r og dybdekonturer ikke filtrert — alle viktige (skj&aelig;r er fysiske hindringer; konturer overlapper ikke)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.12 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
