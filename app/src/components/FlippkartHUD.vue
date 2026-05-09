@@ -59,6 +59,14 @@ const smashFlash = computed(() => {
   if (Date.now() - e.at > 1500) return null
   return e
 })
+
+// Multiball-flash: vises ~2 sek når explosion trigger
+const multiballFlash = computed(() => {
+  const e = props.flipp.lastEvent.value
+  if (!e || e.kind !== 'multiball') return null
+  if (Date.now() - e.at > 2000) return null
+  return e
+})
 </script>
 
 <template>
@@ -93,6 +101,11 @@ const smashFlash = computed(() => {
     <div v-if="smashFlash" class="flipp-smash-flash">
       <div class="flipp-smash-text">SMASH!</div>
       <div class="flipp-smash-sub">+{{ smashFlash.bonus }}</div>
+    </div>
+
+    <!-- Multiball-flash når kula eksploderer i 3 -->
+    <div v-if="multiballFlash" class="flipp-multiball-flash">
+      <div class="flipp-multiball-text">MULTIBALL!</div>
     </div>
 
     <!-- Bottom-right: exit-knapp -->
@@ -260,5 +273,39 @@ const smashFlash = computed(() => {
   20%  { transform: translate(-50%, -50%); opacity: 1; }
   80%  { transform: translate(-50%, -80%); opacity: 1; }
   100% { transform: translate(-50%, -120%); opacity: 0; }
+}
+
+/* Multiball-flash midt på skjermen — eksplosivt 8-bit-stil tekst */
+.flipp-multiball-flash {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: flipp-multiball-shake 2s ease-out forwards;
+}
+.flipp-multiball-text {
+  font-size: 56px;
+  color: #fde047;
+  text-shadow:
+    4px 4px 0 #fb923c,
+    8px 8px 0 #ef4444,
+    12px 12px 0 #000;
+  letter-spacing: 0.08em;
+  animation: flipp-multiball-pulse 0.25s steps(2, end) infinite;
+}
+@keyframes flipp-multiball-shake {
+  0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+  15%  { transform: translate(-50%, -50%) scale(1.4); opacity: 1; }
+  20%  { transform: translate(-52%, -50%) scale(1.2); opacity: 1; }
+  25%  { transform: translate(-48%, -50%) scale(1.2); opacity: 1; }
+  30%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.2); opacity: 0; }
+}
+@keyframes flipp-multiball-pulse {
+  0%   { filter: brightness(1.0); }
+  50%  { filter: brightness(1.4); }
+  100% { filter: brightness(1.0); }
 }
 </style>

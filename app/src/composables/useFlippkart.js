@@ -32,13 +32,18 @@ export function useFlippkart() {
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
 
-  const STILLNESS_DIST_M = 30        // mindre bevegelse enn dette i en periode = stille
+  // v7.2.8: bytte fra posisjon-basert til hastighet-basert stillness-
+  // deteksjon. Posisjon-deteksjon var upålitelig — ball som drev sakte
+  // linjært fikk stillTime resatt før den nådde explode-terskel. Velocity-
+  // basert er mer pålitelig for "ball går tom for energi".
+  const STILLNESS_SPEED_M_S = 80     // under denne fart = "stille" (akkumulerer)
   const STILLNESS_WARNING_S = 1.5    // når warning starter
-  const STILLNESS_EXPLODE_S = 4.0    // når eksplosjon trigger (primary ball)
-  const MULTIBALL_STUCK_S = 8.0      // når multi-ball balls bare drukner stille
+  const STILLNESS_EXPLODE_S = 3.5    // når eksplosjon trigger (primary ball)
+  const MULTIBALL_STUCK_S = 6.0      // når multi-ball balls bare drukner stille
   const MULTIBALL_COUNT = 3
-  const MULTIBALL_SPEED = 1200       // m/s spawn-fart — høy nok til å unngå
-                                     // umiddelbar stillness selv på flate kart
+  // 900 m/s spawn-fart: rask nok til å gi merkbar bevegelse, men ikke så rask
+  // at baller forsvinner ut av playfield i løpet av 1 sekund.
+  const MULTIBALL_SPEED = 900
 
   // balls = aktive baller. Hver ball: {x,y,vx,vy,visible, stillX, stillY,
   //   stillTime, chargeT, nextWarnAt, warnIndex, canExplode}
@@ -121,7 +126,6 @@ export function useFlippkart() {
     const b = {
       x, y, vx, vy,
       visible: true,
-      stillX: x, stillY: y,
       stillTime: 0,
       chargeT: 0,
       warnIndex: 0,
@@ -176,10 +180,11 @@ export function useFlippkart() {
   }
 
   function checkStillness(b, dt) {
-    const moved = Math.hypot(b.x - b.stillX, b.y - b.stillY)
-    if (moved > STILLNESS_DIST_M) {
-      b.stillX = b.x
-      b.stillY = b.y
+    // Velocity-basert: ball som har fart > terskel resetter stillness-state.
+    // Ball som har lav fart akkumulerer stillTime — uavhengig av om den
+    // driver linjært eller bare står helt i ro.
+    const speed = Math.hypot(b.vx, b.vy)
+    if (speed > STILLNESS_SPEED_M_S) {
       b.stillTime = 0
       b.chargeT = 0
       b.warnIndex = 0
@@ -224,6 +229,9 @@ export function useFlippkart() {
     splash.kind = 'explode'
     playExplosion()
     setTimeout(() => playMultiSpawn(), 250)
+
+    // Trigg HUD-flash for "MULTIBALL!"
+    lastEvent.value = { kind: 'multiball', at: Date.now() }
 
     // Marker som ekspodert (blir splicet ut neste loop-iter)
     b.exploded = true
@@ -346,9 +354,7 @@ export function useFlippkart() {
     score.value += 100 * level.value
     playKick(kickLevel)
 
-    // Reset stillness på treff (uansett om det er multi-ball)
-    b.stillX = b.x
-    b.stillY = b.y
+    // Reset stillness-state på treff
     b.stillTime = 0
     b.chargeT = 0
     b.warnIndex = 0
