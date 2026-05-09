@@ -247,6 +247,23 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.21.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.21.2</span>
+                <span class="text-white/50">&mdash; Synlig kyst-diagnostikk i kart-UI</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Diagnostikk uten dev-konsoll:</strong> attribusjons-boksen nederst-h&oslash;yre i MapView viser n&aring; kyst-state n&aring;r relevant: <code>Kyst: ways=N ringer=M fb=&check;/&cross; mode=&check;/&cross;</code>. <code>ways</code> = antall OSM <code>natural=coastline</code>-ways i bbox, <code>ringer</code> = land-polygoner rekonstruert, <code>fb</code> = useCoastlineFallback (true hvis hasCoastline), <code>mode</code> = aktiv coastline-modus (bl&aring; bg)</li>
+                <li><strong>Hjelper diagnose:</strong> hvis <code>ways=0</code> &rarr; OSM returnerte ingen kystlinjer for bboxen (data-mangel eller annet OSM-tagging-skjema), og fb/mode m&aring; v&aelig;re &cross;. Hvis <code>ways&gt;0</code> men <code>mode=&cross;</code> &rarr; coastline-rekonstruksjon kastet exception. Hvis <code>ways&gt;0</code> og <code>mode=&check;</code> &rarr; bg skal v&aelig;re bl&aring; uavhengig av <code>ringer</code>-tall</li>
+                <li><strong>Eksponert i meta:</strong> <code>coastlineWaysCount</code> og <code>useCoastlineFallback</code> lagres i kart-meta og vises i UI etter regenerering. Eldre lagrede kart har ikke disse feltene og viser ingen kyst-linje</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.21.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />

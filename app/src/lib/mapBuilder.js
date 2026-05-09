@@ -1044,6 +1044,11 @@ export function buildSvg(elements, bbox, options = {}) {
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
     coastlineMode: coastlineMode || null,
     coastlineLandRings: coastlineMode ? coastlineLandRings.length : null,
+    // v6.21.2: diagnostikk synlig i kart-UI for å feilsøke uten dev-konsoll.
+    // Skiller faktisk antall coastline-ways fra ringe-output, slik at vi ser
+    // om problemet er manglende OSM-data eller mislykket rekonstruksjon.
+    coastlineWaysCount: coastlineWays.length,
+    useCoastlineFallback: !!useCoastlineFallback,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
