@@ -1026,12 +1026,40 @@ export function buildSvg(elements, bbox, options = {}) {
   const stakerCardSvg = renderStake(stakerCard, 'stake-cardinal')
   const stakerSpecSvg = renderStake(stakerSpec, 'stake-special')
 
-  const dybdepunktSvg = dybdepunkter.map(el => {
+  // v7.1.13: grid-filtrering av dybdepunkter for elegant kart-look.
+  // Sjøkart-WFS leverer ofte 5000+ soundings (capped på vår COUNT). For
+  // padle-/båt-kart trenger man ikke et tall hvert 5. meter — det blir
+  // visuell støy. Strategi: del bbox i 400m × 400m celler i SVG-koord,
+  // behold KUN punktet med minst dybde per celle (grunneste = viktigst
+  // for sikkerhet). Resultat for 5km bbox: max ~150 punkter i stedet
+  // for 5000. Skipperen mister ingen kritisk info; padleren får ren
+  // kart-flate.
+  const DYBDE_GRID_M = 400
+  const dybdeGrid = new Map()  // "col,row" → { el, p, dybde }
+  for (const el of dybdepunkter) {
+    const dybde = Number(el.tags?.dybde)
+    if (!Number.isFinite(dybde)) continue
     const p = project(el.lat, el.lon)
+    const col = Math.floor(p.x / DYBDE_GRID_M)
+    const row = Math.floor(p.y / DYBDE_GRID_M)
+    const key = `${col},${row}`
+    const existing = dybdeGrid.get(key)
+    if (!existing || dybde < existing.dybde) {
+      dybdeGrid.set(key, { el, p, dybde })
+    }
+  }
+  const dybdepunktFiltered = Array.from(dybdeGrid.values())
+  if (dybdepunkter.length > 0) {
+    console.log(`[Sjøkart] Dybdepunkt: ${dybdepunkter.length} → ${dybdepunktFiltered.length} etter grid-filter (${DYBDE_GRID_M}m, grunneste vinner)`)
+  }
+  // Overstyr sjokartCounts.dybdepunkt så UI reflekterer antall faktisk
+  // vist på kartet (etter grid-filter), ikke antall mottatt fra WFS.
+  sjokartCounts.dybdepunkt = dybdepunktFiltered.length
+
+  const dybdepunktSvg = dybdepunktFiltered.map(({ p, el }) => {
     const dybde = el.tags?.dybde
-    if (!dybde) return ''
     return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" text-anchor="middle" data-label="dybde-tall">${xmlEscape(dybde)}</text>`
-  }).filter(Boolean).join('\n')
+  }).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
   // ekte DEM, sampler vi høyde på begge sider av spine for å velge
