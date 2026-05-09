@@ -247,6 +247,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.8 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.8</span>
+                <span class="text-white/50">&mdash; Sjøkart-endepunkt: fjernet d&oslash;d URL, eksplisitt deteksjon av "UKJENT APPLIKASJON"</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerverifisering 9. mai 2026:</strong> URL <code>wfs.sjokart_dybdedata</code> returnerer ServiceException "*** UKJENT APPLIKASJON *** Applikasjon er ukjent og kan ikke rutes videre". Endpointet er DØDT — applikasjonen finnes ikke lenger på Geonorge-serveren</li>
+                <li><strong>Forklarer alle tidligere problemer:</strong> v7.1.5 logget "GML/XML-svar (57)" — det var faktisk denne ServiceException-XML-en, ikke ekte GML. v7.1.6 GML-parser tror det er gyldig GML, finner ikke <code>wfs:member</code>, returnerer 0 features</li>
+                <li><strong>Endringer:</strong> fjernet <code>wfs.sjokart_dybdedata</code>; <code>wfs.dybdedata</code> nå første endepunkt (brukeren bekreftet at den eksisterer ved &aring; gi GetCapabilities-URL)</li>
+                <li><strong>Eksplisitt deteksjon:</strong> hvis ServiceException-respons inneholder "UKJENT APPLIKASJON" / "kan ikke rutes", kategoriseres som <code>endpoint-deprecated</code> og avbryter alle format-attempts for endepunktet (ingen vits å pr&oslash;ve flere). Synlig i MapView som "utdatert endepunkt"</li>
+                <li><strong>Fortsatt &aring;pent:</strong> kjenner ikke status p&aring; <code>wfs.dybdedata2</code> og <code>wfs.sjokartraster_navlys</code>. Kan v&aelig;re i live, kan v&aelig;re d&oslash;de. Brukerens GetCapabilities-respons trengs for &aring; verifisere</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.7 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
