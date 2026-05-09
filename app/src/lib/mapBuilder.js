@@ -1034,6 +1034,13 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <path d="${linePath}" />${teeth}`
   }).join('\n')
 
+  // v7.1.3: derived state for sjø-bakgrunn. Trengs i både meta (for at
+  // MapView.applyTheme skal kunne re-applysere --bg) og senere i SVG-
+  // komposisjon (bgFill, coastlineLandSvg). Beregnes før meta så vi kan
+  // referere det.
+  const isCoastalRender = coastlineLandRings.length > 0
+  const useSeaBg = mapType === 'sea' || isCoastalRender
+
   const meta = {
     bbox,
     utmBbox: { minE, minN, maxE, maxN },
@@ -1048,10 +1055,12 @@ export function buildSvg(elements, bbox, options = {}) {
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
-    // v7.1.0: mapType er den autoritative kart-modus-indikatoren.
-    // 'land' = kremgul bg + alle features. 'sea' = sjø-blå bg +
-    // coastline-land-overlay. Brukeren velger eksplisitt i picker.
+    // v7.1.0: mapType er den autoritative kart-modus-indikatoren
+    // (brukervalg). v7.1.3: useSeaBg er derived state — true hvis bg
+    // skal være blå (kyst-bbox eller eksplisitt sjø-modus). Brukes av
+    // MapView.applyTheme for å re-applysere --bg etter theme-reset.
     mapType,
+    useSeaBg,
     coastlineLandRings: coastlineLandRings.length || null,
     coastlineWaysCount: coastlineWays.length,
     useCoastlineFallback: !!useCoastlineFallback,
@@ -1148,18 +1157,21 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
-  // v7.1.0: bg-farge bestemmes av mapType. SEA-mode legger sjø-blå som
-  // base, og maler kremgul land-overlay (coastline-rekonstruerte ringer)
-  // OPPÅ blå bg. LAND-mode er kremgul-bg som default (alle features
-  // tegnes oppå som vanlig).
+  // v7.1.3: kyst-bbox skal alltid ha blå sjø — også i Land-kart-modus.
+  // Tidligere var bg-flippet bundet til mapType=sea; men brukerrapport
+  // viser at LAND-kart i kystområde også trenger blå sjø for å se
+  // korrekt ut (kremgul-flekker rundt øyer er bare forvirring). mapType
+  // bestemmer FOKUS (sjøkart-detaljer eller ikke), ikke bg-fargen.
   const SEA_BLUE = '#9ec9de'  // matcher ISOM 307 dybdeareal-farge
   const landFill = isomCatalog.background.color
-  const bgFill = mapType === 'sea' ? SEA_BLUE : landFill
+  // useSeaBg/isCoastalRender beregnet høyere oppe (før meta-blokken).
+  const bgFill = useSeaBg ? SEA_BLUE : landFill
 
-  // SEA-mode: render coastline-rekonstruerte land-ringer som kremgule
-  // polygoner over den blå bakgrunnen. Vegetasjon, bygninger, konturer
-  // osv. tegnes som vanlig på land-områdene videre i pipelinen.
-  const coastlineLandSvg = mapType === 'sea' && coastlineLandRings.length
+  // Render coastline-rekonstruerte land-ringer som kremgule polygoner
+  // over blå bg når bg er blå. I begge modi (land/sea), så lenge vi
+  // har kystdata. For pure innland skipper vi (kremgul-på-kremgul =
+  // unødvendig).
+  const coastlineLandSvg = useSeaBg && coastlineLandRings.length
     ? `  <g id="kyst-land" data-layer="land" data-iso="001">\n` +
       coastlineLandRings.map(ring => {
         if (ring.length < 3) return ''
