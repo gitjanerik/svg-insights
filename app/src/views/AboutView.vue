@@ -247,6 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.9 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.1.9</span>
+                <span class="text-emerald-300/85">&mdash; Sjøkart endelig korrekt: Dybdekurve (ikke Dybdekontur), GML-først, robust parser</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong class="text-white/85">Brukeren delte GetCapabilities-XML — første ekte data!</strong> Tre kritiske oppdagelser:</li>
+                <li><strong>Riktig featuretype-navn er &laquo;Dybdekurve&raquo; (ikke Dybdekontur).</strong> Vi har spurt etter feil typename i ALLE versjoner siden v6.10.x. Korrigert: <code>app:Dybdekurve</code></li>
+                <li><strong>Server st&oslash;tter KUN GML, ingen JSON.</strong> Verifisert av <code>&lt;ows:Parameter name="outputFormat"&gt;</code>: <code>text/xml; subtype=gml/3.2.1</code> og <code>application/gml+xml; version=3.2</code>. Hele JSON-format-jakten min har v&aelig;rt bortkastet — det er bare GML her. <code>OUTPUT_FORMATS</code>-listen har n&aring; GML f&oslash;rst</li>
+                <li><strong>Robust namespace-aware GML-parser:</strong> bruker <code>getElementsByTagNameNS(GML_NS, ...)</code> i stedet for prefiks-baserte lookups. H&aring;ndterer Point, LineString, Polygon (med interior-hull), MultiSurface, MultiCurve. Fungerer uavhengig av prefiks-konvensjon</li>
+                <li><strong>Lanterner / fyrlys er IKKE i wfs.dybdedata.</strong> M&aring; hentes fra navlys-tjenesten (urverifisert URL). Kategorien beholdes som tom inntil verifisert</li>
+                <li><strong>Bonus oppdagelser fra featuretype-listen:</strong> <code>app:Skjær</code>, <code>app:Slipp</code> (kajakk-launching!), <code>app:KaiBrygge</code>, <code>app:Pir</code>, <code>app:Molo</code>, <code>app:Fareområde</code> — alle perfekte for fremtidig padle-kart-features</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.8 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />

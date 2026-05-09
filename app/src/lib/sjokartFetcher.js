@@ -33,49 +33,30 @@ const SJOKART_ENDPOINTS = [
   'https://wfs.geonorge.no/skwms1/wfs.sjokartraster_navlys',
 ]
 
-// Kandidat-typenames per kategori. WFS-tjenesten har vekslende prefiks
-// (app:, dybdedata:, ingen). Vi prøver alle varianter og samler resultater.
+// v7.1.9: TYPENAME_CANDIDATES korrigert basert på faktisk
+// GetCapabilities-respons fra wfs.dybdedata (verifisert 9. mai 2026).
+// SOSI-spec "Dybdedata 20201001" bruker app:-prefiks. Den største feilen
+// var at vi spurte etter "Dybdekontur" — riktig navn er "Dybdekurve".
+// Lanterner finnes IKKE i wfs.dybdedata; må hentes fra navlys-tjenesten
+// (wfs.sjokartraster_navlys eller nyere). Beholdes som tom kategori
+// inntil verifisert URL.
 const TYPENAME_CANDIDATES = {
   // Kystkontur — linjen mellom land og sjø ved middel-vannstand.
-  // Brukes til å verifisere at vi har sjø-data i bbox.
-  kystkontur: [
-    'app:Kystkontur',
-    'dybdedata:Kystkontur',
-    'app:KystkonturL',
-  ],
-  // Dybdeareal — polygoner mellom dybdekonturene. Det er disse vi
-  // hovedsakelig vil ha; én polygon dekker "hele sjøen 0-2 m dyp" osv,
-  // og union av dem gir total sjø-utstrekning.
-  dybdeareal: [
-    'app:Dybdeareal',
-    'dybdedata:Dybdeareal',
-    'app:DybdearealF',
-  ],
-  // Dybdekontur — linjer for hver dybde-isobath.
-  dybdekontur: [
-    'app:Dybdekontur',
-    'dybdedata:Dybdekontur',
-    'app:DybdekonturL',
-  ],
-  // Skjær / grunner / stein over vann
-  grunne: [
-    'app:Grunne',
-    'app:Skjer',
-    'app:UndervannSkjer',
-    'dybdedata:Grunne',
-  ],
-  // Lanterner / fyr / nav-merker
-  lanterne: [
-    'app:Lanterne',
-    'app:Lykt',
-    'app:Fyr',
-    'dybdedata:Lanterne',
-  ],
-  // Soundings — punkter med dybde-tall
-  dybdepunkt: [
-    'app:Dybdepunkt',
-    'dybdedata:Dybdepunkt',
-  ],
+  kystkontur: ['app:Kystkontur'],
+  // Dybdeareal — polygoner mellom dybdekonturene. Hver polygon dekker
+  // "hele sjøen 0-2 m dyp" osv; union gir total sjø-utstrekning.
+  dybdeareal: ['app:Dybdeareal'],
+  // Dybdekontur — linjer for hver dybde-isobath. SERVER-NAVN: "Dybdekurve".
+  // Vår interne kategori-navn beholdes som "dybdekontur" så
+  // sjokartToElements og mapBuilder ikke trenger å endres.
+  dybdekontur: ['app:Dybdekurve'],
+  // Skjær / grunner / stein over/under vann.
+  grunne: ['app:Grunne', 'app:Skjær'],
+  // Lanterner — IKKE i wfs.dybdedata (verifisert via GetCapabilities).
+  // Beholdes for fremtidig integrasjon med navlys-tjeneste.
+  lanterne: ['app:Lanterne'],
+  // Soundings — punkter med dybde-tall.
+  dybdepunkt: ['app:Dybdepunkt'],
 }
 
 /**
@@ -178,23 +159,21 @@ async function fetchFirstWorkingTypename(endpoint, candidates, bbox, opts, fetch
   return []
 }
 
-// v7.1.6: Geonorge WFS-endepunkter er inkonsistente i hvilken
-// OUTPUTFORMAT-streng de aksepterer. Brukerrapport viser at v7.1.5
-// loggget "GML/XML-svar (57)" — dvs. serveren svarer, men returnerer
-// GML i stedet for JSON. Vi prøver derfor flere kandidat-strenger
-// per typename før vi gir opp og evt. faller tilbake på GML.
+// v7.1.9: GetCapabilities (9. mai 2026) bekreftet at wfs.dybdedata KUN
+// støtter GML — ingen JSON. Setter GML først; JSON-varianter beholdes
+// som fallback for andre endepunkter (wfs.dybdedata2 osv.) som kanskje
+// har andre format-policies.
 const OUTPUT_FORMATS = [
+  // GML 3.2.1 — verifisert støtte for wfs.dybdedata
+  'text/xml; subtype=gml/3.2.1',
+  'application/gml+xml; version=3.2',
+  // JSON-fallback for andre endepunkter
   'application/json',
   'application/geo+json',
   'json',
   'JSON',
   'text/json',
   'geojson',
-  // Siste-fallback: GML — vi parser den minimalt om JSON ikke virker.
-  // GML 3.2.1 er standard for WFS 2.0.0, ikke spesifiser version her;
-  // serveren velger sin default.
-  'text/xml; subtype=gml/3.2.1',
-  'application/gml+xml; version=3.2',
   'GML2',
 ]
 
@@ -277,6 +256,15 @@ async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
  * @param {string} typeName  for diagnose-logging
  * @returns {Array<{ properties: object, geometry: object }>}
  */
+// GML/WFS namespaces. Geonorge bruker GML 3.2.1.
+const WFS_NS = 'http://www.opengis.net/wfs/2.0'
+const GML_NS = 'http://www.opengis.net/gml/3.2'
+// SOSI/Dybdedata-feature namespace. Verifisert fra GetCapabilities:
+// xmlns:app="http://skjema.geonorge.no/SOSI/produktspesifikasjon/Dybdedata/20201001"
+const APP_NS_PREFIX = 'http://skjema.geonorge.no/SOSI/produktspesifikasjon/'
+
+const GEOMETRY_TYPES = ['Point', 'LineString', 'Polygon', 'MultiSurface', 'MultiCurve']
+
 function parseGmlFeatures(xml, typeName) {
   if (typeof DOMParser === 'undefined') {
     // Node-kontekst (test eller CI): vi har ikke DOMParser. Returner
@@ -289,80 +277,131 @@ function parseGmlFeatures(xml, typeName) {
     console.warn(`[Sjøkart] GML parser-error for ${typeName}: ${err.textContent.slice(0, 100)}`)
     return []
   }
-  // WFS pakker hver feature i wfs:member > <Type-element>. Hent dem.
-  const ns = 'http://www.opengis.net/wfs/2.0'
-  let members = Array.from(doc.getElementsByTagNameNS(ns, 'member'))
+  // WFS 2.0 pakker features i wfs:member; WFS 1.x i gml:featureMember.
+  let members = Array.from(doc.getElementsByTagNameNS(WFS_NS, 'member'))
   if (members.length === 0) {
-    // WFS 1.x-fallback: featureMembers
+    // GML 3.1.1 (eldre WFS) fallback
     members = Array.from(doc.getElementsByTagName('gml:featureMember'))
-    if (members.length === 0) {
-      members = Array.from(doc.getElementsByTagName('wfs:member'))
-    }
   }
   const features = []
   for (const m of members) {
     const inner = m.firstElementChild
     if (!inner) continue
-    const props = {}
-    let geometry = null
-    for (const child of Array.from(inner.children)) {
-      const localName = child.localName
-      // Geometri-felter inneholder gml-elementer
-      const gmlEl = child.getElementsByTagNameNS('http://www.opengis.net/gml/3.2', '*')[0]
-                 ?? child.getElementsByTagName('gml:Point')[0]
-                 ?? child.getElementsByTagName('gml:LineString')[0]
-                 ?? child.getElementsByTagName('gml:Polygon')[0]
-                 ?? child.getElementsByTagName('gml:MultiSurface')[0]
-                 ?? child.getElementsByTagName('gml:MultiCurve')[0]
-      if (gmlEl) {
-        geometry = gmlToGeojsonGeometry(gmlEl)
-      } else if (child.children.length === 0) {
-        props[localName] = child.textContent
-      }
-    }
+    const { props, geometry } = parseFeatureElement(inner)
     if (geometry) features.push({ properties: props, geometry })
   }
   if (features.length > 0) {
     console.log(`[Sjøkart] GML-parser hentet ${features.length} features fra ${typeName}`)
+  } else {
+    console.log(`[Sjøkart] GML-parser fant 0 features i ${typeName} (${members.length} members)`)
   }
   return features
+}
+
+function parseFeatureElement(featureEl) {
+  const props = {}
+  let geometry = null
+  for (const child of Array.from(featureEl.children)) {
+    // Sjekk om dette child-elementet inneholder geometry (en gml:Point,
+    // gml:LineString, gml:Polygon osv som direkte barn).
+    let gmlEl = null
+    for (const t of GEOMETRY_TYPES) {
+      const matches = child.getElementsByTagNameNS(GML_NS, t)
+      if (matches.length > 0) {
+        gmlEl = matches[0]
+        break
+      }
+    }
+    if (gmlEl) {
+      geometry = gmlToGeojsonGeometry(gmlEl)
+    } else if (child.children.length === 0 && child.textContent) {
+      // Property med tekst-innhold (ikke nested element)
+      props[child.localName] = child.textContent.trim()
+    }
+  }
+  return { props, geometry }
 }
 
 function parseCoords(text) {
   return text.trim().split(/\s+/).map(Number).filter(Number.isFinite)
 }
 
+// Namespace-aware lookup for GML child-elementer.
+function gmlChildText(el, localName) {
+  const matches = el.getElementsByTagNameNS(GML_NS, localName)
+  return matches.length > 0 ? matches[0].textContent : null
+}
+function gmlChild(el, localName) {
+  const matches = el.getElementsByTagNameNS(GML_NS, localName)
+  return matches.length > 0 ? matches[0] : null
+}
+
 function gmlToGeojsonGeometry(el) {
   const tag = el.localName
+  // GML 3.2.1 EPSG:4326 har lat lon-rekkefølge; vi konverterer til
+  // GeoJSON [lon, lat] for konsistens med våre øvrige geometrier.
   if (tag === 'Point') {
-    const pos = el.getElementsByTagName('gml:pos')[0]?.textContent ?? el.getElementsByTagName('pos')[0]?.textContent
+    const pos = gmlChildText(el, 'pos')
     if (!pos) return null
-    const [lat, lon] = parseCoords(pos)  // GML 3.2.1 EPSG:4326 = lat lon
+    const [lat, lon] = parseCoords(pos)
     return { type: 'Point', coordinates: [lon, lat] }
   }
   if (tag === 'LineString') {
-    const posList = el.getElementsByTagName('gml:posList')[0]?.textContent ?? el.getElementsByTagName('posList')[0]?.textContent
+    const posList = gmlChildText(el, 'posList')
     if (!posList) return null
-    const flat = parseCoords(posList)
-    const coords = []
-    for (let i = 0; i + 1 < flat.length; i += 2) coords.push([flat[i + 1], flat[i]])
-    return { type: 'LineString', coordinates: coords }
+    return { type: 'LineString', coordinates: posListToLatLon(posList) }
   }
   if (tag === 'Polygon') {
-    const exterior = el.getElementsByTagName('gml:exterior')[0]
+    const exterior = gmlChild(el, 'exterior')
     if (!exterior) return null
-    const posList = exterior.getElementsByTagName('gml:posList')[0]?.textContent
+    const posList = gmlChildText(exterior, 'posList')
     if (!posList) return null
-    const flat = parseCoords(posList)
-    const ring = []
-    for (let i = 0; i + 1 < flat.length; i += 2) ring.push([flat[i + 1], flat[i]])
-    return { type: 'Polygon', coordinates: [ring] }
+    const ring = posListToLatLon(posList)
+    // Inkluder eventuelle interior-ringer (hull)
+    const interiors = el.getElementsByTagNameNS(GML_NS, 'interior')
+    const holes = []
+    for (let i = 0; i < interiors.length; i++) {
+      const innerPos = gmlChildText(interiors[i], 'posList')
+      if (innerPos) holes.push(posListToLatLon(innerPos))
+    }
+    return { type: 'Polygon', coordinates: [ring, ...holes] }
   }
-  if (tag === 'MultiSurface' || tag === 'MultiCurve') {
-    // Ignorerer for nå — sjeldent for sjøkart
-    return null
+  if (tag === 'MultiSurface') {
+    // Sjøkart bruker MultiSurface for komplekse polygoner
+    const surfaceMembers = el.getElementsByTagNameNS(GML_NS, 'surfaceMember')
+    const polygons = []
+    for (let i = 0; i < surfaceMembers.length; i++) {
+      const innerPoly = gmlChild(surfaceMembers[i], 'Polygon')
+      if (innerPoly) {
+        const sub = gmlToGeojsonGeometry(innerPoly)
+        if (sub) polygons.push(sub.coordinates)
+      }
+    }
+    if (polygons.length === 0) return null
+    return { type: 'MultiPolygon', coordinates: polygons }
+  }
+  if (tag === 'MultiCurve') {
+    // Linjer som er splittet i flere ways
+    const curveMembers = el.getElementsByTagNameNS(GML_NS, 'curveMember')
+    const lines = []
+    for (let i = 0; i < curveMembers.length; i++) {
+      const innerLine = gmlChild(curveMembers[i], 'LineString')
+      if (innerLine) {
+        const sub = gmlToGeojsonGeometry(innerLine)
+        if (sub) lines.push(sub.coordinates)
+      }
+    }
+    if (lines.length === 0) return null
+    return { type: 'MultiLineString', coordinates: lines }
   }
   return null
+}
+
+function posListToLatLon(posList) {
+  const flat = parseCoords(posList)
+  const coords = []
+  for (let i = 0; i + 1 < flat.length; i += 2) coords.push([flat[i + 1], flat[i]])
+  return coords
 }
 
 /**
