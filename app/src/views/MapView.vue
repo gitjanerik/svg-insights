@@ -302,6 +302,7 @@ async function loadMap() {
       useSeaBg: !!m.useSeaBg,
       sjokartCounts: m.sjokartCounts ?? null,
       sjokartFetchErrors: Array.isArray(m.sjokartFetchErrors) ? m.sjokartFetchErrors : [],
+      sjokartDebugSamples: Array.isArray(m.sjokartDebugSamples) ? m.sjokartDebugSamples : [],
       coastlineLandRings: m.coastlineLandRings ?? null,
       coastlineWaysCount: m.coastlineWaysCount,
     }
@@ -410,6 +411,22 @@ const equidistanceLabel = computed(() => {
 // v7.1.5: oppsummer Sjøkart-WFS-feil til kort tekst for attribusjons-
 // boksen. Hvis fetcher fanget exceptions, vis dominerende feiltype så
 // brukeren ser at det er WFS-side, ikke app-side.
+// v7.1.10: viser kort hvis ALLE sjøkart-counts er 0, så vi kan vise
+// første response-sample for debugging.
+const sjokartZeroFeatures = computed(() => {
+  const c = meta.value?.sjokartCounts
+  if (!c) return false
+  return (c.dybdeareal ?? 0) + (c.dybdekontur ?? 0) + (c.lanterne ?? 0)
+       + (c.grunne ?? 0) + (c.dybdepunkt ?? 0) === 0
+})
+
+const sjokartFirstSample = computed(() => {
+  const samples = meta.value?.sjokartDebugSamples
+  if (!Array.isArray(samples) || samples.length === 0) return null
+  const s = samples[0]
+  return `${s.typeName} (${s.length}b): ${s.sample.slice(0, 120)}…`
+})
+
 const sjokartFetchErrorSummary = computed(() => {
   const errs = meta.value?.sjokartFetchErrors
   if (!Array.isArray(errs) || errs.length === 0) return null
@@ -769,6 +786,9 @@ onMounted(() => {
         </template>
         <template v-if="meta.mapType === 'sea' && sjokartFetchErrorSummary">
           <br><span class="text-amber-300/85">⚠ Sjøkart-WFS feilet: {{ sjokartFetchErrorSummary }}</span>
+        </template>
+        <template v-if="meta.mapType === 'sea' && sjokartZeroFeatures && sjokartFirstSample">
+          <br><span class="text-amber-200/70 break-all">Sample: {{ sjokartFirstSample }}</span>
         </template>
       </template>
       <template v-else-if="meta?.coastlineWaysCount !== undefined">

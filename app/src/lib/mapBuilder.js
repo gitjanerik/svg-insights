@@ -345,6 +345,10 @@ export function buildSvg(elements, bbox, options = {}) {
     // i meta så MapView UI kan vise "WFS feilet (CORS)" når sjøkart-
     // counts er 0 — skiller data-mangel fra rendering-bug.
     sjokartFetchErrors = [],
+    // v7.1.10: response-samples når WFS returnerer 0 features. Brukes
+    // i MapView for å vise hva serveren faktisk sa (ofte ServiceException
+    // eller tom FeatureCollection).
+    sjokartDebugSamples = [],
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -1114,6 +1118,8 @@ export function buildSvg(elements, bbox, options = {}) {
     // v7.1.5: feilmeldinger fra Sjøkart-WFS — gjør UI i stand til å
     // vise konkret årsak (CORS, HTTP-feil, ikke-JSON-svar) når counts=0.
     sjokartFetchErrors,
+    // v7.1.10: råe response-samples for diagnose når 0 features.
+    sjokartDebugSamples,
     coastlineLandRings: coastlineLandRings.length || null,
     coastlineWaysCount: coastlineWays.length,
     useCoastlineFallback: !!useCoastlineFallback,

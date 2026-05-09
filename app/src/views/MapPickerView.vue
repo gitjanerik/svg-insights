@@ -214,6 +214,9 @@ async function generateMap() {
       // v7.1.5: feilmeldinger fra Sjøkart-WFS-fetcher gis videre til
       // mapBuilder så de kan eksponeres i meta og MapView UI.
       sjokartFetchErrors: sjokart?.fetchErrors ?? [],
+      // v7.1.10: response-samples for å diagnose hva serveren faktisk
+      // sender når vi får 0 features.
+      sjokartDebugSamples: sjokart?.debugSamples ?? [],
     }
 
     // Hvis kyst-situasjon OG ingen lagret preferanse: vis dialog og vent.
@@ -243,7 +246,7 @@ async function chooseMapType(mapType) {
 
 async function proceedWithMapType(mapType) {
   if (!pendingFetchedData.value) return
-  const { elements, source, useCoastlineFallback, sjokartFetchErrors } = pendingFetchedData.value
+  const { elements, source, useCoastlineFallback, sjokartFetchErrors, sjokartDebugSamples } = pendingFetchedData.value
   pendingFetchedData.value = null
   buildState.value = 'building'
   buildProgress.value = `Bygger ${mapType === 'sea' ? 'sjø' : 'land'}-kart …`
@@ -265,6 +268,7 @@ async function proceedWithMapType(mapType) {
       useCoastlineFallback,
       mapType,
       sjokartFetchErrors,
+      sjokartDebugSamples,
     })
 
     buildProgress.value = `Lagrer kart …`
