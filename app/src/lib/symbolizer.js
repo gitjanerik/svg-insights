@@ -191,8 +191,23 @@ export function classifyToIsom(el) {
         stype === 'buoy_isolated_danger' || stype === 'beacon_isolated_danger') {
       return { code: '543', cat: 'point' }
     }
-    // Andre seamark-typer (lighthouse, daymark) får ingen ISOM-kode her;
-    // lighthouse fanges av lanterne-kode hvis det er på sjøkart-fetcher.
+    // v7.1.18 Fase 2: lanterner/fyr fra OSM som backup når
+    // wfs.dybdedata-tjenesten mangler dem (verifisert: ingen Lanterne
+    // typename i wfs.dybdedata).
+    if (stype === 'light_major' || stype === 'light_minor' ||
+        stype === 'light_float' || stype === 'light_vessel' ||
+        stype === 'lighthouse' || stype === 'beacon') {
+      return { code: '533', cat: 'point' }
+    }
+  }
+  // v7.1.18 Fase 2: lighthouse/light som man_made-tag (OSM-konvensjon).
+  if (el.type === 'node' && (t.man_made === 'lighthouse' || t.man_made === 'light')) {
+    return { code: '533', cat: 'point' }
+  }
+  // v7.1.18 Fase 3: hovedled / skipsled fra OSM seamark:type=fairway.
+  // Linje-feature; mørk-blå stiplet linje med pil-marker.
+  if (el.type === 'way' && t['seamark:type'] === 'fairway') {
+    return { code: '545', cat: 'manmade' }
   }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
@@ -201,7 +216,12 @@ export function classifyToIsom(el) {
   // før de generelle natural=water-reglene under (siden Dybdeareal også
   // har natural=water + water=sea satt for backward-kompatibilitet).
   if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
-  if (t.sjokart === 'grunne' && el.type === 'node') return { code: '211', cat: 'point' }
+  if (t.sjokart === 'grunne') {
+    // v7.1.18: skjær/grunne — node = punkt-symbol (211), polygon =
+    // areal-overlegg (212, lys blå outline). Polygon-skjær fikk tidligere
+    // natural=rock og rendret som svart 210-blokkmark-pattern.
+    return el.type === 'node' ? { code: '211', cat: 'point' } : { code: '214', cat: 'rock' }
+  }
   if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
   if (t.sjokart === 'dybdekontur') return { code: '306', cat: 'water' }
   if (t.sjokart === 'dybdeareal')  return { code: '307', cat: 'water' }

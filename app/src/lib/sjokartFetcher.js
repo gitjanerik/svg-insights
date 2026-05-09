@@ -517,13 +517,12 @@ export function sjokartToElements(sjokart) {
 
   for (const f of sjokart.grunne ?? []) {
     const props = f.properties ?? {}
-    const tags = {
-      sjokart: 'grunne',
-      natural: 'rock',
-    }
+    // v7.1.18: dropp natural=rock-tagging på sjokart-grunne. Tidligere
+    // ga det polygon-skjær store sorte ISOM 210-pattern-fyll (blokkmark)
+    // ved zoom-inn. sjokart=grunne alene styrer rendering; polygoner
+    // mappes til ISOM 212 (skjær-areal, lett blå outline).
+    const tags = { sjokart: 'grunne' }
     if (props.minimumsdybde != null) tags.dybde = String(props.minimumsdybde)
-    // v7.1.14: tagge skjær/grunne-navn fra Sjøkart-WFS når de finnes.
-    // SOSI-spec bruker `navn` (norsk) — også støttet `Skjernavn` osv.
     if (props.navn) tags.name = String(props.navn).trim()
     pushAnyGeom(f, tags, elements, () => id++)
   }

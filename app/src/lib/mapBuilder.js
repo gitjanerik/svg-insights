@@ -49,6 +49,7 @@ export function buildOverpassQuery(bbox) {
   way["power"="line"];
   way["place"~"^(island|islet)$"];
   way["man_made"~"^(pier|breakwater)$"];
+  way["seamark:type"="fairway"];
   way["aerialway"];
   way["railway"~"^(rail|tram|narrow_gauge|light_rail|subway|funicular|monorail)$"];
   way["piste:type"];
@@ -56,7 +57,7 @@ export function buildOverpassQuery(bbox) {
   node["natural"="peak"];
   node["natural"="saddle"];
   node["natural"="cave_entrance"];
-  node["man_made"~"^(adit|mineshaft|survey_point|triangulation_pillar)$"];
+  node["man_made"~"^(adit|mineshaft|survey_point|triangulation_pillar|lighthouse|light)$"];
   node["historic"~"^(mine|survey_point)$"];
   node["survey_point"];
   node["geodesic"];
@@ -293,7 +294,9 @@ const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '5
 //   550 = Slipp (point — kajakk-launch)
 //   551 = Kai/Brygge/Pir/Molo (polygon — havne-strukturer)
 //   552 = Fareområde (polygon — rødt mønster, sikkerhets-zone)
-const UPPER_CODES  = ['551', '552', '521', '525', '528', '533', '550']
+// v7.1.18: 214 (skjær-areal) over 552 og under havnestruktur så
+// fareområde ikke dekker skjær.
+const UPPER_CODES  = ['214', '551', '552', '521', '525', '528', '545', '533', '550']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
 const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203', '211']
@@ -307,8 +310,8 @@ const LAYER_ORDER = [
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522', '551', '552'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '214', '301', '302', '303', '307', '308', '309', '512', '521', '522', '551', '552'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '545', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -1372,11 +1375,11 @@ function categoryFor(code) {
     case '512':                                  return 'slalombakke'
     case '515':                                  return 'tog'
     case '201': case '203':                     return 'stupkant'
-    case '210': case '211': case '212': case '213':
+    case '210': case '211': case '212': case '213': case '214':
     case '215': case '216':                          return 'stein'
     case '525': case '528':                     return 'linje'
     case '533':                                  return 'sjokart'
-    case '550': case '551': case '552':         return 'sjokart'
+    case '545': case '550': case '551': case '552':         return 'sjokart'
     case '113':                                  return 'trig'
     case '540': case '541': case '542': case '543': return 'staker'
     case '101': case '102': case '103': case '104': return 'kontur'

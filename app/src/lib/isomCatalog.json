@@ -128,7 +128,7 @@
         "label": "Dybdekontur — sjøkart",
         "stroke": {
           "color": "#3a8db8",
-          "widthMm": 0.13
+          "widthMm": 0.07
         }
       },
       "307": {
@@ -202,6 +202,17 @@
         "point": {
           "symbol": "knaus",
           "scaleMm": 1.2
+        }
+      },
+      "214": {
+        "label": "Skjær / grunne — areal (sjøkart)",
+        "$comment": "Polygon-skjær (sjokart=grunne med areal-geometri). Subtilt lys-blå outline + lett fyll så de er synlige uten å dominere som sorte flekker.",
+        "fill": {
+          "color": "rgba(159, 197, 222, 0.5)"
+        },
+        "stroke": {
+          "color": "#5a8db0",
+          "widthMm": 0.09
         }
       },
       "215": {
@@ -487,6 +498,16 @@
         "point": {
           "symbol": "stake-special",
           "scaleMm": 1.4
+        }
+      },
+      "545": {
+        "label": "Hovedled / skipsled",
+        "$comment": "OSM seamark:type=fairway. Mørk-blå stiplet linje for å antyde retning og separasjon fra dybdekontur (lys-blå).",
+        "stroke": {
+          "color": "#1f3a5c",
+          "widthMm": 0.32,
+          "dasharray": [2.0, 1.0],
+          "linecap": "round"
         }
       },
       "550": {
@@ -993,11 +1014,11 @@
       "haloWidthMm": 0.5
     },
     "dybde-tall": {
-      "fontSizeMm": 2,
+      "fontSizeMm": 2.6,
       "color": "#1f5d8a",
       "italic": false,
       "haloColor": "#fff",
-      "haloWidthMm": 0.4
+      "haloWidthMm": 0.5
     }
   },
   "darkMode": {
