@@ -206,13 +206,19 @@ async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
   // Geonorge SOSI Dybdedata 20201001 er bindingen verifisert fra
   // GetCapabilities `xmlns:app="..."`-attributtet.
   const namespaceUri = guessNamespaceUri(endpoint, typeName)
+  // v7.1.12: bruker URN-form (urn:ogc:def:crs:EPSG::4326) i stedet for
+  // legacy "EPSG:4326". Dette TVINGER aks-order til lat,lon (standard
+  // for geografisk CRS) — legacy-formatet er ambiguøst og noen servere
+  // tolker det som lon,lat. v7.1.10 ga 1098 bytes tom respons; URN-
+  // formatet skal garantere at BBOX tolkes riktig.
+  const CRS_URN = 'urn:ogc:def:crs:EPSG::4326'
   const baseParams = {
     SERVICE: 'WFS',
     VERSION: '2.0.0',
     REQUEST: 'GetFeature',
     TYPENAMES: typeName,
-    SRSNAME: 'EPSG:4326',
-    BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`,
+    SRSNAME: CRS_URN,
+    BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},${CRS_URN}`,
     COUNT: '5000',
   }
   if (namespaceUri) {
@@ -258,7 +264,9 @@ async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
   // data-meta-attributt. Erstatter med ‹ › så strukturen er synlig
   // uten å være gyldig XML-syntaks.
   if (opts.debugSamples && opts.debugSamples.length < 5) {
-    const safeSample = text.slice(0, 200)
+    // v7.1.12: utvidet til 500 bytes så vi ser numberReturned/numberMatched-
+    // attributtene som typisk ligger i wfs:FeatureCollection-rotelementet.
+    const safeSample = text.slice(0, 500)
       .replace(/\s+/g, ' ')
       .replace(/</g, '‹')
       .replace(/>/g, '›')
