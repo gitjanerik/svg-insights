@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.3</span>
+                <span class="text-white/50">&mdash; Land-kart f&aring;r ogs&aring; bl&aring; sj&oslash; ved kyst-bbox</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerrapport:</strong> Sj&oslash;kart-modus fikk endelig bl&aring; sj&oslash; i v7.1.2, men Land-kart i kystomr&aring;de viste fortsatt kremgul der det skulle v&aelig;re sj&oslash;. Det &oslash;delegger lesbarhet selv om brukeren har valgt land-fokus &mdash; kremgul-flekker rundt &oslash;yer er ikke "land-kart", det er forvirring</li>
+                <li><strong>Fix:</strong> ny <code>useSeaBg</code>-flag i mapBuilder = <code>mapType === 'sea' || coastlineLandRings.length &gt; 0</code>. Bg blir bl&aring; b&aring;de n&aring;r brukeren eksplisitt valgte sj&oslash;-fokus OG n&aring;r bbox-en er kyst (kystlinje-rekonstruksjon ga ringer). Pure innland (Vard&aring;sen) blir kremgul som f&oslash;r</li>
+                <li><strong>mapType betyr n&aring; FOKUS, ikke bg-farge:</strong> Sj&oslash;kart vil senere f&aring; mer fremtredende sj&oslash;merker/dybdekontur-detaljer, mens Land-kart filtrerer dem bort. Bg-fargen er en ren konsekvens av geografi (kyst eller innland)</li>
+                <li><strong>MapView.applyTheme</strong> sjekker n&aring; <code>meta.useSeaBg</code> istedenfor <code>mapType === 'sea'</code> for &aring; re-applysere <code>--bg</code></li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />

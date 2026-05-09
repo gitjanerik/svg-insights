@@ -299,6 +299,7 @@ async function loadMap() {
       // theme-reset. Manglende mapType i denne mappingen var hvorfor
       // v7.1.1 ikke virket — vi sjekket alltid mot undefined.
       mapType: m.mapType ?? null,
+      useSeaBg: !!m.useSeaBg,
       coastlineLandRings: m.coastlineLandRings ?? null,
       coastlineWaysCount: m.coastlineWaysCount,
     }
@@ -448,11 +449,11 @@ function applyTheme() {
   }
   svg.style.removeProperty('--bg')
   svg.style.removeProperty('--art-fill-opacity')
-  // v7.1.1: re-applisér bg-farge basert på mapType etter theme-reset.
-  // applyTheme nuller --bg for å rydde mellom tema-bytter, men SEA-mode
-  // skal alltid ha sjø-blå bg uansett tema (light er default-temaet, og
-  // catalog.background.color = kremgul vil ellers slå inn via CSS-fallback).
-  if (meta.value?.mapType === 'sea') {
+  // v7.1.3: re-applisér bg-farge etter theme-reset. Sjø-blå brukes når
+  // bg skal være sjø — enten fordi brukeren valgte sjø-modus, eller
+  // fordi bbox-en er kyst (coastline-rekonstruerte ringer finnes).
+  // mapBuilder setter meta.useSeaBg basert på begge betingelser.
+  if (meta.value?.useSeaBg) {
     svg.style.setProperty('--bg', '#9ec9de')
   }
   for (const code of allCodes) {
