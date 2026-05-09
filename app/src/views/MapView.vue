@@ -9,7 +9,8 @@ import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnno
 import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
-import { unpackDem } from '../lib/demSampling.js'
+import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
+import { fetchDEM } from '../lib/demFetcher.js'
 import { useFlippkart } from '../composables/useFlippkart.js'
 import FlippkartLayer from '../components/FlippkartLayer.vue'
 import FlippkartHUD from '../components/FlippkartHUD.vue'
@@ -128,8 +129,34 @@ function onThemeTap(key) {
   if (key === 'curves') flippUnlocked.value = true
 }
 
-function startFlippkart() {
-  if (!storedDem.value || !meta.value) return
+// v7.3.1: ekstra state for built-in maps som mangler stored DEM
+const flippDemFetching = ref(false)
+const flippDemError = ref(null)
+
+async function ensureDemForFlippkart() {
+  if (storedDem.value || !meta.value) return !!storedDem.value
+  // Lazy-fetch DEM for built-in maps (Vardåsen) som mangler IndexedDB-DEM
+  flippDemFetching.value = true
+  flippDemError.value = null
+  try {
+    const m = meta.value
+    const utmBbox = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
+    const dem = await fetchDEM(m.bbox, utmBbox, { resolutionM: 10, useReal: true })
+    if (dem && !dem.source?.startsWith('synthetic')) {
+      storedDem.value = dem
+      storedHighestPoint.value = findHighestPoint(dem)
+    }
+  } catch (e) {
+    flippDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
+  }
+  flippDemFetching.value = false
+  return !!storedDem.value
+}
+
+async function startFlippkart() {
+  if (!meta.value || flippDemFetching.value) return
+  const ok = await ensureDemForFlippkart()
+  if (!ok) return
   flippkart.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
@@ -972,17 +999,20 @@ onMounted(() => {
           </div>
 
           <!-- Easter egg: Flippkart-knapp synlig etter Curves-tema-tap -->
-          <button v-if="flippUnlocked && storedDem"
+          <button v-if="flippUnlocked"
                   @click="startFlippkart"
+                  :disabled="flippDemFetching"
                   class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
                          border border-fuchsia-400/40 text-white text-[12px]
-                         active:scale-[0.98] flex items-center justify-center gap-2">
-            <span>🎮 Flippkart</span>
+                         active:scale-[0.98] flex items-center justify-center gap-2
+                         disabled:opacity-60">
+            <span v-if="flippDemFetching">⏳ Henter høydedata …</span>
+            <span v-else>🎮 Flippkart</span>
           </button>
-          <div v-else-if="flippUnlocked && !storedDem"
-               class="w-full mb-4 px-3 py-2 rounded-lg bg-white/5 border border-white/10
-                      text-white/40 text-[11px] text-center">
-            🎮 Flippkart krever DEM — generer kartet på nytt
+          <div v-if="flippUnlocked && flippDemError"
+               class="w-full mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
+                      text-red-200 text-[11px] text-center">
+            {{ flippDemError }}
           </div>
 
           <button @click="router.push('/tegnforklaring')"
