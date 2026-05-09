@@ -1151,12 +1151,15 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <path d="${linePath}" />${teeth}`
   }).join('\n')
 
-  // v7.1.3: derived state for sjø-bakgrunn. Trengs i både meta (for at
-  // MapView.applyTheme skal kunne re-applysere --bg) og senere i SVG-
-  // komposisjon (bgFill, coastlineLandSvg). Beregnes før meta så vi kan
-  // referere det.
+  // v7.1.15: useSeaBg respekterer mapType STRENGT. v7.1.3 forsøkte å
+  // gjøre kyst-Land-kart bl&aring;-bakgrunn for &oslash;y-synlighet, men det skapte
+  // motsatt problem: Drammen-omegn-bbox der bare en fjordarm passerer
+  // fikk bl&aring; bg selv om brukeren valgte Land-kart. Ren regel:
+  //   - mapType='sea' → bl&aring; bg (alltid)
+  //   - mapType='land' → kremgul bg (alltid, selv ved kyst)
+  // Brukeren m&aring; velge mapType ut fra prim&aelig;rt fokus.
   const isCoastalRender = coastlineLandRings.length > 0
-  const useSeaBg = mapType === 'sea' || isCoastalRender
+  const useSeaBg = mapType === 'sea'
 
   const meta = {
     bbox,
