@@ -928,7 +928,13 @@ export function buildSvg(elements, bbox, options = {}) {
     return { areaM2: Math.abs(a) / 2, x: cx / (3 * a), y: cy / (3 * a) }
   }
 
-  for (const code of ['301', '302']) {
+  // v7.1.14: utvidet med 303 (saltvann/bukt/sund/fjord). For padlekart er
+  // navn på bukter/sund/poll viktige orienteringspunkter. 303-features
+  // kommer fra OSM-relations med natural=bay/strait/water=sea og har ofte
+  // name-tag. Vi skipper elev-sampling for saltvann (det er ~0 moh per
+  // definisjon).
+  for (const code of ['301', '302', '303']) {
+    const isSeawater = code === '303'
     for (const el of buckets[code] ?? []) {
       let areaM2 = 0
       let centroid = null
@@ -943,16 +949,41 @@ export function buildSvg(elements, bbox, options = {}) {
       } else if (el.type === 'way' && el.geometry) {
         areaM2 = polygonAreaM2(el.geometry)
         centroid = polygonCentroid(el.geometry)
+      } else if (el.type === 'relation' && el.members) {
+        // OSM-relation (typisk for saltvann/fjord). Bygg outer-rings og
+        // bruk største ring som sentroid-proxy.
+        const outerRings = assembleRelationRings(el.members, 'outer')
+        if (outerRings.length === 0) continue
+        const projectedRings = outerRings.map(ring =>
+          ring.map(g => {
+            const p = project(g.lat, g.lon)
+            return [p.x, p.y]
+          })
+        )
+        let largest = null, largestArea = 0
+        for (const r of projectedRings) {
+          const ac = ringAreaCentroid(r)
+          if (ac && ac.areaM2 > largestArea) { largest = ac; largestArea = ac.areaM2 }
+        }
+        if (!largest) continue
+        areaM2 = largestArea
+        centroid = { x: largest.x, y: largest.y }
       } else {
         continue
       }
       if (!centroid) continue
 
-      if (areaM2 < MIN_AREA) continue
+      // Saltvann har lavere areal-terskel siden et lite "Pollen" eller
+      // "Bukta" er like viktig for orientering som en stor fjord.
+      const minArea = isSeawater ? Math.max(MIN_AREA / 4, 500) : MIN_AREA
+      if (areaM2 < minArea) continue
       const name = (el.tags?.name ?? '').trim()
+      // Saltvann uten navn er ikke verdt å rendre (brukeren ser jo at
+      // det er sjø). Innsjøer uten navn kan likevel ha elev som info.
+      if (isSeawater && !name) continue
 
       let elev = null
-      if (sampleDem) {
+      if (!isSeawater && sampleDem) {
         const v = sampleDem(centroid.x, centroid.y)
         if (v != null && Number.isFinite(v)) elev = Math.round(v)
       }
@@ -971,11 +1002,18 @@ export function buildSvg(elements, bbox, options = {}) {
   // ── Sjøkart: skjær (211), lanterner (533), dybdepunkter ──────────────
   // Rendres som <use> mot point-symbols i defs. Dybdepunkter rendres som
   // tekst-label med dybde-tall (paint-order: stroke for halo).
+  // v7.1.14: skjær får navn-label hvis Sjøkart-WFS leverte `navn`-felt.
+  // Plasseres litt under symbolet (1mm dy) så det ikke overlapper med
+  // selve skjær-merket.
   const skjaerSvg = skjaer.map(el => {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('skjaer')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.5)}mm" y="${fmt(p.y - 0.5)}mm" width="1mm" height="1mm"/>`
+    const name = el.tags?.name
+    const nameLabel = name
+      ? `<text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="1.6mm" text-anchor="middle" data-label="skjaer-navn">${xmlEscape(name)}</text>`
+      : ''
+    return `    <use href="#${sid}" x="${fmt(p.x - 0.5)}mm" y="${fmt(p.y - 0.5)}mm" width="1mm" height="1mm"/>${nameLabel}`
   }).filter(Boolean).join('\n')
 
   const lanterneSvg = lanterner.map(el => {

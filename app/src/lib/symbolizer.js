@@ -459,6 +459,10 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   }
   rules.push(`${root} [data-label="dybde-kontur-tall"] text { font-size: ${dyk.fontSizeMm}mm; fill: var(--label-dybde-kontur-tall-fill, ${dyk.color}); paint-order: stroke; stroke: ${dyk.haloColor}; stroke-width: ${dyk.haloWidthMm}mm; stroke-linejoin: round; font-style: italic; }`)
 
+  // v7.1.14: skjær-navn — italic, mindre font enn place-navn, mørk-blå
+  // halo for å være synlig mot blå sjø-bg.
+  rules.push(`${root} [data-label="skjaer-navn"] { font-size: 1.8mm; font-style: italic; fill: #1f3a5c; paint-order: stroke; stroke: #fff; stroke-width: 0.4mm; stroke-linejoin: round; }`)
+
   return rules.join(' ')
 }
 
