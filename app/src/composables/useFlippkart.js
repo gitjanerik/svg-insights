@@ -31,6 +31,36 @@ export function useFlippkart() {
   const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0]
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
+  const PERK_INTERVAL = 3              // perk-velg hvert 3. level (3, 6, 9...)
+  const MAX_LIVES = 5
+  const FLIPPER_LENGTH_BOOST = 0.08    // + 8% lengde per "stor flipper"-perk
+
+  // Perks-tilstand. Akkumuleres permanent gjennom spillet.
+  const perks = reactive({
+    contourMult: 1,        // multiplikator for kontur-bonus
+    kickMult: 1,           // multiplikator for KICK_SPEED
+    hitScoreMult: 1,       // multiplikator for paddle-treff-poeng
+    smashMult: 1,          // multiplikator for smash-bonus
+    frictionMult: 1,       // multiplikator for friction (lavere = mindre drag)
+    chargeBonus: 0,        // free kickLevel etter ball-drop (0..3)
+  })
+
+  // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
+  const perkChoices = ref([])
+
+  // Tilgjengelige perks-typer. Velges 3 tilfeldige hver gang.
+  const PERK_CATALOG = [
+    { id: 'flipper-top',    icon: '⬆️', label: '+8% TOPP-FLIPPER',    desc: 'Lengre paddle på toppen' },
+    { id: 'flipper-bottom', icon: '⬇️', label: '+8% BUNN-FLIPPER',    desc: 'Lengre paddle nederst' },
+    { id: 'flipper-left',   icon: '⬅️', label: '+8% VENSTRE-FLIPPER', desc: 'Lengre paddle til venstre' },
+    { id: 'flipper-right',  icon: '➡️', label: '+8% HØYRE-FLIPPER',   desc: 'Lengre paddle til høyre' },
+    { id: 'contour-x2',     icon: '〰️', label: 'KONTUR-BOOST 2×',     desc: 'Doblede kontur-poeng' },
+    { id: 'kick-power',     icon: '💥', label: '+25% KICK-KRAFT',     desc: 'Kraftigere flipper-spark' },
+    { id: 'smash-x2',       icon: '🌟', label: 'SMASH-BOOST 2×',      desc: 'Doblet smash-bonus' },
+    { id: 'extra-life',     icon: '❤️', label: '+1 LIV',              desc: 'Maks 5 totalt' },
+    { id: 'low-friction',   icon: '❄️', label: '−20% FRIKSJON',       desc: 'Ball glir lenger' },
+    { id: 'pre-charged',    icon: '⚡', label: 'FORHÅNDSLADET',       desc: 'Flippere starter med +1 kick' },
+  ]
 
   // v7.2.8: bytte fra posisjon-basert til hastighet-basert stillness-
   // deteksjon. Posisjon-deteksjon var upålitelig — ball som drev sakte
@@ -41,9 +71,6 @@ export function useFlippkart() {
   const STILLNESS_EXPLODE_S = 3.5    // når eksplosjon trigger (primary ball)
   const MULTIBALL_STUCK_S = 6.0      // når multi-ball balls bare drukner stille
   const MULTIBALL_COUNT = 3
-  // 900 m/s spawn-fart: rask nok til å gi merkbar bevegelse, men ikke så rask
-  // at baller forsvinner ut av playfield i løpet av 1 sekund.
-  const MULTIBALL_SPEED = 900
 
   // balls = aktive baller. Hver ball: {x,y,vx,vy,visible, stillX, stillY,
   //   stillTime, chargeT, nextWarnAt, warnIndex, canExplode}
@@ -94,7 +121,12 @@ export function useFlippkart() {
   const levelTarget = computed(() => computeLevelTarget(level.value))
 
   function computeLevelTarget(n) {
-    return Math.round(500 + 600 * Math.log2(Math.max(1, n)))
+    // v7.2.9: bratte kurve etter level ~5. Gammel formel (500+600*log2)
+    // platafonet: L10=2493, L20=3093 — for enkelt etter level 10.
+    // Ny: log2-base + kvadratisk komponent for høyere levels.
+    //   L1: 500, L3: 1610, L5: 2534, L10: 5733, L20: 17533
+    const lv = Math.max(1, n)
+    return Math.round(500 + 600 * Math.log2(lv) + 40 * Math.pow(lv - 1, 2))
   }
 
   function loadHighscore() {
@@ -117,7 +149,7 @@ export function useFlippkart() {
     const baseFriction = Math.max(0.05, 0.18 - 0.02 * (n - 1))
     return {
       kGravity: 1875 + 250 * (n - 1),
-      friction: baseFriction / terrainEnergyMult,
+      friction: (baseFriction / terrainEnergyMult) * perks.frictionMult,
     }
   }
 
@@ -216,14 +248,10 @@ export function useFlippkart() {
   }
 
   function explodeBall(b) {
-    // Clamp spawn-posisjon godt inne i playfield så multi-ball-baller ikke
-    // umiddelbart krysser flipper-plan og drukner. Margin = inset + r + 50.
-    const margin = FLIPPER_INSET_M + BALL_RADIUS_M + 50
-    const sx = Math.max(margin, Math.min(bounds.width - margin, b.x))
-    const sy = Math.max(margin, Math.min(bounds.height - margin, b.y))
-
-    splash.x = sx
-    splash.y = sy
+    // Splash visualiseres ved ballens posisjon (det føles riktig at
+    // eksplosjonen skjer DER kula sto stille).
+    splash.x = b.x
+    splash.y = b.y
     splash.active = true
     splash.t = 0
     splash.kind = 'explode'
@@ -236,15 +264,21 @@ export function useFlippkart() {
     // Marker som ekspodert (blir splicet ut neste loop-iter)
     b.exploded = true
 
-    // Spawn 3 nye baller fra (clamped) eksplosjonspunkt
-    const baseAngle = Math.random() * Math.PI * 2
+    // v7.2.9: 3 nye baller "droppes" på TILFELDIGE posisjoner innenfor R=65%-
+    // sirkel, med null start-fart. Som level-start: gradient-akselerasjon
+    // + level-physics gir dem fart fra start. Ingen risiko for at alle 3
+    // havner på samme problemtype-spot som original-kula.
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+    const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
     for (let k = 0; k < MULTIBALL_COUNT; k++) {
-      const angle = baseAngle + (k * 2 * Math.PI / MULTIBALL_COUNT)
-      const a = angle + (Math.random() - 0.5) * 0.5
-      const speed = MULTIBALL_SPEED * (0.85 + Math.random() * 0.3)
-      // canExplode=false: ingen kaskade-eksplosjoner. Stuck-cleanup (8s) tar
-      // over hvis multi-ball balls stagnerer.
-      spawnBall(sx, sy, Math.cos(a) * speed, Math.sin(a) * speed, false)
+      const angle = Math.random() * Math.PI * 2
+      const r = Math.sqrt(Math.random()) * R
+      const x = cx + Math.cos(angle) * r
+      const y = cy + Math.sin(angle) * r
+      // canExplode=false: ingen kaskade-eksplosjoner. Stuck-cleanup tar over
+      // hvis multi-ball balls stagnerer.
+      spawnBall(x, y, 0, 0, false)
     }
   }
 
@@ -269,10 +303,10 @@ export function useFlippkart() {
       let thick = false
       for (let i = lo + 1; i <= hi; i++) {
         if (i % 5 === 0) {
-          score.value += 5
+          score.value += Math.round(5 * perks.contourMult)
           thick = true
         } else {
-          score.value += 1
+          score.value += Math.round(1 * perks.contourMult)
         }
       }
       playContourTick(thick)
@@ -294,7 +328,7 @@ export function useFlippkart() {
       if (b.x >= c - half && b.x <= c + half) {
         b.y = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vy = Math.max(KICK_SPEED * mult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
+        b.vy = Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
         registerHit(b, f, 'top')
       } else {
         ballDrown(b, b.x, 0)
@@ -308,7 +342,7 @@ export function useFlippkart() {
       if (b.x >= c - half && b.x <= c + half) {
         b.y = h - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vy = -Math.max(KICK_SPEED * mult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
+        b.vy = -Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
         registerHit(b, f, 'bottom')
       } else {
         ballDrown(b, b.x, h)
@@ -322,7 +356,7 @@ export function useFlippkart() {
       if (b.y >= c - half && b.y <= c + half) {
         b.x = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vx = Math.max(KICK_SPEED * mult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
+        b.vx = Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
         registerHit(b, f, 'left')
       } else {
         ballDrown(b, 0, b.y)
@@ -336,7 +370,7 @@ export function useFlippkart() {
       if (b.y >= c - half && b.y <= c + half) {
         b.x = w - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vx = -Math.max(KICK_SPEED * mult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
+        b.vx = -Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
         registerHit(b, f, 'right')
       } else {
         ballDrown(b, w, b.y)
@@ -351,7 +385,7 @@ export function useFlippkart() {
   function registerHit(b, flipper, edge) {
     const kickLevel = flipper.kickLevel
     flipper.kickLevel = 0
-    score.value += 100 * level.value
+    score.value += Math.round(100 * level.value * perks.hitScoreMult)
     playKick(kickLevel)
 
     // Reset stillness-state på treff
@@ -360,7 +394,7 @@ export function useFlippkart() {
     b.warnIndex = 0
 
     if (lastHitEdge && OPPOSITE[lastHitEdge] === edge) {
-      const bonus = SMASH_BONUS_BASE * Math.pow(2, level.value - 1)
+      const bonus = Math.round(SMASH_BONUS_BASE * Math.pow(2, level.value - 1) * perks.smashMult)
       score.value += bonus
       lastEvent.value = { kind: 'smash', bonus, at: Date.now() }
       playSmash()
@@ -462,8 +496,44 @@ export function useFlippkart() {
       balls.length = 0
       lastHitEdge = null
       lastElev = NaN
-      status.value = 'idle'
+      // Hvert PERK_INTERVAL (3.) level: vis perk-velg-meny FØR neste level
+      if ((level.value - 1) % PERK_INTERVAL === 0) {
+        perkChoices.value = pickRandomPerks(3)
+        status.value = 'perk-select'
+      } else {
+        status.value = 'idle'
+      }
     }, 1500)
+  }
+
+  function pickRandomPerks(count) {
+    // Trekker 'count' tilfeldige unike perks fra katalogen.
+    const pool = [...PERK_CATALOG]
+    const result = []
+    for (let i = 0; i < count && pool.length > 0; i++) {
+      const idx = Math.floor(Math.random() * pool.length)
+      result.push(pool[idx])
+      pool.splice(idx, 1)
+    }
+    return result
+  }
+
+  function applyPerk(id) {
+    if (status.value !== 'perk-select') return
+    switch (id) {
+      case 'flipper-top':    flippers.top.length    += FLIPPER_LENGTH_BOOST; break
+      case 'flipper-bottom': flippers.bottom.length += FLIPPER_LENGTH_BOOST; break
+      case 'flipper-left':   flippers.left.length   += FLIPPER_LENGTH_BOOST; break
+      case 'flipper-right':  flippers.right.length  += FLIPPER_LENGTH_BOOST; break
+      case 'contour-x2':     perks.contourMult *= 2; break
+      case 'kick-power':     perks.kickMult *= 1.25; break
+      case 'smash-x2':       perks.smashMult *= 2; break
+      case 'extra-life':     lives.value = Math.min(MAX_LIVES, lives.value + 1); break
+      case 'low-friction':   perks.frictionMult *= 0.8; break
+      case 'pre-charged':    perks.chargeBonus = Math.min(3, perks.chargeBonus + 1); break
+    }
+    perkChoices.value = []
+    status.value = 'idle'
   }
 
   function startCountdown() {
@@ -497,6 +567,12 @@ export function useFlippkart() {
     const y = cy + Math.sin(angle) * r
     balls.length = 0
     spawnBall(x, y, 0, 0, true)
+    // Pre-charged perk: alle flippere starter med +N kickLevel
+    if (perks.chargeBonus > 0) {
+      for (const e of ['top', 'bottom', 'left', 'right']) {
+        flippers[e].kickLevel = Math.min(KICK_MULTIPLIERS.length - 1, perks.chargeBonus)
+      }
+    }
     status.value = 'rolling'
     lastElev = NaN
     lastHitEdge = null
@@ -520,8 +596,16 @@ export function useFlippkart() {
     splash.active = false
     lastHitEdge = null
     lastElev = NaN
+    perkChoices.value = []
+    perks.contourMult = 1
+    perks.kickMult = 1
+    perks.hitScoreMult = 1
+    perks.smashMult = 1
+    perks.frictionMult = 1
+    perks.chargeBonus = 0
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
+      flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
       flippers[e].kickLevel = 0
     }
   }
@@ -573,9 +657,10 @@ export function useFlippkart() {
     active, status, level, lives, score, totalScore, countdown, highscore,
     levelTarget, lastEvent,
     balls, splash, trail, flippers,
+    perks, perkChoices,
     // actions
     init, activate, deactivate,
-    startCountdown, restart, energize,
+    startCountdown, restart, energize, applyPerk,
     levelParams,
     // constants
     BALL_RADIUS_M,

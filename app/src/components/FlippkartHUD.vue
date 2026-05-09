@@ -52,6 +52,10 @@ function onOverlayTap() {
   else if (s === 'idle' && props.flipp.lives.value > 0) emit('continue')
 }
 
+function onPerkChoice(id) {
+  props.flipp.applyPerk(id)
+}
+
 // Smash-flash: vises kort når lastEvent.kind === 'smash'
 const smashFlash = computed(() => {
   const e = props.flipp.lastEvent.value
@@ -129,6 +133,22 @@ const multiballFlash = computed(() => {
       <div v-if="overlay.tapText"
            class="flipp-overlay-sub flipp-cyan">
         {{ overlay.tapText }}
+      </div>
+    </div>
+
+    <!-- Perk-select-overlay (vises hvert 3. level) -->
+    <div v-if="flipp.status.value === 'perk-select'" class="flipp-perk-overlay">
+      <div class="flipp-perk-title flipp-yellow">CHOOSE PERK</div>
+      <div class="flipp-perk-sub flipp-cyan">LEVEL {{ String(flipp.level.value).padStart(2, '0') }}</div>
+      <div class="flipp-perk-grid">
+        <button v-for="p in flipp.perkChoices.value"
+                :key="p.id"
+                class="flipp-perk-btn"
+                @click="onPerkChoice(p.id)">
+          <div class="flipp-perk-icon">{{ p.icon }}</div>
+          <div class="flipp-perk-label">{{ p.label }}</div>
+          <div class="flipp-perk-desc">{{ p.desc }}</div>
+        </button>
       </div>
     </div>
   </div>
@@ -307,5 +327,71 @@ const multiballFlash = computed(() => {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.4); }
   100% { filter: brightness(1.0); }
+}
+
+/* Perk-select overlay — vises ved level-clear hvert 3. level */
+.flipp-perk-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1em;
+  padding: 1em;
+}
+.flipp-perk-title {
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  text-shadow: 3px 3px 0 #000;
+}
+.flipp-perk-sub {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0 #000;
+  margin-bottom: 0.5em;
+}
+.flipp-perk-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+  width: min(320px, 90%);
+}
+.flipp-perk-btn {
+  font-family: inherit;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  color: #fff;
+  border: 2px solid #5cefff;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 80ms, filter 80ms;
+}
+.flipp-perk-btn:active {
+  transform: scale(0.98);
+  filter: brightness(1.3);
+}
+.flipp-perk-icon {
+  grid-row: 1 / span 2;
+  font-size: 26px;
+  text-align: center;
+}
+.flipp-perk-label {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: #ffe24d;
+  text-shadow: 1px 1px 0 #000;
+}
+.flipp-perk-desc {
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  color: #cbd5e1;
+  text-transform: lowercase;
 }
 </style>
