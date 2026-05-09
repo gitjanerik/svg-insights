@@ -709,8 +709,11 @@ onMounted(() => {
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
-      <template v-if="meta?.coastlineWaysCount !== undefined">
-        <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }} fb={{ meta?.useCoastlineFallback ? '✓' : '✗' }} mode={{ meta?.coastlineMode ? '✓' : '✗' }}</span>
+      <template v-if="meta?.duomap">
+        <br><span class="text-sky-300/85">Duomap: land-paths={{ meta.landMaskPathCount ?? 0 }} ways={{ meta?.coastlineWaysCount ?? 0 }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>
+      </template>
+      <template v-else-if="meta?.coastlineWaysCount !== undefined">
+        <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>
       </template>
     </div>
 
