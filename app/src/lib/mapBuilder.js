@@ -305,36 +305,6 @@ const LAYER_ORDER = [
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
 const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
-// v7.0.0 duomap-arkitektur: vi rendrer to maske-koblede kart i samme SVG.
-// LAND-laget er det vanlige (kremgul bg + vegetasjon, bygninger, konturer).
-// SJØ-laget er en gruppe med blå rect + Sjøkart-detaljer, klippet til
-// "sjø-region" via en mask som er bygd opp av UNIONEN av alle land-
-// polygoner. Hver kilde som bidrar til land-mask (vegetasjon, bygninger,
-// place=island/islet, coastline-rekonstruksjon, innlands-vann) gjør
-// sjø-overlayet usynlig der → sjø-overlayet maler kun blå der INGEN
-// land-kilde har dekning. Robust: kremgul-i-sjø-feilen krever at ALLE
-// land-deteksjons-kilder feiler samtidig.
-//
-// LAND_POLYGON_CODES = polygoner som bidrar til land-mask (sjø skal IKKE
-// renderes oppå disse). Inkluderer alle vegetasjons-koder, bygninger,
-// place=island, og innlandsvann (lakes, myr) — fordi de er omringet av
-// land og er IKKE havflate.
-const LAND_POLYGON_CODES = new Set([
-  '001',                                          // place=island/islet land-overlay
-  '401', '403', '404', '406', '407', '408', '409', // åpen mark, frukthage, eng, skog
-  '210',                                          // steinrøys
-  '512',                                          // slalom-bakke
-  '301', '302',                                   // innsjø, tjern (innlandsvann)
-  '308', '309',                                   // myr, myr-utilgjengelig
-  '521',                                          // individuelle bygninger
-])
-// SEA_POLYGON_CODES = polygoner som faktisk er sjø (inn i sea-overlay).
-// 522 (urbanmass) er handled separately via urbanMassPath.
-const SEA_POLYGON_CODES = new Set(['303', '307'])
-// SEA_LINE_CODES = linjer som hører til sjø (i sea-overlay, klippet til
-// sjø-region). 306 = Sjøkart dybdekontur.
-const SEA_LINE_CODES = new Set(['306'])
-
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
  * symbolisering med mm-baserte streker for print.
@@ -360,10 +330,16 @@ export function buildSvg(elements, bbox, options = {}) {
     includeKnauser = true,
     includeCliffs = true,
     skipContoursIfSynthetic = false,
-    // v6.10.2: hvis kysten må rekonstrueres fra OSM natural=coastline (ingen
-    // Havflate/Dybdeareal), settes denne til true av MapPickerView. mapBuilder
-    // bytter da bakgrunn til sjø-blå og maler land-polygoner kremgul oppe.
+    // v6.10.2: brukes fortsatt av MapPickerView for å trigge coastline-
+    // rekonstruksjon (`buildLandPolygonsFromCoastline`) — ringene brukes i
+    // SEA-mode som bidrag til land-overlay.
     useCoastlineFallback = false,
+    // v7.1.0: 'land' (kremgul bg + alle features, default) eller 'sea'
+    // (sjø-blå bg + kremgul land-overlay fra coastline-rekonstruksjon +
+    // OSM natural=land-polygoner). Brukeren velger eksplisitt i picker
+    // for kyst-områder. v7.0.0 duomap-mask-arkitekturen er erstattet av
+    // dette valget — én rendering per kart, brukeren bestemmer fokus.
+    mapType = 'land',
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -638,13 +614,6 @@ export function buildSvg(elements, bbox, options = {}) {
   const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
   const isomCss = buildIsomCss(isomCatalog, patternIds)
 
-  // v7.0.0 duomap: samle path-d-strenger fra alle land-polygoner i bbox.
-  // Brukes til å bygge sea-region-mask som klipper sjø-overlayet.
-  // Hver land-kilde (vegetasjon, bygninger, place=island, coastline-
-  // rekonstruksjon, innlands-vann) bidrar til union-en. Sjø-overlayet
-  // males kun der INGEN land-kilde dekker — robust mot enkelt-kilde-feil.
-  const landMaskPaths = []
-
   const layerSvg = (code) => {
     const els = buckets[code]
     if (!els.length) return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"></g>\n`
@@ -679,11 +648,9 @@ export function buildSvg(elements, bbox, options = {}) {
               ringPaths.push(rd)
             }
             if (ringPaths.length > 0) {
-              const pathD = ringPaths.join(' ')
               pathElements.push(
-                `    <path d="${pathD}" fill-rule="evenodd" data-src="merged" data-name="${xmlEscape(name)}"/>`
+                `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd" data-src="merged" data-name="${xmlEscape(name)}"/>`
               )
-              if (LAND_POLYGON_CODES.has(code)) landMaskPaths.push(pathD)
             }
           }
           continue
@@ -708,7 +675,6 @@ export function buildSvg(elements, bbox, options = {}) {
           pathElements.push(
             `    <path d="${d}" fill-rule="evenodd" data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
-          if (LAND_POLYGON_CODES.has(code)) landMaskPaths.push(d)
         }
       }
       if (pathElements.length === 0) {
@@ -1082,19 +1048,13 @@ export function buildSvg(elements, bbox, options = {}) {
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
-    // v7.0.0 duomap-meta. coastlineMode/coastlineLandRings beholdes for
-    // backwards-kompatibilitet, men semantikken er endret: coastlineMode
-    // er nå alltid null (gammel bg-flip-modus er fjernet). Sjø-renderingen
-    // er duomap-arkitekturens sea-overlay som klippes av land-mask-en.
-    coastlineMode: null,
+    // v7.1.0: mapType er den autoritative kart-modus-indikatoren.
+    // 'land' = kremgul bg + alle features. 'sea' = sjø-blå bg +
+    // coastline-land-overlay. Brukeren velger eksplisitt i picker.
+    mapType,
     coastlineLandRings: coastlineLandRings.length || null,
     coastlineWaysCount: coastlineWays.length,
     useCoastlineFallback: !!useCoastlineFallback,
-    // v7.0.0: duomap-state. landMaskPaths fylles under renderCodes nedenfor
-    // og oppdateres rett før SVG-konstruksjon (se etter renderCodes).
-    duomap: true,
-    landMaskPathCount: 0,
-    seaOverlayActive: false,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
@@ -1187,53 +1147,36 @@ export function buildSvg(elements, bbox, options = {}) {
   const urbanMassLayerSvg = urbanMassPath
     ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
-  // v7.0.0: bymasse bidrar til land-mask (sjø-overlay skal ikke renderes
-  // over tett bebyggelse — det er åpenbart land).
-  if (urbanMassPath) landMaskPaths.push(urbanMassPath)
 
-  // v7.0.0 duomap: bg er ALLTID kremgul (land). Sjø-overlayet på toppen
-  // (clipped til sjø-region via mask) maler blå der det IKKE er noen
-  // land-kilde. Tidligere bg-bytting (cream ↔ blå basert på coastlineMode)
-  // er fjernet — sjø-overlayet er den nye autoritative sjø-renderingen.
+  // v7.1.0: bg-farge bestemmes av mapType. SEA-mode legger sjø-blå som
+  // base, og maler kremgul land-overlay (coastline-rekonstruerte ringer)
+  // OPPÅ blå bg. LAND-mode er kremgul-bg som default (alle features
+  // tegnes oppå som vanlig).
   const SEA_BLUE = '#9ec9de'  // matcher ISOM 307 dybdeareal-farge
   const landFill = isomCatalog.background.color
-  const bgFill = landFill
+  const bgFill = mapType === 'sea' ? SEA_BLUE : landFill
 
-  // Bygg ringene fra coastline-rekonstruksjon som path-d-strenger og legg
-  // dem til i landMaskPaths (de er ekstra signal for "land i sjø-bbox").
-  for (const ring of coastlineLandRings) {
-    if (ring.length < 3) continue
-    let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-    for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-    d += 'Z'
-    landMaskPaths.push(d)
-  }
-
-  // v7.0.0 duomap: bygg sea-region-mask og sjø-overlay-gruppa. Hvis det
-  // finnes >0 land-paths, klippes sjø-overlayet av den unionen. Ellers
-  // (helt uten land-data) tegnes overlayet over hele bbox-en.
-  const seaMaskSvg = landMaskPaths.length > 0
-    ? `<mask id="sea-region-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${landMaskPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
+  // SEA-mode: render coastline-rekonstruerte land-ringer som kremgule
+  // polygoner over den blå bakgrunnen. Vegetasjon, bygninger, konturer
+  // osv. tegnes som vanlig på land-områdene videre i pipelinen.
+  const coastlineLandSvg = mapType === 'sea' && coastlineLandRings.length
+    ? `  <g id="kyst-land" data-layer="land" data-iso="001">\n` +
+      coastlineLandRings.map(ring => {
+        if (ring.length < 3) return ''
+        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+        d += 'Z'
+        return `    <path d="${d}" fill="${landFill}" data-src="kystlinje"/>`
+      }).filter(Boolean).join('\n') +
+      `\n  </g>\n`
     : ''
-  const seaMaskAttr = landMaskPaths.length > 0 ? ' mask="url(#sea-region-mask)"' : ''
-
-  // Oppdater meta nå som landMaskPaths er fylt etter renderCodes-pass.
-  meta.landMaskPathCount = landMaskPaths.length
-  meta.seaOverlayActive = true  // alltid på i duomap; mask styrer synlighet
-
-  // v7.0.0 duomap: sjø-overlayet plasseres ETTER ground+urbanmass og FØR
-  // vann-laget. Det er en blå rect klippet til sjø-region (mask som
-  // skjuler den der det er kjent land). Dybdeareal/dybdekontur (Sjøkart)
-  // og innlandsvann/streams renders på toppen som detaljer over den
-  // basis-blå sjøflaten.
-  const seaOverlaySvg = `  <g id="sjo-overlay" data-layer="sjo"${seaMaskAttr}>\n    <rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${SEA_BLUE}"/>\n  </g>\n`
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;')}'>
-  <defs>${isomDefs}${landMaskSvg}${seaMaskSvg}</defs>
+  <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${seaOverlaySvg}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
