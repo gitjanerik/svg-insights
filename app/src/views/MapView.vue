@@ -476,7 +476,9 @@ function applyTheme() {
   // bg skal være sjø — enten fordi brukeren valgte sjø-modus, eller
   // fordi bbox-en er kyst (coastline-rekonstruerte ringer finnes).
   // mapBuilder setter meta.useSeaBg basert på begge betingelser.
-  if (meta.value?.useSeaBg) {
+  // v7.1.7 backwards-compat: kart laget før v7.1.3 har ikke useSeaBg
+  // i meta. Falle tilbake på mapType='sea' så de fortsatt får blå bg.
+  if (meta.value?.useSeaBg || meta.value?.mapType === 'sea') {
     svg.style.setProperty('--bg', '#9ec9de')
   }
   for (const code of allCodes) {
