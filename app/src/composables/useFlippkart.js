@@ -37,17 +37,23 @@ export function useFlippkart() {
   })
 
   // Pong-flippere på alle fire kart-kanter. position er 0..1 langs kanten
-  // (sentrert), length er fraksjon av kant-lengden (default 0.2 = 20%).
+  // (sentrert), length er fraksjon av kant-lengden (default 0.25 = 25%).
   // Ball som treffer kant utenfor en flipper-coverage drukner.
+  // Flippere er INSET fra kart-kanten med FLIPPER_INSET_M viewBox-meter
+  // så de er synlige innenfor kart-arealet.
   const flippers = reactive({
-    top:    { position: 0.5, length: 0.2 },
-    bottom: { position: 0.5, length: 0.2 },
-    left:   { position: 0.5, length: 0.2 },
-    right:  { position: 0.5, length: 0.2 },
+    top:    { position: 0.5, length: 0.25 },
+    bottom: { position: 0.5, length: 0.25 },
+    left:   { position: 0.5, length: 0.25 },
+    right:  { position: 0.5, length: 0.25 },
   })
 
-  const BALL_RADIUS_M = 180      // viewBox-meter (15× v1, 3× forrige)
-  const BOUNCE_DAMPING = 0.85
+  const BALL_RADIUS_M = 90       // viewBox-meter (halvert fra forrige 180)
+  const FLIPPER_INSET_M = 150    // viewBox-meter — collision-plan ligger inset
+                                 // (ca 45px CSS ved typisk 2km-kart-zoom, gir
+                                 // plass til 35px-tykk paddle visuelt inside)
+  const BOUNCE_AMPLIFY = 1.1     // litt mer fart ut enn inn
+  const KICK_SPEED = 300         // minimum utgående fart i m/s — "spark"
 
   // Trail (ringbuffer)
   const TRAIL_LEN = 14
@@ -71,7 +77,7 @@ export function useFlippkart() {
     // ekte fysisk meter (km-stor playfield krever overdrevet gravitasjon
     // for at ballen skal bevege seg merkbart i sub-minutt-tidsskala).
     return {
-      kGravity: 200 + 30 * (n - 1),
+      kGravity: 1000 + 150 * (n - 1),
       friction: Math.max(0.15, 0.4 - 0.04 * (n - 1)),
     }
   }
@@ -103,61 +109,63 @@ export function useFlippkart() {
   }
 
   /**
-   * Sjekk hver kart-kant: hvis ballen er på vei ut, bounce mot flipper hvis
-   * den dekker, ellers drukn. Returnerer false hvis ballen druknet (caller
-   * skal stoppe physics-stepet).
+   * Ball som krysser flipper-plan (inset INNOVER fra kart-kant) bouncer hvis
+   * flipper-coverage dekker, drukner ellers. Bouncen er ikke en mild
+   * reflektering — flipper "sparker" ballen ut med minst KICK_SPEED, slik at
+   * den ikke bare blir liggende i daler. Returnerer false ved drown.
    */
   function handleEdges() {
     const w = bounds.width, h = bounds.height
     const r = BALL_RADIUS_M
+    const inset = FLIPPER_INSET_M
 
-    // Top-edge
-    if (ball.y - r < 0 && ball.vy < 0) {
+    // Top: collision-plan ved y = inset (innenfor kart-kanten)
+    if (ball.y - r < inset && ball.vy < 0) {
       const f = flippers.top
       const c = f.position * w
       const half = f.length * w * 0.5
       if (ball.x >= c - half && ball.x <= c + half) {
-        ball.y = r
-        ball.vy = Math.abs(ball.vy) * BOUNCE_DAMPING
+        ball.y = inset + r
+        ball.vy = Math.max(KICK_SPEED, Math.abs(ball.vy) * BOUNCE_AMPLIFY)
       } else {
         drown(ball.x, 0)
         return false
       }
     }
-    // Bottom-edge
-    if (ball.y + r > h && ball.vy > 0) {
+    // Bottom: collision ved y = h - inset
+    if (ball.y + r > h - inset && ball.vy > 0) {
       const f = flippers.bottom
       const c = f.position * w
       const half = f.length * w * 0.5
       if (ball.x >= c - half && ball.x <= c + half) {
-        ball.y = h - r
-        ball.vy = -Math.abs(ball.vy) * BOUNCE_DAMPING
+        ball.y = h - inset - r
+        ball.vy = -Math.max(KICK_SPEED, Math.abs(ball.vy) * BOUNCE_AMPLIFY)
       } else {
         drown(ball.x, h)
         return false
       }
     }
-    // Left-edge
-    if (ball.x - r < 0 && ball.vx < 0) {
+    // Left: collision ved x = inset
+    if (ball.x - r < inset && ball.vx < 0) {
       const f = flippers.left
       const c = f.position * h
       const half = f.length * h * 0.5
       if (ball.y >= c - half && ball.y <= c + half) {
-        ball.x = r
-        ball.vx = Math.abs(ball.vx) * BOUNCE_DAMPING
+        ball.x = inset + r
+        ball.vx = Math.max(KICK_SPEED, Math.abs(ball.vx) * BOUNCE_AMPLIFY)
       } else {
         drown(0, ball.y)
         return false
       }
     }
-    // Right-edge
-    if (ball.x + r > w && ball.vx > 0) {
+    // Right: collision ved x = w - inset
+    if (ball.x + r > w - inset && ball.vx > 0) {
       const f = flippers.right
       const c = f.position * h
       const half = f.length * h * 0.5
       if (ball.y >= c - half && ball.y <= c + half) {
-        ball.x = w - r
-        ball.vx = -Math.abs(ball.vx) * BOUNCE_DAMPING
+        ball.x = w - inset - r
+        ball.vx = -Math.max(KICK_SPEED, Math.abs(ball.vx) * BOUNCE_AMPLIFY)
       } else {
         drown(w, ball.y)
         return false
@@ -307,5 +315,6 @@ export function useFlippkart() {
     // constants
     WIN_RADIUS_M,
     BALL_RADIUS_M,
+    FLIPPER_INSET_M,
   }
 }
