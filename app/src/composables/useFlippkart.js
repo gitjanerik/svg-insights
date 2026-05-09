@@ -228,25 +228,37 @@ export function useFlippkart() {
   }
 
   function checkStillness(b, dt) {
-    // v7.3.0: position-history rolling-window deteksjon. Velocity-basert
-    // (v7.2.8) klarte ikke å fange ball som oscillerer i en dal (speed
-    // alternerer mellom +/-200 m/s, |v| alltid > terskel). Vindu-basert
-    // er mer robust: hvis ballen ikke har FORLATT en sirkel av radius
-    // STILLNESS_DISPL_M innenfor de siste STILLNESS_WINDOW_S sekunder,
-    // er den stuck.
+    // v7.3.2: bounding-radius rundt centroid av posisjons-historikken.
+    // Tidligere "oldest vs current"-displacement (v7.3.0) klarte ikke fange
+    // ball som oscillerer i en dal med rytme nær 1-sek-vinduet — oldest
+    // og current er ved samme/ulik fase i oscillasjonen, så displacement
+    // varierer kaotisk. Bounding-radius er rytme-uavhengig:
+    //
+    //   - Stillestående ball  → all history på samme sted → maxR = 0
+    //   - Oscillerende ball   → centroid i midten, maxR = oscillasjons-radius
+    //   - Drift (sakte linjær) → centroid følger drift, maxR = liten
+    //   - Drift (rask)         → samples sprer seg utover, maxR > terskel
+    //
     if (!b.history) b.history = []
     b.history.push({ x: b.x, y: b.y })
     if (b.history.length > STILLNESS_HISTORY_LEN) b.history.shift()
 
     if (b.history.length < STILLNESS_HISTORY_LEN) {
-      // Ikke nok samples enda — anta ikke stuck
       b.stillTime = 0
       return
     }
 
-    const oldest = b.history[0]
-    const moved = Math.hypot(b.x - oldest.x, b.y - oldest.y)
-    if (moved > STILLNESS_DISPL_M) {
+    let cx = 0, cy = 0
+    for (const p of b.history) { cx += p.x; cy += p.y }
+    cx /= b.history.length
+    cy /= b.history.length
+    let maxR = 0
+    for (const p of b.history) {
+      const d = Math.hypot(p.x - cx, p.y - cy)
+      if (d > maxR) maxR = d
+    }
+
+    if (maxR > STILLNESS_DISPL_M) {
       b.stillTime = 0
       b.chargeT = 0
       b.warnIndex = 0
@@ -309,22 +321,34 @@ export function useFlippkart() {
       const dx = b.x - bp.x
       const dy = b.y - bp.y
       const dist = Math.hypot(dx, dy)
-      if (dist > r || dist < 1) continue
-      // Kollisjon — beregn normal og reflekter ball.v
-      const nx = dx / dist
-      const ny = dy / dist
-      // Push ball ut av bumper langs normalen
-      const overlap = r - dist
-      b.x += nx * overlap
-      b.y += ny * overlap
-      // Reflekter velocity langs normal + boost (sparker som bumper i pinball)
-      const vDotN = b.vx * nx + b.vy * ny
-      // Kun reflekter hvis ball var på vei INN i bumperen
-      if (vDotN < 0) {
-        const incomingMag = Math.hypot(b.vx, b.vy)
-        const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.15)
-        b.vx = nx * outMag
-        b.vy = ny * outMag
+      if (dist > r) continue
+      // v7.3.2: Spesialtilfelle — ball direkte i bumper-senter (dist ≈ 0).
+      // Tidligere `if (dist < 1) continue` etterlot ball stuck inne i
+      // bumperen. Nå force-push i tilfeldig retning med full BOUNCE_SPEED.
+      let nx, ny
+      if (dist < 1) {
+        const a = Math.random() * Math.PI * 2
+        nx = Math.cos(a)
+        ny = Math.sin(a)
+        b.x = bp.x + nx * (r * 0.5)
+        b.y = bp.y + ny * (r * 0.5)
+        b.vx = nx * BUMPER_BOUNCE_SPEED
+        b.vy = ny * BUMPER_BOUNCE_SPEED
+      } else {
+        nx = dx / dist
+        ny = dy / dist
+        // Push ball ut av bumper langs normalen
+        const overlap = r - dist
+        b.x += nx * overlap
+        b.y += ny * overlap
+        // Reflekter velocity langs normal + boost (sparker som pinball-bumper)
+        const vDotN = b.vx * nx + b.vy * ny
+        if (vDotN < 0) {
+          const incomingMag = Math.hypot(b.vx, b.vy)
+          const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.15)
+          b.vx = nx * outMag
+          b.vy = ny * outMag
+        }
       }
       // Score + sound + state
       bp.hits += 1
@@ -332,11 +356,12 @@ export function useFlippkart() {
       const remaining = BUMPER_HITS_TO_MULTIBALL - bp.hits
       playBumperHit(remaining)
 
-      // Reset stillness på ball (ball kollidert = ikke stuck)
+      // Reset stillness på ball (ball kollidert = ikke stuck).
+      // NB: clear ikke history-array, bare stillTime — ellers blir
+      // checkStillness-deteksjon kunstig forsinket i 1 sek etter hver hit.
       b.stillTime = 0
       b.chargeT = 0
       b.warnIndex = 0
-      if (b.history) b.history.length = 0
 
       checkLevelComplete()
 
