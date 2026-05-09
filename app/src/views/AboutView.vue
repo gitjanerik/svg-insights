@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 6.21.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">6.21.0</span>
+                <span class="text-white/50">&mdash; Sj&oslash; rendres bl&aring; for alle kyst-bboxer + sj&oslash;merker synlige</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/50 space-y-1 list-disc list-inside">
+                <li><strong>Coastline-modus er n&aring; standard for ALLE kyst-bboxer.</strong> Tidligere gating <code>hasCoastline &amp;&amp; !haveAuthoritativeSea</code> i <code>MapPickerView.vue</code> var for streng &mdash; &eacute;n eneste Sj&oslash;kart-dybdeareal-polygon (eller N50-Havflate-flekk) ga <code>haveAuthoritativeSea=true</code> og slo av coastline-rekonstruksjon. Resultat: sj&oslash; vist med kremgul bakgrunn-rect i stedet for bl&aring; (rapportert for Oslofjord, Asker-skj&aelig;rg&aring;rd, Drammen-Konnerud m.fl.). Sj&oslash;kart og N50 er n&aring; <em>additive</em> — de maler dybde-tonet detalj over en allerede-bl&aring; bakgrunn</li>
+                <li><strong>Land-overlay synlig:</strong> ISOM 001 (<code>place=island/islet</code>) ble alltid rendret som kremgul polygon, men i kremgul-bakgrunn-modus ble &oslash;yene cream-on-cream usynlige. N&aring; tegnes kremgule &oslash;yer over bl&aring; sj&oslash; og blir korrekt synlige</li>
+                <li><strong>Bug-fix: ISOM 540 (port-stake, r&oslash;d) og ISOM 542 (cardinal-stake, gul/sort) var usynlige</strong> b&aring;de i Tegnforklaring-side og p&aring; selve kart med faktiske sj&oslash;merker. R&oslash;t&aring;rsak: <code>buildPointSymbolDef</code> i <code>symbolizer.js</code> manglet <code>rect</code>-handler, mens 540/542-symboldefinisjonene i <code>isomCatalog.json</code> bruker <code>type:&quot;rect&quot;</code> (541 og 543 bruker polygon/circle og rendret OK). Rect-elementer ble silent dropped &rarr; tomme <code>&lt;symbol&gt;</code>-defs</li>
+                <li><strong>Test-suite utvidet:</strong> ny <code>symbolizer.test.js</code> med dekning for alle <code>buildPointSymbolDef</code>-element-typer (regresjon-vern mot at fremtidige rect/polygon/circle-symboler droppes)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.20.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-yellow-400" />

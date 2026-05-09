@@ -101,7 +101,18 @@ async function generateMap() {
     const hasCoastline = osmData.elements.some(el =>
       el.type === 'way' && el.tags?.natural === 'coastline'
     )
-    const useCoastlineFallback = hasCoastline && !haveAuthoritativeSea
+    // v6.21.0: coastline-mode er nå standard for ALLE kyst-bboxer, ikke
+    // siste-fallback. Gating-en `hasCoastline && !haveAuthoritativeSea`
+    // var for streng — én eneste Sjøkart-dybdeareal-polygon (eller én
+    // N50 Havflate-flekk) ga `haveAuthoritativeSea=true` og slo av
+    // coastline-rekonstruksjon, selv om Sjøkart/N50 ofte har hull i
+    // sjø-dekningen og ikke faktisk dekker hele sjø-arealet. Resultat:
+    // sjø rendret med kremgul bakgrunn-rect i stedet for blå (Oslofjord,
+    // Asker-skjærgård, Drammen-Konnerud m.fl.). Sjøkart/N50 er nå
+    // *additive* — de maler dybde-tonet blå over allerede-blå bg, gir
+    // dybdekonturer og lanterner og innsjø-elev-labels uten å påvirke
+    // basis-sjøen som coastline-rekonstruksjon håndterer.
+    const useCoastlineFallback = hasCoastline
 
     // v6.12.1: «Confirmed inland»-deteksjon. Hvis N50 har ferskvann
     // (innsjø/elv), N50 har INGEN sjø (Havflate), OG ingen OSM coastline,

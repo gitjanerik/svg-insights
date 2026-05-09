@@ -93,6 +93,14 @@ export function buildPointSymbolDef(symId, spec) {
     if (el.type === 'polygon') {
       return `<polygon points="${el.points}" fill="${el.fill}"/>`
     }
+    if (el.type === 'rect') {
+      // ISOM 540 (stake-port) og 542 (stake-cardinal) bruker rect-elementer
+      // — uten denne handleren ble de silent dropped → tomme symboler
+      // (usynlig på kart og i Tegnforklaring).
+      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${el.widthMm}mm"` : ''
+      const fill = el.fill ?? 'none'
+      return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="${fill}" ${stroke}/>`
+    }
     return ''
   }).join('')
   return `<symbol id="${symId}" viewBox="${spec.viewBox}">${elements}</symbol>`
