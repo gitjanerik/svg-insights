@@ -1,4 +1,4 @@
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, unref, onMounted, onUnmounted } from 'vue'
 
 /**
  * Multi-touch pinch-to-zoom + pan + double-tap-to-zoom-on-point.
@@ -6,8 +6,16 @@ import { ref, onMounted, onUnmounted } from 'vue'
  * v6.9.0-polish: pinch zoomer rundt finger-senter (tidligere zoomet rundt
  * elementets midt = uvant for brukeren), wheel zoomer rundt mus-pos, og
  * dobbeltklikk/dobbel-tap zoomer 2x på treffpunkt med kort transition.
+ *
+ * v7.2.2: options.enabled (ref|computed|bool) — handlere skipper input når
+ * false. Brukes f.eks. av Flippkart-spillet for å fryse pan/zoom/rotasjon.
  */
-export function usePinchZoom(elementRef) {
+export function usePinchZoom(elementRef, options = {}) {
+  const enabledOpt = options.enabled
+  function isEnabled() {
+    return enabledOpt == null ? true : !!unref(enabledOpt)
+  }
+
   const scale = ref(1)
   const translateX = ref(0)
   const translateY = ref(0)
@@ -76,6 +84,7 @@ export function usePinchZoom(elementRef) {
   }
 
   function onTouchStart(e) {
+    if (!isEnabled()) return
     if (e.touches.length === 2) {
       isPinching = true
       isPanning = false
@@ -118,6 +127,7 @@ export function usePinchZoom(elementRef) {
   }
 
   function onTouchMove(e) {
+    if (!isEnabled()) return
     if (isPinching && e.touches.length === 2) {
       e.preventDefault()
       const d = dist(e.touches[0], e.touches[1])
@@ -156,6 +166,7 @@ export function usePinchZoom(elementRef) {
 
   // Desktop: scroll to zoom rundt mus-pos
   function onWheel(e) {
+    if (!isEnabled()) return
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
     zoomAtPoint(clampScale(scale.value * delta), e.clientX, e.clientY)
@@ -163,6 +174,7 @@ export function usePinchZoom(elementRef) {
 
   // Desktop: dobbeltklikk = double-tap-ekvivalent
   function onDblClick(e) {
+    if (!isEnabled()) return
     e.preventDefault()
     if (scale.value >= 15.9) {
       animate()
