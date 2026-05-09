@@ -174,42 +174,187 @@ async function fetchFirstWorkingTypename(endpoint, candidates, bbox, opts, fetch
   return []
 }
 
+// v7.1.6: Geonorge WFS-endepunkter er inkonsistente i hvilken
+// OUTPUTFORMAT-streng de aksepterer. Brukerrapport viser at v7.1.5
+// loggget "GML/XML-svar (57)" — dvs. serveren svarer, men returnerer
+// GML i stedet for JSON. Vi prøver derfor flere kandidat-strenger
+// per typename før vi gir opp og evt. faller tilbake på GML.
+const OUTPUT_FORMATS = [
+  'application/json',
+  'application/geo+json',
+  'json',
+  'JSON',
+  'text/json',
+  'geojson',
+  // Siste-fallback: GML — vi parser den minimalt om JSON ikke virker.
+  // GML 3.2.1 er standard for WFS 2.0.0, ikke spesifiser version her;
+  // serveren velger sin default.
+  'text/xml; subtype=gml/3.2.1',
+  'application/gml+xml; version=3.2',
+  'GML2',
+]
+
 async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
-  const params = new URLSearchParams({
+  const baseParams = {
     SERVICE: 'WFS',
     VERSION: '2.0.0',
     REQUEST: 'GetFeature',
     TYPENAMES: typeName,
     SRSNAME: 'EPSG:4326',
     BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`,
-    OUTPUTFORMAT: 'application/json',
     COUNT: '5000',
-  })
-  const url = `${endpoint}?${params}`
-  let res
-  try {
-    res = await fetch(url, { signal: opts.signal })
-  } catch (e) {
-    // Network/CORS-feil — logg eksplisitt så det er synlig i DevTools
-    console.warn(`[Sjøkart] Network/CORS-feil for ${typeName} på ${endpoint}: ${e.message}`)
-    throw e
   }
+  let lastError = null
+  for (const fmt of OUTPUT_FORMATS) {
+    try {
+      const features = await tryFormat(endpoint, baseParams, typeName, fmt, opts)
+      if (features != null) {
+        // Logg første gang vi treffer en virkende format-streng for
+        // gitt endpoint/typename — hjelper diagnose.
+        if (fmt !== 'application/json') {
+          console.log(`[Sjøkart] ${typeName} virket med OUTPUTFORMAT=${fmt}`)
+        }
+        return features
+      }
+    } catch (e) {
+      lastError = e
+      // Network/CORS-feil er fatal for hele endpointet; ingen vits å
+      // prøve andre format-strenger om vi ikke når serveren i det hele
+      // tatt.
+      if (e?.message && /Failed to fetch|NetworkError|ERR_/i.test(e.message)) {
+        throw e
+      }
+      // Annet (HTTP-feil, ikke-JSON, etc) — prøv neste format.
+    }
+  }
+  // Alle format-varianter failet. Last error gir mest informasjon.
+  throw lastError ?? new Error(`Alle format-varianter feilet for ${typeName}`)
+}
+
+async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
+  const params = new URLSearchParams({ ...baseParams, OUTPUTFORMAT: outputFormat })
+  const url = `${endpoint}?${params}`
+  const res = await fetch(url, { signal: opts.signal })
   if (!res.ok) {
-    console.warn(`[Sjøkart] HTTP ${res.status} for ${typeName} på ${endpoint}`)
-    throw new Error(`HTTP ${res.status} for ${typeName}`)
+    throw new Error(`HTTP ${res.status} for ${typeName} med format ${outputFormat}`)
   }
   const text = await res.text()
-  // Geonorge-tjenester returnerer av og til GML når GeoJSON ikke støttes,
-  // selv om OUTPUTFORMAT=application/json er bedt. Hvis svaret ikke er
-  // gyldig JSON, logg så vi vet typename er feil eller format er GML.
-  try {
-    const json = JSON.parse(text)
-    return json.features ?? []
-  } catch {
-    const head = text.slice(0, 200).replace(/\s+/g, ' ')
-    console.warn(`[Sjøkart] Ikke-JSON respons for ${typeName} (kan være GML eller ServiceException): ${head}…`)
-    throw new Error(`Ikke-JSON respons for ${typeName}`)
+  // GeoJSON-format
+  if (text.trim().startsWith('{')) {
+    try {
+      const json = JSON.parse(text)
+      return json.features ?? []
+    } catch {
+      throw new Error(`Ikke-JSON respons for ${typeName} (forventet med ${outputFormat})`)
+    }
   }
+  // GML-format — kun forsøkt for GML-MIME-types
+  if (text.trim().startsWith('<') && /gml|xml/i.test(outputFormat)) {
+    return parseGmlFeatures(text, typeName)
+  }
+  // ServiceException eller annet uventet
+  if (text.includes('ServiceException')) {
+    // Gi opp denne format-varianten stille, prøv neste
+    return null
+  }
+  throw new Error(`Ikke-JSON respons for ${typeName}`)
+}
+
+/**
+ * Minimal GML-parser for WFS-svar. Henter ut Point/LineString/Polygon-
+ * geometrier og koblede properties. Bevisst forenkletbeginn — håndterer
+ * gml:posList og gml:pos i EPSG:4326 (lat lon-rekkefølge for GML 3.2.1).
+ *
+ * @param {string} xml  GML-string fra WFS
+ * @param {string} typeName  for diagnose-logging
+ * @returns {Array<{ properties: object, geometry: object }>}
+ */
+function parseGmlFeatures(xml, typeName) {
+  if (typeof DOMParser === 'undefined') {
+    // Node-kontekst (test eller CI): vi har ikke DOMParser. Returner
+    // tom liste; CI-bygg kjører Vardåsen som er innland.
+    return []
+  }
+  const doc = new DOMParser().parseFromString(xml, 'application/xml')
+  const err = doc.querySelector('parsererror')
+  if (err) {
+    console.warn(`[Sjøkart] GML parser-error for ${typeName}: ${err.textContent.slice(0, 100)}`)
+    return []
+  }
+  // WFS pakker hver feature i wfs:member > <Type-element>. Hent dem.
+  const ns = 'http://www.opengis.net/wfs/2.0'
+  let members = Array.from(doc.getElementsByTagNameNS(ns, 'member'))
+  if (members.length === 0) {
+    // WFS 1.x-fallback: featureMembers
+    members = Array.from(doc.getElementsByTagName('gml:featureMember'))
+    if (members.length === 0) {
+      members = Array.from(doc.getElementsByTagName('wfs:member'))
+    }
+  }
+  const features = []
+  for (const m of members) {
+    const inner = m.firstElementChild
+    if (!inner) continue
+    const props = {}
+    let geometry = null
+    for (const child of Array.from(inner.children)) {
+      const localName = child.localName
+      // Geometri-felter inneholder gml-elementer
+      const gmlEl = child.getElementsByTagNameNS('http://www.opengis.net/gml/3.2', '*')[0]
+                 ?? child.getElementsByTagName('gml:Point')[0]
+                 ?? child.getElementsByTagName('gml:LineString')[0]
+                 ?? child.getElementsByTagName('gml:Polygon')[0]
+                 ?? child.getElementsByTagName('gml:MultiSurface')[0]
+                 ?? child.getElementsByTagName('gml:MultiCurve')[0]
+      if (gmlEl) {
+        geometry = gmlToGeojsonGeometry(gmlEl)
+      } else if (child.children.length === 0) {
+        props[localName] = child.textContent
+      }
+    }
+    if (geometry) features.push({ properties: props, geometry })
+  }
+  if (features.length > 0) {
+    console.log(`[Sjøkart] GML-parser hentet ${features.length} features fra ${typeName}`)
+  }
+  return features
+}
+
+function parseCoords(text) {
+  return text.trim().split(/\s+/).map(Number).filter(Number.isFinite)
+}
+
+function gmlToGeojsonGeometry(el) {
+  const tag = el.localName
+  if (tag === 'Point') {
+    const pos = el.getElementsByTagName('gml:pos')[0]?.textContent ?? el.getElementsByTagName('pos')[0]?.textContent
+    if (!pos) return null
+    const [lat, lon] = parseCoords(pos)  // GML 3.2.1 EPSG:4326 = lat lon
+    return { type: 'Point', coordinates: [lon, lat] }
+  }
+  if (tag === 'LineString') {
+    const posList = el.getElementsByTagName('gml:posList')[0]?.textContent ?? el.getElementsByTagName('posList')[0]?.textContent
+    if (!posList) return null
+    const flat = parseCoords(posList)
+    const coords = []
+    for (let i = 0; i + 1 < flat.length; i += 2) coords.push([flat[i + 1], flat[i]])
+    return { type: 'LineString', coordinates: coords }
+  }
+  if (tag === 'Polygon') {
+    const exterior = el.getElementsByTagName('gml:exterior')[0]
+    if (!exterior) return null
+    const posList = exterior.getElementsByTagName('gml:posList')[0]?.textContent
+    if (!posList) return null
+    const flat = parseCoords(posList)
+    const ring = []
+    for (let i = 0; i + 1 < flat.length; i += 2) ring.push([flat[i + 1], flat[i]])
+    return { type: 'Polygon', coordinates: [ring] }
+  }
+  if (tag === 'MultiSurface' || tag === 'MultiCurve') {
+    // Ignorerer for nå — sjeldent for sjøkart
+    return null
+  }
+  return null
 }
 
 /**
