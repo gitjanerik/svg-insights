@@ -33,11 +33,12 @@ export function useFlippkart() {
   const RANDOM_DROP_R_FRAC = 0.325
 
   const STILLNESS_DIST_M = 30        // mindre bevegelse enn dette i en periode = stille
-  const STILLNESS_WARNING_S = 1.0    // når warning starter
-  const STILLNESS_EXPLODE_S = 3.0    // når eksplosjon trigger
+  const STILLNESS_WARNING_S = 1.5    // når warning starter
+  const STILLNESS_EXPLODE_S = 4.0    // når eksplosjon trigger (primary ball)
+  const MULTIBALL_STUCK_S = 8.0      // når multi-ball balls bare drukner stille
   const MULTIBALL_COUNT = 3
-  const MULTIBALL_SPEED = 700        // m/s spawn-fart for nye baller
-  const MULTIBALL_DROP_S = 8.0       // multi-ball runder eksploderer ikke (max 1 nivå rekursivt)
+  const MULTIBALL_SPEED = 1200       // m/s spawn-fart — høy nok til å unngå
+                                     // umiddelbar stillness selv på flate kart
 
   // balls = aktive baller. Hver ball: {x,y,vx,vy,visible, stillX, stillY,
   //   stillTime, chargeT, nextWarnAt, warnIndex, canExplode}
@@ -74,6 +75,12 @@ export function useFlippkart() {
   let equidistanceM = 20
   let lastElev = NaN
   let lastHitEdge = null
+  // Terreng-energi-multiplikator (v7.2.7): scaler friction inverst etter
+  // kart-utsnittets høydeforskjell. Flate kart (lite range) → mye lavere
+  // friksjon → ball glir lenger på flatmark. Bratte kart (stort range) →
+  // høyere friksjon, men slope-akselerasjon kompenserer. Beregnet i init().
+  let terrainEnergyMult = 1
+  const TERRAIN_REF_RANGE_M = 200    // referanse — typisk variert terreng
 
   let rafId = null
   let lastTime = 0
@@ -99,10 +106,13 @@ export function useFlippkart() {
   }
 
   function levelParams(n) {
-    // v7.2.6: +25% grunnfart fra v7.2.5 (1500 → 1875)
+    // v7.2.7: senket base-friksjon 0.4 → 0.18. Skalert friction inverst
+    // med terrainEnergyMult — flate kart får lavere friksjon (ball glir
+    // mye lenger på flatmark, mindre stagnering).
+    const baseFriction = Math.max(0.05, 0.18 - 0.02 * (n - 1))
     return {
       kGravity: 1875 + 250 * (n - 1),
-      friction: Math.max(0.15, 0.4 - 0.04 * (n - 1)),
+      friction: baseFriction / terrainEnergyMult,
     }
   }
 
@@ -153,7 +163,7 @@ export function useFlippkart() {
 
       // Stillness-detection
       checkStillness(b, dt)
-      if (b.exploded) {
+      if (b.exploded || !b.visible) {
         balls.splice(i, 1)
         continue
       }
@@ -166,7 +176,6 @@ export function useFlippkart() {
   }
 
   function checkStillness(b, dt) {
-    if (!b.canExplode) return
     const moved = Math.hypot(b.x - b.stillX, b.y - b.stillY)
     if (moved > STILLNESS_DIST_M) {
       b.stillX = b.x
@@ -178,26 +187,38 @@ export function useFlippkart() {
     }
     b.stillTime += dt
 
-    // Charge ramper fra 0 ved warning-start til 1 ved explode
-    if (b.stillTime >= STILLNESS_WARNING_S) {
-      const range = STILLNESS_EXPLODE_S - STILLNESS_WARNING_S
-      b.chargeT = Math.min(1, (b.stillTime - STILLNESS_WARNING_S) / range)
-      // Spille warning beeps progressivt (4 stk fra warning til explode)
-      const desiredWarn = Math.floor(b.chargeT * 4 + 0.001)
-      while (b.warnIndex < desiredWarn) {
-        playStillWarning(b.warnIndex)
-        b.warnIndex++
+    if (b.canExplode) {
+      // Primary ball: warn → explode flow
+      if (b.stillTime >= STILLNESS_WARNING_S) {
+        const range = STILLNESS_EXPLODE_S - STILLNESS_WARNING_S
+        b.chargeT = Math.min(1, (b.stillTime - STILLNESS_WARNING_S) / range)
+        const desiredWarn = Math.floor(b.chargeT * 4 + 0.001)
+        while (b.warnIndex < desiredWarn) {
+          playStillWarning(b.warnIndex)
+          b.warnIndex++
+        }
       }
-    }
-
-    if (b.stillTime >= STILLNESS_EXPLODE_S) {
-      explodeBall(b)
+      if (b.stillTime >= STILLNESS_EXPLODE_S) {
+        explodeBall(b)
+      }
+    } else {
+      // Multi-ball balls: ingen kaskade-eksplosjon. Forsvinner stille hvis
+      // de virkelig blir stuck i en dal — slik at game-state ikke henger.
+      if (b.stillTime >= MULTIBALL_STUCK_S) {
+        b.visible = false   // silent cleanup, ingen splash/lyd
+      }
     }
   }
 
   function explodeBall(b) {
-    splash.x = b.x
-    splash.y = b.y
+    // Clamp spawn-posisjon godt inne i playfield så multi-ball-baller ikke
+    // umiddelbart krysser flipper-plan og drukner. Margin = inset + r + 50.
+    const margin = FLIPPER_INSET_M + BALL_RADIUS_M + 50
+    const sx = Math.max(margin, Math.min(bounds.width - margin, b.x))
+    const sy = Math.max(margin, Math.min(bounds.height - margin, b.y))
+
+    splash.x = sx
+    splash.y = sy
     splash.active = true
     splash.t = 0
     splash.kind = 'explode'
@@ -207,15 +228,15 @@ export function useFlippkart() {
     // Marker som ekspodert (blir splicet ut neste loop-iter)
     b.exploded = true
 
-    // Spawn 3 nye baller fra eksplosjonspunktet
+    // Spawn 3 nye baller fra (clamped) eksplosjonspunkt
     const baseAngle = Math.random() * Math.PI * 2
     for (let k = 0; k < MULTIBALL_COUNT; k++) {
       const angle = baseAngle + (k * 2 * Math.PI / MULTIBALL_COUNT)
-      // Liten random skew for variasjon
       const a = angle + (Math.random() - 0.5) * 0.5
       const speed = MULTIBALL_SPEED * (0.85 + Math.random() * 0.3)
-      // Multi-ball baller får canExplode=false så vi ikke får cascading explosions
-      spawnBall(b.x, b.y, Math.cos(a) * speed, Math.sin(a) * speed, false)
+      // canExplode=false: ingen kaskade-eksplosjoner. Stuck-cleanup (8s) tar
+      // over hvis multi-ball balls stagnerer.
+      spawnBall(sx, sy, Math.cos(a) * speed, Math.sin(a) * speed, false)
     }
   }
 
@@ -503,6 +524,23 @@ export function useFlippkart() {
     dem = ctx.dem
     bounds = ctx.bounds
     equidistanceM = ctx.equidistanceM ?? 20
+    // Beregn terrain-energy-multiplier basert på DEM-elevasjon-spenn.
+    // Typisk variert terreng (200m range) → 1.0. Flatmark (50m) → 4.0
+    // (kraftig redusert friksjon). Mountain (500m) → 0.4 (mer friksjon,
+    // men terrenget gir naturlig akselerasjon).
+    terrainEnergyMult = 1
+    if (dem?.data && dem.noData != null) {
+      let mn = Infinity, mx = -Infinity
+      const nd = dem.noData
+      for (let i = 0; i < dem.data.length; i++) {
+        const z = dem.data[i]
+        if (z === nd || !Number.isFinite(z)) continue
+        if (z < mn) mn = z
+        if (z > mx) mx = z
+      }
+      const range = (mx - mn) > 0 ? (mx - mn) : TERRAIN_REF_RANGE_M
+      terrainEnergyMult = Math.max(0.4, Math.min(4.0, TERRAIN_REF_RANGE_M / range))
+    }
   }
 
   function activate() {
