@@ -181,6 +181,14 @@ export function playExplosion() {
   playTone(N.C6, 0.06, 'triangle', 0.10, 0.10)
 }
 
+/** Bumper-bonk — ball treffer hus. Pitch øker med remaining-hits-til-multiball. */
+export function playBumperHit(remainingHits = 0) {
+  // 4 hits left = lav pitch, 1 hit left = høy pitch (spennings-bygging)
+  const baseFreq = N.E5 * Math.pow(1.18921, Math.max(0, 4 - remainingHits))
+  playTone(baseFreq, 0.07, 'square', 0.16)
+  playTone(baseFreq * 0.5, 0.05, 'triangle', 0.10, 0.01)
+}
+
 /** Multi-ball spawn — kvint-gnist når 3 baller spretter ut. */
 export function playMultiSpawn() {
   playTone(N.C5, 0.06, 'square', 0.18, 0.00)

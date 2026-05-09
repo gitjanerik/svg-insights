@@ -149,6 +149,18 @@ function onPointerUp(e) {
   transition: background 120ms, box-shadow 120ms;
 }
 
+/* v7.3.0: Utvidet touch-sone via ::before pseudo-element. Paddle visuelt
+   står som før, men kan grabbes 70px ekstra INN mot kart-senter. */
+.flipp-paddle::before {
+  content: '';
+  position: absolute;
+  background: transparent;
+}
+.flipp-paddle-top::before    { inset:    0  0 -70px  0; }
+.flipp-paddle-bottom::before { inset: -70px  0    0  0; }
+.flipp-paddle-left::before   { inset:    0 -70px  0  0; }
+.flipp-paddle-right::before  { inset:    0    0  0 -70px; }
+
 .flipp-paddle:active,
 .flipp-paddle.flipp-paddle-active {
   cursor: grabbing;

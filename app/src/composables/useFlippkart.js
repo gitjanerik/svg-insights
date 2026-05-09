@@ -3,7 +3,7 @@ import { sampleGradient, sampleElevation } from '../lib/demSampling.js'
 import {
   playIntro, playKick, playEnergize, playSplash, playWin,
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
-  playStillWarning, playExplosion, playMultiSpawn,
+  playStillWarning, playExplosion, playMultiSpawn, playBumperHit,
 } from './useFlippkartSound.js'
 
 /**
@@ -66,15 +66,28 @@ export function useFlippkart() {
   // deteksjon. Posisjon-deteksjon var upålitelig — ball som drev sakte
   // linjært fikk stillTime resatt før den nådde explode-terskel. Velocity-
   // basert er mer pålitelig for "ball går tom for energi".
-  const STILLNESS_SPEED_M_S = 80     // under denne fart = "stille" (akkumulerer)
-  const STILLNESS_WARNING_S = 1.5    // når warning starter
-  const STILLNESS_EXPLODE_S = 3.5    // når eksplosjon trigger (primary ball)
+  // v7.3.0: rolling-window position-history deteksjon
+  const STILLNESS_HISTORY_LEN = 60   // ~1 sek ved 60 fps
+  const STILLNESS_DISPL_M = 120      // total displacement i 1s vindu < dette = stuck
+  const STILLNESS_WARNING_S = 1.0    // når warning starter
+  const STILLNESS_EXPLODE_S = 3.0    // når eksplosjon trigger (primary ball)
   const MULTIBALL_STUCK_S = 6.0      // når multi-ball balls bare drukner stille
   const MULTIBALL_COUNT = 3
 
-  // balls = aktive baller. Hver ball: {x,y,vx,vy,visible, stillX, stillY,
-  //   stillTime, chargeT, nextWarnAt, warnIndex, canExplode}
+  // balls = aktive baller.
   const balls = reactive([])
+
+  // Bumpers (v7.3.0): hus-formede stationary-objekter som ballen bouncer
+  // av. Etter BUMPER_HITS_TO_MULTIBALL treff på samme bumper → multi-ball
+  // trigges. Genereres bare på partalls-levels (level % 2 === 0).
+  const bumpers = reactive([])
+  const BUMPER_RADIUS_M = 90        // collision-radius (i meter, viewBox)
+  const BUMPER_HITS_TO_MULTIBALL = 4
+  const BUMPER_HIT_SCORE = 50
+  const BUMPER_BOUNCE_SPEED = 350   // minimum utgående fart fra bumper-hit
+  const BUMPER_MAX_PER_LEVEL = 5
+  const BUMPER_MIN_DISTANCE_M = 250 // min avstand mellom bumpers
+  const BUMPER_LEVEL_MOD = 2        // bumpers genereres når level % 2 === 0
 
   const splash = reactive({
     x: 0, y: 0,
@@ -190,6 +203,9 @@ export function useFlippkart() {
       // Trail bare for primary (først i listen) — multi-ball balls får ikke trail
       if (i === 0) detectContourCrossings(prevX, prevY, b.x, b.y)
 
+      // Bumper-collisions
+      handleBumperCollisions(b)
+
       // Bounds-check pr ball
       if (!handleEdgesForBall(b)) {
         // Ball droknet → fjern fra array
@@ -212,11 +228,25 @@ export function useFlippkart() {
   }
 
   function checkStillness(b, dt) {
-    // Velocity-basert: ball som har fart > terskel resetter stillness-state.
-    // Ball som har lav fart akkumulerer stillTime — uavhengig av om den
-    // driver linjært eller bare står helt i ro.
-    const speed = Math.hypot(b.vx, b.vy)
-    if (speed > STILLNESS_SPEED_M_S) {
+    // v7.3.0: position-history rolling-window deteksjon. Velocity-basert
+    // (v7.2.8) klarte ikke å fange ball som oscillerer i en dal (speed
+    // alternerer mellom +/-200 m/s, |v| alltid > terskel). Vindu-basert
+    // er mer robust: hvis ballen ikke har FORLATT en sirkel av radius
+    // STILLNESS_DISPL_M innenfor de siste STILLNESS_WINDOW_S sekunder,
+    // er den stuck.
+    if (!b.history) b.history = []
+    b.history.push({ x: b.x, y: b.y })
+    if (b.history.length > STILLNESS_HISTORY_LEN) b.history.shift()
+
+    if (b.history.length < STILLNESS_HISTORY_LEN) {
+      // Ikke nok samples enda — anta ikke stuck
+      b.stillTime = 0
+      return
+    }
+
+    const oldest = b.history[0]
+    const moved = Math.hypot(b.x - oldest.x, b.y - oldest.y)
+    if (moved > STILLNESS_DISPL_M) {
       b.stillTime = 0
       b.chargeT = 0
       b.warnIndex = 0
@@ -225,7 +255,6 @@ export function useFlippkart() {
     b.stillTime += dt
 
     if (b.canExplode) {
-      // Primary ball: warn → explode flow
       if (b.stillTime >= STILLNESS_WARNING_S) {
         const range = STILLNESS_EXPLODE_S - STILLNESS_WARNING_S
         b.chargeT = Math.min(1, (b.stillTime - STILLNESS_WARNING_S) / range)
@@ -239,11 +268,110 @@ export function useFlippkart() {
         explodeBall(b)
       }
     } else {
-      // Multi-ball balls: ingen kaskade-eksplosjon. Forsvinner stille hvis
-      // de virkelig blir stuck i en dal — slik at game-state ikke henger.
       if (b.stillTime >= MULTIBALL_STUCK_S) {
-        b.visible = false   // silent cleanup, ingen splash/lyd
+        b.visible = false
       }
+    }
+  }
+
+  /**
+   * Genererer bumpers for nåværende level. Tilfeldig plassering innenfor
+   * playable area, min-avstand mellom hver. 1-5 bumpers, men kun når
+   * level % BUMPER_LEVEL_MOD === 0 (partalls-levels). Resetter hits-counter.
+   */
+  function generateBumpersForLevel() {
+    bumpers.length = 0
+    if (level.value % BUMPER_LEVEL_MOD !== 0) return
+    const count = 1 + Math.floor(Math.random() * BUMPER_MAX_PER_LEVEL)
+    const margin = FLIPPER_INSET_M + BUMPER_RADIUS_M + 100
+    let attempts = 0
+    while (bumpers.length < count && attempts < 100) {
+      attempts++
+      const x = margin + Math.random() * (bounds.width - 2 * margin)
+      const y = margin + Math.random() * (bounds.height - 2 * margin)
+      // Sjekk min-avstand til andre bumpers
+      let ok = true
+      for (const b of bumpers) {
+        if (Math.hypot(b.x - x, b.y - y) < BUMPER_MIN_DISTANCE_M) {
+          ok = false; break
+        }
+      }
+      if (ok) {
+        bumpers.push({ x, y, hits: 0 })
+      }
+    }
+  }
+
+  /** Sjekk om ball treffer noen bumper og handter bounce + multiball-trigger. */
+  function handleBumperCollisions(b) {
+    const r = BALL_RADIUS_M + BUMPER_RADIUS_M
+    for (const bp of bumpers) {
+      const dx = b.x - bp.x
+      const dy = b.y - bp.y
+      const dist = Math.hypot(dx, dy)
+      if (dist > r || dist < 1) continue
+      // Kollisjon — beregn normal og reflekter ball.v
+      const nx = dx / dist
+      const ny = dy / dist
+      // Push ball ut av bumper langs normalen
+      const overlap = r - dist
+      b.x += nx * overlap
+      b.y += ny * overlap
+      // Reflekter velocity langs normal + boost (sparker som bumper i pinball)
+      const vDotN = b.vx * nx + b.vy * ny
+      // Kun reflekter hvis ball var på vei INN i bumperen
+      if (vDotN < 0) {
+        const incomingMag = Math.hypot(b.vx, b.vy)
+        const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.15)
+        b.vx = nx * outMag
+        b.vy = ny * outMag
+      }
+      // Score + sound + state
+      bp.hits += 1
+      score.value += Math.round(BUMPER_HIT_SCORE * level.value * perks.hitScoreMult)
+      const remaining = BUMPER_HITS_TO_MULTIBALL - bp.hits
+      playBumperHit(remaining)
+
+      // Reset stillness på ball (ball kollidert = ikke stuck)
+      b.stillTime = 0
+      b.chargeT = 0
+      b.warnIndex = 0
+      if (b.history) b.history.length = 0
+
+      checkLevelComplete()
+
+      if (bp.hits >= BUMPER_HITS_TO_MULTIBALL) {
+        // Trigg multi-ball + reset bumperen
+        bp.hits = 0
+        triggerMultiballFromBumper(bp.x, bp.y)
+      }
+      // En ball kan kun treffe én bumper per frame
+      break
+    }
+  }
+
+  /** Multiball trigget av bumper-treff (samme drop-pattern som explodeBall). */
+  function triggerMultiballFromBumper(sx, sy) {
+    splash.x = sx
+    splash.y = sy
+    splash.active = true
+    splash.t = 0
+    splash.kind = 'explode'
+    playExplosion()
+    setTimeout(() => playMultiSpawn(), 250)
+    lastEvent.value = { kind: 'multiball', at: Date.now() }
+
+    // 3 baller dropped på random posisjoner (samme som explodeBall — uten å
+    // markere noen ball som exploded, siden multi-ball her trigges av treff)
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+    const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
+    for (let k = 0; k < MULTIBALL_COUNT; k++) {
+      const angle = Math.random() * Math.PI * 2
+      const r = Math.sqrt(Math.random()) * R
+      const x = cx + Math.cos(angle) * r
+      const y = cy + Math.sin(angle) * r
+      spawnBall(x, y, 0, 0, false)
     }
   }
 
@@ -388,10 +516,11 @@ export function useFlippkart() {
     score.value += Math.round(100 * level.value * perks.hitScoreMult)
     playKick(kickLevel)
 
-    // Reset stillness-state på treff
+    // Reset stillness-state på treff (inkl posisjon-historikk)
     b.stillTime = 0
     b.chargeT = 0
     b.warnIndex = 0
+    if (b.history) b.history.length = 0
 
     if (lastHitEdge && OPPOSITE[lastHitEdge] === edge) {
       const bonus = Math.round(SMASH_BONUS_BASE * Math.pow(2, level.value - 1) * perks.smashMult)
@@ -496,6 +625,7 @@ export function useFlippkart() {
       balls.length = 0
       lastHitEdge = null
       lastElev = NaN
+      generateBumpersForLevel()    // v7.3.0: ny set bumpers for nytt level
       // Hvert PERK_INTERVAL (3.) level: vis perk-velg-meny FØR neste level
       if ((level.value - 1) % PERK_INTERVAL === 0) {
         perkChoices.value = pickRandomPerks(3)
@@ -608,6 +738,8 @@ export function useFlippkart() {
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
       flippers[e].kickLevel = 0
     }
+    bumpers.length = 0
+    generateBumpersForLevel()       // for L1 vil dette bli no-op (level%2 ikke 0)
   }
 
   function init(ctx) {
@@ -656,7 +788,7 @@ export function useFlippkart() {
     // state
     active, status, level, lives, score, totalScore, countdown, highscore,
     levelTarget, lastEvent,
-    balls, splash, trail, flippers,
+    balls, splash, trail, flippers, bumpers,
     perks, perkChoices,
     // actions
     init, activate, deactivate,
@@ -666,5 +798,7 @@ export function useFlippkart() {
     BALL_RADIUS_M,
     FLIPPER_INSET_M,
     KICK_MULTIPLIERS,
+    BUMPER_RADIUS_M,
+    BUMPER_HITS_TO_MULTIBALL,
   }
 }
