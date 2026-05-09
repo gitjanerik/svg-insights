@@ -13,6 +13,7 @@ import { unpackDem } from '../lib/demSampling.js'
 import { useFlippkart } from '../composables/useFlippkart.js'
 import FlippkartLayer from '../components/FlippkartLayer.vue'
 import FlippkartHUD from '../components/FlippkartHUD.vue'
+import FlippkartFlippers from '../components/FlippkartFlippers.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,6 +35,21 @@ const flippViewBox = computed(() => {
   if (!meta.value) return '0 0 1 1'
   return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
 })
+
+// Skjerm-rekt for kart-SVG-en, oppdatert når flippkart er aktiv så Pong-paddles
+// kan posisjoneres relativt til kartets ekte plass på skjermen (etter pinch/pan).
+const mapRect = ref(null)
+
+function updateMapRect() {
+  if (!flippkart.active.value) {
+    mapRect.value = null
+    return
+  }
+  const el = svgHostRef.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  mapRect.value = { top: r.top, left: r.left, width: r.width, height: r.height }
+}
 
 const BUILTIN = {
   vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
@@ -102,6 +118,8 @@ function startFlippkart() {
     highestPoint: storedHighestPoint.value,
   })
   flippkart.restart()
+  // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
+  reset()
   flippkart.activate()
   closeDrawer()
 }
@@ -142,6 +160,23 @@ function applyLayerVisibility() {
 }
 
 const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef)
+
+// Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
+// alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
+// faktisk er applied i DOM før vi måler.
+watch([scale, translateX, translateY, rotation], () => {
+  if (flippkart.active.value) nextTick(updateMapRect)
+})
+
+watch(() => flippkart.active.value, (active) => {
+  if (active) {
+    nextTick(updateMapRect)
+    // Reset() animerer scale/translate over 200ms — re-mål når transitionen er ferdig.
+    setTimeout(updateMapRect, 250)
+  } else {
+    mapRect.value = null
+  }
+})
 
 // Translate + scale i ytre lag (origin 0 0 så pinch-zoom rundt finger
 // fungerer som før). Rotasjon i indre lag (origin center center) så
@@ -641,6 +676,8 @@ function clearMapTypePreference() {
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
+  window.addEventListener('resize', updateMapRect)
+  window.addEventListener('orientationchange', updateMapRect)
   loadMap()
 })
 </script>
@@ -1029,6 +1066,9 @@ onMounted(() => {
 
     <!-- Flippkart-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
     <FlippkartHUD :flipp="flippkart" @restart="flippkart.restart" @exit="stopFlippkart"/>
+
+    <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
+    <FlippkartFlippers :flipp="flippkart" :map-rect="mapRect"/>
   </div>
 </template>
 

@@ -5,9 +5,11 @@ const props = defineProps({
   flipp: { type: Object, required: true },
   viewBox: { type: String, required: true },
   highestPoint: { type: Object, default: null },
-  // Ballradius i viewBox-koord (meter). 12 = ~24m visuelt, lett å se.
-  ballRadius: { type: Number, default: 12 },
 })
+
+// Hent ballradius fra composable (60m i v7.2.0). FlippkartLayer holder ikke
+// egen kopi — physikk og rendering må alltid være enige.
+const ballRadius = computed(() => props.flipp.BALL_RADIUS_M ?? 12)
 
 const emit = defineEmits(['drop'])
 
@@ -27,8 +29,9 @@ const splashTiles = computed(() => {
   // 8-bit pixel-eksplosjon: 8 fliser i ring rundt drown-punktet
   const t = props.flipp.splash.t       // 0..1
   if (!props.flipp.splash.active) return []
-  const baseSize = props.ballRadius * 0.45
-  const radius = props.ballRadius * 0.4 + t * props.ballRadius * 4
+  const r = ballRadius.value
+  const baseSize = r * 0.45
+  const radius = r * 0.4 + t * r * 4
   const fade = 1 - t
   const tiles = []
   for (let i = 0; i < 8; i++) {
