@@ -518,6 +518,13 @@ function applyDiagnoseMode() {
 }
 watch(diagnose, applyDiagnoseMode)
 
+// v7.1.0: nullstill globalt karttype-valg slik at picker spør på nytt
+// neste gang. Påvirker ikke gjeldende kart (det er allerede generert med
+// sin valgte type), kun fremtidige genereringer.
+function clearMapTypePreference() {
+  try { localStorage.removeItem('svg-insights:mapType') } catch { /* ignore */ }
+}
+
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -709,8 +716,13 @@ onMounted(() => {
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
-      <template v-if="meta?.duomap">
-        <br><span class="text-sky-300/85">Duomap: land-paths={{ meta.landMaskPathCount ?? 0 }} ways={{ meta?.coastlineWaysCount ?? 0 }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>
+      <template v-if="meta?.mapType">
+        <br><span class="text-white/65">{{ meta.mapType === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}</span>
+        <button @click="clearMapTypePreference"
+                class="ml-1 text-[8px] text-sky-400/70 underline pointer-events-auto"
+                :title="'Nullstiller globalt karttype-valg. Du blir spurt på nytt neste gang.'">
+          Nullstill
+        </button>
       </template>
       <template v-else-if="meta?.coastlineWaysCount !== undefined">
         <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>

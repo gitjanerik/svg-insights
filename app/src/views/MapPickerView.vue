@@ -46,9 +46,25 @@ const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, h
 
 const sizeKm = computed(() => (halfKm.value * 2).toFixed(1))
 
-const buildState = ref('idle')   // 'idle' | 'fetching' | 'building' | 'saving' | 'error'
+// v7.1.0: 'idle' | 'fetching' | 'awaiting-map-type' | 'building' | 'saving' | 'error'
+const buildState = ref('idle')
 const buildError = ref(null)
 const buildProgress = ref('')
+
+// v7.1.0: karttype-valg. Brukeren velger eksplisitt for kyst-områder
+// (LAND-kart for hike, SJØ-kart for padling). Lagret preferanse i
+// localStorage så vi ikke spør hver gang.
+const MAP_TYPE_KEY = 'svg-insights:mapType'
+const savedMapTypePref = (() => {
+  try { return localStorage.getItem(MAP_TYPE_KEY) } catch { return null }
+})()
+const mapTypePreference = ref(savedMapTypePref)  // 'land' | 'sea' | null
+
+// Når kart-type-dialogen vises: pendingFetchedData holder all data fra
+// fetch+filter-passet, og generateMap fortsetter når brukeren velger.
+const pendingFetchedData = ref(null)
+const rememberMapType = ref(true)   // checkbox i dialog (default: husk)
+const detectedCoastline = ref(false)
 
 async function generateMap() {
   buildState.value = 'fetching'
@@ -183,7 +199,51 @@ async function generateMap() {
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
 
-    // 2. Generer DEM (syntetisk for nå)
+    // v7.1.0: deteksjon av "kyst-situasjon". Hvis bbox-en har coastline-
+    // ways ELLER autoritativ sjø-data, gir det mening å spørre brukeren
+    // om karttype-fokus (land-tur eller padle/båt). Innlandsbboxer går
+    // automatisk videre med 'land'.
+    const isCoastal = hasCoastline || haveAuthoritativeSea
+    detectedCoastline.value = isCoastal
+
+    // Lagre alle data vi trenger for siste pass (etter eventuelt
+    // karttype-valg). Vi starter ikke DEM-fetch før vi vet vi skal
+    // generere — sparer båndbredde hvis brukeren vil avbryte.
+    pendingFetchedData.value = { elements, source, isCoastal, useCoastlineFallback }
+
+    // Hvis kyst-situasjon OG ingen lagret preferanse: vis dialog og vent.
+    // Ellers: bruk preferanse (eller default 'land' for innland).
+    let chosenType = mapTypePreference.value
+    if (isCoastal && !chosenType) {
+      buildState.value = 'awaiting-map-type'
+      return  // venter på chooseMapType()
+    }
+    if (!chosenType) chosenType = 'land'
+    await proceedWithMapType(chosenType)
+  } catch (e) {
+    buildState.value = 'error'
+    buildError.value = e.message ?? 'Bygging feilet'
+  }
+}
+
+// Kalles når brukeren velger karttype i dialogen, ELLER automatisk
+// fra generateMap når vi har lagret preferanse / ikke-kyst-bbox.
+async function chooseMapType(mapType) {
+  if (rememberMapType.value) {
+    try { localStorage.setItem(MAP_TYPE_KEY, mapType) } catch (e) { /* QuotaExceeded osv */ }
+    mapTypePreference.value = mapType
+  }
+  await proceedWithMapType(mapType)
+}
+
+async function proceedWithMapType(mapType) {
+  if (!pendingFetchedData.value) return
+  const { elements, source, useCoastlineFallback } = pendingFetchedData.value
+  pendingFetchedData.value = null
+  buildState.value = 'building'
+  buildProgress.value = `Bygger ${mapType === 'sea' ? 'sjø' : 'land'}-kart …`
+
+  try {
     const sw = wgs84ToUtm32(bbox.value.south, bbox.value.west)
     const ne = wgs84ToUtm32(bbox.value.north, bbox.value.east)
     const utmBbox = {
@@ -192,19 +252,15 @@ async function generateMap() {
     }
     buildProgress.value = `Henter høydedata fra Kartverket …`
     await new Promise(r => setTimeout(r, 30))
-    // Forsøk ekte WCS — kan CORS-feile i nettleser. Hvis så, dropper
-    // mapBuilder konturer (skipContoursIfSynthetic) heller enn å vise
-    // falske konsentriske ringer fra syntetisk Gaussian-modell.
     const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 10, useReal: true })
 
-    // 3. Bygg SVG med konturer
     const { svg, counts, meta } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
-      // Hvis WCS faller tilbake til syntetisk: ingen falske konsentriske
-      // ringer i kartet. Bedre uten konturer enn villedende konturer.
       skipContoursIfSynthetic: true,
       useCoastlineFallback,
+      mapType,
     })
+
     buildProgress.value = `Lagrer kart …`
     buildState.value = 'saving'
 
@@ -216,6 +272,7 @@ async function generateMap() {
       bbox: bbox.value,
       center: { ...center.value },
       halfKm: halfKm.value,
+      mapType,            // v7.1.0: lagre brukerens valg
       counts,
       svg,
       source,
@@ -228,6 +285,17 @@ async function generateMap() {
     buildState.value = 'error'
     buildError.value = e.message ?? 'Bygging feilet'
   }
+}
+
+function cancelMapTypeChoice() {
+  pendingFetchedData.value = null
+  buildState.value = 'idle'
+  buildProgress.value = ''
+}
+
+function clearMapTypePreference() {
+  try { localStorage.removeItem(MAP_TYPE_KEY) } catch { /* ignore */ }
+  mapTypePreference.value = null
 }
 
 // ── Preview med ekte Kartverket-tiler som bakgrunn ─────────────────────────
@@ -532,8 +600,68 @@ onMounted(() => {
                   text-slate-100 text-[11px]">
         {{ buildError }}
       </div>
-      <div class="mt-3 text-[10px] text-white/40 text-center">
-        Henter data fra OpenStreetMap (ODbL) via Overpass API.
+      <div class="mt-3 text-[10px] text-white/40 text-center flex items-center justify-center gap-2">
+        <span>Henter data fra OpenStreetMap (ODbL) via Overpass API.</span>
+        <template v-if="mapTypePreference">
+          <span class="text-white/60">·</span>
+          <span class="text-white/60">Lagret: {{ mapTypePreference === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}</span>
+          <button @click="clearMapTypePreference" class="text-sky-400/70 underline">Nullstill</button>
+        </template>
+      </div>
+    </div>
+
+    <!-- v7.1.0 Karttype-dialog (kyst-bbox uten lagret preferanse) -->
+    <div v-if="buildState === 'awaiting-map-type'"
+         class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+         @click.self="cancelMapTypeChoice">
+      <div class="w-full max-w-md bg-zinc-900 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div>
+          <h3 class="text-base font-semibold text-white">Velg karttype</h3>
+          <p class="text-xs text-white/55 mt-1">
+            Området har kystlinje. Land-kart er optimalisert for hike-tur, sjø-kart for padling/båt.
+            Du kan ikke ha begge i samme kart — velg fokus.
+          </p>
+        </div>
+
+        <div class="space-y-2">
+          <button @click="chooseMapType('land')"
+                  class="w-full text-left p-3 rounded-xl bg-amber-50/10 border border-amber-200/20
+                         hover:bg-amber-50/15 active:scale-[0.99] transition">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🥾</span>
+              <div class="flex-1">
+                <div class="text-sm font-semibold text-white">Land-kart (turkart)</div>
+                <div class="text-[11px] text-white/55 mt-0.5">
+                  Stier, vegetasjon, høydekurver, bygninger. Fokus på land-tur.
+                </div>
+              </div>
+            </div>
+          </button>
+
+          <button @click="chooseMapType('sea')"
+                  class="w-full text-left p-3 rounded-xl bg-sky-500/10 border border-sky-300/20
+                         hover:bg-sky-500/15 active:scale-[0.99] transition">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🌊</span>
+              <div class="flex-1">
+                <div class="text-sm font-semibold text-white">Sjøkart (padle/båt)</div>
+                <div class="text-[11px] text-white/55 mt-0.5">
+                  Sjø-blå bakgrunn, dybdekontur, sjømerker, lanterner. Fokus på vannveier.
+                </div>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <label class="flex items-center gap-2 text-[11px] text-white/60 cursor-pointer select-none">
+          <input v-model="rememberMapType" type="checkbox" class="accent-slate-300" />
+          Husk valget mitt — ikke spør neste gang
+        </label>
+
+        <button @click="cancelMapTypeChoice"
+                class="w-full py-2 text-xs text-white/40 hover:text-white/70 transition">
+          Avbryt
+        </button>
       </div>
     </div>
   </div>
