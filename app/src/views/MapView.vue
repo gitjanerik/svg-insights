@@ -46,9 +46,32 @@ function updateMapRect() {
     return
   }
   const el = svgHostRef.value
-  if (!el) return
+  if (!el || !meta.value) return
   const r = el.getBoundingClientRect()
-  mapRect.value = { top: r.top, left: r.left, width: r.width, height: r.height }
+  // SVG bruker preserveAspectRatio="xMidYMid meet" — content-rect er centrert
+  // og letterboxet i host-div-en. Beregn ekte content-rect (der kart-kantene
+  // faktisk er) så paddles følger kantene, ikke host-edges.
+  const containerAR = r.width / r.height
+  const viewBoxAR = meta.value.widthM / meta.value.heightM
+  let contentW, contentH, offsetX, offsetY
+  if (containerAR > viewBoxAR) {
+    // Container bredere → fit by height, horisontal letterbox
+    contentH = r.height
+    contentW = r.height * viewBoxAR
+    offsetY = 0
+    offsetX = (r.width - contentW) / 2
+  } else {
+    contentW = r.width
+    contentH = r.width / viewBoxAR
+    offsetX = 0
+    offsetY = (r.height - contentH) / 2
+  }
+  mapRect.value = {
+    top:    r.top + offsetY,
+    left:   r.left + offsetX,
+    width:  contentW,
+    height: contentH,
+  }
 }
 
 const BUILTIN = {
@@ -159,7 +182,9 @@ function applyLayerVisibility() {
   }
 }
 
-const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef)
+// Pinch/pan/rotate fryses i Flippkart-modus (kart skal stå i ro under spill).
+const pinchEnabled = computed(() => !flippkart.active.value)
+const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform

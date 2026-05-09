@@ -46,7 +46,7 @@ export function useFlippkart() {
     right:  { position: 0.5, length: 0.2 },
   })
 
-  const BALL_RADIUS_M = 60       // viewBox-meter (5× v1-størrelse)
+  const BALL_RADIUS_M = 180      // viewBox-meter (15× v1, 3× forrige)
   const BOUNCE_DAMPING = 0.85
 
   // Trail (ringbuffer)
@@ -67,10 +67,12 @@ export function useFlippkart() {
   let lastTime = 0
 
   function levelParams(n) {
-    // Level 1 base er 3× v1-fart. Hvert level: litt mer fart, litt mindre friksjon.
+    // Konstantene er kraftig oppskalert for arcade-feel: physikk-meter ≠
+    // ekte fysisk meter (km-stor playfield krever overdrevet gravitasjon
+    // for at ballen skal bevege seg merkbart i sub-minutt-tidsskala).
     return {
-      kGravity: 15 + 1.2 * (n - 1),
-      friction: Math.max(0.1, 0.6 - 0.05 * (n - 1)),
+      kGravity: 200 + 30 * (n - 1),
+      friction: Math.max(0.15, 0.4 - 0.04 * (n - 1)),
     }
   }
 
