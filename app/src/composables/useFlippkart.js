@@ -225,7 +225,7 @@ export function useFlippkart() {
 
       // Bounds-check pr ball
       if (!handleEdgesForBall(b)) {
-        // Ball droknet → fjern fra array
+        dlog('drown', { i, canExp: b.canExplode, x: Math.round(b.x), y: Math.round(b.y) })
         balls.splice(i, 1)
         continue
       }
@@ -233,6 +233,7 @@ export function useFlippkart() {
       // Stillness-detection
       checkStillness(b, dt)
       if (b.exploded || !b.visible) {
+        dlog('splice', { reason: b.exploded ? 'exploded' : 'invisible', i, after: balls.length - 1 })
         balls.splice(i, 1)
         continue
       }
@@ -462,40 +463,38 @@ export function useFlippkart() {
   }
 
   function explodeBall(b) {
-    // Splash visualiseres ved ballens posisjon (det føles riktig at
-    // eksplosjonen skjer DER kula sto stille).
-    splash.x = b.x
-    splash.y = b.y
-    splash.active = true
-    splash.t = 0
-    splash.kind = 'explode'
-    playExplosion()
-    setTimeout(() => playMultiSpawn(), 250)
+    dlog('explodeBall:enter', { canExp: b.canExplode, before: balls.length })
+    try {
+      splash.x = b.x
+      splash.y = b.y
+      splash.active = true
+      splash.t = 0
+      splash.kind = 'explode'
 
-    // Trigg HUD-flash for "MULTIBALL!"
-    lastEvent.value = { kind: 'multiball', at: Date.now() }
-    dlog('explode → multiball')
+      try { playExplosion() } catch (err) { dlog('!playExplosion', { e: String(err).slice(0, 60) }) }
+      try { setTimeout(() => playMultiSpawn(), 250) } catch (err) { dlog('!setTimeout', { e: String(err).slice(0, 60) }) }
 
-    // Marker som ekspodert (blir splicet ut neste loop-iter)
-    b.exploded = true
+      lastEvent.value = { kind: 'multiball', at: Date.now() }
+      dlog('explode → multiball')
 
-    // v7.3.4: 3 nye baller spawnes på TILFELDIGE posisjoner med random kick
-    // ved KICK_SPEED-fart. Tidligere ble de spawnet med vx=vy=0 og var
-    // sårbare for å stå stille på flatmark — så multiball "døde" stille.
-    const cx = bounds.width / 2
-    const cy = bounds.height / 2
-    const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
-    for (let k = 0; k < MULTIBALL_COUNT; k++) {
-      const angle = Math.random() * Math.PI * 2
-      const r = Math.sqrt(Math.random()) * R
-      const x = cx + Math.cos(angle) * r
-      const y = cy + Math.sin(angle) * r
-      const kickAngle = Math.random() * Math.PI * 2
-      const vx = Math.cos(kickAngle) * KICK_SPEED
-      const vy = Math.sin(kickAngle) * KICK_SPEED
-      // canExplode=false: ingen kaskade-eksplosjoner. Stuck-cleanup tar over
-      // hvis multi-ball balls likevel stagnerer.
-      spawnBall(x, y, vx, vy, false)
+      b.exploded = true
+
+      const cx = bounds.width / 2
+      const cy = bounds.height / 2
+      const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
+      for (let k = 0; k < MULTIBALL_COUNT; k++) {
+        const angle = Math.random() * Math.PI * 2
+        const r = Math.sqrt(Math.random()) * R
+        const x = cx + Math.cos(angle) * r
+        const y = cy + Math.sin(angle) * r
+        const kickAngle = Math.random() * Math.PI * 2
+        const vx = Math.cos(kickAngle) * KICK_SPEED
+        const vy = Math.sin(kickAngle) * KICK_SPEED
+        spawnBall(x, y, vx, vy, false)
+      }
+      dlog('explodeBall:exit', { after: balls.length })
+    } catch (err) {
+      dlog('!explodeBall', { e: String(err).slice(0, 80) })
     }
   }
 
