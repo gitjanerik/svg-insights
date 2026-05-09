@@ -57,6 +57,16 @@ const TYPENAME_CANDIDATES = {
   lanterne: ['app:Lanterne'],
   // Soundings — punkter med dybde-tall.
   dybdepunkt: ['app:Dybdepunkt'],
+  // v7.1.16 (Fase 5): padle-relevante kunstige strukturer.
+  // Slipp = båtopplagring/kajakk-launch (kritisk for padle-bruk).
+  slipp: ['app:Slipp'],
+  // KaiBrygge / Pir / Molo / Bølgebryter — ulike kunstige havne-
+  // strukturer. Vi rendrer alle med samme stil (ISOM 551).
+  kaibrygge: ['app:KaiBrygge'],
+  pir: ['app:Pir'],
+  molo: ['app:Molo', 'app:Bølgebryter'],
+  // Fareområde — sikkerhets-zoner (kabel, undervannsledninger osv).
+  fareomraade: ['app:Fareområde'],
 }
 
 /**
@@ -142,6 +152,8 @@ function emptyResult() {
   return {
     kystkontur: [], dybdeareal: [], dybdekontur: [],
     grunne: [], lanterne: [], dybdepunkt: [],
+    // v7.1.16 padle-features
+    slipp: [], kaibrygge: [], pir: [], molo: [], fareomraade: [],
     source: null,
     fetchErrors: [],
   }
@@ -532,6 +544,34 @@ export function sjokartToElements(sjokart) {
     if (dybde == null) continue
     const tags = { sjokart: 'dybdepunkt', dybde: String(dybde) }
     pushPointOnly(f, tags, elements, () => id++)
+  }
+
+  // v7.1.16 padle-features:
+  // Slipp = kajakk/båt-opplagring. Typisk Point men kan v&aelig;re Polygon
+  // (slipp-rampe). Vi pusher som point eller way etter geometri-type.
+  for (const f of sjokart.slipp ?? []) {
+    const props = f.properties ?? {}
+    const tags = { sjokart: 'slipp' }
+    if (props.navn) tags.name = String(props.navn).trim()
+    pushAnyGeom(f, tags, elements, () => id++)
+  }
+  // KaiBrygge / Pir / Molo / Bølgebryter — alle havne-strukturer.
+  // Tagges med en felles sjokart='havnestruktur' så mapBuilder kan
+  // klassifisere dem til samme ISOM-kode (551).
+  for (const cat of ['kaibrygge', 'pir', 'molo']) {
+    for (const f of sjokart[cat] ?? []) {
+      const props = f.properties ?? {}
+      const tags = { sjokart: 'havnestruktur', subtype: cat }
+      if (props.navn) tags.name = String(props.navn).trim()
+      pushAnyGeom(f, tags, elements, () => id++)
+    }
+  }
+  // Fareområde — sikkerhets-zoner (undervanns-kabel, ankerforbud osv).
+  for (const f of sjokart.fareomraade ?? []) {
+    const props = f.properties ?? {}
+    const tags = { sjokart: 'fareomraade' }
+    if (props.navn) tags.name = String(props.navn).trim()
+    pushAnyGeom(f, tags, elements, () => id++)
   }
 
   return elements

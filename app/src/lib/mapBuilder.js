@@ -289,7 +289,11 @@ const LAND_OVERLAY_CODES = ['001']
 // Veier/stier + ski-infrastruktur (510 lysløype, 511 heistrasé) i samme
 // stack som veier siden de visuelt er linjer og ofte krysser veinettet.
 const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '508', '510', '511']
-const UPPER_CODES  = ['521', '525', '528', '533']
+// v7.1.16 (Fase 5): padle-features lagt til UPPER_CODES.
+//   550 = Slipp (point — kajakk-launch)
+//   551 = Kai/Brygge/Pir/Molo (polygon — havne-strukturer)
+//   552 = Fareområde (polygon — rødt mønster, sikkerhets-zone)
+const UPPER_CODES  = ['551', '552', '521', '525', '528', '533', '550']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 // Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
 const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203', '211']
@@ -303,7 +307,7 @@ const LAYER_ORDER = [
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522', '551', '552'])
 const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -457,8 +461,9 @@ export function buildSvg(elements, bbox, options = {}) {
   const stakerStb = []     // ISOM 541 (lateral starboard — grønn)
   const stakerCard = []    // ISOM 542 (cardinal)
   const stakerSpec = []    // ISOM 543 (spesial / safe water)
+  const slipper = []       // ISOM 550 (kajakk-launch / slipp — Sjøkart)
 
-  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0, hule: 0, gruve: 0, trig: 0, stake: 0 }
+  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0, hule: 0, gruve: 0, trig: 0, stake: 0, slipp: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   // Samle OSM natural=coastline + man_made=pier/breakwater ways for siste-
@@ -470,7 +475,8 @@ export function buildSvg(elements, bbox, options = {}) {
   // v7.1.4: tellere for sjøkart-features (Kartverket WFS). Eksponeres
   // i meta og vises i MapView attribusjons-boks for synlig diagnose:
   // hvis alle er 0 → WFS feilet, ikke et rendering-problem.
-  const sjokartCounts = { dybdeareal: 0, dybdekontur: 0, lanterne: 0, grunne: 0, dybdepunkt: 0 }
+  const sjokartCounts = { dybdeareal: 0, dybdekontur: 0, lanterne: 0, grunne: 0, dybdepunkt: 0,
+    slipp: 0, havnestruktur: 0, fareomraade: 0 }
 
   for (const el of elements) {
     const t = el.tags ?? {}
@@ -495,6 +501,7 @@ export function buildSvg(elements, bbox, options = {}) {
       else if (cls.code === '541') { stakerStb.push(el); counts.stake++ }
       else if (cls.code === '542') { stakerCard.push(el); counts.stake++ }
       else if (cls.code === '543') { stakerSpec.push(el); counts.stake++ }
+      else if (cls.code === '550') { slipper.push(el); counts.slipp++ }
       else if (cls.code === 'dybdepunkt') { dybdepunkter.push(el); counts.dybdepunkt++ }
       continue
     }
@@ -1027,6 +1034,19 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>${labelPart}</g>`
   }).filter(Boolean).join('\n')
 
+  // v7.1.16: Slipp-punkter (ISOM 550) — kajakk-launch fra Sjøkart-WFS.
+  // Større enn lanterne (2.4mm bredde) for å være tydelig.
+  const slippSvg = slipper.map(el => {
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('slipp')
+    if (!sid) return ''
+    const name = xmlEscape(el.tags?.name ?? '')
+    const labelPart = name
+      ? `<text x="1.4mm" y="0.4mm" data-label="slipp-navn">${name}</text>`
+      : ''
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-1.2mm" y="-1.2mm" width="2.4mm" height="2.4mm"/>${labelPart}</g>`
+  }).filter(Boolean).join('\n')
+
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
   const huleSvg = huler.map(el => {
@@ -1271,6 +1291,8 @@ export function buildSvg(elements, bbox, options = {}) {
     : ''
   const lanterneLayerSvg = lanterneSvg
     ? `  <g data-layer="sjokart" data-iso="533">\n${lanterneSvg}\n  </g>\n` : ''
+  const slippLayerSvg = slippSvg
+    ? `  <g data-layer="sjokart" data-iso="550">\n${slippSvg}\n  </g>\n` : ''
   const dybdepunktLayerSvg = dybdepunktSvg
     ? `  <g data-layer="dybde">\n${dybdepunktSvg}\n  </g>\n` : ''
 
@@ -1323,7 +1345,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1354,6 +1376,7 @@ function categoryFor(code) {
     case '215': case '216':                          return 'stein'
     case '525': case '528':                     return 'linje'
     case '533':                                  return 'sjokart'
+    case '550': case '551': case '552':         return 'sjokart'
     case '113':                                  return 'trig'
     case '540': case '541': case '542': case '543': return 'staker'
     case '101': case '102': case '103': case '104': return 'kontur'

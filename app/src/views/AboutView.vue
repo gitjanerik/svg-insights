@@ -247,6 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.16 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.1.16</span>
+                <span class="text-emerald-300/85">&mdash; 🚣 Padle-features fra Sjøkart (Fase 5): slipp, pir, molo, fareområde</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Fase 5 levert</strong> — Sjøkart-WFS-fetcher utvidet med 5 nye padle-relevante kategorier som vi vet finnes i tjenesten:</li>
+                <li><code>app:Slipp</code> &rarr; ny ISOM-kode 550 (kajakk-launch). Bl&aring; pil-symbol med bryggekant. St&oslash;rre enn lanterne (2.4mm) for tydelig visning</li>
+                <li><code>app:KaiBrygge</code>, <code>app:Pir</code>, <code>app:Molo</code>, <code>app:Bølgebryter</code> &rarr; ny ISOM-kode 551 (m&oslash;rk-gr&aring; havne-strukturer). Samlet rendering siden de visuelt er like</li>
+                <li><code>app:Fareområde</code> &rarr; ny ISOM-kode 552 (rødt diagonalt mønster + stiplet rød ramme). Sikkerhets-zoner for undervanns-kabel, ankerforbud osv</li>
+                <li><strong>Tegnforklaring</strong> oppdatert: 550, 551, 552 lagt til Sjøkart-seksjonen med forklaring</li>
+                <li>Sj&oslash;kart-features med <code>navn</code>-felt f&aring;r tekst-label (slipp-navn vises ved siden av symbolet)</li>
+                <li>WFS-fetcher gj&oslash;r n&aring; opp til 11 parallelle requests per kart (6 grunnleggende + 5 padle-features). Ingen merkbar latency-impact</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.15 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
