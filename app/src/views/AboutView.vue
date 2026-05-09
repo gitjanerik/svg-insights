@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.10 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.10</span>
+                <span class="text-white/50">&mdash; WFS NAMESPACES-parameter + response-sample i UI</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>v7.1.9 ga "tom respons (3)"</strong> i diagnose — endepunktene svarer men returnerer 0 features. Mest sannsynlig &aring;rsak: vi mangler <code>NAMESPACES</code>-parameter i WFS-requesten</li>
+                <li><strong>Fix:</strong> WFS 2.0.0 krever at <code>app:</code>-prefiks bindes til namespace-URI via <code>NAMESPACES=xmlns(app,http://skjema.geonorge.no/SOSI/produktspesifikasjon/Dybdedata/20201001)</code>. <code>guessNamespaceUri()</code> matcher endpoint &rarr; URI</li>
+                <li><strong>Synlig diagnose:</strong> hvis sj&oslash;kart-counts er 0 etter fetch, lagrer vi f&oslash;rste 200 bytes av respons i meta. MapView attribusjons-boks viser "Sample: ..." s&aring; vi kan se hva serveren faktisk sender</li>
+                <li><strong>Forventet utfall etter merge:</strong> Sj&oslash;kart-data dukker opp endelig (success!), eller vi ser <code>Sample: ServiceException ...</code> som forteller oss n&oslash;yaktig hva som mangler</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.9 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />

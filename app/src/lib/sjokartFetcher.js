@@ -81,15 +81,20 @@ export async function fetchSjokart(bbox, opts = {}) {
   // v7.1.5: samle feilmeldinger per endepunkt så vi kan eksponere dem
   // i kart-meta og MapView. CORS, HTTP-fail, og non-JSON-svar separeres.
   const fetchErrors = []
+  // v7.1.10: når en respons returnerer 0 features, lagre første ~200
+  // bytes av selve responsen for diagnose. Hjelper å se hva serveren
+  // faktisk returnerer.
+  const debugSamples = []
+  const internalOpts = { ...opts, debugSamples }
   for (const endpoint of SJOKART_ENDPOINTS) {
     try {
-      const result = await fetchAllCategories(endpoint, bbox, opts, fetchErrors)
+      const result = await fetchAllCategories(endpoint, bbox, internalOpts, fetchErrors)
       const totals = Object.values(result).reduce(
         (a, v) => a + (Array.isArray(v) ? v.length : 0), 0
       )
       if (totals > 0) {
         console.log(`[Sjøkart] ${endpoint} → ${totals} features totalt`)
-        return { ...result, source: endpoint, fetchErrors }
+        return { ...result, source: endpoint, fetchErrors, debugSamples }
       } else {
         console.log(`[Sjøkart] ${endpoint} svarte men 0 features (kan være feil typenames eller utenfor dekning)`)
         fetchErrors.push({ endpoint, kind: 'zero-features', message: '0 features for alle typenames' })
@@ -100,7 +105,24 @@ export async function fetchSjokart(bbox, opts = {}) {
     }
   }
   console.warn('[Sjøkart] Ingen endepunkter ga data — kart vil falle tilbake til OSM coastline-rekonstruksjon')
-  return { ...emptyResult(), fetchErrors }
+  return { ...emptyResult(), fetchErrors, debugSamples }
+}
+
+// v7.1.10: Geonorge SOSI-feature-namespaces er forskjellige per dataset.
+// Verifisert URI for wfs.dybdedata = SOSI/produktspesifikasjon/Dybdedata
+// /20201001 (fra GetCapabilities). Andre endepunkter sannsynligvis har
+// egen URI; må verifiseres via deres GetCapabilities.
+function guessNamespaceUri(endpoint, typeName) {
+  if (typeName.startsWith('app:')) {
+    if (endpoint.includes('dybdedata')) {
+      return 'http://skjema.geonorge.no/SOSI/produktspesifikasjon/Dybdedata/20201001'
+    }
+    if (endpoint.includes('navlys')) {
+      // Antagelse — uverifisert. Brukes når brukeren bekrefter URL.
+      return 'http://skjema.geonorge.no/SOSI/produktspesifikasjon/Navlys/20201001'
+    }
+  }
+  return null
 }
 
 // Kategoriser fetch-feil for synlig diagnose. Nettverks-feil i nettleser
@@ -178,6 +200,12 @@ const OUTPUT_FORMATS = [
 ]
 
 async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
+  // v7.1.10: WFS 2.0.0 krever at prefix→URI-binding deklareres via
+  // NAMESPACES-parameter. Uten dette kan serveren tolke `app:`-prefiks
+  // som ukjent og returnere tom respons (eller ServiceException). For
+  // Geonorge SOSI Dybdedata 20201001 er bindingen verifisert fra
+  // GetCapabilities `xmlns:app="..."`-attributtet.
+  const namespaceUri = guessNamespaceUri(endpoint, typeName)
   const baseParams = {
     SERVICE: 'WFS',
     VERSION: '2.0.0',
@@ -186,6 +214,9 @@ async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
     SRSNAME: 'EPSG:4326',
     BBOX: `${bbox.south},${bbox.west},${bbox.north},${bbox.east},EPSG:4326`,
     COUNT: '5000',
+  }
+  if (namespaceUri) {
+    baseParams.NAMESPACES = `xmlns(app,${namespaceUri})`
   }
   let lastError = null
   for (const fmt of OUTPUT_FORMATS) {
@@ -222,6 +253,16 @@ async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
     throw new Error(`HTTP ${res.status} for ${typeName} med format ${outputFormat}`)
   }
   const text = await res.text()
+  // v7.1.10: lagre første sample for diagnose (kun gjenbrukbar via
+  // opts.debugSamples som muteres). Hjelper å se hva serveren faktisk
+  // returnerer når 0 features.
+  if (opts.debugSamples && opts.debugSamples.length < 5) {
+    opts.debugSamples.push({
+      typeName, outputFormat,
+      length: text.length,
+      sample: text.slice(0, 200).replace(/\s+/g, ' '),
+    })
+  }
   // GeoJSON-format
   if (text.trim().startsWith('{')) {
     try {
