@@ -72,6 +72,13 @@ function onClick() {
   if (props.flipp.status.value !== 'idle') return
   emit('drop')
 }
+
+function onBallTap(b) {
+  // v7.3.4: tap-på-ball gir et tilfeldig kick. Redningsplanke når
+  // kula har slått seg til ro på flatmark uten å trigge multiball.
+  if (props.flipp.status.value !== 'rolling') return
+  props.flipp.kickBall?.(b)
+}
 </script>
 
 <template>
@@ -169,8 +176,10 @@ function onClick() {
     </g>
 
     <!-- Baller (multi-ball-støtte). Charging-pulse-ring renderes UNDER ballen
-         når chargeT > 0 (rød advarsel om snarlig eksplosjon). -->
-    <g v-for="(b, i) in flipp.balls" :key="`ball-${i}`" pointer-events="none">
+         når chargeT > 0 (rød advarsel om snarlig eksplosjon). v7.3.4: marble
+         er klikkbar (kicker ballen i tilfeldig retning) — redningsplanke når
+         ball har slått seg til ro på flatmark. -->
+    <g v-for="(b, i) in flipp.balls" :key="`ball-${i}`">
       <!-- Charging warning ring -->
       <circle v-if="b.chargeT > 0"
               :cx="b.x" :cy="b.y"
@@ -178,7 +187,8 @@ function onClick() {
               :fill="`rgba(239, 68, 68, ${0.15 + b.chargeT * 0.25})`"
               :stroke="b.chargeT >= 0.95 ? '#fde047' : '#ef4444'"
               :stroke-width="3 + b.chargeT * 6"
-              :stroke-dasharray="b.chargeT >= 0.5 ? '8 4' : 'none'">
+              :stroke-dasharray="b.chargeT >= 0.5 ? '8 4' : 'none'"
+              pointer-events="none">
         <animate v-if="b.chargeT >= 0.5"
                  attributeName="r"
                  :values="`${ballRadius * (1.15 + b.chargeT * 0.6)};${ballRadius * (1.4 + b.chargeT * 0.6)};${ballRadius * (1.15 + b.chargeT * 0.6)}`"
@@ -189,7 +199,11 @@ function onClick() {
       <circle :cx="b.x" :cy="b.y" :r="ballRadius"
               fill="url(#flipp-chrome)"
               filter="url(#flipp-shadow)"
-              :style="{ filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '' }"/>
+              :style="{
+                filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '',
+                cursor: 'pointer',
+              }"
+              @click.stop="onBallTap(b)"/>
     </g>
 
     <!-- Splash / explosion -->

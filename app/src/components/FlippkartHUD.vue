@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   flipp: { type: Object, required: true },
@@ -64,12 +64,25 @@ const smashFlash = computed(() => {
   return e
 })
 
-// Multiball-flash: vises ~2 sek når explosion trigger
-const multiballFlash = computed(() => {
-  const e = props.flipp.lastEvent.value
-  if (!e || e.kind !== 'multiball') return null
-  if (Date.now() - e.at > 2000) return null
-  return e
+// Multiball-flash: ref + watch i stedet for computed.
+// v7.3.4: tidligere computed reagerte ikke på Date.now()-utløp, og ble heller
+// aldri synlig hvis lastEvent ble satt mens en annen reaktiv oppdatering
+// ikke trigget recompute. Watch + setTimeout garanterer minst 2s visning.
+const multiballFlash = ref(null)
+let multiballTimer = null
+
+watch(() => props.flipp.lastEvent.value, (e) => {
+  if (e?.kind !== 'multiball') return
+  multiballFlash.value = e
+  if (multiballTimer) clearTimeout(multiballTimer)
+  multiballTimer = setTimeout(() => {
+    multiballFlash.value = null
+    multiballTimer = null
+  }, 2000)
+})
+
+onUnmounted(() => {
+  if (multiballTimer) clearTimeout(multiballTimer)
 })
 </script>
 
