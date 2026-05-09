@@ -430,6 +430,11 @@ const sjokartFirstSample = computed(() => {
 const sjokartFetchErrorSummary = computed(() => {
   const errs = meta.value?.sjokartFetchErrors
   if (!Array.isArray(errs) || errs.length === 0) return null
+  // v7.1.17: hvis vi faktisk har features fra Sjøkart, skjul WFS-
+  // advarselen. Én feil av mange typenames (typisk lanterne som
+  // ikke er i wfs.dybdedata) skal ikke skremme brukeren når andre
+  // typenames leverer fint.
+  if (!sjokartZeroFeatures.value) return null
   // Tell pr type, vis mest vanlige
   const counts = {}
   for (const e of errs) counts[e.kind] = (counts[e.kind] ?? 0) + 1

@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.17 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.17</span>
+                <span class="text-white/50">&mdash; UI-polering: skjul WFS-advarsel ved delvis suksess</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerrapport:</strong> Engelsviken-sjøkart viste "⚠ Sjøkart-WFS feilet: CORS/nettfeil (1)" selv om vi hadde 148 dybdeareal, 144 konturer, 135 skjær og 70 dybdepunkter rendret</li>
+                <li><strong>Rotårsak:</strong> Lanterne-typenamen (<code>app:Lanterne</code>) finnes IKKE i <code>wfs.dybdedata</code> — vi vet det fra GetCapabilities. 1 av 11 typenames feiler &laquo;forventet&raquo;, men advarsels-meldingen var like skarp som om alt var brutt</li>
+                <li><strong>Fix:</strong> <code>sjokartFetchErrorSummary</code>-computed sjekker n&aring; <code>sjokartZeroFeatures</code> f&oslash;rst. Hvis vi har features fra Sj&oslash;kart, skjules advarselen — feilen er lagret i meta for diagnose, men brukeren skremmes ikke</li>
+                <li>Hvis ALLE feil (<code>sjokartZeroFeatures = true</code>), vises advarselen som f&oslash;r — det er da et reelt problem brukeren m&aring; vite om</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.16 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
