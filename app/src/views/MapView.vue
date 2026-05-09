@@ -294,6 +294,13 @@ async function loadMap() {
       source: m.source,
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
+      // v7.1.2: kritisk for SEA-mode bg-fix. applyTheme() leser
+      // meta.value.mapType for å re-applysere --bg=#9ec9de etter
+      // theme-reset. Manglende mapType i denne mappingen var hvorfor
+      // v7.1.1 ikke virket — vi sjekket alltid mot undefined.
+      mapType: m.mapType ?? null,
+      coastlineLandRings: m.coastlineLandRings ?? null,
+      coastlineWaysCount: m.coastlineWaysCount,
     }
     setupHostSvg(root)
     loading.value = false
