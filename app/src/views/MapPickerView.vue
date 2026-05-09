@@ -209,7 +209,12 @@ async function generateMap() {
     // Lagre alle data vi trenger for siste pass (etter eventuelt
     // karttype-valg). Vi starter ikke DEM-fetch før vi vet vi skal
     // generere — sparer båndbredde hvis brukeren vil avbryte.
-    pendingFetchedData.value = { elements, source, isCoastal, useCoastlineFallback }
+    pendingFetchedData.value = {
+      elements, source, isCoastal, useCoastlineFallback,
+      // v7.1.5: feilmeldinger fra Sjøkart-WFS-fetcher gis videre til
+      // mapBuilder så de kan eksponeres i meta og MapView UI.
+      sjokartFetchErrors: sjokart?.fetchErrors ?? [],
+    }
 
     // Hvis kyst-situasjon OG ingen lagret preferanse: vis dialog og vent.
     // Ellers: bruk preferanse (eller default 'land' for innland).
@@ -238,7 +243,7 @@ async function chooseMapType(mapType) {
 
 async function proceedWithMapType(mapType) {
   if (!pendingFetchedData.value) return
-  const { elements, source, useCoastlineFallback } = pendingFetchedData.value
+  const { elements, source, useCoastlineFallback, sjokartFetchErrors } = pendingFetchedData.value
   pendingFetchedData.value = null
   buildState.value = 'building'
   buildProgress.value = `Bygger ${mapType === 'sea' ? 'sjø' : 'land'}-kart …`
@@ -259,6 +264,7 @@ async function proceedWithMapType(mapType) {
       skipContoursIfSynthetic: true,
       useCoastlineFallback,
       mapType,
+      sjokartFetchErrors,
     })
 
     buildProgress.value = `Lagrer kart …`
