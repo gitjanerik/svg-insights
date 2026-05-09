@@ -95,6 +95,53 @@ function onClick() {
       </filter>
     </defs>
 
+    <!-- Bumpers: hus-formede stationary-kollisjons-objekter. Rendres FØR
+         baller så ball-circles tegnes oppå. Hver bumper viser hits-counter
+         som lit/unlit firkanter på taket (4 hits = 4 firkanter, lyser grønn). -->
+    <g v-for="(bp, i) in flipp.bumpers" :key="`bumper-${i}`" pointer-events="none">
+      <g :transform="`translate(${bp.x} ${bp.y})`">
+        <!-- Skygge -->
+        <ellipse cx="3" :cy="ballRadius * 0.95"
+                 :rx="ballRadius * 0.85" ry="6"
+                 fill="rgba(0,0,0,0.4)"/>
+        <!-- Vegg-flate -->
+        <rect :x="-ballRadius * 0.85" :y="-ballRadius * 0.2"
+              :width="ballRadius * 1.7" :height="ballRadius * 1.1"
+              fill="#8b4513"
+              stroke="#fff"
+              stroke-width="3"/>
+        <!-- Tak (triangel) -->
+        <polygon
+          :points="`${-ballRadius * 1.0},${-ballRadius * 0.2} 0,${-ballRadius * 0.95} ${ballRadius * 1.0},${-ballRadius * 0.2}`"
+          fill="#dc2626"
+          stroke="#fff"
+          stroke-width="3"/>
+        <!-- Dør -->
+        <rect :x="-ballRadius * 0.18" :y="ballRadius * 0.45"
+              :width="ballRadius * 0.36" :height="ballRadius * 0.45"
+              fill="#451a03"/>
+        <!-- Vindu -->
+        <rect :x="ballRadius * 0.25" :y="ballRadius * 0.1"
+              :width="ballRadius * 0.32" :height="ballRadius * 0.32"
+              fill="#fbbf24"
+              stroke="#7c2d12"
+              stroke-width="2"/>
+        <!-- Hits-counter på taket: 4 firkanter, lyser opp etter hvert som
+             treff samles. Når alle 4 lyser → multiball. -->
+        <g :transform="`translate(${-ballRadius * 0.6}, ${-ballRadius * 0.55})`">
+          <rect v-for="n in flipp.BUMPER_HITS_TO_MULTIBALL"
+                :key="`hit-${n}`"
+                :x="(n - 1) * ballRadius * 0.32"
+                y="0"
+                :width="ballRadius * 0.22"
+                :height="ballRadius * 0.18"
+                :fill="n <= bp.hits ? '#22c55e' : 'rgba(0,0,0,0.4)'"
+                stroke="#fff"
+                stroke-width="1.5"/>
+        </g>
+      </g>
+    </g>
+
     <!-- Trail: faded tail bak primary ball (balls[0]) -->
     <g v-if="flipp.balls.length > 0">
       <circle v-for="(t, i) in flipp.trail" :key="`trail-${i}`"
