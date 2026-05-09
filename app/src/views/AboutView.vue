@@ -247,6 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.0.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-yellow-400 ring-2 ring-yellow-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.0.0</span>
+                <span class="text-yellow-300/85">&mdash; Duomap: to maske-koblede kart i samme SVG</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong class="text-white/85">Stor arkitektur-milepæl.</strong> SVG-rendering har f&aring;tt et nytt grunnprinsipp: <em>land-laget</em> (kremgul bg + alle land-features) og <em>sj&oslash;-laget</em> (bl&aring; rect + Sj&oslash;kart-detalj) renderes parallelt i samme SVG og komponeres via en mask. Sj&oslash;-laget har prioritet der det vinner — men er klippet til "sj&oslash;-region" definert som <em>bbox MINUS unionen av alle land-polygoner</em></li>
+                <li><strong>Robust mot enkeltkilde-feil:</strong> tidligere hang sj&oslash;-renderingen p&aring; at &eacute;n kilde (Sj&oslash;kart, N50 Havflate, eller coastline-rekonstruksjon) lyktes. Hvis ikke: kremgul-katastrofe. N&aring; bidrar 5+ kilder til land-masken (vegetasjon, bygninger, urban-mass, place=island, innlandsvann, coastline-rekonstruksjon). Kremgul-i-sj&oslash;-feilen krever at <em>alle</em> feiler samtidig — i praksis umulig</li>
+                <li><strong>Landøya-typetilfellet er løst:</strong> OSM-saltvann-relations som lekker over land (Drammensfjorden inn i Gulskogen) har ingen effekt p&aring; sj&oslash;-rendering n&aring;r mask-en sier "land". Sj&oslash;-overlayet males kun der INGEN land-kilde gir signal</li>
+                <li><strong>Endringer:</strong> <code>mapBuilder.js</code> har fått <code>LAND_POLYGON_CODES</code>, <code>landMaskPaths</code>-collector i <code>layerSvg</code>, <code>seaMaskSvg</code> i <code>&lt;defs&gt;</code>, og en ny <code>&lt;g id="sjo-overlay"&gt;</code> mellom ground-laget og water-laget. <code>coastlineMode</code> bg-bytting er fjernet — bg er n&aring; alltid kremgul, og sj&oslash;-overlayet h&aring;ndterer havet</li>
+                <li><strong>Diagnose:</strong> attribusjons-boksen viser <code>Duomap: land-paths=N ways=M ringer=K</code>. <code>land-paths</code> = antall land-polygoner i mask-en. Et h&oslash;yt tall (typisk 50–500) betyr god land-deteksjon</li>
+                <li><strong>Backwards-kompatibilitet:</strong> kart laget p&aring; v6.x har ikke duomap og rendres som f&oslash;r (gamle kremgul-bg-modus). Regenerer kartene for &aring; f&aring; ny bl&aring; sj&oslash;-rendering</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 6.21.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
