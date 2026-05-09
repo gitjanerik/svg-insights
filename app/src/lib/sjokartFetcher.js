@@ -510,6 +510,9 @@ export function sjokartToElements(sjokart) {
       natural: 'rock',
     }
     if (props.minimumsdybde != null) tags.dybde = String(props.minimumsdybde)
+    // v7.1.14: tagge skjær/grunne-navn fra Sjøkart-WFS når de finnes.
+    // SOSI-spec bruker `navn` (norsk) — også støttet `Skjernavn` osv.
+    if (props.navn) tags.name = String(props.navn).trim()
     pushAnyGeom(f, tags, elements, () => id++)
   }
 
