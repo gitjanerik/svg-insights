@@ -253,14 +253,20 @@ async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
     throw new Error(`HTTP ${res.status} for ${typeName} med format ${outputFormat}`)
   }
   const text = await res.text()
-  // v7.1.10: lagre første sample for diagnose (kun gjenbrukbar via
-  // opts.debugSamples som muteres). Hjelper å se hva serveren faktisk
-  // returnerer når 0 features.
+  // v7.1.10: lagre første sample for diagnose. v7.1.11: strip XML-tegn
+  // (<>) som ellers ville brutt SVG-parsing når sample lagres i
+  // data-meta-attributt. Erstatter med ‹ › så strukturen er synlig
+  // uten å være gyldig XML-syntaks.
   if (opts.debugSamples && opts.debugSamples.length < 5) {
+    const safeSample = text.slice(0, 200)
+      .replace(/\s+/g, ' ')
+      .replace(/</g, '‹')
+      .replace(/>/g, '›')
+      .replace(/&/g, '&amp;')
     opts.debugSamples.push({
       typeName, outputFormat,
       length: text.length,
-      sample: text.slice(0, 200).replace(/\s+/g, ' '),
+      sample: safeSample,
     })
   }
   // GeoJSON-format
