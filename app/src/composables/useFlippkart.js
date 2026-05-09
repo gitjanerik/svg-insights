@@ -28,6 +28,10 @@ export function useFlippkart() {
   const highscore = ref(loadHighscore())
   const lastEvent = ref(null)
 
+  // v7.3.4: midlertidig debug-flag for å verifisere multiball-pipelinen.
+  // Skru til false når atferden er bekreftet stabil i prod.
+  const DEBUG_MULTIBALL = true
+
   const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0]
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
@@ -277,6 +281,7 @@ export function useFlippkart() {
         }
       }
       if (b.stillTime >= STILLNESS_EXPLODE_S) {
+        if (DEBUG_MULTIBALL) console.log('[Flippkart] stillness threshold reached', { stillTime: b.stillTime.toFixed(2) })
         explodeBall(b)
       }
     } else {
@@ -380,6 +385,20 @@ export function useFlippkart() {
     }
   }
 
+  /** Gi en ball et tilfeldig kick (random retning, gitt fart). Brukes av
+   *  tap-to-kick UI og av multiball-spawn for å unngå at nye baller står
+   *  helt stille på flatmark. Resetter også stillness-state. */
+  function kickBall(b, speed = KICK_SPEED) {
+    if (!b || !b.visible) return
+    const angle = Math.random() * Math.PI * 2
+    b.vx = Math.cos(angle) * speed
+    b.vy = Math.sin(angle) * speed
+    b.stillTime = 0
+    b.chargeT = 0
+    b.warnIndex = 0
+    if (b.history) b.history.length = 0
+  }
+
   /** Multiball trigget av bumper-treff (samme drop-pattern som explodeBall). */
   function triggerMultiballFromBumper(sx, sy) {
     splash.x = sx
@@ -390,9 +409,10 @@ export function useFlippkart() {
     playExplosion()
     setTimeout(() => playMultiSpawn(), 250)
     lastEvent.value = { kind: 'multiball', at: Date.now() }
+    if (DEBUG_MULTIBALL) console.log('[Flippkart] bumper → multiball', { x: sx, y: sy, balls: balls.length })
 
-    // 3 baller dropped på random posisjoner (samme som explodeBall — uten å
-    // markere noen ball som exploded, siden multi-ball her trigges av treff)
+    // 3 baller dropped på random posisjoner med random kick — uten kick
+    // ville nye baller stått stille på flatmark og blitt stuck-cleanet ut
     const cx = bounds.width / 2
     const cy = bounds.height / 2
     const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
@@ -401,7 +421,10 @@ export function useFlippkart() {
       const r = Math.sqrt(Math.random()) * R
       const x = cx + Math.cos(angle) * r
       const y = cy + Math.sin(angle) * r
-      spawnBall(x, y, 0, 0, false)
+      const kickAngle = Math.random() * Math.PI * 2
+      const vx = Math.cos(kickAngle) * KICK_SPEED
+      const vy = Math.sin(kickAngle) * KICK_SPEED
+      spawnBall(x, y, vx, vy, false)
     }
   }
 
@@ -418,14 +441,14 @@ export function useFlippkart() {
 
     // Trigg HUD-flash for "MULTIBALL!"
     lastEvent.value = { kind: 'multiball', at: Date.now() }
+    if (DEBUG_MULTIBALL) console.log('[Flippkart] explode → multiball', { ballPos: { x: b.x, y: b.y } })
 
     // Marker som ekspodert (blir splicet ut neste loop-iter)
     b.exploded = true
 
-    // v7.2.9: 3 nye baller "droppes" på TILFELDIGE posisjoner innenfor R=65%-
-    // sirkel, med null start-fart. Som level-start: gradient-akselerasjon
-    // + level-physics gir dem fart fra start. Ingen risiko for at alle 3
-    // havner på samme problemtype-spot som original-kula.
+    // v7.3.4: 3 nye baller spawnes på TILFELDIGE posisjoner med random kick
+    // ved KICK_SPEED-fart. Tidligere ble de spawnet med vx=vy=0 og var
+    // sårbare for å stå stille på flatmark — så multiball "døde" stille.
     const cx = bounds.width / 2
     const cy = bounds.height / 2
     const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
@@ -434,9 +457,12 @@ export function useFlippkart() {
       const r = Math.sqrt(Math.random()) * R
       const x = cx + Math.cos(angle) * r
       const y = cy + Math.sin(angle) * r
+      const kickAngle = Math.random() * Math.PI * 2
+      const vx = Math.cos(kickAngle) * KICK_SPEED
+      const vy = Math.sin(kickAngle) * KICK_SPEED
       // canExplode=false: ingen kaskade-eksplosjoner. Stuck-cleanup tar over
-      // hvis multi-ball balls stagnerer.
-      spawnBall(x, y, 0, 0, false)
+      // hvis multi-ball balls likevel stagnerer.
+      spawnBall(x, y, vx, vy, false)
     }
   }
 
@@ -835,6 +861,7 @@ export function useFlippkart() {
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
+    kickBall,
     levelParams,
     // constants — getters reads dynamic values (skaleres i init basert på map-size)
     get BALL_RADIUS_M() { return BALL_RADIUS_M },
