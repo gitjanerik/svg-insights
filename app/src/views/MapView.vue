@@ -715,8 +715,9 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Kompass-rose -->
-    <div class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
+    <!-- Kompass-rose (skjult i Flippkart-modus) -->
+    <div v-if="!flippkart.active.value"
+         class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
               class="w-14 h-14 rounded-full bg-zinc-950
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
@@ -742,8 +743,9 @@ onMounted(() => {
     <!-- FAB-stack: zoom inn / zoom ut / sentrer. Synlig både når drawer er
          åpen og lukket. Når drawer er åpen flyttes FAB-en opp over drawer-
          toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
-         ligger over drawer (z-30). -->
-    <div class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
+         ligger over drawer (z-30). Skjult i Flippkart-modus. -->
+    <div v-if="!flippkart.active.value"
+         class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
          :style="{
            bottom: showControls
              ? 'calc(45dvh + 0.75rem)'
@@ -840,8 +842,8 @@ onMounted(() => {
       Du er utenfor dette kartet.
     </div>
 
-    <!-- Skala + ekvidistanse + ISOM-info -->
-    <div v-if="!loading"
+    <!-- Skala + ekvidistanse + ISOM-info (skjult i Flippkart-modus) -->
+    <div v-if="!loading && !flippkart.active.value"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
       <div class="px-3 py-2 rounded-lg bg-zinc-950 text-white text-[11px]
                   font-medium space-y-1.5 shadow-lg">
@@ -864,8 +866,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Attribusjon -->
-    <div v-if="!loading"
+    <!-- Attribusjon (skjult i Flippkart-modus) -->
+    <div v-if="!loading && !flippkart.active.value"
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
