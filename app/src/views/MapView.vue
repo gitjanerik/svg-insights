@@ -705,10 +705,13 @@ onMounted(() => {
     <!-- Attribusjon -->
     <div v-if="!loading"
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
-                text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[160px]">
+                text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
+      <template v-if="meta?.coastlineWaysCount !== undefined">
+        <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }} fb={{ meta?.useCoastlineFallback ? '✓' : '✗' }} mode={{ meta?.coastlineMode ? '✓' : '✗' }}</span>
+      </template>
     </div>
 
     <!-- Kontrollpanel (drawer) -->
