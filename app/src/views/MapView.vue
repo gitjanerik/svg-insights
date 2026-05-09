@@ -532,8 +532,8 @@ function applyTheme() {
 }
 
 // Auto-hide / restore layers ved tema-bytte:
-//   - Inn til Curves/Warhol → bare høydekurver vises
-//   - Ut fra Curves/Warhol → alle lag restaureres
+//   - Inn til art-mode (autoHideLayers=true) → bare høydekurver vises
+//   - Ut fra art-mode → alle lag restaureres
 //   - Mellom andre temaer → ingen endring (brukerens manuelle valg beholdes)
 // applyLayerVisibility kalles ubetinget på slutten så DOM er garantert
 // i sync med state — fjerner mulighet for stuck display=none fra forrige
