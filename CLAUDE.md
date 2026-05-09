@@ -1,5 +1,20 @@
 # CLAUDE.md — Prosjektkontekst for Claude Code
 
+## Sesjons-oppstart — ALLTID gjør dette først
+
+**Synk lokal master mot remote** før noe annet skjer i en ny sesjon:
+
+```bash
+git fetch origin master
+git rev-list --left-right --count master...origin/master
+# Hvis output er noe annet enn "0\t0" → resync:
+git checkout -B master origin/master   # (fra master, ev. checkout til feature-branch etter)
+```
+
+Lokal master har historisk drevet bort fra origin/master (eks. v6.3.x lokalt, v6.20.x på origin) fordi gh-pages auto-deployer fra origin og lokal-state ikke alltid følger med. Dette gir villedende state ved merge/branch-base og må fikses umiddelbart.
+
+Tilsvarende: når en feature-branch er klar til release, sjekk om base-branchen er oppdatert før merge — `git fetch origin master` + verifiser at lokal master ligger på samme commit.
+
 ## Hva er dette?
 
 SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
