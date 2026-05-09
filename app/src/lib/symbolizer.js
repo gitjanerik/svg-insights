@@ -205,6 +205,16 @@ export function classifyToIsom(el) {
   if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
   if (t.sjokart === 'dybdekontur') return { code: '306', cat: 'water' }
   if (t.sjokart === 'dybdeareal')  return { code: '307', cat: 'water' }
+  // v7.1.16: padle-features fra Sjøkart-WFS (Fase 5)
+  // Slipp kan være Point eller Polygon i WFS — håndteres som point
+  // hvis node, ellers polygon med samme styling som havnestruktur (551).
+  if (t.sjokart === 'slipp') {
+    return el.type === 'node'
+      ? { code: '550', cat: 'point' }
+      : { code: '551', cat: 'manmade' }
+  }
+  if (t.sjokart === 'havnestruktur')  return { code: '551', cat: 'manmade' }
+  if (t.sjokart === 'fareomraade')    return { code: '552', cat: 'manmade' }
 
   // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
   // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har
