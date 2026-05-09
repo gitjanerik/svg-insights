@@ -498,8 +498,19 @@ export function buildSvg(elements, bbox, options = {}) {
     try {
       const result = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
       coastlineLandRings = result.rings
-      coastlineMode = coastlineLandRings.length > 0
+      // v6.21.1: aktiver coastlineMode (blå bg) når det finnes coastline-
+      // ways UANSETT om rekonstruksjon ga land-polygoner. Hvis vi har
+      // coastline-data men ringer feiler (algoritme-edge-case, OSM-data
+      // fragmentert), er en blå bg uten cream-land-overlay LANGT bedre
+      // enn 100% kremgul over hele sjøen. Ground-layers (vegetasjon,
+      // bygninger, urbanmass) og place=island/islet-overlays dekker
+      // de fleste viktige land-arealer på toppen. Brukerne ser blå sjø
+      // selv ved fragmentert OSM-tagging.
+      coastlineMode = true
       console.log(`[Kystlinje] ${coastlineWays.length} coastline-ways → ${coastlineLandRings.length} land-polygoner (${result.closedRingsCount} lukkede øyer + ${result.openArcsCount} bbox-lukkede mainland)`)
+      if (coastlineLandRings.length === 0) {
+        console.warn(`[Kystlinje] 0 ringer rekonstruert — bg blir blå men land kan se ufullstendig ut. Stoler på ground-layers og place=island for land-dekning.`)
+      }
     } catch (e) {
       console.warn(`[Kystlinje] Land-rekonstruksjon feilet: ${e.message}`)
     }
