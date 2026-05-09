@@ -18,6 +18,7 @@ import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
+import { depthToColor } from './sjokartFetcher.js'
 // coastline.js: rekonstruerer LAND-polygoner fra OSM natural=coastline
 // linjer. Brukes KUN som siste fallback i kyst-områder der hverken N50
 // Havflate eller Sjøkart Dybdeareal returnerer sjø-polygoner. Ble fjernet
@@ -458,8 +459,14 @@ export function buildSvg(elements, bbox, options = {}) {
   // som land-grense på samme måte som coastline.
   const coastlineWays = []
 
+  // v7.1.4: tellere for sjøkart-features (Kartverket WFS). Eksponeres
+  // i meta og vises i MapView attribusjons-boks for synlig diagnose:
+  // hvis alle er 0 → WFS feilet, ikke et rendering-problem.
+  const sjokartCounts = { dybdeareal: 0, dybdekontur: 0, lanterne: 0, grunne: 0, dybdepunkt: 0 }
+
   for (const el of elements) {
     const t = el.tags ?? {}
+    if (t.sjokart && sjokartCounts[t.sjokart] !== undefined) sjokartCounts[t.sjokart]++
     if (el.type === 'way' && (t.natural === 'coastline' ||
                                t.man_made === 'pier' ||
                                t.man_made === 'breakwater')) {
@@ -672,8 +679,23 @@ export function buildSvg(elements, bbox, options = {}) {
           d = subpaths.join(' ')
         }
         if (d) {
+          // v7.1.4: ISOM 307 (Sjøkart dybdeareal) får per-polygon fill
+          // basert på snitt-dybde. Catalog default-fyll er identisk med
+          // SEA_BLUE bg, så en flat fill ville vært usynlig. depthToColor
+          // gir gradient #b6daee (grunt) → #1f5d8a (dypt) som synliggjør
+          // dybde-shading mot bg.
+          let inlineStyle = ''
+          if (code === '307' && el.tags) {
+            const minD = Number(el.tags.minDybde)
+            const maxD = Number(el.tags.maxDybde)
+            const avgD = Number.isFinite(minD) && Number.isFinite(maxD) ? (minD + maxD) / 2
+                       : Number.isFinite(minD) ? minD
+                       : Number.isFinite(maxD) ? maxD
+                       : null
+            if (avgD != null) inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
+          }
           pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd" data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            `    <path d="${d}" fill-rule="evenodd"${inlineStyle} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
         }
       }
@@ -1061,6 +1083,9 @@ export function buildSvg(elements, bbox, options = {}) {
     // MapView.applyTheme for å re-applysere --bg etter theme-reset.
     mapType,
     useSeaBg,
+    // v7.1.4: synlig sjøkart-feature-diagnose i kart-UI. Hvis alle 0 →
+    // WFS feilet (CORS/nett), ikke rendering-problem.
+    sjokartCounts,
     coastlineLandRings: coastlineLandRings.length || null,
     coastlineWaysCount: coastlineWays.length,
     useCoastlineFallback: !!useCoastlineFallback,
