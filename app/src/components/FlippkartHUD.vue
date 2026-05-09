@@ -71,18 +71,31 @@ const smashFlash = computed(() => {
 const multiballFlash = ref(null)
 let multiballTimer = null
 
+// v7.3.7: cascade-level-up under multiball — eget flash med chain-mult og bonus
+const chainFlash = ref(null)
+let chainTimer = null
+
 watch(() => props.flipp.lastEvent.value, (e) => {
-  if (e?.kind !== 'multiball') return
-  multiballFlash.value = e
-  if (multiballTimer) clearTimeout(multiballTimer)
-  multiballTimer = setTimeout(() => {
-    multiballFlash.value = null
-    multiballTimer = null
-  }, 2000)
+  if (e?.kind === 'multiball') {
+    multiballFlash.value = e
+    if (multiballTimer) clearTimeout(multiballTimer)
+    multiballTimer = setTimeout(() => {
+      multiballFlash.value = null
+      multiballTimer = null
+    }, 2000)
+  } else if (e?.kind === 'chain') {
+    chainFlash.value = e
+    if (chainTimer) clearTimeout(chainTimer)
+    chainTimer = setTimeout(() => {
+      chainFlash.value = null
+      chainTimer = null
+    }, 1800)
+  }
 })
 
 onUnmounted(() => {
   if (multiballTimer) clearTimeout(multiballTimer)
+  if (chainTimer) clearTimeout(chainTimer)
 })
 
 // v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
@@ -160,6 +173,13 @@ function onForceMultiball() {
     <!-- Multiball-flash når kula eksploderer i 3 -->
     <div v-if="multiballFlash" class="flipp-multiball-flash">
       <div class="flipp-multiball-text">MULTIBALL!</div>
+    </div>
+
+    <!-- Chain-flash når multiball-cascade clearer flere levels på rad -->
+    <div v-if="chainFlash" class="flipp-chain-flash">
+      <div class="flipp-chain-mini">LEVEL UP!</div>
+      <div class="flipp-chain-text">CHAIN ×{{ chainFlash.mult }}</div>
+      <div class="flipp-chain-sub">+{{ chainFlash.bonus }}</div>
     </div>
 
     <!-- Bottom-right: exit-knapp -->
@@ -405,6 +425,56 @@ function onForceMultiball() {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.4); }
   100% { filter: brightness(1.0); }
+}
+
+/* Chain-flash — vises når multiball-cascade clearer et level (v7.3.7).
+   Stiger fra bunn med rainbow-pulserende tekst, scaler med chain-dybde. */
+.flipp-chain-flash {
+  position: absolute;
+  top: 38%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: flipp-chain-burst 1.8s ease-out forwards;
+}
+.flipp-chain-mini {
+  font-size: 14px;
+  color: #5cefff;
+  letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0 #000;
+  margin-bottom: 0.4em;
+}
+.flipp-chain-text {
+  font-size: 48px;
+  color: #fde047;
+  text-shadow:
+    3px 3px 0 #f97316,
+    6px 6px 0 #ef4444,
+    9px 9px 0 #a855f7,
+    12px 12px 0 #000;
+  letter-spacing: 0.06em;
+  animation: flipp-chain-pulse 0.2s steps(2, end) infinite;
+}
+.flipp-chain-sub {
+  font-size: 22px;
+  color: #4ade80;
+  margin-top: 0.5em;
+  text-shadow: 3px 3px 0 #000;
+  letter-spacing: 0.04em;
+}
+@keyframes flipp-chain-burst {
+  0%   { transform: translate(-50%, 30%) scale(0.3); opacity: 0; }
+  15%  { transform: translate(-50%, -50%) scale(1.3); opacity: 1; }
+  20%  { transform: translate(-52%, -50%) scale(1.15); opacity: 1; }
+  25%  { transform: translate(-48%, -50%) scale(1.15); opacity: 1; }
+  30%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -110%) scale(1.1); opacity: 0; }
+}
+@keyframes flipp-chain-pulse {
+  0%   { filter: brightness(1.0) hue-rotate(0deg); }
+  50%  { filter: brightness(1.5) hue-rotate(20deg); }
+  100% { filter: brightness(1.0) hue-rotate(0deg); }
 }
 
 /* Perk-select overlay — vises ved level-clear hvert 3. level */

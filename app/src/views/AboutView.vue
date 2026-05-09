@@ -247,13 +247,32 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.3.6 -->
+          <!-- 7.3.7 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white text-base">7.3.6</span>
-                <span class="text-emerald-300/85">&mdash; multiball-diagnose</span>
+                <span class="font-semibold text-white text-base">7.3.7</span>
+                <span class="text-emerald-300/85">&mdash; multiball-cascade + ny perk</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li>Multiball-cascade: clear flere levels på rad uten å miste fart, eksponentiell bonus ×1, ×2, ×4, ×8, ×16</li>
+                <li>Ny CHAIN-flash på skjermen ved hver level-up under multiball</li>
+                <li>Ny perk: <strong>Koblede paddles</strong> — bunn+venstre og topp+høyre lader sammen ved tap</li>
+                <li>Web Audio er nå defensivt try/catch'et — TypeError på Android stopper ikke spillet</li>
+                <li>Debug-panel skjult (flag i useFlippkart.js, beholdt for senere bruk)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 7.3.6 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.3.6</span>
+                <span class="text-white/50">&mdash; multiball-diagnose</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
