@@ -291,6 +291,11 @@ export function useFlippkart() {
    * playable area, min-avstand mellom hver. 1-5 bumpers, men kun når
    * level % BUMPER_LEVEL_MOD === 0 (partalls-levels). Resetter hits-counter.
    */
+  // Bumper-typer (matcher kart-annoterings-symboler i appen):
+  // knaus = brun halvmåne, stein = svart trekant, brønn = blå sirkel m kryss,
+  // bro = to parallelle streker. Random kind pr bumper for visuell variasjon.
+  const BUMPER_KINDS = ['knaus', 'stein', 'brønn', 'bro']
+
   function generateBumpersForLevel() {
     bumpers.length = 0
     if (level.value % BUMPER_LEVEL_MOD !== 0) return
@@ -301,7 +306,6 @@ export function useFlippkart() {
       attempts++
       const x = margin + Math.random() * (bounds.width - 2 * margin)
       const y = margin + Math.random() * (bounds.height - 2 * margin)
-      // Sjekk min-avstand til andre bumpers
       let ok = true
       for (const b of bumpers) {
         if (Math.hypot(b.x - x, b.y - y) < BUMPER_MIN_DISTANCE_M) {
@@ -309,7 +313,8 @@ export function useFlippkart() {
         }
       }
       if (ok) {
-        bumpers.push({ x, y, hits: 0 })
+        const kind = BUMPER_KINDS[Math.floor(Math.random() * BUMPER_KINDS.length)]
+        bumpers.push({ x, y, hits: 0, kind })
       }
     }
   }
