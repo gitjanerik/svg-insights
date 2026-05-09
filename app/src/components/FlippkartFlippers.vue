@@ -3,15 +3,16 @@ import { ref } from 'vue'
 
 const props = defineProps({
   flipp: { type: Object, required: true },
-  // Skjerm-rekt for kart-SVG-en (ikke FlippkartLayer-overlay).
-  // Brukes til å posisjonere paddles i CSS-piksler ved hver kant.
+  // Skjerm-rekt for kart-SVG-en (med pxPerM for viewBox-m → CSS-px)
   mapRect: { type: Object, default: null },
 })
 
-// Tykkelse på flipper (perpendikulært til kant), i CSS-piksler. Halvert
-// fra v7.2.2 sitt 70px etter brukerfeedback — fortsatt nok til at finger
-// får tak (CSS-pixel-bredde ≠ touch-target-bredde i praksis).
+// Tykkelse på flipper (perpendikulært til kant), i CSS-piksler.
 const PAD_THICKNESS = 35
+
+// Hvor mye drag-bevegelse før vi tolker det som drag (ikke tap).
+// Under terskel = tap → energize.
+const TAP_MOVE_THRESHOLD = 0.005   // fraksjon av kant-lengde
 
 const dragState = ref(null)
 
@@ -24,10 +25,7 @@ function paddleStyle(edge) {
   const padLen = totalLen * f.length
   const padCenter = totalLen * f.position
 
-  // INSET i CSS-piksler — paddla sin INNER edge (mot midt av kart) sitter
-  // her, og paddla strekker seg utover (mot kart-kanten). Fysikk-collision-
-  // planet ligger på INNER edge.
-  const insetM = props.flipp.FLIPPER_INSET_M ?? 150
+  const insetM = props.flipp.FLIPPER_INSET_M ?? 280
   const insetPx = (r.pxPerM ?? 0.3) * insetM
 
   if (edge === 'top') {
@@ -54,13 +52,16 @@ function paddleStyle(edge) {
       height: `${padLen}px`,
     }
   }
-  // right
   return {
     top:    `${r.top + padCenter - padLen / 2}px`,
     left:   `${r.left + r.width - insetPx}px`,
     width:  `${PAD_THICKNESS}px`,
     height: `${padLen}px`,
   }
+}
+
+function chargeClass(edge) {
+  return `flipp-charge-${props.flipp.flippers[edge].kickLevel}`
 }
 
 function onPointerDown(edge, e) {
@@ -74,6 +75,7 @@ function onPointerDown(edge, e) {
     pointerId: e.pointerId,
     startCoord: isHoriz ? e.clientX : e.clientY,
     startPos: props.flipp.flippers[edge].position,
+    movedAsDrag: false,
   }
 }
 
@@ -87,6 +89,7 @@ function onPointerMove(e) {
   const total = isHoriz ? props.mapRect.width : props.mapRect.height
   if (total <= 0) return
   const delta = (cur - ds.startCoord) / total
+  if (Math.abs(delta) > TAP_MOVE_THRESHOLD) ds.movedAsDrag = true
   const f = props.flipp.flippers[ds.edge]
   const half = f.length / 2
   f.position = Math.max(half, Math.min(1 - half, ds.startPos + delta))
@@ -96,6 +99,10 @@ function onPointerUp(e) {
   const ds = dragState.value
   if (ds && ds.pointerId === e.pointerId) {
     e.currentTarget.releasePointerCapture?.(e.pointerId)
+    if (!ds.movedAsDrag) {
+      // Quick tap → energize (lade kick-multiplier)
+      props.flipp.energize(ds.edge)
+    }
     dragState.value = null
   }
 }
@@ -106,7 +113,11 @@ function onPointerUp(e) {
     <div v-for="edge in ['top', 'bottom', 'left', 'right']"
          :key="edge"
          class="flipp-paddle"
-         :class="[`flipp-paddle-${edge}`, dragState?.edge === edge ? 'flipp-paddle-active' : '']"
+         :class="[
+           `flipp-paddle-${edge}`,
+           chargeClass(edge),
+           dragState?.edge === edge && dragState?.movedAsDrag ? 'flipp-paddle-active' : '',
+         ]"
          :style="paddleStyle(edge)"
          @pointerdown="onPointerDown(edge, $event)"
          @pointermove="onPointerMove"
@@ -130,27 +141,46 @@ function onPointerUp(e) {
   pointer-events: auto;
   touch-action: none;
   user-select: none;
-  background: linear-gradient(135deg, #ffe24d 0%, #fb923c 60%, #c2410c 100%);
-  border: 2px solid #fff;
-  box-shadow:
-    0 0 12px rgba(255, 226, 77, 0.55),
-    inset 0 0 6px rgba(0, 0, 0, 0.35);
-  cursor: grab;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid #fff;
+  cursor: grab;
+  transition: background 120ms, box-shadow 120ms;
 }
 
 .flipp-paddle:active,
 .flipp-paddle.flipp-paddle-active {
   cursor: grabbing;
-  background: linear-gradient(135deg, #fff7d0 0%, #ffe24d 60%, #fb923c 100%);
-  box-shadow:
-    0 0 18px rgba(255, 226, 77, 0.85),
-    inset 0 0 8px rgba(0, 0, 0, 0.35);
+  filter: brightness(1.15);
 }
 
-/* Grip-stripe i 8-bit-stil for visuell feedback */
+/* Charge stages — kald → varm via kickLevel.
+   0 = blå (normal), 1 = gul, 2 = oransj, 3 = rød (max). */
+.flipp-charge-0 {
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.55), inset 0 0 4px rgba(0,0,0,0.3);
+}
+.flipp-charge-1 {
+  background: linear-gradient(135deg, #fde047 0%, #facc15 100%);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.75), inset 0 0 4px rgba(0,0,0,0.3);
+}
+.flipp-charge-2 {
+  background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
+  box-shadow: 0 0 14px rgba(251, 146, 60, 0.85), inset 0 0 4px rgba(0,0,0,0.3);
+}
+.flipp-charge-3 {
+  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+  box-shadow: 0 0 18px rgba(239, 68, 68, 0.95), inset 0 0 6px rgba(0,0,0,0.4);
+  animation: flipp-pulse-red 0.5s steps(2, end) infinite;
+}
+@keyframes flipp-pulse-red {
+  0%   { filter: brightness(1.0); }
+  50%  { filter: brightness(1.3); }
+  100% { filter: brightness(1.0); }
+}
+
+/* Diagonal grip-stripe i 8-bit-stil for visuell feedback */
 .flipp-paddle-grip {
   background: repeating-linear-gradient(
     45deg,

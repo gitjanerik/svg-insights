@@ -15,7 +15,7 @@ const overlay = computed(() => {
   const s = props.flipp.status.value
   if (s === 'gameover') return { text: 'GAME OVER', sub: 'TAP TO RESTART', color: 'red' }
   if (s === 'won') return { text: 'LEVEL CLEAR!', sub: '', color: 'yellow' }
-  if (s === 'sunk') return { text: 'SPLASH!', sub: '', color: 'cyan' }
+  if (s === 'sunk') return { text: 'MISS!', sub: '', color: 'cyan' }
   if (s === 'idle' && props.flipp.lives.value === 3 && props.flipp.score.value === 0 && props.flipp.level.value === 1) {
     return { text: '', sub: 'TAP MAP TO DROP MARBLE', color: 'cyan' }
   }

@@ -819,7 +819,6 @@ onMounted(() => {
           <FlippkartLayer
             :flipp="flippkart"
             :view-box="flippViewBox"
-            :highest-point="storedHighestPoint"
             @drop="onFlippDrop"/>
         </div>
       </div>
