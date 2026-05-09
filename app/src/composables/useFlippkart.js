@@ -62,13 +62,10 @@ export function useFlippkart() {
     { id: 'pre-charged',    icon: '⚡', label: 'FORHÅNDSLADET',       desc: 'Flippere starter med +1 kick' },
   ]
 
-  // v7.2.8: bytte fra posisjon-basert til hastighet-basert stillness-
-  // deteksjon. Posisjon-deteksjon var upålitelig — ball som drev sakte
-  // linjært fikk stillTime resatt før den nådde explode-terskel. Velocity-
-  // basert er mer pålitelig for "ball går tom for energi".
   // v7.3.0: rolling-window position-history deteksjon
   const STILLNESS_HISTORY_LEN = 60   // ~1 sek ved 60 fps
-  const STILLNESS_DISPL_M = 120      // total displacement i 1s vindu < dette = stuck
+  // v7.3.1: STILLNESS_DISPL_M skaleres med map-size i init() (default for 4km-kart)
+  let STILLNESS_DISPL_M = 120
   const STILLNESS_WARNING_S = 1.0    // når warning starter
   const STILLNESS_EXPLODE_S = 3.0    // når eksplosjon trigger (primary ball)
   const MULTIBALL_STUCK_S = 6.0      // når multi-ball balls bare drukner stille
@@ -81,12 +78,14 @@ export function useFlippkart() {
   // av. Etter BUMPER_HITS_TO_MULTIBALL treff på samme bumper → multi-ball
   // trigges. Genereres bare på partalls-levels (level % 2 === 0).
   const bumpers = reactive([])
-  const BUMPER_RADIUS_M = 90        // collision-radius (i meter, viewBox)
+  // v7.3.1: spatial konstanter skaleres med map-size i init(). Default-verdier
+  // er kalibrert for 4×4km kart.
+  let BUMPER_RADIUS_M = 90          // collision-radius (i meter, viewBox)
   const BUMPER_HITS_TO_MULTIBALL = 4
   const BUMPER_HIT_SCORE = 50
   const BUMPER_BOUNCE_SPEED = 350   // minimum utgående fart fra bumper-hit
   const BUMPER_MAX_PER_LEVEL = 5
-  const BUMPER_MIN_DISTANCE_M = 250 // min avstand mellom bumpers
+  let BUMPER_MIN_DISTANCE_M = 250   // min avstand mellom bumpers
   const BUMPER_LEVEL_MOD = 2        // bumpers genereres når level % 2 === 0
 
   const splash = reactive({
@@ -103,8 +102,9 @@ export function useFlippkart() {
     right:  { position: 0.5, length: 0.25, kickLevel: 0 },
   })
 
-  const BALL_RADIUS_M = 90
-  const FLIPPER_INSET_M = 280
+  // v7.3.1: spatial konstanter skaleres i init() basert på map-size
+  let BALL_RADIUS_M = 90
+  let FLIPPER_INSET_M = 280
   const BOUNCE_AMPLIFY = 1.1
   const KICK_SPEED = 300
 
@@ -746,6 +746,18 @@ export function useFlippkart() {
     dem = ctx.dem
     bounds = ctx.bounds
     equidistanceM = ctx.equidistanceM ?? 20
+
+    // v7.3.1: Skala spatial-konstanter etter kart-størrelse. Defaults var
+    // tunet for 4×4km kart. Mindre kart (1km, 2km, 3km) trengte mindre
+    // ball + paddler + bumpers + stillness-displacement-terskel.
+    const minDim = Math.min(bounds.width || 4000, bounds.height || 4000)
+    const mapScale = minDim / 4000
+    BALL_RADIUS_M       = 90  * mapScale
+    FLIPPER_INSET_M     = 280 * mapScale
+    BUMPER_RADIUS_M     = 90  * mapScale
+    BUMPER_MIN_DISTANCE_M = 250 * mapScale
+    STILLNESS_DISPL_M   = 120 * mapScale
+
     // Beregn terrain-energy-multiplier basert på DEM-elevasjon-spenn.
     // Typisk variert terreng (200m range) → 1.0. Flatmark (50m) → 4.0
     // (kraftig redusert friksjon). Mountain (500m) → 0.4 (mer friksjon,
@@ -794,11 +806,11 @@ export function useFlippkart() {
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
     levelParams,
-    // constants
-    BALL_RADIUS_M,
-    FLIPPER_INSET_M,
+    // constants — getters reads dynamic values (skaleres i init basert på map-size)
+    get BALL_RADIUS_M() { return BALL_RADIUS_M },
+    get FLIPPER_INSET_M() { return FLIPPER_INSET_M },
+    get BUMPER_RADIUS_M() { return BUMPER_RADIUS_M },
     KICK_MULTIPLIERS,
-    BUMPER_RADIUS_M,
     BUMPER_HITS_TO_MULTIBALL,
   }
 }
