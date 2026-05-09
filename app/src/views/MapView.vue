@@ -9,6 +9,10 @@ import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnno
 import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
+import { unpackDem } from '../lib/demSampling.js'
+import { useFlippkart } from '../composables/useFlippkart.js'
+import FlippkartLayer from '../components/FlippkartLayer.vue'
+import FlippkartHUD from '../components/FlippkartHUD.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -19,6 +23,17 @@ const loading = ref(true)
 const loadError = ref(null)
 const meta = ref(null)
 const mapTitle = ref('Turkart')
+
+// Flippkart easter egg: synlig først etter at brukeren tapper Curves-tema.
+// Holdes i memory pr session — ingen persistering.
+const flippUnlocked = ref(false)
+const flippkart = useFlippkart()
+const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
+const storedHighestPoint = ref(null)
+const flippViewBox = computed(() => {
+  if (!meta.value) return '0 0 1 1'
+  return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
+})
 
 const BUILTIN = {
   vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
@@ -66,6 +81,38 @@ const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
+
+// Easter egg: tapping Curves-tema låser opp Flippkart-knappen i drawer.
+function onThemeTap(key) {
+  currentTheme.value = key
+  if (key === 'curves') flippUnlocked.value = true
+}
+
+function startFlippkart() {
+  if (!storedDem.value || !meta.value) return
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const lakePaths = Array.from(svg.querySelectorAll(
+    'path[data-iso="301"], path[data-iso="302"], path[data-iso="303"], path[data-iso="304"], polygon[data-iso="301"], polygon[data-iso="302"], polygon[data-iso="303"], polygon[data-iso="304"]'
+  ))
+  flippkart.init({
+    dem: storedDem.value,
+    bounds: { width: meta.value.widthM, height: meta.value.heightM },
+    lakePaths,
+    highestPoint: storedHighestPoint.value,
+  })
+  flippkart.restart()
+  flippkart.activate()
+  closeDrawer()
+}
+
+function stopFlippkart() {
+  flippkart.deactivate()
+}
+
+function onFlippDrop({ x, y }) {
+  flippkart.dropBall(x, y)
+}
 
 function toggleLayer(key) {
   const next = new Set(visibleLayers.value)
@@ -270,6 +317,11 @@ async function loadMap() {
       if (!stored) throw new Error('Kart ikke funnet i lagring')
       mapTitle.value = stored.navn
       text = stored.svg
+      // v7.2.0: hent DEM hvis lagret (forberedt for Flippkart)
+      if (stored.dem) {
+        try { storedDem.value = unpackDem(stored.dem) } catch { storedDem.value = null }
+      }
+      storedHighestPoint.value = stored.highestPoint ?? null
     }
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'image/svg+xml')
@@ -532,8 +584,8 @@ function applyTheme() {
 }
 
 // Auto-hide / restore layers ved tema-bytte:
-//   - Inn til Curves/Warhol → bare høydekurver vises
-//   - Ut fra Curves/Warhol → alle lag restaureres
+//   - Inn til art-mode (autoHideLayers=true) → bare høydekurver vises
+//   - Ut fra art-mode → alle lag restaureres
 //   - Mellom andre temaer → ingen endring (brukerens manuelle valg beholdes)
 // applyLayerVisibility kalles ubetinget på slutten så DOM er garantert
 // i sync med state — fjerner mulighet for stuck display=none fra forrige
@@ -697,8 +749,13 @@ onMounted(() => {
     <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
          :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''">
       <div class="w-full h-full" :style="transformStyle">
-        <div class="w-full h-full" :style="rotateStyle">
+        <div class="w-full h-full relative" :style="rotateStyle">
           <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
+          <FlippkartLayer
+            :flipp="flippkart"
+            :view-box="flippViewBox"
+            :highest-point="storedHighestPoint"
+            @drop="onFlippDrop"/>
         </div>
       </div>
     </div>
@@ -846,13 +903,27 @@ onMounted(() => {
           <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Tema</div>
           <div class="grid grid-cols-3 gap-2 mb-4">
             <button v-for="t in THEMES" :key="t.key"
-                    @click="currentTheme = t.key"
+                    @click="onThemeTap(t.key)"
                     class="px-3 py-2 rounded-lg border text-[11px] active:scale-[0.98] transition text-center"
                     :class="currentTheme === t.key
                             ? 'bg-slate-400/25 border-slate-300/50 text-white font-medium'
                             : 'bg-white/5 border-white/10 text-white/65'">
               {{ t.label }}
             </button>
+          </div>
+
+          <!-- Easter egg: Flippkart-knapp synlig etter Curves-tema-tap -->
+          <button v-if="flippUnlocked && storedDem"
+                  @click="startFlippkart"
+                  class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
+                         border border-fuchsia-400/40 text-white text-[12px]
+                         active:scale-[0.98] flex items-center justify-center gap-2">
+            <span>🎮 Flippkart</span>
+          </button>
+          <div v-else-if="flippUnlocked && !storedDem"
+               class="w-full mb-4 px-3 py-2 rounded-lg bg-white/5 border border-white/10
+                      text-white/40 text-[11px] text-center">
+            🎮 Flippkart krever DEM — generer kartet på nytt
           </div>
 
           <button @click="router.push('/tegnforklaring')"
@@ -955,6 +1026,9 @@ onMounted(() => {
         </div>
       </div>
     </Transition>
+
+    <!-- Flippkart-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
+    <FlippkartHUD :flipp="flippkart" @restart="flippkart.restart" @exit="stopFlippkart"/>
   </div>
 </template>
 
