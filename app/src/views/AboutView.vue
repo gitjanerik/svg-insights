@@ -247,9 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.1.18 -->
+          <!-- 7.2.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.2.0</span>
+                <span class="text-emerald-300/85">&mdash; Warhol-tema fjernet, DEM persisteres med kartet</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Warhol-kart-tema fjernet.</strong> Curves er nå alene som art-mode (mørk slate bakgrunn med varm gul kurver). Logikken i theme-bytte er fortsatt fullt data-drevet via <code>themes.autoHideLayers</code> &mdash; ingen andre temaer påvirket. Drawing-preset Warhol (i image-to-SVG-pipelinen) er urørt: det er en separat feature</li>
+                <li><strong>DEM-data lagres nå med kartet.</strong> Når brukeren genererer et nytt kart med ekte Kartverket-DTM, lagres høydegridet (Float32Array 200×200, ~160 KB per kart) i IndexedDB sammen med SVG-en, samt høyeste DEM-punkt. Forberedelse til DEM-baserte features. Eldre kart (lagret før denne versjonen) har <code>dem=null</code> og påvirkes ikke</li>
+                <li><strong>Ny lib/demSampling.js:</strong> bilinear elevasjon, gradient (sentral-differanse), og <code>findHighestPoint</code>. Pure functions med 12 unit-tester</li>
+                <li><strong>mapStorage.listMaps()</strong> ekskluderer nå dem-feltet fra listing (heavy ArrayBuffer) og eksponerer en <code>hasDem</code>-bool</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 7.1.18 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white text-base">7.1.18</span>
