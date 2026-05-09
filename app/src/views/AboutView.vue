@@ -247,6 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.4 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.4</span>
+                <span class="text-white/50">&mdash; Sjøkart-detaljer endelig synlige (dybde-shading + tykkere kontur)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Brukerrapport:</strong> Sjø-bg ble blå i v7.1.3, men selve sjøkart-detaljene (dybdekontur, dybdeareal-shading, sjømerker) var ikke synlige i vannet</li>
+                <li><strong>Rotårsak A: ISOM 307 fyllfarge identisk med bg.</strong> Catalog default for dybdeareal var <code>#9ec9de</code> &mdash; akkurat samme som SEA_BLUE bakgrunns-rect. Polygonene rendret blå-på-blå, null kontrast. <code>depthToColor()</code> i <code>sjokartFetcher.js</code> var eksportert men aldri kalt</li>
+                <li><strong>Fix A:</strong> mapBuilder importerer <code>depthToColor</code>, og hver 307-polygon får inline <code>style="fill: ..."</code> beregnet fra <code>tags.minDybde</code> &amp; <code>maxDybde</code>. Gradient <code>#b6daee</code> (grunt) → <code>#1f5d8a</code> (dypt). Inline <code>style</code> overstyrer catalog-CSS</li>
+                <li><strong>Rotårsak B: ISOM 306 dybdekontur strekbredde 0.06mm</strong> &mdash; under 1 device-piksel på telefonskjerm ved typisk zoom. Hairline usynlig</li>
+                <li><strong>Fix B:</strong> 306 widthMm 0.06 → 0.18 (samme som ISOM 102 indekskontur). Synlig på skjerm uten å overdrive på print</li>
+                <li><strong>Fix C — synlig diagnostikk:</strong> mapBuilder teller sjøkart-features og lagrer i meta. MapView attribusjons-boks viser <code>Sjøkart: omr=N kontur=M lan=K skj=S dyb=D</code> for sjø-modus. Hvis alle 0 → WFS feilet (CORS/nett), ikke rendering-problem</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />

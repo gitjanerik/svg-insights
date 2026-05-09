@@ -300,6 +300,7 @@ async function loadMap() {
       // v7.1.1 ikke virket — vi sjekket alltid mot undefined.
       mapType: m.mapType ?? null,
       useSeaBg: !!m.useSeaBg,
+      sjokartCounts: m.sjokartCounts ?? null,
       coastlineLandRings: m.coastlineLandRings ?? null,
       coastlineWaysCount: m.coastlineWaysCount,
     }
@@ -738,6 +739,9 @@ onMounted(() => {
                 :title="'Nullstiller globalt karttype-valg. Du blir spurt på nytt neste gang.'">
           Nullstill
         </button>
+        <template v-if="meta.mapType === 'sea' && meta.sjokartCounts">
+          <br><span class="text-sky-300/70">Sjøkart: omr={{ meta.sjokartCounts.dybdeareal }} kontur={{ meta.sjokartCounts.dybdekontur }} lan={{ meta.sjokartCounts.lanterne }} skj={{ meta.sjokartCounts.grunne }} dyb={{ meta.sjokartCounts.dybdepunkt }}</span>
+        </template>
       </template>
       <template v-else-if="meta?.coastlineWaysCount !== undefined">
         <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>
