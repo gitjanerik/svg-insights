@@ -36,17 +36,22 @@ function playTone(freq, duration, type = 'square', volume = 0.15, startOffset = 
   if (muted) return
   const ctx = ensureCtx()
   if (!ctx) return
-  const t0 = ctx.currentTime + startOffset
-  const osc = ctx.createOscillator()
-  const gain = ctx.createGain()
-  osc.type = type
-  osc.frequency.setValueAtTime(freq, t0)
-  gain.gain.setValueAtTime(volume, t0)
-  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration)
-  osc.connect(gain)
-  gain.connect(masterGain)
-  osc.start(t0)
-  osc.stop(t0 + duration + 0.05)
+  // v7.3.7: Web Audio kan kaste TypeError på Android når AudioContext er
+  // suspended eller mange oscillators schedules samtidig — lyd er ikke-essensielt
+  // så vi catcher stille for å holde resten av spillet i gang.
+  try {
+    const t0 = ctx.currentTime + startOffset
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, t0)
+    gain.gain.setValueAtTime(volume, t0)
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration)
+    osc.connect(gain)
+    gain.connect(masterGain)
+    osc.start(t0)
+    osc.stop(t0 + duration + 0.05)
+  } catch {}
 }
 
 /** Glissando — pitch-glid mellom to frekvenser. */
@@ -54,18 +59,20 @@ function playGlide(freqStart, freqEnd, duration, type = 'square', volume = 0.15)
   if (muted) return
   const ctx = ensureCtx()
   if (!ctx) return
-  const t0 = ctx.currentTime
-  const osc = ctx.createOscillator()
-  const gain = ctx.createGain()
-  osc.type = type
-  osc.frequency.setValueAtTime(freqStart, t0)
-  osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), t0 + duration)
-  gain.gain.setValueAtTime(volume, t0)
-  gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration)
-  osc.connect(gain)
-  gain.connect(masterGain)
-  osc.start(t0)
-  osc.stop(t0 + duration + 0.05)
+  try {
+    const t0 = ctx.currentTime
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freqStart, t0)
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), t0 + duration)
+    gain.gain.setValueAtTime(volume, t0)
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration)
+    osc.connect(gain)
+    gain.connect(masterGain)
+    osc.start(t0)
+    osc.stop(t0 + duration + 0.05)
+  } catch {}
 }
 
 // MIDI-frekvenser for noter vi bruker

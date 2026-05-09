@@ -28,9 +28,10 @@ export function useFlippkart() {
   const highscore = ref(loadHighscore())
   const lastEvent = ref(null)
 
-  // v7.3.4: midlertidig debug-flag for å verifisere multiball-pipelinen.
-  // Skru til false når atferden er bekreftet stabil i prod.
-  const DEBUG_MULTIBALL = true
+  // v7.3.4: debug-flag for å verifisere multiball-pipelinen. v7.3.7: skrudd
+  // av — alt debug-stillas (panel, dlog, force-multiball) er bevart i koden
+  // for senere bruk, bare gated på dette flagget.
+  const DEBUG_MULTIBALL = false
 
   // v7.3.5: ring-buffer av debug-meldinger som vises i HUD-debug-panelet
   // (mobil-friendly — ingen konsoll trengs). Holder maks 12 entries.
@@ -60,7 +61,18 @@ export function useFlippkart() {
     smashMult: 1,          // multiplikator for smash-bonus
     frictionMult: 1,       // multiplikator for friction (lavere = mindre drag)
     chargeBonus: 0,        // free kickLevel etter ball-drop (0..3)
+    linkedFlippers: false, // tap → energize parret flipper også (v7.3.7)
   })
+
+  // v7.3.7: når perks.linkedFlippers er aktiv, energiserer ett tap to flippere
+  // i diagonal par. Hvis du tapper bunn lader også venstre, og omvendt — likeens
+  // for topp ↔ høyre. Lar én finger drive en hel diagonal-halvdel.
+  const LINKED_PAIRS = {
+    bottom: 'left',
+    left: 'bottom',
+    top: 'right',
+    right: 'top',
+  }
 
   // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
   const perkChoices = ref([])
@@ -77,6 +89,7 @@ export function useFlippkart() {
     { id: 'extra-life',     icon: '❤️', label: '+1 LIV',              desc: 'Maks 5 totalt' },
     { id: 'low-friction',   icon: '❄️', label: '−20% FRIKSJON',       desc: 'Ball glir lenger' },
     { id: 'pre-charged',    icon: '⚡', label: 'FORHÅNDSLADET',       desc: 'Flippere starter med +1 kick' },
+    { id: 'linked-flippers',icon: '🔗', label: 'KOBLEDE PADDLES',     desc: 'Bunn+venstre og topp+høyre lader sammen' },
   ]
 
   // v7.3.0: rolling-window position-history deteksjon
@@ -131,6 +144,13 @@ export function useFlippkart() {
     Array.from({ length: TRAIL_LEN }, () => ({ x: 0, y: 0, age: TRAIL_LEN }))
   )
   let trailIdx = 0
+
+  // v7.3.7: multiball-cascade-state. levelChain teller på hverandre følgende
+  // level-clears mens multiball er aktiv. Reset ved drown / restart / normal-win.
+  // pendingPerkSelect husker at vi krysset et perk-trigger-level under cascade
+  // så menyen vises når multiball avsluttes.
+  let levelChain = 0
+  let pendingPerkSelect = false
 
   let dem = null
   let bounds = { width: 0, height: 0 }
@@ -631,6 +651,12 @@ export function useFlippkart() {
     if (!f) return
     f.kickLevel = (f.kickLevel + 1) % KICK_MULTIPLIERS.length
     playEnergize(f.kickLevel)
+    // v7.3.7 koblede paddles-perk: lad også linket flipper i samme diagonal-par
+    if (perks.linkedFlippers) {
+      const link = LINKED_PAIRS[edge]
+      const lf = link && flippers[link]
+      if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
+    }
   }
 
   function updateTrail() {
@@ -683,6 +709,7 @@ export function useFlippkart() {
     lives.value = Math.max(0, lives.value - 1)
     lastHitEdge = null
     lastElev = NaN
+    levelChain = 0
 
     if (lives.value === 0) {
       const finalTotal = totalScore.value + score.value
@@ -704,6 +731,44 @@ export function useFlippkart() {
   }
 
   function win() {
+    // v7.3.7: cascade-mode under multiball — hvis flere baller er i lufta
+    // når mål-score nås, hopper vi rett til neste level uten å pause
+    // physics. Score som overstiger målet bæres over, og hver kjede gir
+    // eksponentielt høyere bonus. Belønner spillere som klarer å holde
+    // multiball oppe gjennom flere levels på én gang.
+    if (balls.length > 1 && status.value === 'rolling') {
+      levelChain += 1
+      const target = levelTarget.value
+      const carryOver = Math.max(0, score.value - target)
+
+      // Bonus skalerer eksponentielt med chain-dybde, capped ved x16 (chain 5).
+      // chain 1 = 1×, 2 = 2×, 3 = 4×, 4 = 8×, 5+ = 16×
+      const chainMult = Math.min(16, Math.pow(2, levelChain - 1))
+      const chainBonus = Math.round(500 * level.value * chainMult)
+
+      totalScore.value += target + chainBonus
+      level.value += 1
+      score.value = carryOver
+      lastHitEdge = null
+
+      // Defer perk-select hvis vi krysser et perk-trigger-level mens
+      // multiball er aktiv — perk-meny kan ikke åpnes mid-cascade.
+      if ((level.value - 1) % PERK_INTERVAL === 0) {
+        pendingPerkSelect = true
+      }
+
+      lastEvent.value = {
+        kind: 'chain',
+        chain: levelChain,
+        bonus: chainBonus,
+        mult: chainMult,
+        at: Date.now(),
+      }
+      playWin()
+      return
+    }
+
+    levelChain = 0
     status.value = 'won'
     playWin()
     totalScore.value += score.value
@@ -713,9 +778,10 @@ export function useFlippkart() {
       balls.length = 0
       lastHitEdge = null
       lastElev = NaN
-      generateBumpersForLevel()    // v7.3.0: ny set bumpers for nytt level
-      // Hvert PERK_INTERVAL (3.) level: vis perk-velg-meny FØR neste level
-      if ((level.value - 1) % PERK_INTERVAL === 0) {
+      generateBumpersForLevel()
+      const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
+      pendingPerkSelect = false
+      if (triggerPerk) {
         perkChoices.value = pickRandomPerks(3)
         status.value = 'perk-select'
       } else {
@@ -749,6 +815,7 @@ export function useFlippkart() {
       case 'extra-life':     lives.value = Math.min(MAX_LIVES, lives.value + 1); break
       case 'low-friction':   perks.frictionMult *= 0.8; break
       case 'pre-charged':    perks.chargeBonus = Math.min(3, perks.chargeBonus + 1); break
+      case 'linked-flippers':perks.linkedFlippers = true; break
     }
     perkChoices.value = []
     status.value = 'idle'
@@ -822,6 +889,9 @@ export function useFlippkart() {
     perks.smashMult = 1
     perks.frictionMult = 1
     perks.chargeBonus = 0
+    perks.linkedFlippers = false
+    levelChain = 0
+    pendingPerkSelect = false
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
