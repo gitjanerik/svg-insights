@@ -247,6 +247,24 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.1.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.1.1</span>
+                <span class="text-white/50">&mdash; Bl&aring; sj&oslash; faktisk synlig (CSS-variabel-fix)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">9. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong class="text-white/85">Kritisk fiks: bg-fargen var aldri reaktiv.</strong> ALLE «bl&aring; sj&oslash;»-fiks-fors&oslash;k siden v6.10.x har v&aelig;rt blokkert av samme CSS-regel: <code>.isom-map #bakgrunn rect { fill: var(--bg, #fefae0); }</code> i <code>symbolizer.js</code>. CSS for <code>fill</code> overstyrer alltid inline <code>fill</code>-attributter — s&aring; selv om mapBuilder satte <code>&lt;rect fill=&quot;#9ec9de&quot;/&gt;</code>, ble det ignorert</li>
+                <li><strong>Hvorfor v7.0.0 duomap virket:</strong> sj&oslash;-overlayet brukte en SEPARAT <code>&lt;rect&gt;</code> uten <code>#bakgrunn</code>-id, s&aring; CSS-regelen traff aldri den. Det forklarer hvorfor blå sjø dukket opp på Nesøya kun i v7.0.0 men ikke i v7.1.0 SEA-mode (sistnevnte brukte #bakgrunn-rect)</li>
+                <li><strong>Fiks (Alt 1):</strong> mapBuilder setter n&aring; <code>style=&quot;--bg: ${bgFill}&quot;</code> inline p&aring; SVG-roten. CSS-regelen plukker opp variabelen via cascade, og fill-fargen er reaktiv. MapView's <code>applyTheme()</code> nuller <code>--bg</code> mellom tema-bytter, s&aring; vi re-applyserer den der ogs&aring; basert p&aring; <code>meta.mapType === 'sea'</code></li>
+                <li><strong>Bevarer dark-mode:</strong> tema-systemet bruker fortsatt <code>--bg</code> til å overstyre via theme.background. SEA-mode i lys-tema = <code>#9ec9de</code>; tema-overstyringer fungerer som f&oslash;r</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.1.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-300" />

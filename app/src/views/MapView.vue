@@ -441,6 +441,13 @@ function applyTheme() {
   }
   svg.style.removeProperty('--bg')
   svg.style.removeProperty('--art-fill-opacity')
+  // v7.1.1: re-applisér bg-farge basert på mapType etter theme-reset.
+  // applyTheme nuller --bg for å rydde mellom tema-bytter, men SEA-mode
+  // skal alltid ha sjø-blå bg uansett tema (light er default-temaet, og
+  // catalog.background.color = kremgul vil ellers slå inn via CSS-fallback).
+  if (meta.value?.mapType === 'sea') {
+    svg.style.setProperty('--bg', '#9ec9de')
+  }
   for (const code of allCodes) {
     svg.style.removeProperty(`--iso-${code}-fill`)
     svg.style.removeProperty(`--iso-${code}-stroke`)
