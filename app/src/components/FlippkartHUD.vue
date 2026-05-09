@@ -84,6 +84,43 @@ watch(() => props.flipp.lastEvent.value, (e) => {
 onUnmounted(() => {
   if (multiballTimer) clearTimeout(multiballTimer)
 })
+
+// v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
+// når DEBUG_MULTIBALL er på (fjernes med flag i useFlippkart.js når bug
+// er bekreftet løst).
+const DEBUG_KEY = 'flippkart-debug-panel'
+const debugOpen = ref((() => {
+  try { return localStorage.getItem(DEBUG_KEY) !== '0' } catch { return true }
+})())
+function toggleDebug() {
+  debugOpen.value = !debugOpen.value
+  try { localStorage.setItem(DEBUG_KEY, debugOpen.value ? '1' : '0') } catch {}
+}
+
+// Live-state ticker — re-render hver 100 ms så stillTime-tellingen er synlig
+const tick = ref(0)
+let tickTimer = null
+tickTimer = setInterval(() => { tick.value++ }, 100)
+onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
+
+const ballState = computed(() => {
+  void tick.value
+  const b = props.flipp.balls[0]
+  if (!b) return null
+  const v = Math.hypot(b.vx ?? 0, b.vy ?? 0)
+  return {
+    n: props.flipp.balls.length,
+    still: (b.stillTime ?? 0).toFixed(2),
+    charge: (b.chargeT ?? 0).toFixed(2),
+    canExp: b.canExplode ? 'Y' : 'n',
+    v: v.toFixed(0),
+    hist: b.history?.length ?? 0,
+  }
+})
+
+function onForceMultiball() {
+  props.flipp.forceMultiball?.()
+}
 </script>
 
 <template>
@@ -127,6 +164,34 @@ onUnmounted(() => {
 
     <!-- Bottom-right: exit-knapp -->
     <button class="flipp-exit" @click="emit('exit')">EXIT</button>
+
+    <!-- v7.3.5 DEBUG-panel for multiball-feilsøking. Togglebar via DBG-knapp. -->
+    <template v-if="flipp.DEBUG_MULTIBALL">
+      <button class="flipp-dbg-toggle" @click="toggleDebug">
+        {{ debugOpen ? '▾ DBG' : '▸ DBG' }}
+      </button>
+      <div v-if="debugOpen" class="flipp-dbg-panel">
+        <div class="flipp-dbg-row">
+          <span>balls:{{ flipp.balls.length }}</span>
+          <span v-if="ballState">v:{{ ballState.v }}</span>
+          <span v-if="ballState">still:{{ ballState.still }}/{{ flipp.STILLNESS_EXPLODE_S }}s</span>
+        </div>
+        <div v-if="ballState" class="flipp-dbg-row">
+          <span>charge:{{ ballState.charge }}</span>
+          <span>canExp:{{ ballState.canExp }}</span>
+          <span>hist:{{ ballState.hist }}/60</span>
+        </div>
+        <div class="flipp-dbg-row">
+          <span>displ-thr:{{ Math.round(flipp.STILLNESS_DISPL_M) }}m</span>
+          <span>status:{{ flipp.status.value }}</span>
+        </div>
+        <button class="flipp-dbg-force" @click="onForceMultiball">FORCE MULTIBALL</button>
+        <div class="flipp-dbg-log">
+          <div v-for="(l, i) in flipp.debugLog" :key="`l-${i}`" class="flipp-dbg-line">{{ l }}</div>
+          <div v-if="!flipp.debugLog.length" class="flipp-dbg-line flipp-dbg-empty">(no events yet)</div>
+        </div>
+      </div>
+    </template>
 
     <!-- Center overlay -->
     <div v-if="overlay"
@@ -407,4 +472,76 @@ onUnmounted(() => {
   color: #cbd5e1;
   text-transform: lowercase;
 }
+
+/* DEBUG-panel (v7.3.5 — fjern når DEBUG_MULTIBALL settes til false) */
+.flipp-dbg-toggle {
+  position: absolute;
+  top: 56px;
+  right: 8px;
+  pointer-events: auto;
+  background: #000;
+  color: #fde047;
+  border: 1px solid #fde047;
+  font-family: inherit;
+  font-size: 9px;
+  padding: 4px 6px;
+  cursor: pointer;
+  z-index: 60;
+}
+.flipp-dbg-panel {
+  position: absolute;
+  top: 88px;
+  right: 8px;
+  width: min(220px, 60vw);
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.88);
+  border: 1px solid #fde047;
+  padding: 6px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #fde047;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.flipp-dbg-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.flipp-dbg-row span {
+  white-space: nowrap;
+}
+.flipp-dbg-force {
+  pointer-events: auto;
+  background: #7f1d1d;
+  color: #fff;
+  border: 1px solid #ef4444;
+  font-family: inherit;
+  font-size: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+  margin-top: 2px;
+}
+.flipp-dbg-force:active { background: #ef4444; }
+.flipp-dbg-log {
+  border-top: 1px dashed #444;
+  padding-top: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: #cbd5e1;
+  font-size: 9px;
+  line-height: 1.2;
+}
+.flipp-dbg-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flipp-dbg-empty { color: #666; font-style: italic; }
 </style>

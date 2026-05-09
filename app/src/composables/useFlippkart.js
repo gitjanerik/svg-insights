@@ -32,6 +32,19 @@ export function useFlippkart() {
   // Skru til false når atferden er bekreftet stabil i prod.
   const DEBUG_MULTIBALL = true
 
+  // v7.3.5: ring-buffer av debug-meldinger som vises i HUD-debug-panelet
+  // (mobil-friendly — ingen konsoll trengs). Holder maks 12 entries.
+  const debugLog = reactive([])
+  function dlog(msg, data) {
+    if (!DEBUG_MULTIBALL) return
+    const t = new Date()
+    const stamp = `${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}.${String(t.getMilliseconds()).padStart(3,'0').slice(0,2)}`
+    const line = data === undefined ? `${stamp} ${msg}` : `${stamp} ${msg} ${JSON.stringify(data)}`
+    console.log('[Flippkart]', msg, data ?? '')
+    debugLog.push(line)
+    while (debugLog.length > 12) debugLog.shift()
+  }
+
   const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0]
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
@@ -273,7 +286,9 @@ export function useFlippkart() {
     if (b.canExplode) {
       if (b.stillTime >= STILLNESS_WARNING_S) {
         const range = STILLNESS_EXPLODE_S - STILLNESS_WARNING_S
+        const prevCharge = b.chargeT
         b.chargeT = Math.min(1, (b.stillTime - STILLNESS_WARNING_S) / range)
+        if (prevCharge === 0) dlog('stillness warning', { maxR: +maxR.toFixed(0) })
         const desiredWarn = Math.floor(b.chargeT * 4 + 0.001)
         while (b.warnIndex < desiredWarn) {
           playStillWarning(b.warnIndex)
@@ -281,7 +296,7 @@ export function useFlippkart() {
         }
       }
       if (b.stillTime >= STILLNESS_EXPLODE_S) {
-        if (DEBUG_MULTIBALL) console.log('[Flippkart] stillness threshold reached', { stillTime: b.stillTime.toFixed(2) })
+        dlog('stillness → explode', { stillTime: +b.stillTime.toFixed(2) })
         explodeBall(b)
       }
     } else {
@@ -397,6 +412,24 @@ export function useFlippkart() {
     b.chargeT = 0
     b.warnIndex = 0
     if (b.history) b.history.length = 0
+    dlog('kick', { speed: +speed.toFixed(0) })
+  }
+
+  /** Debug-utløser: tving multiball-trigger uavhengig av stillness/bumper.
+   *  Lar oss verifisere at SPAWN-stien fungerer selv om DETEKSJONEN er
+   *  feil. Vises som en knapp i debug-panelet. */
+  function forceMultiball() {
+    if (status.value !== 'rolling') {
+      dlog('force-multiball skipped', { status: status.value })
+      return
+    }
+    const b = balls[0]
+    if (!b) {
+      dlog('force-multiball: no ball')
+      return
+    }
+    dlog('force-multiball')
+    explodeBall(b)
   }
 
   /** Multiball trigget av bumper-treff (samme drop-pattern som explodeBall). */
@@ -409,7 +442,7 @@ export function useFlippkart() {
     playExplosion()
     setTimeout(() => playMultiSpawn(), 250)
     lastEvent.value = { kind: 'multiball', at: Date.now() }
-    if (DEBUG_MULTIBALL) console.log('[Flippkart] bumper → multiball', { x: sx, y: sy, balls: balls.length })
+    dlog('bumper → multiball', { ballsBefore: balls.length })
 
     // 3 baller dropped på random posisjoner med random kick — uten kick
     // ville nye baller stått stille på flatmark og blitt stuck-cleanet ut
@@ -441,7 +474,7 @@ export function useFlippkart() {
 
     // Trigg HUD-flash for "MULTIBALL!"
     lastEvent.value = { kind: 'multiball', at: Date.now() }
-    if (DEBUG_MULTIBALL) console.log('[Flippkart] explode → multiball', { ballPos: { x: b.x, y: b.y } })
+    dlog('explode → multiball')
 
     // Marker som ekspodert (blir splicet ut neste loop-iter)
     b.exploded = true
@@ -753,6 +786,7 @@ export function useFlippkart() {
     const y = cy + Math.sin(angle) * r
     balls.length = 0
     spawnBall(x, y, 0, 0, true)
+    dlog('drop', { canExplode: true })
     // Pre-charged perk: alle flippere starter med +N kickLevel
     if (perks.chargeBonus > 0) {
       for (const e of ['top', 'bottom', 'left', 'right']) {
@@ -861,8 +895,12 @@ export function useFlippkart() {
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
-    kickBall,
+    kickBall, forceMultiball,
     levelParams,
+    debugLog,
+    DEBUG_MULTIBALL,
+    STILLNESS_WARNING_S, STILLNESS_EXPLODE_S,
+    get STILLNESS_DISPL_M() { return STILLNESS_DISPL_M },
     // constants — getters reads dynamic values (skaleres i init basert på map-size)
     get BALL_RADIUS_M() { return BALL_RADIUS_M },
     get FLIPPER_INSET_M() { return FLIPPER_INSET_M },
