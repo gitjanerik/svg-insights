@@ -4,12 +4,25 @@ import { computed } from 'vue'
 const props = defineProps({
   flipp: { type: Object, required: true },
   viewBox: { type: String, required: true },
-  highestPoint: { type: Object, default: null },
 })
 
-// Hent ballradius fra composable (60m i v7.2.0). FlippkartLayer holder ikke
-// egen kopi — physikk og rendering må alltid være enige.
+// Hent ballradius fra composable. Ingen egen kopi — physikk og rendering
+// må alltid være enige.
 const ballRadius = computed(() => props.flipp.BALL_RADIUS_M ?? 12)
+
+// Subtil grunnfarge-shift per level (v7.2.4). Level 1 = klassisk chrome,
+// høyere level = progressivt varmere/kjøligere chrome via HSL-stops.
+const ballGradient = computed(() => {
+  const lev = props.flipp.level.value
+  if (lev === 1) return { inner: '#ffffff', mid: '#cbd5e1', outer: '#0f172a' }
+  const hues = [30, 350, 280, 60, 200, 120, 320]
+  const h = hues[(lev - 2) % hues.length]
+  return {
+    inner: `hsl(${h}, 10%, 96%)`,
+    mid:   `hsl(${h}, 32%, 68%)`,
+    outer: `hsl(${h}, 60%, 16%)`,
+  }
+})
 
 const emit = defineEmits(['drop'])
 
@@ -69,9 +82,9 @@ function onClick(e) {
        @click="onClick">
     <defs>
       <radialGradient id="flipp-chrome" cx="35%" cy="30%">
-        <stop offset="0%" stop-color="#ffffff"/>
-        <stop offset="35%" stop-color="#cbd5e1"/>
-        <stop offset="100%" stop-color="#0f172a"/>
+        <stop offset="0%" :stop-color="ballGradient.inner"/>
+        <stop offset="35%" :stop-color="ballGradient.mid"/>
+        <stop offset="100%" :stop-color="ballGradient.outer"/>
       </radialGradient>
       <filter id="flipp-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="1.5"/>
@@ -81,24 +94,6 @@ function onClick(e) {
         <feComposite in="SourceGraphic"/>
       </filter>
     </defs>
-
-    <!-- Highest-point-target: 8-bit blinking pixel-stjerne i Pac-Man-gul -->
-    <g v-if="highestPoint && flipp.status.value !== 'gameover'"
-       class="flipp-target"
-       :transform="`translate(${highestPoint.svgX} ${highestPoint.svgY})`"
-       pointer-events="none">
-      <!-- Stjerne av 5 6×6 piksler i kors-mønster -->
-      <rect x="-3" y="-21" width="6" height="6" fill="#fbbf24"/>
-      <rect x="-3" y="15"  width="6" height="6" fill="#fbbf24"/>
-      <rect x="-21" y="-3" width="6" height="6" fill="#fbbf24"/>
-      <rect x="15" y="-3"  width="6" height="6" fill="#fbbf24"/>
-      <rect x="-3" y="-3"  width="6" height="6" fill="#fde68a"/>
-      <!-- Diagonal-aksenter, mindre piksler -->
-      <rect x="-12" y="-12" width="3" height="3" fill="#fbbf24"/>
-      <rect x="9" y="-12"   width="3" height="3" fill="#fbbf24"/>
-      <rect x="-12" y="9"   width="3" height="3" fill="#fbbf24"/>
-      <rect x="9" y="9"     width="3" height="3" fill="#fbbf24"/>
-    </g>
 
     <!-- Trail: faded tail bak ballen -->
     <g v-if="flipp.ball.visible">
@@ -130,13 +125,3 @@ function onClick(e) {
   </svg>
 </template>
 
-<style scoped>
-.flipp-target {
-  animation: flipp-blink 0.8s steps(2, end) infinite;
-}
-@keyframes flipp-blink {
-  0% { opacity: 1; }
-  50% { opacity: 0.35; }
-  100% { opacity: 1; }
-}
-</style>
