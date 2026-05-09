@@ -787,9 +787,12 @@ export function buildSvg(elements, bbox, options = {}) {
   const landMaskAttr = contourMaskAttr
 
   // ── Bygg kontur-, knaus- og cliff-lag fra DEM-features ───────────────
-  // DEM-koordinater er i meter relativ til UTM bbox sw-hjørne. Vi må
-  // y-flippe for SVG (y vokser nedover).
-  const demProject = ([x, y]) => [x, heightM - y]
+  // DEM-transformen (demFetcher / dem.js#gridToWorld) gir world-koord der
+  // row=0 (GeoTIFF øverst = NORD i UTM-bbox) maps til y=0. Det er allerede
+  // samme konvensjon som OSM-`project` (nord=y=0). Identitet er korrekt;
+  // tidligere `heightM - y`-flip ga vertikal speiling = kontur-tall i feil
+  // ende av kartet (rapportert v6.20.0, fikset v6.20.1).
+  const demProject = ([x, y]) => [x, y]
 
   const contourMinorPaths = []
   const contourIndexPaths = []
@@ -821,11 +824,15 @@ export function buildSvg(elements, bbox, options = {}) {
   const MIN_AREA = 1500
   const lakeLabels = []
 
+  // Sample DEM ved et punkt i bbox-relativt koord-rom — samme som
+  // `project()` returnerer (x ∈ [0, widthM], y ∈ [0, heightM] med y=0
+  // = nord). Transformen (originX/Y=0, positiv pixelHeight) gjør at
+  // row=0 (GeoTIFF nord) ↔ yM=0 stemmer direkte.
   const sampleDem = usableDem
-    ? (utmE, utmN) => {
+    ? (xM, yM) => {
         const t = usableDem.transform
-        const col = Math.round((utmE - t.originX) / t.pixelWidth)
-        const row = Math.round((utmN - t.originY) / t.pixelHeight)
+        const col = Math.round((xM - t.originX) / t.pixelWidth)
+        const row = Math.round((yM - t.originY) / t.pixelHeight)
         if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
         const v = usableDem.data[row * usableDem.cols + col]
         if (v === usableDem.noData) return null
@@ -873,9 +880,7 @@ export function buildSvg(elements, bbox, options = {}) {
 
       let elev = null
       if (sampleDem) {
-        const utmE = centroid.x + minE
-        const utmN = (heightM - centroid.y) + minN
-        const v = sampleDem(utmE, utmN)
+        const v = sampleDem(centroid.x, centroid.y)
         if (v != null && Number.isFinite(v)) elev = Math.round(v)
       }
 
@@ -958,21 +963,10 @@ export function buildSvg(elements, bbox, options = {}) {
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
   // ekte DEM, sampler vi høyde på begge sider av spine for å velge
   // riktig side; ellers default til høyre. Spacing ~20m (~2mm @ 1:10k),
-  // tann-lengde ~5m (~0.5mm). Coordinates er i meter-rom relativt til
-  // UTM bbox sw-hjørne (samme som cliff-spine).
-  const cliffSampleDem = usableDem
-    ? (xM, yM) => {
-        const t = usableDem.transform
-        const utmE = xM + minE
-        const utmN = yM + minN
-        const col = Math.round((utmE - t.originX) / t.pixelWidth)
-        const row = Math.round((utmN - t.originY) / t.pixelHeight)
-        if (col < 0 || col >= usableDem.cols || row < 0 || row >= usableDem.rows) return null
-        const v = usableDem.data[row * usableDem.cols + col]
-        if (v === usableDem.noData) return null
-        return v
-      }
-    : null
+  // tann-lengde ~5m (~0.5mm). Cliff-koord er bbox-relativt (samme rom
+  // som transformen, originX/Y=0), så vi sampler direkte uten å legge
+  // til minE/minN.
+  const cliffSampleDem = sampleDem
 
   const cliffsSvg = demFeatures.cliffs.map(c => {
     const projected = c.coordinates.map(demProject)

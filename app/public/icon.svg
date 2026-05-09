@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Slate-400 bakgrunn (full bleed for maskable safe zone) -->
-  <rect width="512" height="512" fill="#94a3b8"/>
+  <!-- Slate-200 bakgrunn (full bleed for maskable safe zone) -->
+  <rect width="512" height="512" fill="#e2e8f0"/>
   <!-- Sentrert logo i 80% safe zone -->
   <g transform="translate(96, 96)">
-    <!-- Sirkel-ring i hvit (subtilt) -->
-    <circle cx="160" cy="160" r="148" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.4"/>
-    <!-- Strektegning-kurve i hvit -->
+    <!-- Sirkel-ring i gul (subtilt) -->
+    <circle cx="160" cy="160" r="148" fill="none" stroke="#facc15" stroke-width="4" opacity="0.5"/>
+    <!-- Strektegning-kurve i gul -->
     <path d="M40 240 L80 100 L130 200 L190 50 L250 170 L290 100"
-          fill="none" stroke="#ffffff" stroke-width="14"
+          fill="none" stroke="#facc15" stroke-width="14"
           stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- Hvite ankerprikker -->
-    <circle cx="80" cy="100" r="10" fill="#ffffff"/>
-    <circle cx="190" cy="50" r="10" fill="#ffffff"/>
-    <circle cx="290" cy="100" r="10" fill="#ffffff"/>
+    <!-- Gule ankerprikker -->
+    <circle cx="80" cy="100" r="10" fill="#facc15"/>
+    <circle cx="190" cy="50" r="10" fill="#facc15"/>
+    <circle cx="290" cy="100" r="10" fill="#facc15"/>
   </g>
 </svg>

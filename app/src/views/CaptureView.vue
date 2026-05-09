@@ -180,14 +180,14 @@ onUnmounted(stopCamera)
 
         <!-- Processing spinner -->
         <div v-if="processing" class="flex flex-col items-center gap-4">
-          <div class="w-12 h-12 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin" />
+          <div class="w-12 h-12 border-2 border-slate-400/25 border-t-slate-200 rounded-full animate-spin" />
           <p class="text-sm text-white/50">Konverterer til strektegning...</p>
         </div>
 
         <!-- SVG Preview — same size as the viewer so the user sees what they'll get -->
         <div
           v-if="previewSvg && !processing"
-          class="w-full h-full flex items-center justify-center p-4 text-violet-300"
+          class="w-full h-full flex items-center justify-center p-4 text-slate-200"
           v-html="previewSvg.svg"
         />
 
@@ -218,10 +218,10 @@ onUnmounted(stopCamera)
             <input
               v-model.number="sensitivity"
               type="range" min="20" max="90" step="1"
-              class="flex-1 h-1 accent-violet-500 bg-white/10 rounded-full appearance-none
+              class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none
                      [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
-                     [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-400
-                     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-[0_0_12px_rgba(167,139,250,0.5)]"
+                     [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-slate-200
+                     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/30"
             />
             <span class="text-[11px] text-white/50 w-10 text-right tabular-nums">{{ sensitivity }}%</span>
           </div>
@@ -232,10 +232,10 @@ onUnmounted(stopCamera)
               v-model.number="zoom"
               type="range"
               :min="zoomRange.min" :max="zoomRange.max" :step="zoomRange.step"
-              class="flex-1 h-1 accent-sky-500 bg-white/10 rounded-full appearance-none
+              class="flex-1 h-1 accent-slate-300 bg-white/10 rounded-full appearance-none
                      [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
-                     [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-sky-400
-                     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-[0_0_12px_rgba(56,189,248,0.5)]"
+                     [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-slate-200
+                     [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-white/30"
             />
             <span class="text-[11px] text-white/50 w-10 text-right tabular-nums">{{ zoom.toFixed(1) }}&times;</span>
           </div>
@@ -301,8 +301,8 @@ onUnmounted(stopCamera)
           </button>
           <button
             @click="goToViewer"
-            class="flex-1 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-sky-600 text-white text-sm font-semibold
-                   active:scale-[0.98] transition-transform shadow-[0_0_30px_rgba(139,92,246,0.3)]"
+            class="flex-1 py-3 rounded-xl bg-white text-slate-900 text-sm font-semibold
+                   active:scale-[0.98] transition-transform"
           >
             Utforsk SVG
           </button>
