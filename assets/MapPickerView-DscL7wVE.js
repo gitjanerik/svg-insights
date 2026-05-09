@@ -62,7 +62,7 @@ out geom;
 `)+`
   </g>
 `:``;return{svg:`<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${We}" ${Ge} data-meta='${JSON.stringify(Ue).replace(/'/g,`&apos;`)}'>
+<svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${We}" ${Ge} style="--bg: ${dt}" data-meta='${JSON.stringify(Ue).replace(/'/g,`&apos;`)}'>
   <defs>${_e}${V}</defs>
   <style>${z}</style>
   <g id="bakgrunn"><rect width="${Z(x)}" height="${Z(S)}" fill="${dt}"/></g>
