@@ -295,6 +295,21 @@ Brukeren har identifisert disse for neste sesjon:
 3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
 4. **Generelt UI-polish i MapView**
 
+## Todo: rebrand FlippKart → CurveBall (egen PR senere)
+
+Brukeren har bestilt 10. mai 2026 (etter v7.4.3): «FlippKart» dur ikke internasjonalt — for spesifikt norsk og mangler schwung. Døp om til **CurveBall**. Krever bredt omfang:
+
+- `useFlippkart()` → `useCurveBall()` (composable)
+- `FlippkartHUD.vue`, `FlippkartLayer.vue`, `FlippkartFlippers.vue` → `CurveBallHUD.vue` osv.
+- Alle CSS-klasser `.flipp-*` → `.cb-*` (eller `.curveball-*`)
+- `useFlippkartSound.js` → `useCurveBallSound.js`
+- localStorage-/sessionStorage-keys: `flippkart-highscore`, `flippkart-debug-panel`, `flippkart-tournament-state`, `flippkart-autostart-mapId` → `curveball-*`. NB: trenger graceful migrering (les begge nøkler i en overgangsperiode, skriv kun ny)
+- UI-strenger: «Flippkart», «🎮 Flippkart», «Start FlippKart» → «CurveBall», «🎮 CurveBall», «Start CurveBall». «FLIPPKART»-tekst i splash-skjermen om noen
+- Norske kommentarer kan beholdes (intern kontekst), men brukervendte tekster bør være engelske eller verdt en re-review
+- Endringslogg-tone: det er en cosmetic rebrand, ikke en omimplementering — fortrinnsvis én atomisk PR med en tydelig commit-melding så historie-graven er enkel
+
+Ta dette i en egen PR — IKKE bland inn andre fix-er, slik at evt. revert er triviell.
+
 ## Lærdommer fra 5.0-pakken (30. april 2026)
 
 Sesjonen som ga oss versjon 5.0.1, alt fokusert på webfont-sporet:

@@ -204,5 +204,50 @@ export function playMultiSpawn() {
   playTone(N.C6, 0.12, 'square', 0.20, 0.12)
 }
 
+/**
+ * v7.4.3 Miniball spawn — 12 små baller med dobbel energi. Lysere pitch enn
+ * multi-ball, raskere arpeggio, sluttklang en oktav høyere.
+ */
+export function playMiniSpawn() {
+  playTone(N.E5, 0.04, 'square', 0.16, 0.00)
+  playTone(N.G5, 0.04, 'square', 0.16, 0.03)
+  playTone(N.C6, 0.04, 'square', 0.16, 0.06)
+  playTone(N.E5 * 2, 0.05, 'square', 0.18, 0.09)  // E6
+  playTone(N.G5 * 2, 0.05, 'square', 0.18, 0.12)  // G6
+  playTone(N.C6 * 2, 0.14, 'square', 0.20, 0.15)  // C7
+}
+
+/**
+ * v7.4.3 Miniball-treff — kort tinkle med høyere pitch enn vanlig treff
+ * (signaliserer "mer energi = mer poeng").
+ */
+export function playMiniHit() {
+  playTone(N.E5 * 2, 0.04, 'square', 0.10)         // E6
+  playTone(N.G5 * 2, 0.03, 'triangle', 0.06, 0.01) // G6
+}
+
+/**
+ * v7.4.3 CurveInvaders spawn — Space Invaders-aktig "march"-introduksjon.
+ * Lavt menacing brum + 4 stigende toner i halvnøkkel.
+ */
+export function playInvaderSpawn() {
+  playTone(N.C4, 0.16, 'sawtooth', 0.18, 0.00)
+  playTone(N.A4, 0.06, 'square',  0.16, 0.10)
+  playTone(N.B4, 0.06, 'square',  0.16, 0.16)
+  playTone(N.C5, 0.06, 'square',  0.16, 0.22)
+  playTone(N.D5, 0.06, 'square',  0.16, 0.28)
+  playTone(N.E5, 0.10, 'square',  0.18, 0.34)
+}
+
+/**
+ * v7.4.3 Invaders breakout — den klassiske "alle dyker mot deg"-følelsen
+ * når formasjonen plutselig forlater orbiten.
+ */
+export function playInvaderBreakout() {
+  playGlide(N.A5, N.C4, 0.32, 'sawtooth', 0.22)
+  playTone(N.G4, 0.10, 'square', 0.16, 0.10)
+  playTone(N.D4, 0.14, 'square', 0.18, 0.18)
+}
+
 export function setMuted(m) { muted = !!m }
 export function isMuted() { return muted }

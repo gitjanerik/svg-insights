@@ -6,9 +6,19 @@ const props = defineProps({
   viewBox: { type: String, required: true },
 })
 
-// Hent ballradius fra composable. Ingen egen kopi — physikk og rendering
-// må alltid være enige.
+// Hent default-ballradius fra composable. v7.4.3: enkelte baller (mini,
+// invader) har sin egen `b.r` som overstyrer denne — bruk ballR(b)-helper
+// til rendering, ikke ballRadius direkte for ball-elementer.
 const ballRadius = computed(() => props.flipp.BALL_RADIUS_M ?? 12)
+function ballR(b) { return b?.r ?? ballRadius.value }
+
+// v7.4.3: ulike spawn-modi får ulik fyll. Mini = lyserød med høy luminans
+// (signaliserer "energi"), invader = grønn-glød (Space Invaders-feel).
+function ballFill(b) {
+  if (b.mode === 'mini') return 'url(#flipp-mini)'
+  if (b.mode === 'invader') return 'url(#flipp-invader)'
+  return 'url(#flipp-chrome)'
+}
 
 // Subtil grunnfarge-shift per level (v7.2.4). Level 1 = klassisk chrome,
 // høyere level = progressivt varmere/kjøligere chrome via HSL-stops.
@@ -92,6 +102,18 @@ function onBallTap(b) {
         <stop offset="0%" :stop-color="ballGradient.inner"/>
         <stop offset="35%" :stop-color="ballGradient.mid"/>
         <stop offset="100%" :stop-color="ballGradient.outer"/>
+      </radialGradient>
+      <!-- v7.4.3: miniball — energisk lyserosa/cyan glød (signaliserer dobbel fart) -->
+      <radialGradient id="flipp-mini" cx="35%" cy="30%">
+        <stop offset="0%"  stop-color="#ffe4f0"/>
+        <stop offset="40%" stop-color="#ff77c8"/>
+        <stop offset="100%" stop-color="#7a1f4e"/>
+      </radialGradient>
+      <!-- v7.4.3: invader — alien-grønn med dyp midtpunkt (Space Invaders-feel) -->
+      <radialGradient id="flipp-invader" cx="35%" cy="30%">
+        <stop offset="0%"  stop-color="#d8ffe2"/>
+        <stop offset="40%" stop-color="#22c55e"/>
+        <stop offset="100%" stop-color="#0f3a1c"/>
       </radialGradient>
       <filter id="flipp-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="1.5"/>
@@ -178,12 +200,24 @@ function onBallTap(b) {
     <!-- Baller (multi-ball-støtte). Charging-pulse-ring renderes UNDER ballen
          når chargeT > 0 (rød advarsel om snarlig eksplosjon). v7.3.4: marble
          er klikkbar (kicker ballen i tilfeldig retning) — redningsplanke når
-         ball har slått seg til ro på flatmark. -->
+         ball har slått seg til ro på flatmark.
+         v7.4.3: per-ball radius (ballR) + mode-spesifikk gradient. Invaders
+         i orbit-fase får en subtil sirkulær orbit-indikator. -->
     <g v-for="(b, i) in flipp.balls" :key="`ball-${i}`">
+      <!-- Invader orbit-indikator: tegnet sirkel rundt peak under orbit-fase -->
+      <circle v-if="b.mode === 'invader' && b.invaderPhase === 'orbit' && i === 0"
+              :cx="b.orbitCenter.x" :cy="b.orbitCenter.y"
+              :r="b.orbitRadius"
+              fill="none"
+              stroke="#22c55e"
+              stroke-opacity="0.35"
+              :stroke-width="ballRadius * 0.08"
+              stroke-dasharray="6 6"
+              pointer-events="none"/>
       <!-- Charging warning ring -->
       <circle v-if="b.chargeT > 0"
               :cx="b.x" :cy="b.y"
-              :r="ballRadius * (1.15 + b.chargeT * 0.6)"
+              :r="ballR(b) * (1.15 + b.chargeT * 0.6)"
               :fill="`rgba(239, 68, 68, ${0.15 + b.chargeT * 0.25})`"
               :stroke="b.chargeT >= 0.95 ? '#fde047' : '#ef4444'"
               :stroke-width="3 + b.chargeT * 6"
@@ -191,13 +225,13 @@ function onBallTap(b) {
               pointer-events="none">
         <animate v-if="b.chargeT >= 0.5"
                  attributeName="r"
-                 :values="`${ballRadius * (1.15 + b.chargeT * 0.6)};${ballRadius * (1.4 + b.chargeT * 0.6)};${ballRadius * (1.15 + b.chargeT * 0.6)}`"
+                 :values="`${ballR(b) * (1.15 + b.chargeT * 0.6)};${ballR(b) * (1.4 + b.chargeT * 0.6)};${ballR(b) * (1.15 + b.chargeT * 0.6)}`"
                  dur="0.3s"
                  repeatCount="indefinite"/>
       </circle>
       <!-- Marble -->
-      <circle :cx="b.x" :cy="b.y" :r="ballRadius"
-              fill="url(#flipp-chrome)"
+      <circle :cx="b.x" :cy="b.y" :r="ballR(b)"
+              :fill="ballFill(b)"
               filter="url(#flipp-shadow)"
               :style="{
                 filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '',

@@ -247,12 +247,31 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.4.2 -->
+          <!-- 7.4.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white text-base">7.4.2</span>
+                <span class="font-semibold text-white text-base">7.4.3</span>
+                <span class="text-emerald-300/85">&mdash; nye spawn-modi: Miniball + CurveInvaders</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Miniball</strong> (fra level 3): 12 små rosa baller med 2× fart, 2× poeng og lysere klang ved treff</li>
+                <li><strong>CurveInvaders</strong> (fra level 6): 3-12 grønne baller spawner i sirkel-formasjon rundt sentral kolle, holder orbiten i 3 sek (ignorerer gravity og bumpers), så marsjerer de mot en av kantene i formasjon med ±20% energi-variasjon → spredning blir kaotisk</li>
+                <li>Spawn-mode pickes tilfeldig fra pool som vokser med level — multiball alene på L1-2, multiball/mini fra L3, multiball/mini/invaders fra L6</li>
+                <li>Per-ball-radius og fyll-gradient: chrome (normal), rosa-gløde (mini), alien-grønn (invader). Hard cap på 16 baller i lufta</li>
+                <li>Nye HUD-flash «MINIBALL!» (rosa, vibrerende) og «CURVE INVADERS!» (grønn, march-stil)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 7.4.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.4.2</span>
                 <span class="text-emerald-300/85">&mdash; utfordringsmodus + auto-Curves</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
               </summary>

@@ -95,6 +95,13 @@ let multiballTimer = null
 const chainFlash = ref(null)
 let chainTimer = null
 
+// v7.4.3: nye spawn-modi får eget flash. Mini = lyserosa "MINIBALL!",
+// invader = grønn "CURVE INVADERS!".
+const miniFlash = ref(null)
+let miniTimer = null
+const invaderFlash = ref(null)
+let invaderTimer = null
+
 watch(() => props.flipp.lastEvent.value, (e) => {
   if (e?.kind === 'multiball') {
     multiballFlash.value = e
@@ -110,12 +117,28 @@ watch(() => props.flipp.lastEvent.value, (e) => {
       chainFlash.value = null
       chainTimer = null
     }, 1800)
+  } else if (e?.kind === 'mini') {
+    miniFlash.value = e
+    if (miniTimer) clearTimeout(miniTimer)
+    miniTimer = setTimeout(() => {
+      miniFlash.value = null
+      miniTimer = null
+    }, 2000)
+  } else if (e?.kind === 'invader') {
+    invaderFlash.value = e
+    if (invaderTimer) clearTimeout(invaderTimer)
+    invaderTimer = setTimeout(() => {
+      invaderFlash.value = null
+      invaderTimer = null
+    }, 2200)
   }
 })
 
 onUnmounted(() => {
   if (multiballTimer) clearTimeout(multiballTimer)
   if (chainTimer) clearTimeout(chainTimer)
+  if (miniTimer) clearTimeout(miniTimer)
+  if (invaderTimer) clearTimeout(invaderTimer)
 })
 
 // v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
@@ -269,6 +292,18 @@ async function copyShareUrl() {
     <!-- Multiball-flash når kula eksploderer i 3 -->
     <div v-if="multiballFlash" class="flipp-multiball-flash">
       <div class="flipp-multiball-text">MULTIBALL!</div>
+    </div>
+
+    <!-- v7.4.3 Miniball-flash — 12 små baller med dobbel energi -->
+    <div v-if="miniFlash" class="flipp-mini-flash">
+      <div class="flipp-mini-text">MINIBALL!</div>
+      <div class="flipp-mini-sub">×12 · 2× SPEED · 2× POENG</div>
+    </div>
+
+    <!-- v7.4.3 CurveInvaders-flash — formasjonen marsjerer over kurvene -->
+    <div v-if="invaderFlash" class="flipp-invader-flash">
+      <div class="flipp-invader-text">CURVE INVADERS!</div>
+      <div class="flipp-invader-sub">FORMATION INCOMING</div>
     </div>
 
     <!-- Chain-flash når multiball-cascade clearer flere levels på rad -->
@@ -597,6 +632,83 @@ async function copyShareUrl() {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.4); }
   100% { filter: brightness(1.0); }
+}
+
+/* v7.4.3 Miniball-flash — lyserosa, energisk vibrating tekst */
+.flipp-mini-flash {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: flipp-mini-burst 2s ease-out forwards;
+}
+.flipp-mini-text {
+  font-size: 52px;
+  color: #ff77c8;
+  text-shadow:
+    3px 3px 0 #db2777,
+    6px 6px 0 #4a044e,
+    9px 9px 0 #000;
+  letter-spacing: 0.09em;
+  animation: flipp-multiball-pulse 0.18s steps(2, end) infinite;
+}
+.flipp-mini-sub {
+  font-size: 12px;
+  color: #fbcfe8;
+  margin-top: 0.4em;
+  letter-spacing: 0.16em;
+  text-shadow: 2px 2px 0 #000;
+}
+@keyframes flipp-mini-burst {
+  0%   { transform: translate(-50%, -50%) scale(0.1) rotate(-8deg); opacity: 0; }
+  12%  { transform: translate(-50%, -50%) scale(1.5) rotate( 4deg); opacity: 1; }
+  18%  { transform: translate(-52%, -50%) scale(1.25) rotate(-3deg); opacity: 1; }
+  24%  { transform: translate(-48%, -50%) scale(1.25) rotate( 3deg); opacity: 1; }
+  30%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg); opacity: 1; }
+  85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -130%) scale(1.2); opacity: 0; }
+}
+
+/* v7.4.3 CurveInvaders-flash — alien-grønn, monospace-vibe + flicker */
+.flipp-invader-flash {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: flipp-invader-march 2.2s ease-out forwards;
+}
+.flipp-invader-text {
+  font-size: 44px;
+  color: #4ade80;
+  text-shadow:
+    3px 3px 0 #166534,
+    6px 6px 0 #052e16,
+    9px 9px 0 #000;
+  letter-spacing: 0.1em;
+  animation: flipp-invader-flicker 0.5s steps(3, end) infinite;
+}
+.flipp-invader-sub {
+  font-size: 11px;
+  color: #86efac;
+  margin-top: 0.6em;
+  letter-spacing: 0.22em;
+  text-shadow: 2px 2px 0 #000;
+}
+@keyframes flipp-invader-march {
+  0%   { transform: translate(-150%, -50%) scale(1.0); opacity: 0; }
+  20%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  40%  { transform: translate(-46%, -50%) scale(1.05); opacity: 1; }
+  60%  { transform: translate(-54%, -50%) scale(1.05); opacity: 1; }
+  80%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(150%, -50%) scale(1.0); opacity: 0; }
+}
+@keyframes flipp-invader-flicker {
+  0%   { filter: brightness(1.0) contrast(1.0); }
+  33%  { filter: brightness(1.3) contrast(1.2); }
+  66%  { filter: brightness(0.9) contrast(0.95); }
+  100% { filter: brightness(1.0) contrast(1.0); }
 }
 
 /* Chain-flash — vises når multiball-cascade clearer et level (v7.3.7).
