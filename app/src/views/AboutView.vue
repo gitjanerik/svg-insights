@@ -247,12 +247,29 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.4.0 -->
+          <!-- 7.4.1 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-amber-200/40" />
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white text-base">7.4.0</span>
+                <span class="font-semibold text-white text-base">7.4.1</span>
+                <span class="text-emerald-300/85">&mdash; spawn-i-spawn-fiks + auto-start fra delingslenke</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Spawn-i-spawn-cascade fikset:</strong> bare normale baller (canExplode=true) tikker bumper hit-counter mot multiball-trigger. Multiball-baller bouncer av bumpers uten å trigge nye multiballs. Hard cap på 8 baller i lufta som siste forsvar</li>
+                <li><strong>Auto-start fra delingslenke:</strong> bygg kart fra share-URL → flippkart starter umiddelbart i ny MapView (ingen Curves-tema-easter-egg-tap nødvendig)</li>
+                <li>HIGHSCORE/SCORE bruker nå tusenskille i stedet for scientific notation ved store tall</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 7.4.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.4.0</span>
                 <span class="text-amber-300/85">&mdash; turneringsmodus + deling + tettere bumpere</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
               </summary>

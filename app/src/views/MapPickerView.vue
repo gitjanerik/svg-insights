@@ -331,6 +331,12 @@ async function proceedWithMapType(mapType) {
       opprettet: Date.now(),
     }
     await saveMap(entry)
+    // v7.4.1: hvis kartet er bygget fra en delingslenke → marker for auto-
+    // start av flippkart i ny MapView. Brukeren skal rett inn i spillet,
+    // ikke måtte tappe Curves-tema og deretter Flippkart-knappen.
+    if (challenge.value) {
+      try { sessionStorage.setItem('flippkart-autostart-mapId', id) } catch { /* QuotaExceeded */ }
+    }
     router.push({ name: 'kart-vis', params: { id } })
   } catch (e) {
     buildState.value = 'error'
