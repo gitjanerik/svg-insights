@@ -3,9 +3,16 @@ import { computed, ref, watch, onUnmounted } from 'vue'
 
 const props = defineProps({
   flipp: { type: Object, required: true },
+  // v7.4.0: turneringsmodus + share — drives av MapView, HUD bare emitter
+  // og rendrer UI. tournamentNext: { id, navn } eller null hvis ingen
+  // egne kart finnes / vi er på siste kart.
+  tournamentNext: { type: Object, default: null },
+  // shareInfo: { lat, lon, sizeKm, equidistanceM, baseUrl } — alt HUD trenger
+  // for å bygge en delings-URL ved game over. Null hvis ikke tilgjengelig.
+  shareInfo: { type: Object, default: null },
 })
 
-const emit = defineEmits(['restart', 'exit', 'continue'])
+const emit = defineEmits(['restart', 'exit', 'continue', 'tournamentNext'])
 
 const levelStr = computed(() => `LEVEL ${String(props.flipp.level.value).padStart(2, '0')}`)
 const scoreStr = computed(() => {
@@ -19,10 +26,11 @@ const overlay = computed(() => {
   const s = props.flipp.status.value
   if (s === 'gameover') {
     const hs = props.flipp.highscore.value
+    // v7.4.0: tapText fjernet — vi har eksplisitte RESTART/DEL-knapper i
+    // overlayet nå, så hele bakgrunnen skal IKKE trigge restart ved tap.
     return {
       text: 'GAME OVER',
       sub: `HIGHSCORE: ${String(hs).padStart(5, '0')}`,
-      tapText: 'TAP TO RESTART',
       color: 'red',
     }
   }
@@ -35,7 +43,8 @@ const overlay = computed(() => {
   if (s === 'idle' && props.flipp.lives.value > 0) {
     const isFresh = props.flipp.lives.value === 3 &&
                     props.flipp.score.value === 0 &&
-                    props.flipp.level.value === 1
+                    props.flipp.level.value === 1 &&
+                    props.flipp.totalScore.value === 0
     return {
       text: '',
       sub: isFresh ? 'TAP TO START' : 'TAP TO CONTINUE',
@@ -48,8 +57,9 @@ const overlay = computed(() => {
 
 function onOverlayTap() {
   const s = props.flipp.status.value
-  if (s === 'gameover') emit('restart')
-  else if (s === 'idle' && props.flipp.lives.value > 0) emit('continue')
+  // v7.4.0: gameover har nå eksplisitte knapper (RESTART/DEL); kun idle
+  // beholder tap-anywhere-to-start-flowen.
+  if (s === 'idle' && props.flipp.lives.value > 0) emit('continue')
 }
 
 function onPerkChoice(id) {
@@ -134,6 +144,82 @@ const ballState = computed(() => {
 function onForceMultiball() {
   props.flipp.forceMultiball?.()
 }
+
+// ── v7.4.0 turneringsmodus ─────────────────────────────────────────────────
+function pickTournament(yes) {
+  props.flipp.setTournamentMode?.(yes)
+}
+function onTournamentNext() {
+  if (!props.tournamentNext) return
+  emit('tournamentNext', props.tournamentNext)
+}
+
+// ── v7.4.0 share-modal ─────────────────────────────────────────────────────
+const shareOpen = ref(false)
+const shareName = ref('')
+const shareCopied = ref(false)
+let shareCopyTimer = null
+
+function openShare() {
+  if (!props.shareInfo) return
+  shareName.value = ''
+  shareCopied.value = false
+  shareOpen.value = true
+}
+function closeShare() {
+  shareOpen.value = false
+  if (shareCopyTimer) { clearTimeout(shareCopyTimer); shareCopyTimer = null }
+}
+function onShareNameInput(e) {
+  // 3 bokstaver, A–Z, store. Klipp til 3 tegn.
+  const v = String(e.target.value || '').toUpperCase().replace(/[^A-ZÆØÅ]/g, '').slice(0, 3)
+  shareName.value = v
+  e.target.value = v
+}
+const shareUrl = computed(() => {
+  if (!props.shareInfo || shareName.value.length < 3) return ''
+  const s = props.shareInfo
+  const lat = Number(s.lat).toFixed(5)
+  const lon = Number(s.lon).toFixed(5)
+  const km = Number(s.sizeKm)
+  const eq = Number(s.equidistanceM)
+  const score = Number(props.flipp.totalScore.value || 0)
+  const lv = Number(props.flipp.level.value || 1)
+  const params = new URLSearchParams({
+    n: shareName.value,
+    lat, lon,
+    km: String(km),
+    eq: String(eq),
+    score: String(score),
+    lv: String(lv),
+  })
+  const base = (s.baseUrl ?? '').replace(/\/$/, '')
+  return `${base}/kart/nytt?${params.toString()}`
+})
+async function copyShareUrl() {
+  const url = shareUrl.value
+  if (!url) return
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url)
+    } else {
+      // fallback for eldre browsere
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch {}
+      document.body.removeChild(ta)
+    }
+    shareCopied.value = true
+    if (shareCopyTimer) clearTimeout(shareCopyTimer)
+    shareCopyTimer = setTimeout(() => { shareCopied.value = false }, 1800)
+  } catch (err) {
+    shareCopied.value = false
+  }
+}
 </script>
 
 <template>
@@ -216,7 +302,7 @@ function onForceMultiball() {
     <!-- Center overlay -->
     <div v-if="overlay"
          class="flipp-overlay"
-         :class="{ 'flipp-tappable': overlay.tappable || flipp.status.value === 'gameover' }"
+         :class="{ 'flipp-tappable': overlay.tappable }"
          @click="onOverlayTap">
       <div v-if="overlay.text"
            class="flipp-overlay-main"
@@ -231,6 +317,82 @@ function onForceMultiball() {
       <div v-if="overlay.tapText"
            class="flipp-overlay-sub flipp-cyan">
         {{ overlay.tapText }}
+      </div>
+
+      <!-- v7.4.0: Game-over har «DEL»-knapp ved siden av TAP TO RESTART. Egne
+           handlere så tap på Del ikke trigger restart. -->
+      <div v-if="flipp.status.value === 'gameover'" class="flipp-go-actions">
+        <button class="flipp-go-btn flipp-go-restart"
+                @click.stop="emit('restart')">RESTART</button>
+        <button v-if="shareInfo"
+                class="flipp-go-btn flipp-go-share"
+                @click.stop="openShare">DEL ▣</button>
+      </div>
+
+      <!-- v7.4.0: Turneringsmodus-snarvei — ekstra knapp ved level-clear/idle -->
+      <button v-if="flipp.status.value === 'idle'
+                    && flipp.lives.value > 0
+                    && flipp.tournamentMode.value === true
+                    && tournamentNext"
+              class="flipp-tournament-next"
+              @click.stop="onTournamentNext">
+        NESTE KART →
+        <span class="flipp-tournament-next-name">{{ tournamentNext.navn }}</span>
+      </button>
+    </div>
+
+    <!-- v7.4.0: Mode-select-overlay — vises FØR første level. To valg: standard
+         eller turnering (krever at brukeren har egne kart). -->
+    <div v-if="flipp.status.value === 'mode-select'" class="flipp-mode-overlay">
+      <div class="flipp-mode-title flipp-yellow">VELG MODUS</div>
+      <div class="flipp-mode-sub flipp-cyan">FØR FØRSTE LEVEL</div>
+      <div class="flipp-mode-grid">
+        <button class="flipp-mode-btn" @click="pickTournament(false)">
+          <div class="flipp-mode-icon">🎯</div>
+          <div class="flipp-mode-label">STANDARD</div>
+          <div class="flipp-mode-desc">spill alle levels på dette kartet</div>
+        </button>
+        <button class="flipp-mode-btn flipp-mode-tour"
+                :disabled="!tournamentNext"
+                @click="pickTournament(true)">
+          <div class="flipp-mode-icon">🏆</div>
+          <div class="flipp-mode-label">TURNERING</div>
+          <div v-if="tournamentNext" class="flipp-mode-desc">
+            snarvei til neste eget kart ved level-clear
+          </div>
+          <div v-else class="flipp-mode-desc flipp-mode-desc-disabled">
+            krever minst ett eget kart i mappa
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- v7.4.0: Share-modal (vises når DEL-knappen er trykket på game over) -->
+    <div v-if="shareOpen" class="flipp-share-overlay" @click.self="closeShare">
+      <div class="flipp-share-card">
+        <div class="flipp-share-title flipp-yellow">DEL UTFORDRINGEN</div>
+        <div class="flipp-share-sub flipp-cyan">
+          DIN SCORE: {{ String(flipp.totalScore.value).padStart(5, '0') }}
+          · LEVEL {{ String(flipp.level.value).padStart(2, '0') }}
+        </div>
+        <label class="flipp-share-label">DITT NAVN (3 BOKSTAVER)</label>
+        <input type="text"
+               class="flipp-share-input"
+               maxlength="3"
+               :value="shareName"
+               placeholder="ABC"
+               autocomplete="off"
+               autocapitalize="characters"
+               spellcheck="false"
+               @input="onShareNameInput">
+        <div v-if="shareUrl" class="flipp-share-url-wrap">
+          <div class="flipp-share-url">{{ shareUrl }}</div>
+          <button class="flipp-share-copy" @click="copyShareUrl">
+            {{ shareCopied ? 'KOPIERT ✓' : 'KOPIER LENKE' }}
+          </button>
+        </div>
+        <div v-else class="flipp-share-hint">Skriv 3 bokstaver for å lage lenke</div>
+        <button class="flipp-share-close" @click="closeShare">LUKK</button>
       </div>
     </div>
 
@@ -614,4 +776,233 @@ function onForceMultiball() {
   text-overflow: ellipsis;
 }
 .flipp-dbg-empty { color: #666; font-style: italic; }
+
+/* ── v7.4.0 mode-select-overlay (FØR første level) ───────────────────────── */
+.flipp-mode-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  padding: 1em;
+  z-index: 70;
+}
+.flipp-mode-title {
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  text-shadow: 3px 3px 0 #000;
+}
+.flipp-mode-sub {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0 #000;
+  margin-bottom: 0.6em;
+}
+.flipp-mode-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+  width: min(320px, 90%);
+}
+.flipp-mode-btn {
+  font-family: inherit;
+  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+  color: #fff;
+  border: 2px solid #5cefff;
+  padding: 14px 12px;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 80ms, filter 80ms;
+}
+.flipp-mode-btn:active:not(:disabled) {
+  transform: scale(0.98);
+  filter: brightness(1.3);
+}
+.flipp-mode-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.flipp-mode-tour {
+  background: linear-gradient(135deg, #4a044e 0%, #db2777 100%);
+  border-color: #fde047;
+}
+.flipp-mode-icon {
+  grid-row: 1 / span 2;
+  font-size: 28px;
+  text-align: center;
+}
+.flipp-mode-label {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #ffe24d;
+  text-shadow: 1px 1px 0 #000;
+}
+.flipp-mode-desc {
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  color: #cbd5e1;
+  text-transform: lowercase;
+}
+.flipp-mode-desc-disabled { color: #f87171; text-transform: none; }
+
+/* ── v7.4.0 game-over actions (RESTART + DEL) ────────────────────────────── */
+.flipp-go-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 0.8em;
+}
+.flipp-go-btn {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 10px 18px;
+  border: 2px solid currentColor;
+  background: #000;
+  cursor: pointer;
+  transition: filter 80ms, transform 80ms;
+}
+.flipp-go-btn:active { transform: scale(0.96); filter: brightness(1.4); }
+.flipp-go-restart { color: #5cefff; }
+.flipp-go-share   { color: #fde047; }
+
+/* ── v7.4.0 turnerings-snarvei (level-clear) ─────────────────────────────── */
+.flipp-tournament-next {
+  pointer-events: auto;
+  margin-top: 1.2em;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #4a044e 0%, #db2777 100%);
+  color: #fde047;
+  border: 2px solid #fde047;
+  text-shadow: 1px 1px 0 #000;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  transition: filter 80ms, transform 80ms;
+}
+.flipp-tournament-next:active { transform: scale(0.97); filter: brightness(1.3); }
+.flipp-tournament-next-name {
+  font-size: 9px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+/* ── v7.4.0 share-modal ──────────────────────────────────────────────────── */
+.flipp-share-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 1em;
+}
+.flipp-share-card {
+  width: min(360px, 100%);
+  background: #0b1019;
+  border: 2px solid #fde047;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.flipp-share-title {
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-shadow: 2px 2px 0 #000;
+}
+.flipp-share-sub {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-shadow: 1px 1px 0 #000;
+}
+.flipp-share-label {
+  font-size: 9px;
+  color: #cbd5e1;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+.flipp-share-input {
+  font-family: inherit;
+  font-size: 28px;
+  letter-spacing: 0.4em;
+  text-align: center;
+  padding: 10px 6px;
+  background: #000;
+  color: #fde047;
+  border: 2px solid #5cefff;
+  text-transform: uppercase;
+  outline: none;
+}
+.flipp-share-input:focus { border-color: #fde047; }
+.flipp-share-url-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.flipp-share-url {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #5cefff;
+  background: #000;
+  padding: 8px;
+  border: 1px solid #334;
+  word-break: break-all;
+  user-select: all;
+  line-height: 1.35;
+}
+.flipp-share-copy {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 10px;
+  background: #000;
+  color: #4ade80;
+  border: 2px solid #4ade80;
+  cursor: pointer;
+  transition: filter 80ms, transform 80ms;
+}
+.flipp-share-copy:active { transform: scale(0.97); filter: brightness(1.4); }
+.flipp-share-hint {
+  font-size: 9px;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+  text-align: center;
+  padding: 10px;
+  border: 1px dashed #334;
+}
+.flipp-share-close {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 8px;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #334;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.flipp-share-close:active { color: #fff; border-color: #94a3b8; }
 </style>
