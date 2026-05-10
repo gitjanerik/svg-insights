@@ -134,11 +134,15 @@ export function useCurveBall() {
   // På bratte kart kunne ballen havne i en dal med slik geometri at den
   // alltid endte i samme valley, eksploderte → multiball → multiball-baller
   // drukner → primary lever videre, blir stuck igjen → ny eksplosjon →
-  // cascade. Cap'er antallet til 1 per level. Påfølgende stillness-events
-  // gir en «rescue-kick» (kraftig kast mot nærmeste bumper eller oppoverbakke)
-  // i stedet for ny spawn-burst.
-  const STILLNESS_EXPLODE_PER_LEVEL_CAP = 1
-  let stillnessExplodeCount = 0
+  // cascade.
+  // v8.0.5: erstattet per-level-cap med tidsbasert cooldown. Brukeren
+  // rapporterte at rescue-kicken ofte ikke klarte å bryte fastlås-situasjonen
+  // (ball ble stuck → rescue → stuck igjen → rescue), så vi trenger flere
+  // multiball-spawn per level. Cooldown forhindrer instant cascade (den
+  // farlige 3-sek-loopen) men tillater ny multiball når ballen står fast
+  // igjen senere — som faktisk gir nye lokasjoner og bryter låsen.
+  const STILLNESS_EXPLODE_COOLDOWN_MS = 5000
+  let lastStillnessExplodeAt = 0
 
   // v8.0.2: maksimal kulehastighet med myk level-progresjon. Flate kart med
   // få høydekurver lot ballen akselerere ubegrenset (paddle BOUNCE_AMPLIFY=1.1
@@ -259,7 +263,9 @@ export function useCurveBall() {
   // v7.3.1: spatial konstanter skaleres i init() basert på map-size
   let BALL_RADIUS_M = 90
   let FLIPPER_INSET_M = 280
-  const BOUNCE_AMPLIFY = 1.1
+  // v8.0.5: BOUNCE_AMPLIFY 1.10 → 1.13. Ballen beholder litt mer fart pr
+  // paddle-bounce — mild energi-økning i den vanlige ballen etter brukerønske.
+  const BOUNCE_AMPLIFY = 1.13
   // v8.0.3: KICK_SPEED og BUMPER_BOUNCE_SPEED er fart i m/s. Tidligere fast,
   // men det gir radikalt ulik skjerm-traverseringstid mellom 1km- og 10km-
   // kart (på 1km-kart blastet ballen tvers over på <1s). Nå skaleres alle
@@ -791,15 +797,17 @@ export function useCurveBall() {
         }
       }
       if (b.stillTime >= STILLNESS_EXPLODE_S) {
-        // v8.0.2: cap stillness-trigget multiball til CAP-stk per level.
-        // Etter capen er nådd, gi en rescue-kick i stedet for ny eksplosjon
-        // så vi unngår cascade på bratte kart.
-        if (stillnessExplodeCount >= STILLNESS_EXPLODE_PER_LEVEL_CAP) {
-          dlog('stillness → rescue', { stillTime: +b.stillTime.toFixed(2), cap: STILLNESS_EXPLODE_PER_LEVEL_CAP })
+        // v8.0.5: tidsbasert cooldown — multiball-spawn kun hvis det er gått
+        // STILLNESS_EXPLODE_COOLDOWN_MS siden forrige spawn (forhindrer
+        // 3-sek-cascade). Utenfor cooldown: ny multiball gir ferske ball-
+        // lokasjoner og bryter låsen. Innenfor cooldown: rescue-kick.
+        const now = Date.now()
+        if (now - lastStillnessExplodeAt < STILLNESS_EXPLODE_COOLDOWN_MS) {
+          dlog('stillness → rescue', { stillTime: +b.stillTime.toFixed(2), cooldownLeft: STILLNESS_EXPLODE_COOLDOWN_MS - (now - lastStillnessExplodeAt) })
           rescueStuckBall(b)
         } else {
           dlog('stillness → explode', { stillTime: +b.stillTime.toFixed(2) })
-          stillnessExplodeCount += 1
+          lastStillnessExplodeAt = now
           explodeBall(b)
         }
       }
@@ -874,7 +882,8 @@ export function useCurveBall() {
         const vDotN = b.vx * nx + b.vy * ny
         if (vDotN < 0) {
           const incomingMag = Math.hypot(b.vx, b.vy)
-          const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.15)
+          // v8.0.5: bumper-bonus 1.15 → 1.18 — litt mer trøkk i bumper-bounces
+          const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.18)
           b.vx = nx * outMag
           b.vy = ny * outMag
         }
@@ -1430,7 +1439,7 @@ export function useCurveBall() {
       balls.length = 0
       lastHitEdge = null
       lastElev = NaN
-      stillnessExplodeCount = 0
+      lastStillnessExplodeAt = 0
       invaderModeActive.value = false
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
@@ -1548,7 +1557,7 @@ export function useCurveBall() {
     perks.linkedFlippers = false
     levelChain = 0
     pendingPerkSelect = false
-    stillnessExplodeCount = 0
+    lastStillnessExplodeAt = 0
     invaderModeActive.value = false
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
@@ -1605,7 +1614,7 @@ export function useCurveBall() {
     lastHitEdge = null
     lastElev = NaN
     levelChain = 0
-    stillnessExplodeCount = 0
+    lastStillnessExplodeAt = 0
     invaderModeActive.value = false
     pendingPerkSelect = !!state.pendingPerkSelect
     perkChoices.value = []
@@ -1677,7 +1686,9 @@ export function useCurveBall() {
     const flatBoost = 1 + 0.4 * Math.max(0, Math.min(1, (terrainEnergyMult - 1) / 3))
     // v8.0.3: hastigheter skaleres med mapScale så skjerm-tid er invariant
     // v8.0.4: + flatBoost så flate kart får mer energi i bumper/paddle-impulser
-    KICK_SPEED          = 300 * mapScale * flatBoost
+    // v8.0.5: base-fart hevet 300 → 330 m/s (+10 %) for litt mer trøkk i
+    // den vanlige ballen
+    KICK_SPEED          = 330 * mapScale * flatBoost
     BUMPER_BOUNCE_SPEED = 350 * mapScale * flatBoost
   }
 

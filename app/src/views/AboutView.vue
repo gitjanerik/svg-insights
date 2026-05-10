@@ -247,10 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.0.5 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.0.5</span>
+                <span class="text-cyan-300/90">&mdash; multiball-rescue, mer trøkk, test-presets</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Multiball-stillness-spawn er n&aring; tilgjengelig flere ganger pr level</strong> &mdash; men styrt av en 5-sek cooldown i stedet for v8.0.2-cap'en. Brukeren rapporterte at rescue-kicken ofte ikke klarte &aring; bryte fastl&aring;s-situasjonen, s&aring; n&aring; f&aring;r ballen ferske multiball-lokasjoner igjen n&aring;r den st&aring;r fast etter cooldown'en. Cascade (3-sek-loop) forhindres fortsatt</li>
+                <li><strong>Mer tr&oslash;kk i den vanlige ballen:</strong> <code>KICK_SPEED</code> 300 → 330 m/s (+10 %), <code>BOUNCE_AMPLIFY</code> 1.10 → 1.13, og bumper-bonus 1.15 → 1.18. Mild men merkbar &oslash;kning &mdash; ingen av dem alene ville gj&oslash;re mye, men sammen gir det mer aktivitet uten &aring; v&aelig;re voldsomt</li>
+                <li><strong>Test-kart-presets i kart-velgeren:</strong> 4 forh&aring;ndsdefinerte sentrum/st&oslash;rrelse-kombinasjoner (flat kyst Lista, bratt fjell Romsdalen, lite/tett Sognsvann, stort/variert Jotunheimen) for &aring; raskt teste fysikk p&aring; topografisk veldig ulike kart. &Eacute;n-tap fyller inn alt — bare trykk «Lag turkart»</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.0.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.0.4</span>
                 <span class="text-rose-300/90">&mdash; score-balansering &amp; invader-polish</span>
