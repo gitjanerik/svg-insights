@@ -15,9 +15,16 @@ const props = defineProps({
 const emit = defineEmits(['restart', 'exit', 'continue', 'tournamentNext'])
 
 const levelStr = computed(() => `LEVEL ${String(props.flipp.level.value).padStart(2, '0')}`)
+// v7.4.1: defensiv formatering — for veldig store tall blir String() til
+// scientific notation. Bruk toLocaleString så HUD alltid viser ekte siffer.
+function formatScore(n) {
+  const v = Math.min(Math.max(0, Math.round(Number(n) || 0)), Number.MAX_SAFE_INTEGER)
+  if (v < 100000) return String(v).padStart(5, '0')
+  return v.toLocaleString('no-NO')
+}
 const scoreStr = computed(() => {
-  const s = String(props.flipp.score.value).padStart(4, '0')
-  const t = String(props.flipp.levelTarget.value).padStart(4, '0')
+  const s = formatScore(props.flipp.score.value).padStart(4, '0')
+  const t = formatScore(props.flipp.levelTarget.value).padStart(4, '0')
   return `${s}/${t}`
 })
 const heartCount = computed(() => Math.max(0, props.flipp.lives.value))
@@ -28,9 +35,12 @@ const overlay = computed(() => {
     const hs = props.flipp.highscore.value
     // v7.4.0: tapText fjernet — vi har eksplisitte RESTART/DEL-knapper i
     // overlayet nå, så hele bakgrunnen skal IKKE trigge restart ved tap.
+    // v7.4.1: bruk integer-formatering med tusenskille (ikke scientific
+    // notation) ved store tall. Cap'es ved Number.MAX_SAFE_INTEGER for
+    // defensiv beskyttelse mot eldre cascade-bugs.
     return {
       text: 'GAME OVER',
-      sub: `HIGHSCORE: ${String(hs).padStart(5, '0')}`,
+      sub: `HIGHSCORE: ${formatScore(hs)}`,
       color: 'red',
     }
   }
@@ -372,7 +382,7 @@ async function copyShareUrl() {
       <div class="flipp-share-card">
         <div class="flipp-share-title flipp-yellow">DEL UTFORDRINGEN</div>
         <div class="flipp-share-sub flipp-cyan">
-          DIN SCORE: {{ String(flipp.totalScore.value).padStart(5, '0') }}
+          DIN SCORE: {{ formatScore(flipp.totalScore.value) }}
           · LEVEL {{ String(flipp.level.value).padStart(2, '0') }}
         </div>
         <label class="flipp-share-label">DITT NAVN (3 BOKSTAVER)</label>

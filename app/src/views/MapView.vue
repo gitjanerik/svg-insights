@@ -811,6 +811,32 @@ function clearMapTypePreference() {
   try { localStorage.removeItem('svg-insights:mapType') } catch { /* ignore */ }
 }
 
+/**
+ * v7.4.1: Auto-start flippkart hvis brukeren akkurat bygde dette kartet
+ * fra en delingslenke. Skipper Curves-tema-easter-eggen helt — share-flowen
+ * er ekvivalent med at Flippkart-knappen ble trykket.
+ */
+function consumeShareAutostart() {
+  try {
+    const flagId = sessionStorage.getItem('flippkart-autostart-mapId')
+    if (!flagId || flagId !== route.params.id) return false
+    sessionStorage.removeItem('flippkart-autostart-mapId')
+    return true
+  } catch { return false }
+}
+
+async function maybeAutostartFromShare() {
+  if (!consumeShareAutostart()) return
+  flippUnlocked.value = true
+  if (!meta.value) {
+    const stop = watch(meta, async (m) => {
+      if (m) { stop(); await startFlippkart() }
+    })
+  } else {
+    await startFlippkart()
+  }
+}
+
 async function maybeRestoreTournament() {
   // Sjekk om vi mountet på dette kartet pga «Neste kart»-snarvei. Hvis ja,
   // init+aktivér flippkart med restorert state. Krever at kartet og DEM
@@ -853,6 +879,7 @@ onMounted(() => {
   loadMap()
   loadUserMapsForTournament()
   maybeRestoreTournament()
+  maybeAutostartFromShare()
 })
 </script>
 
