@@ -86,6 +86,23 @@ export function useCurveBall() {
     right: 'top',
   }
 
+  // v8.0.4: under invader-modus parres flipperne aksialt (motstående) i
+  // stedet for diagonalt. Tap på topp lader også bunn; tap på venstre lader
+  // også høyre. Visuelt holdes opposite paddles til samme posisjon — én
+  // finger styrer hele aksen.
+  const INVADER_LINKED_PAIRS = {
+    top: 'bottom',
+    bottom: 'top',
+    left: 'right',
+    right: 'left',
+  }
+
+  // v8.0.4: settes til true når spawnInvaders fyrer av, false igjen når
+  // siste invader-ball er borte (sjekkes i physicsStep). Brukes av:
+  //  - energize() til å lade aksiale par
+  //  - CurveBallFlippers til å speile drag-posisjoner mellom topp/bunn og venstre/høyre
+  const invaderModeActive = ref(false)
+
   // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
   const perkChoices = ref([])
 
@@ -196,15 +213,34 @@ export function useCurveBall() {
   const MINI_COUNT = 12
   const MINI_SPEED_MULT = 2.0
   const MINI_RADIUS_FRAC = 0.5        // av BALL_RADIUS_M
-  const MINI_SCORE_MULT = 2
+  // v8.0.4: senket mini-bonus 2 → 0.7 fordi 12 hissige baller hver med 2×
+  // poeng-mult ga ekstreme score-spikes. Med 12 baller × 0.7 mult er effektiv
+  // score-rate fortsatt ~8× normal — fortsatt morsomt, men ikke vill cascade.
+  const MINI_SCORE_MULT = 0.7
 
   const INVADER_MIN_COUNT = 3
   const INVADER_MAX_COUNT = 12
   const INVADER_RADIUS_FRAC = 0.6     // av BALL_RADIUS_M
-  const INVADER_SCORE_MULT = 1.5
-  const INVADER_ORBIT_DURATION_S = 3.0
+  // v8.0.4: senket invader-bonus 1.5 → 1.0 (ingen per-ball bonus). 3–12 baller
+  // gir naturlig høy score-rate uten å trenge ekstra multiplier.
+  const INVADER_SCORE_MULT = 1.0
+  // v8.0.4: orbit-fasen forlenget 3.0 → 7.0 sek etter brukerønske —
+  // formasjonen får mer tid til å rulle langs konturen i Space-Invaders-stil
+  // før den breaks out.
+  const INVADER_ORBIT_DURATION_S = 7.0
   const INVADER_BREAKOUT_SPEED_MULT = 1.4
   const INVADER_ENERGY_VARIATION = 0.4   // ±20% per ball
+  // v8.0.4: invaders ruller nå rundt en STØRRE høydekurve. Tidligere 15 %
+  // under peak-elevasjon, nå 30 % for større omkrets og lengre marsj-distanse.
+  const INVADER_CONTOUR_DEPTH_FRAC = 0.30
+
+  // v8.0.4: maks antall cascade-level-ups under multiball. Tidligere kun
+  // capped via chainMult (×16), men selve cascaden var uendelig — 12
+  // mini-baller på flatmark kunne trigge level-cascade dusinvis ganger og
+  // sende score ut i millioner. Etter MAX_CHAIN level-ups faller vi tilbake
+  // til normal-win-flowen (clear balls, perk-select) selv om multiball er
+  // aktiv.
+  const MAX_CHAIN = 2
 
   const splash = reactive({
     x: 0, y: 0,
@@ -676,6 +712,11 @@ export function useCurveBall() {
     // konsistente posisjoner og hastigheter for hele paret.
     handleBallBallCollisions(speedCap)
 
+    // v8.0.4: deaktiver invader-modus når siste invader-ball er borte.
+    if (invaderModeActive.value && !balls.some(b => b.mode === 'invader')) {
+      invaderModeActive.value = false
+    }
+
     // v7.4.0: Når multiball ebbet ut til én ball igjen — promoter den til
     // normal ball (canExplode = true) så stillness-detektor og videre
     // multiball-trigger fra bumper er aktiv som vanlig. Reset history-
@@ -1009,8 +1050,16 @@ export function useCurveBall() {
     setTimeout(() => playInvaderSpawn(), 200)
     lastEvent.value = { kind: 'invader', at: Date.now() }
 
+    // v8.0.4: invader-modus aktiveres — påvirker energize() (aksial-link)
+    // og CurveBallFlippers (drag-speiling). Settes av igjen i physicsStep
+    // når siste invader-ball er borte. Samtidig snapper vi opposite paddles
+    // til samme posisjon så én finger kontroller hele aksen umiddelbart.
+    invaderModeActive.value = true
+    flippers.bottom.position = flippers.top.position
+    flippers.right.position  = flippers.left.position
+
     const peak = findCentralPeak()
-    const orbitR = 0.18 * Math.min(bounds.width, bounds.height)
+    const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
     const count = INVADER_MIN_COUNT +
                   Math.floor(Math.random() * (INVADER_MAX_COUNT - INVADER_MIN_COUNT + 1))
     const orbitSpeed = 1.5 + Math.random() * 0.6   // rad/s
@@ -1041,8 +1090,10 @@ export function useCurveBall() {
         if (z > mx) mx = z
       }
       const range = (mx - mn) > 0 ? (mx - mn) : 100
-      // Mellom 10 % og 25 % under peak, men minst 20 m for å unngå micro-konturer
-      targetZ = peak.elev - Math.max(20, range * 0.15)
+      // v8.0.4: 30 % under peak (var 15 %) gir større omkrets-kontur og
+      // lengre marsj-distanse for formasjonen. Minst 30 m for å unngå
+      // micro-konturer på flate kart.
+      targetZ = peak.elev - Math.max(30, range * INVADER_CONTOUR_DEPTH_FRAC)
     }
     const orbitDir = Math.random() < 0.5 ? 1 : -1   // CCW eller CW
 
@@ -1247,6 +1298,13 @@ export function useCurveBall() {
       const lf = link && flippers[link]
       if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
     }
+    // v8.0.4 invader-modus: lad aksial partner (topp↔bunn, venstre↔høyre)
+    // automatisk. Dette gjelder uavhengig av linkedFlippers-perken.
+    if (invaderModeActive.value) {
+      const link = INVADER_LINKED_PAIRS[edge]
+      const lf = link && flippers[link]
+      if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
+    }
   }
 
   function updateTrail() {
@@ -1326,14 +1384,18 @@ export function useCurveBall() {
     // physics. Score som overstiger målet bæres over, og hver kjede gir
     // eksponentielt høyere bonus. Belønner spillere som klarer å holde
     // multiball oppe gjennom flere levels på én gang.
-    if (balls.length > 1 && status.value === 'rolling') {
+    // v8.0.4: cap'er nå antallet cascade-iterasjoner via MAX_CHAIN så
+    // mini-/invader-spawnede baller ikke kan trigge endeløse level-ups.
+    // Etter MAX_CHAIN kjeder faller vi til normal-win uansett.
+    if (balls.length > 1 && levelChain < MAX_CHAIN && status.value === 'rolling') {
       levelChain += 1
       const target = levelTarget.value
       const carryOver = Math.max(0, score.value - target)
 
-      // Bonus skalerer eksponentielt med chain-dybde, capped ved x16 (chain 5).
-      // chain 1 = 1×, 2 = 2×, 3 = 4×, 4 = 8×, 5+ = 16×
-      const chainMult = Math.min(16, Math.pow(2, levelChain - 1))
+      // Bonus skalerer eksponentielt med chain-dybde, men capped både på
+      // chainMult (8 = depth 4) og på MAX_CHAIN (depth 2 → mult 2).
+      // chain 1 = 1×, 2 = 2×, 3 = 4×, 4 = 8×
+      const chainMult = Math.min(8, Math.pow(2, levelChain - 1))
       const chainBonus = Math.round(500 * level.value * chainMult)
 
       totalScore.value += target + chainBonus
@@ -1369,6 +1431,7 @@ export function useCurveBall() {
       lastHitEdge = null
       lastElev = NaN
       stillnessExplodeCount = 0
+      invaderModeActive.value = false
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
       pendingPerkSelect = false
@@ -1486,6 +1549,7 @@ export function useCurveBall() {
     levelChain = 0
     pendingPerkSelect = false
     stillnessExplodeCount = 0
+    invaderModeActive.value = false
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
@@ -1542,6 +1606,7 @@ export function useCurveBall() {
     lastElev = NaN
     levelChain = 0
     stillnessExplodeCount = 0
+    invaderModeActive.value = false
     pendingPerkSelect = !!state.pendingPerkSelect
     perkChoices.value = []
     if (state.perks) Object.assign(perks, state.perks)
@@ -1584,9 +1649,6 @@ export function useCurveBall() {
     BUMPER_RADIUS_M     = 90  * mapScale
     BUMPER_MIN_DISTANCE_M = 250 * mapScale
     STILLNESS_DISPL_M   = 120 * mapScale
-    // v8.0.3: hastigheter — viktig for konsistent gameplay-feel
-    KICK_SPEED          = 300 * mapScale
-    BUMPER_BOUNCE_SPEED = 350 * mapScale
 
     // Beregn terrain-energy-multiplier basert på DEM-elevasjon-spenn.
     // Typisk variert terreng (200m range) → 1.0. Flatmark (50m) → 4.0
@@ -1605,6 +1667,18 @@ export function useCurveBall() {
       const range = (mx - mn) > 0 ? (mx - mn) : TERRAIN_REF_RANGE_M
       terrainEnergyMult = Math.max(0.4, Math.min(4.0, TERRAIN_REF_RANGE_M / range))
     }
+
+    // v8.0.4: flat-energy-boost. På flate kart (få høydekurver, lavt
+    // elevasjons-spenn) får ballen lite energi fra naturlig slope-
+    // akselerasjon, så bumpers og paddles må gi merkbart kraftigere boost.
+    // terrainEnergyMult ≈ 1 på normalt terreng, opp til 4 på veldig flatt.
+    // Bruk en clamp så bonus går fra 1.0× (normal/bratt) til 1.4× (helt flat).
+    //   flatBoost = 1 + 0.4 × clamp((terrainEnergyMult − 1) / 3, 0, 1)
+    const flatBoost = 1 + 0.4 * Math.max(0, Math.min(1, (terrainEnergyMult - 1) / 3))
+    // v8.0.3: hastigheter skaleres med mapScale så skjerm-tid er invariant
+    // v8.0.4: + flatBoost så flate kart får mer energi i bumper/paddle-impulser
+    KICK_SPEED          = 300 * mapScale * flatBoost
+    BUMPER_BOUNCE_SPEED = 350 * mapScale * flatBoost
   }
 
   function activate() {
@@ -1633,6 +1707,7 @@ export function useCurveBall() {
     balls, splash, trail, flippers, bumpers,
     perks, perkChoices,
     tournamentMode,
+    invaderModeActive,
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
