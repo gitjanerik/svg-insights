@@ -126,17 +126,30 @@ export function useCurveBall() {
   // v8.0.2: maksimal kulehastighet med myk level-progresjon. Flate kart med
   // få høydekurver lot ballen akselerere ubegrenset (paddle BOUNCE_AMPLIFY=1.1
   // og bumper-bounce ×1.15 komponerte uten friksjons-motstand på flatmark).
-  // Resultatet ble en ball så rask at den var praktisk talt umulig å treffe
-  // med bumpere eller paddles. Cap kalkulerer mykt asymptotisk:
+  // v8.0.3: cap'en skaleres med `mapScale` så skjerm-traverseringstid blir
+  // kart-størrelse-uavhengig (1km-kart fikk ellers 4× rasker visuell ball
+  // enn 4km-kart). I tillegg en mild «steep-bonus» (1.0×–1.3×) basert på
+  // terreng-elevasjons-spenn så bratte kart faktisk får utløp for slope-
+  // akselerasjonen — gir gameplay-følelsen «bratt = raskere».
+  //
+  // Referanse-curven (4×4km, normal topografi):
   //   speedCap(n) = BASE + (MAX − BASE) × (1 − exp(−(n−1)/K))
   // L1: 650, L5: 781, L10: 871, L20: 953, L∞: 1000.
   const BALL_SPEED_BASE = 650
   const BALL_SPEED_MAX  = 1000
   const BALL_SPEED_LEVEL_K = 10
+  const STEEP_BONUS_MAX = 0.3
   function maxBallSpeed(n) {
     const lv = Math.max(1, n)
     const growth = BALL_SPEED_MAX - BALL_SPEED_BASE
-    return BALL_SPEED_BASE + growth * (1 - Math.exp(-(lv - 1) / BALL_SPEED_LEVEL_K))
+    const baseCap = BALL_SPEED_BASE + growth * (1 - Math.exp(-(lv - 1) / BALL_SPEED_LEVEL_K))
+    // terrainEnergyMult er 4.0 på flatt og 0.4 på bratt. Inverter til
+    // steepness-faktor (0.25 flatt, 1.0 normal, 2.5 bratt) og bruk den
+    // til en mild bonus opp til +30 % over normal-cap. Flate kart får
+    // ingen straff (clampet ved 0).
+    const terrainSteepness = 1 / Math.max(0.4, terrainEnergyMult)
+    const steepBonus = 1 + STEEP_BONUS_MAX * Math.max(0, Math.min(1, terrainSteepness - 1))
+    return baseCap * mapScale * steepBonus
   }
   function clampBallSpeed(b, cap) {
     const v2 = b.vx * b.vx + b.vy * b.vy
@@ -158,7 +171,8 @@ export function useCurveBall() {
   let BUMPER_RADIUS_M = 90          // collision-radius (i meter, viewBox)
   const BUMPER_HITS_TO_MULTIBALL = 4
   const BUMPER_HIT_SCORE = 50
-  const BUMPER_BOUNCE_SPEED = 350   // minimum utgående fart fra bumper-hit
+  // v8.0.3: BUMPER_BOUNCE_SPEED er flyttet til velocity-blokken nedenfor og
+  // skaleres med mapScale i init().
   // v7.4.0: bumpers spawnes nå på ALLE levels med 1-10 random count
   // (tidligere kun partalls-levels og 1-5 stk). Mer pinball-tett bane.
   const BUMPER_MAX_PER_LEVEL = 10
@@ -210,7 +224,16 @@ export function useCurveBall() {
   let BALL_RADIUS_M = 90
   let FLIPPER_INSET_M = 280
   const BOUNCE_AMPLIFY = 1.1
-  const KICK_SPEED = 300
+  // v8.0.3: KICK_SPEED og BUMPER_BOUNCE_SPEED er fart i m/s. Tidligere fast,
+  // men det gir radikalt ulik skjerm-traverseringstid mellom 1km- og 10km-
+  // kart (på 1km-kart blastet ballen tvers over på <1s). Nå skaleres alle
+  // hastigheter og akselerasjoner lineært med `mapScale` så skjerm-tid blir
+  // tilnærmet kart-størrelse-uavhengig. Multipliers (KICK_MULTIPLIERS,
+  // BOUNCE_AMPLIFY) og rates (friction 1/s) er fortsatt skala-invariante.
+  let KICK_SPEED = 300
+  let BUMPER_BOUNCE_SPEED = 350
+  let mapScale = 1   // recomputed in init() — bevart som module-level for at
+                     // levelParams() og maxBallSpeed() skal kunne bruke verdien
 
   // Trail (for én ball — den med nyligst posisjons-oppdatering)
   const TRAIL_LEN = 14
@@ -280,9 +303,12 @@ export function useCurveBall() {
     // v7.2.7: senket base-friksjon 0.4 → 0.18. Skalert friction inverst
     // med terrainEnergyMult — flate kart får lavere friksjon (ball glir
     // mye lenger på flatmark, mindre stagnering).
+    // v8.0.3: kGravity (slope-akselerasjon) skaleres med mapScale så
+    // tiden ballen bruker på å akselerere over kartet er kart-størrelse-
+    // uavhengig. Friction er en rate (1/s) og forblir skala-invariant.
     const baseFriction = Math.max(0.05, 0.18 - 0.02 * (n - 1))
     return {
-      kGravity: 1875 + 250 * (n - 1),
+      kGravity: (1875 + 250 * (n - 1)) * mapScale,
       friction: (baseFriction / terrainEnergyMult) * perks.frictionMult,
     }
   }
@@ -1549,13 +1575,18 @@ export function useCurveBall() {
     // v7.3.1: Skala spatial-konstanter etter kart-størrelse. Defaults var
     // tunet for 4×4km kart. Mindre kart (1km, 2km, 3km) trengte mindre
     // ball + paddler + bumpers + stillness-displacement-terskel.
+    // v8.0.3: alle hastigheter og akselerasjoner skaleres også med mapScale
+    // så skjerm-traverseringstid blir kart-størrelse-uavhengig.
     const minDim = Math.min(bounds.width || 4000, bounds.height || 4000)
-    const mapScale = minDim / 4000
+    mapScale = minDim / 4000
     BALL_RADIUS_M       = 90  * mapScale
     FLIPPER_INSET_M     = 280 * mapScale
     BUMPER_RADIUS_M     = 90  * mapScale
     BUMPER_MIN_DISTANCE_M = 250 * mapScale
     STILLNESS_DISPL_M   = 120 * mapScale
+    // v8.0.3: hastigheter — viktig for konsistent gameplay-feel
+    KICK_SPEED          = 300 * mapScale
+    BUMPER_BOUNCE_SPEED = 350 * mapScale
 
     // Beregn terrain-energy-multiplier basert på DEM-elevasjon-spenn.
     // Typisk variert terreng (200m range) → 1.0. Flatmark (50m) → 4.0
