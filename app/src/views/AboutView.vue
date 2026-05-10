@@ -247,10 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.0.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.0.3</span>
+                <span class="text-amber-300/90">&mdash; kart-st&oslash;rrelse-uavhengig fart</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Skjerm-traverseringstid er n&aring; kart-st&oslash;rrelse-uavhengig.</strong> Tidligere bestod hastigheter (KICK_SPEED 300 m/s, BUMPER_BOUNCE_SPEED 350 m/s, speed-cap 650 m/s) som faste m/s-verdier &mdash; p&aring; 1&times;1 km-kart blastet ballen tvers over p&aring; under 1 sek, p&aring; 10&times;10 km-kart krabbet den. N&aring; skaleres alle hastigheter og akselerasjoner line&aelig;rt med <code>mapScale</code> (= minDim/4000), s&aring; en passering &laquo;x &rarr; y&raquo; tar omtrent samme antall sekunder uansett kart-st&oslash;rrelse</li>
+                <li><strong>kGravity (slope-akselerasjon)</strong> skaleres ogs&aring; med <code>mapScale</code>. Friction er en rate (1/s) og forblir skala-invariant. Multipliers (KICK_MULTIPLIERS, BOUNCE_AMPLIFY, ×1.15 bumper-bonus) er ogs&aring; uendret &mdash; bare absolutte fart/akselerasjon-tall skaleres</li>
+                <li><strong>Mild «steep-bonus» p&aring; speed-capen</strong> (1.0&times;&ndash;1.3&times;) basert p&aring; <code>terrainEnergyMult</code>. Bratte kart f&aring;r ekstra headroom over capen s&aring; den naturlige slope-akselerasjonen f&aring;r utl&oslash;p &mdash; gameplay-f&oslash;lelsen «bratt = raskere» bevares mens flate kart fortsatt er forutsigbare</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.0.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.0.2</span>
                 <span class="text-emerald-300/90">&mdash; fysikk-balansering &amp; konturmarsj</span>
