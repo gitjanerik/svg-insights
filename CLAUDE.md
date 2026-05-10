@@ -91,9 +91,14 @@ Sjøkart-fetcher prøver multi-endpoint (`wfs.sjokart_dybdedata` → `wfs.dybded
 - **Test-suite**: 143 tester passerer (`npm run test` i app/)
 - **CurveBall på MS Edge Android (v7.4.1, rapportert 10. mai 2026):** spillet fungerer, men kart-bakgrunnen rendres lys (default-tema istedenfor mørkt) og kula vises som helt sort sirkel uten chrome-gradient. Sannsynlig årsak: Edge har problemer med å resolve `<radialGradient id="...">`-fill-referanser i SVG-elementer som er flyttet/klonet via DOM, eller `fill="url(#...)"` faller tilbake til sort når gradient-noden ikke finnes i scope. Sjekk `CurveBallLayer.vue` ball-rendering — vurder eksplisitt `xlink:href`-fallback eller flat circle-fill ved degradering. Opera Android og Chrome Android fungerer som forventet
 
-## Spillnavn — CurveBall (rebrand v7.5.0)
+## Spillnavn — CurveInvaders (brand) / CurveBall (codename)
 
-Spillet het tidligere «FlippKart» (norskspesifikk og uten schwung). Ble rebrandet 10. mai 2026 til **CurveBall** med samtidig introduksjon av en lett-vekt i18n-modul (`src/lib/i18n.js`). Norsk bokmål er default, engelsk-stub følger med. Brukervendte strenger ligger i dictionary; brand-navnet «CurveBall» er konstant på tvers av locales.
+Spillet het tidligere «FlippKart» (norskspesifikk og uten schwung). Rebrandet 10. mai 2026:
+
+- **v7.5.0**: rebrand til **CurveBall** + lett-vekt i18n-modul (`src/lib/i18n.js`). Norsk bokmål er default, engelsk-stub følger med.
+- **v7.5.1** (samme dag): brand-navn endret til **CurveInvaders** — fanger spawn-modus-paletten bedre (multiball + miniball + invaders) og har mer schwung. Endringen sitter kun i i18n-katalogen (`game.name`, `button.startGame`).
+
+Brukervendt brand er **CurveInvaders**. Interne identifiers (filnavn, funksjoner, CSS-klasser, storage-keys) er fortsatt **CurveBall** — det er et codename, ikke en brand. Man kan rebrande internals i en egen PR senere hvis ønskelig, men det krever da samme migrerings-disiplin som FlippKart→CurveBall (fallback-read for storage-keys osv).
 
 Migrert i samme PR:
 - Filer/komponenter: `useCurveBall.js`, `useCurveBallSound.js`, `CurveBallHUD.vue`, `CurveBallLayer.vue`, `CurveBallFlippers.vue`

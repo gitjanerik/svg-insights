@@ -33,12 +33,16 @@ const DEFAULT_LOCALE = 'no'   // norsk bokmål
  */
 const no = {
   // ── Brand ────────────────────────────────────────────────────────────
-  'game.name': 'CurveBall',
+  // v7.5.1: Brand-navnet endret fra «CurveBall» → «CurveInvaders».
+  // Det fanger spawn-modus-paletten bedre (multiball + miniball + invaders)
+  // og har mer schwung. Interne identifiers (useCurveBall, .cb-*, storage-
+  // keys) beholdes som CurveBall — det er et codename, ikke en brand.
+  'game.name': 'CurveInvaders',
   'game.emoji': '🎮',
   'game.tagline': 'flipperspill-fysikk over et ekte turkart',
 
   // ── Knapper / generelt ──────────────────────────────────────────────
-  'button.startGame': 'Start CurveBall',
+  'button.startGame': 'Start CurveInvaders',
   'button.exit': 'EXIT',
   'button.restart': 'RESTART',
   'button.share': 'DEL',
@@ -109,11 +113,11 @@ const no = {
  * til norsk via `t()`-helperen. Brand-navnet er det samme.
  */
 const en = {
-  'game.name': 'CurveBall',
+  'game.name': 'CurveInvaders',
   'game.emoji': '🎮',
   'game.tagline': 'pinball physics on a real hiking map',
 
-  'button.startGame': 'Start CurveBall',
+  'button.startGame': 'Start CurveInvaders',
   'button.exit': 'EXIT',
   'button.restart': 'RESTART',
   'button.share': 'SHARE',
