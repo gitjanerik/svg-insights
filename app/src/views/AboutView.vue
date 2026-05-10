@@ -247,9 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 7.4.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-amber-400 ring-2 ring-amber-200/40" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white text-base">7.4.0</span>
+                <span class="text-amber-300/85">&mdash; turneringsmodus + deling + tettere bumpere</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li><strong>Turneringsmodus</strong> velges før første level (mode-select-overlay). Aktivert → snarvei til neste eget kart vises ved level-clear; state (level, score, lives, perks, paddle-vekst) bæres gjennom kart-bytte via sessionStorage</li>
+                <li><strong>Delingslenke</strong> ved game over: skriv 3 bokstaver, kopier URL med kart-koordinater, kartstørrelse og ekvidistanse. Mottaker lander i kart-velgeren med alt pre-utfylt + utfordrer-banner</li>
+                <li>Bumpers spawnes på <strong>alle levels</strong> (1–10 stk random), tidligere kun partalls-levels (1–5)</li>
+                <li>Level-mål-kurven gror jevnere med ren lineær base + svak kvadratisk hale (L1=500, L5=3340, L10=8550, L20=25270)</li>
+                <li>Multiball som ebbet ut til én ball promoteres tilbake til normal status (kan trigge stillness-explode + nye multiball fra bumper igjen)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 7.3.7 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white text-base">7.3.7</span>

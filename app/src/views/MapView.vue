@@ -6,7 +6,7 @@ import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
-import { loadMap as loadStoredMap } from '../lib/mapStorage.js'
+import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
@@ -32,6 +32,89 @@ const flippUnlocked = ref(false)
 const flippkart = useFlippkart()
 const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
 const storedHighestPoint = ref(null)
+
+// v7.4.0: turneringsmodus — kart-rekkefølge og state-bæring mellom kart.
+// userMaps: alle brukerens egne kart (sortert av listMaps i opprettet-desc).
+// visitedMapIds: hvilke kart turneringen allerede har spilt (lagres i sessionStorage).
+const userMaps = ref([])
+const TOURNAMENT_KEY = 'flippkart-tournament-state'
+
+// Neste kart i turneringen — første userMap som ikke er gjeldende kart og
+// ikke i visitedMapIds. null hvis ingen flere kart finnes.
+const tournamentNextMap = computed(() => {
+  if (!userMaps.value.length) return null
+  const visited = readVisitedMapIds()
+  const currentId = route.params.id
+  for (const m of userMaps.value) {
+    if (m.id === currentId) continue
+    if (visited.includes(m.id)) continue
+    return { id: m.id, navn: m.navn }
+  }
+  return null
+})
+
+function readVisitedMapIds() {
+  try {
+    const raw = sessionStorage.getItem(TOURNAMENT_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed.visitedMapIds) ? parsed.visitedMapIds : []
+  } catch { return [] }
+}
+
+// shareInfo for HUD-modal — bygges fra meta + base-URL. null hvis meta mangler.
+const flippShareInfo = computed(() => {
+  const m = meta.value
+  if (!m || !m.bbox) return null
+  const lat = (m.bbox.south + m.bbox.north) / 2
+  const lon = (m.bbox.west + m.bbox.east) / 2
+  // sizeKm = bredde i km (kvadratiske kart, så bredde≈høyde). Faller tilbake til 4.
+  const sizeKm = m.widthM ? +(m.widthM / 1000).toFixed(2) : 4
+  const equidistanceM = m.equidistance ?? 20
+  const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
+  return { lat, lon, sizeKm, equidistanceM, baseUrl }
+})
+
+async function loadUserMapsForTournament() {
+  try { userMaps.value = await listStoredMaps() }
+  catch { userMaps.value = [] }
+}
+
+async function onTournamentNext(next) {
+  if (!next?.id) return
+  // Lagre flippkart-state + visited-list for restoring i ny MapView-mount
+  const state = flippkart.serializeForTournament()
+  const visited = readVisitedMapIds()
+  if (!visited.includes(route.params.id)) visited.push(route.params.id)
+  try {
+    sessionStorage.setItem(TOURNAMENT_KEY, JSON.stringify({
+      state,
+      visitedMapIds: visited,
+      pendingNextMapId: next.id,
+    }))
+  } catch { /* QuotaExceeded — fall through, restore vil ikke trigge */ }
+  flippkart.deactivate()
+  router.push({ name: 'kart-vis', params: { id: next.id } })
+}
+
+function consumeTournamentRestore() {
+  try {
+    const raw = sessionStorage.getItem(TOURNAMENT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (parsed?.pendingNextMapId !== route.params.id) {
+      // Mounted på et annet kart enn forventet — turneringen er brutt.
+      sessionStorage.removeItem(TOURNAMENT_KEY)
+      return null
+    }
+    // Behold visitedMapIds for senere "Neste kart"-kjeder, men fjern
+    // state+pendingNextMapId så vi ikke restorer dobbelt.
+    sessionStorage.setItem(TOURNAMENT_KEY, JSON.stringify({
+      visitedMapIds: parsed.visitedMapIds ?? [],
+    }))
+    return parsed.state ?? null
+  } catch { return null }
+}
 const flippViewBox = computed(() => {
   if (!meta.value) return '0 0 1 1'
   return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
@@ -171,6 +254,13 @@ async function startFlippkart() {
 
 function stopFlippkart() {
   flippkart.deactivate()
+}
+
+function onFlippRestart() {
+  // v7.4.0: full restart fra game over → glem turneringens visited-list
+  // så neste runde kan re-besøke samme kart.
+  try { sessionStorage.removeItem(TOURNAMENT_KEY) } catch { /* noop */ }
+  flippkart.restart()
 }
 
 // Tap på kart eller HUD-overlay → start nedtelling. Auto-drop ved 0.
@@ -721,12 +811,48 @@ function clearMapTypePreference() {
   try { localStorage.removeItem('svg-insights:mapType') } catch { /* ignore */ }
 }
 
+async function maybeRestoreTournament() {
+  // Sjekk om vi mountet på dette kartet pga «Neste kart»-snarvei. Hvis ja,
+  // init+aktivér flippkart med restorert state. Krever at kartet og DEM
+  // er ferdig lastet, så vi venter på loadMap().
+  const state = consumeTournamentRestore()
+  if (!state) return
+  flippUnlocked.value = true
+  await loadUserMapsForTournament()
+  // Vent til meta er klar — loadMap settes ferdig før onMounted-callback returnerer
+  // hvis kartet ligger i IndexedDB. Hvis ikke, watch på meta nedenfor håndterer det.
+  if (!meta.value) {
+    const stop = watch(meta, async (m) => {
+      if (m) { stop(); await activateRestoredFlipp(state) }
+    })
+  } else {
+    await activateRestoredFlipp(state)
+  }
+}
+
+async function activateRestoredFlipp(state) {
+  if (!meta.value) return
+  const ok = await ensureDemForFlippkart()
+  if (!ok) return
+  flippkart.init({
+    dem: storedDem.value,
+    bounds: { width: meta.value.widthM, height: meta.value.heightM },
+    equidistanceM: meta.value.equidistance ?? 20,
+  })
+  flippkart.restoreFromTournament(state)
+  reset()
+  flippkart.activate()
+  closeDrawer()
+}
+
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
   window.addEventListener('orientationchange', updateMapRect)
   loadMap()
+  loadUserMapsForTournament()
+  maybeRestoreTournament()
 })
 </script>
 
@@ -1118,9 +1244,12 @@ onMounted(() => {
 
     <!-- Flippkart-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
     <FlippkartHUD :flipp="flippkart"
-                  @restart="flippkart.restart"
+                  :tournament-next="tournamentNextMap"
+                  :share-info="flippShareInfo"
+                  @restart="onFlippRestart"
                   @continue="onFlippContinue"
-                  @exit="stopFlippkart"/>
+                  @exit="stopFlippkart"
+                  @tournament-next="onTournamentNext"/>
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
     <FlippkartFlippers :flipp="flippkart" :map-rect="mapRect"/>

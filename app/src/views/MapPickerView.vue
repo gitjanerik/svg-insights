@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
@@ -13,6 +13,7 @@ import { saveMap, generateMapId } from '../lib/mapStorage.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
 
 const router = useRouter()
+const route = useRoute()
 
 // Standard utgangspunkt: Oslo
 const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
@@ -21,6 +22,35 @@ const center = ref({ ...DEFAULT_CENTER })
 const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*halfKm
 const equidistanceM = ref(20)  // høydekurve-intervall, 10/20/50/100 m
 const customName = ref('')
+
+// v7.4.0: Delings-utfordring. Hvis URL har ?n=ABC&lat=...&lon=...&km=...&eq=...
+// så kommer brukeren fra en delings-lenke — pre-populer alle felter og vis
+// banner med info om hvem som har utfordret + spillforklaring.
+const challenge = ref(null)   // { name, score, level } eller null
+
+function parseShareQuery() {
+  const q = route.query
+  if (!q || !q.lat || !q.lon || !q.n) return null
+  const lat = parseFloat(q.lat)
+  const lon = parseFloat(q.lon)
+  const km = parseFloat(q.km)
+  const eq = parseInt(q.eq, 10)
+  const score = parseInt(q.score, 10)
+  const lv = parseInt(q.lv, 10)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  // Pre-populer kart-oppsett. customName settes så challenger-navn synes
+  // i lagrede-kart-listen senere.
+  center.value = { lat, lon, name: '' }
+  if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
+  if (Number.isFinite(eq) && [5, 10, 20, 50, 100].includes(eq)) equidistanceM.value = eq
+  const name = String(q.n).slice(0, 3).toUpperCase()
+  customName.value = `Utfordring fra ${name}`
+  return {
+    name,
+    score: Number.isFinite(score) ? score : null,
+    level: Number.isFinite(lv) ? lv : null,
+  }
+}
 
 const EQUIDISTANCE_OPTIONS = [
   { value: 5,   label: '5 m',   desc: 'ISOM-orientering — krever 1m DTM' },
@@ -440,6 +470,7 @@ function onPreviewWheel(e) {
 }
 
 onMounted(() => {
+  challenge.value = parseShareQuery()
   nextTick(() => measurePreview())
   window.addEventListener('resize', measurePreview)
 })
@@ -461,6 +492,35 @@ onMounted(() => {
       </button>
       <div class="text-[14px] font-semibold">Nytt turkart</div>
       <div class="w-10 h-10"/>
+    </div>
+
+    <!-- v7.4.0: Banner ved share-link — pre-populer felter, vis utfordrer +
+         spillforklaring så mottaker forstår hva de er invitert til. -->
+    <div v-if="challenge"
+         class="mx-4 mt-4 rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
+      <div class="flex items-center gap-3">
+        <div class="shrink-0 w-10 h-10 rounded-full bg-amber-400/20 border border-amber-300/40
+                    flex items-center justify-center text-amber-200 text-base font-bold tracking-widest">
+          {{ challenge.name }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-amber-100">
+            Utfordring fra {{ challenge.name }}
+          </div>
+          <div v-if="challenge.score !== null" class="text-[11px] text-amber-100/70">
+            Score: {{ challenge.score.toLocaleString('no-NO') }}<span v-if="challenge.level"> · level {{ challenge.level }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-2.5 text-[11px] text-white/70 leading-relaxed">
+        Spillet er <strong class="text-white">Flippkart</strong> — en flipperspill-fysikk over et
+        ekte turkart. Trill kula over høydekurver for poeng, treff bumpere, hold den i lufta med
+        paddles på alle fire kanter. Lag kartet med samme oppsett, og se om du kan slå
+        utfordrerens score.
+      </div>
+      <div class="mt-2 text-[10px] text-white/45">
+        Sentrum, kartstørrelse og ekvidistanse er pre-utfylt fra lenken.
+      </div>
     </div>
 
     <!-- Søkefelt -->

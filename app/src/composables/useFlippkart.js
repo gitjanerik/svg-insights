@@ -18,7 +18,7 @@ import {
  */
 export function useFlippkart() {
   const active = ref(false)
-  // 'idle' | 'countdown' | 'rolling' | 'sunk' | 'won' | 'gameover'
+  // 'idle' | 'countdown' | 'rolling' | 'sunk' | 'won' | 'gameover' | 'mode-select' | 'perk-select'
   const status = ref('idle')
   const level = ref(1)
   const lives = ref(3)
@@ -27,6 +27,13 @@ export function useFlippkart() {
   const countdown = ref(0)
   const highscore = ref(loadHighscore())
   const lastEvent = ref(null)
+
+  // v7.4.0 turneringsmodus: settes FØR første level (mode-select-overlay).
+  //   null  → ikke valgt enda (HUD viser mode-select-prompt)
+  //   true  → "Neste kart"-snarvei vises ved level-clear, state bæres
+  //           gjennom navigering via sessionStorage
+  //   false → standard, bli på samme kart hele runden
+  const tournamentMode = ref(null)
 
   // v7.3.4: debug-flag for å verifisere multiball-pipelinen. v7.3.7: skrudd
   // av — alt debug-stillas (panel, dlog, force-multiball) er bevart i koden
@@ -114,9 +121,10 @@ export function useFlippkart() {
   const BUMPER_HITS_TO_MULTIBALL = 4
   const BUMPER_HIT_SCORE = 50
   const BUMPER_BOUNCE_SPEED = 350   // minimum utgående fart fra bumper-hit
-  const BUMPER_MAX_PER_LEVEL = 5
+  // v7.4.0: bumpers spawnes nå på ALLE levels med 1-10 random count
+  // (tidligere kun partalls-levels og 1-5 stk). Mer pinball-tett bane.
+  const BUMPER_MAX_PER_LEVEL = 10
   let BUMPER_MIN_DISTANCE_M = 250   // min avstand mellom bumpers
-  const BUMPER_LEVEL_MOD = 2        // bumpers genereres når level % 2 === 0
 
   const splash = reactive({
     x: 0, y: 0,
@@ -171,12 +179,13 @@ export function useFlippkart() {
   const levelTarget = computed(() => computeLevelTarget(level.value))
 
   function computeLevelTarget(n) {
-    // v7.2.9: bratte kurve etter level ~5. Gammel formel (500+600*log2)
-    // platafonet: L10=2493, L20=3093 — for enkelt etter level 10.
-    // Ny: log2-base + kvadratisk komponent for høyere levels.
-    //   L1: 500, L3: 1610, L5: 2534, L10: 5733, L20: 17533
+    // v7.4.0: rent gradvis vekst — lineær base + svak kvadratisk hale.
+    // Tidligere log2-formel (v7.2.9) ga store hopp tidlig (L1→L3 +1110)
+    // og deretter slakkere stigning. Nå skalerer hver level med en jevn
+    // step på +600/level pluss en smal kvadratisk akselerasjon.
+    //   L1: 500, L3: 1820, L5: 3340, L10: 8550, L15: 15860, L20: 25270
     const lv = Math.max(1, n)
-    return Math.round(500 + 600 * Math.log2(lv) + 40 * Math.pow(lv - 1, 2))
+    return Math.round(500 + 600 * (lv - 1) + 60 * Math.pow(lv - 1, 2))
   }
 
   function loadHighscore() {
@@ -259,6 +268,22 @@ export function useFlippkart() {
       }
     }
 
+    // v7.4.0: Når multiball ebbet ut til én ball igjen — promoter den til
+    // normal ball (canExplode = true) så stillness-detektor og videre
+    // multiball-trigger fra bumper er aktiv som vanlig. Reset history-
+    // bufferen så vi ikke trigger eksplosjon umiddelbart på en ball som
+    // har vært stationær mens den var i multi-mode.
+    if (balls.length === 1 && status.value === 'rolling' && balls[0].canExplode === false) {
+      const sole = balls[0]
+      sole.canExplode = true
+      sole.stillTime = 0
+      sole.chargeT = 0
+      sole.warnIndex = 0
+      if (sole.history) sole.history.length = 0
+      levelChain = 0
+      dlog('multiball→normal')
+    }
+
     // Hvis alle baller er borte og status fortsatt 'rolling' → drown-event
     if (balls.length === 0 && status.value === 'rolling') {
       drownAll()
@@ -339,7 +364,6 @@ export function useFlippkart() {
 
   function generateBumpersForLevel() {
     bumpers.length = 0
-    if (level.value % BUMPER_LEVEL_MOD !== 0) return
     const count = 1 + Math.floor(Math.random() * BUMPER_MAX_PER_LEVEL)
     const margin = FLIPPER_INSET_M + BUMPER_RADIUS_M + 100
     let attempts = 0
@@ -877,7 +901,9 @@ export function useFlippkart() {
     score.value = 0
     totalScore.value = 0
     countdown.value = 0
-    status.value = 'idle'
+    // v7.4.0: ny runde må velge turneringsmodus først.
+    tournamentMode.value = null
+    status.value = 'mode-select'
     balls.length = 0
     splash.active = false
     lastHitEdge = null
@@ -898,7 +924,78 @@ export function useFlippkart() {
       flippers[e].kickLevel = 0
     }
     bumpers.length = 0
-    generateBumpersForLevel()       // for L1 vil dette bli no-op (level%2 ikke 0)
+    generateBumpersForLevel()
+  }
+
+  /** Brukerens valg fra mode-select-overlay. Når modus er valgt går vi
+   *  til 'idle' så «TAP TO START»-promptet vises. */
+  function setTournamentMode(value) {
+    tournamentMode.value = !!value
+    if (status.value === 'mode-select') status.value = 'idle'
+  }
+
+  /**
+   * Serialize spill-tilstand for kryss-kart-navigering (turneringsmodus).
+   * Hentes etter level-clear, før router.push til neste kart. Restore-funksjon
+   * leses i ny MapView etter mount.
+   */
+  function serializeForTournament() {
+    return {
+      level: level.value,
+      lives: lives.value,
+      totalScore: totalScore.value,
+      score: 0,                            // start frisk på neste kart
+      tournamentMode: true,
+      perks: { ...perks },
+      flipperLengths: {
+        top: flippers.top.length,
+        bottom: flippers.bottom.length,
+        left: flippers.left.length,
+        right: flippers.right.length,
+      },
+      pendingPerkSelect,
+    }
+  }
+
+  /** Restorer state fra serializeForTournament. Kaller etter init() men
+   *  før activate(). Status settes til 'idle' så bruker kan tappe for å starte. */
+  function restoreFromTournament(state) {
+    if (!state) return
+    if (countdownTimer) { clearTimeout(countdownTimer); countdownTimer = null }
+    level.value = state.level ?? 1
+    lives.value = state.lives ?? 3
+    totalScore.value = state.totalScore ?? 0
+    score.value = state.score ?? 0
+    countdown.value = 0
+    tournamentMode.value = state.tournamentMode === true
+    balls.length = 0
+    splash.active = false
+    lastHitEdge = null
+    lastElev = NaN
+    levelChain = 0
+    pendingPerkSelect = !!state.pendingPerkSelect
+    perkChoices.value = []
+    if (state.perks) Object.assign(perks, state.perks)
+    if (state.flipperLengths) {
+      flippers.top.length    = state.flipperLengths.top    ?? 0.25
+      flippers.bottom.length = state.flipperLengths.bottom ?? 0.25
+      flippers.left.length   = state.flipperLengths.left   ?? 0.25
+      flippers.right.length  = state.flipperLengths.right  ?? 0.25
+    }
+    for (const e of ['top', 'bottom', 'left', 'right']) {
+      flippers[e].position = 0.5
+      flippers[e].kickLevel = 0
+    }
+    bumpers.length = 0
+    generateBumpersForLevel()
+    // pendingPerkSelect → vis perk-select med en gang istedenfor idle
+    if (pendingPerkSelect) {
+      perkChoices.value = pickRandomPerks(3)
+      status.value = 'perk-select'
+      pendingPerkSelect = false
+    } else {
+      status.value = 'idle'
+    }
   }
 
   function init(ctx) {
@@ -961,10 +1058,13 @@ export function useFlippkart() {
     levelTarget, lastEvent,
     balls, splash, trail, flippers, bumpers,
     perks, perkChoices,
+    tournamentMode,
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
     kickBall, forceMultiball,
+    setTournamentMode,
+    serializeForTournament, restoreFromTournament,
     levelParams,
     debugLog,
     DEBUG_MULTIBALL,
