@@ -5,10 +5,13 @@ import {
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
   playStillWarning, playExplosion, playMultiSpawn, playBumperHit,
   playMiniSpawn, playMiniHit, playInvaderSpawn, playInvaderBreakout,
-} from './useFlippkartSound.js'
+} from './useCurveBallSound.js'
 
 /**
- * Flippkart — fysikk og state machine for marble-spillet.
+ * CurveBall — fysikk og state machine for marble-spillet.
+ *
+ * (v8.0.0: rebrandet fra useFlippkart — semantikk uendret. Brand-navnet i
+ * UI er CurveInvaders, men codename i kildekoden er CurveBall.)
  *
  * v7.2.6 multi-ball:
  *   - balls[] erstatter single ball
@@ -17,7 +20,7 @@ import {
  *   - Game continues til ALLE baller er ute (drown / out-of-edge), så -1 liv
  *   - Stillness reset på paddle-treff og bevegelse (>STILLNESS_DIST_M)
  */
-export function useFlippkart() {
+export function useCurveBall() {
   const active = ref(false)
   // 'idle' | 'countdown' | 'rolling' | 'sunk' | 'won' | 'gameover' | 'mode-select' | 'perk-select'
   const status = ref('idle')
@@ -49,7 +52,7 @@ export function useFlippkart() {
     const t = new Date()
     const stamp = `${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}.${String(t.getMilliseconds()).padStart(3,'0').slice(0,2)}`
     const line = data === undefined ? `${stamp} ${msg}` : `${stamp} ${msg} ${JSON.stringify(data)}`
-    console.log('[Flippkart]', msg, data ?? '')
+    console.log('[CurveBall]', msg, data ?? '')
     debugLog.push(line)
     while (debugLog.length > 12) debugLog.shift()
   }
@@ -140,7 +143,7 @@ export function useFlippkart() {
   const SPAWN_MODE_LVL = {
     multiball: 1,         // tilgjengelig fra level 1
     miniball: 3,          // fra level 3
-    curveInvaders: 6,     // fra level 6
+    invaders: 6,          // fra level 6 (v8.0.0: navn forkortet fra curveInvaders)
   }
   const MINI_COUNT = 12
   const MINI_SPEED_MULT = 2.0
@@ -217,17 +220,26 @@ export function useFlippkart() {
     return Math.round(500 + 600 * (lv - 1) + 60 * Math.pow(lv - 1, 2))
   }
 
+  // v8.0.0 rebrand-migrering: skriv kun ny nøkkel, men les både ny og gammel
+  // i en overgangsperiode så eksisterende highscores fra FlippKart-tiden
+  // ikke nullstilles. Kan ryddes vekk noen versjoner senere.
+  const HIGHSCORE_KEY_NEW = 'curveball-highscore'
+  const HIGHSCORE_KEY_OLD = 'flippkart-highscore'
+
   function loadHighscore() {
     if (typeof localStorage === 'undefined') return 0
     try {
-      const v = parseInt(localStorage.getItem('flippkart-highscore') ?? '0', 10)
+      const raw = localStorage.getItem(HIGHSCORE_KEY_NEW)
+                ?? localStorage.getItem(HIGHSCORE_KEY_OLD)
+                ?? '0'
+      const v = parseInt(raw, 10)
       return Number.isFinite(v) ? v : 0
     } catch { return 0 }
   }
 
   function saveHighscore(value) {
     if (typeof localStorage === 'undefined') return
-    try { localStorage.setItem('flippkart-highscore', String(value)) } catch {}
+    try { localStorage.setItem(HIGHSCORE_KEY_NEW, String(value)) } catch {}
   }
 
   function levelParams(n) {
@@ -268,7 +280,7 @@ export function useFlippkart() {
       mode: opts.mode ?? 'normal',          // 'normal' | 'mini' | 'invader'
       r: opts.r ?? BALL_RADIUS_M,           // ball-radius i viewBox-units
       scoreMult: opts.scoreMult ?? 1,       // multiplier for paddle/bumper-score
-      // CurveInvaders-felter (kun satt hvis mode==='invader')
+      // Invaders-felter (kun satt hvis mode==='invader')
       invaderPhase: opts.invaderPhase,      // 'orbit' | 'breakout' | undefined
       orbitCenter: opts.orbitCenter,        // {x, y}
       orbitRadius: opts.orbitRadius,
@@ -298,7 +310,7 @@ export function useFlippkart() {
 
   /**
    * Finn central peak / kolle ved å sample DEM i sentrale 50% av kartet.
-   * Brukes av CurveInvaders for å plassere orbiten rundt en hill-feature.
+   * Brukes av invaders-modus for å plassere orbiten rundt en hill-feature.
    * Faller tilbake til geometrisk sentrum hvis DEM mangler.
    */
   function findCentralPeak() {
@@ -335,7 +347,7 @@ export function useFlippkart() {
         continue
       }
 
-      // v7.4.3: CurveInvaders i orbit-fase bruker kinematisk oppdatering
+      // v7.4.3: Invaders i orbit-fase bruker kinematisk oppdatering
       // (overstyrer gravity, friksjon og bumper-respons). Etter ORBIT-
       // varighet → bytt til breakout-fase som bruker normal physics + den
       // pre-beregnede breakoutVel.
@@ -630,7 +642,7 @@ export function useFlippkart() {
   function spawnByMode(mode, sx, sy) {
     switch (mode) {
       case 'miniball':      return spawnMiniballs(sx, sy)
-      case 'curveInvaders': return spawnCurveInvaders(sx, sy)
+      case 'invaders':      return spawnInvaders(sx, sy)
       case 'multiball':
       default:              return spawnMultiball(sx, sy)
     }
@@ -697,7 +709,7 @@ export function useFlippkart() {
   }
 
   /**
-   * CurveInvaders: 3-12 minibanker spawner i sirkel-formasjon rundt central
+   * Invaders: 3-12 minibanker spawner i sirkel-formasjon rundt central
    * peak (en kolle / fjell i sentrale 50%). Faser:
    *   1. ORBIT (~3s) — kinematisk: følger sirkel rundt peak, ignorerer
    *      gravity og bumpers. Denne fasen er Space-Invaders-marsjen.
@@ -705,7 +717,7 @@ export function useFlippkart() {
    *      med ±20% energi-variasjon → spredning blir mer kaotisk over tid.
    * Tilgjengelig fra level 6.
    */
-  function spawnCurveInvaders(sx, sy) {
+  function spawnInvaders(sx, sy) {
     splash.x = sx; splash.y = sy
     splash.active = true; splash.t = 0; splash.kind = 'explode'
     playExplosion()

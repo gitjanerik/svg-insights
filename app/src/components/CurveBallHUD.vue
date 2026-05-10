@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch, onUnmounted } from 'vue'
+import { t } from '../lib/i18n.js'
 
 const props = defineProps({
   flipp: { type: Object, required: true },
@@ -14,7 +15,7 @@ const props = defineProps({
 
 const emit = defineEmits(['restart', 'exit', 'continue', 'tournamentNext'])
 
-const levelStr = computed(() => `LEVEL ${String(props.flipp.level.value).padStart(2, '0')}`)
+const levelStr = computed(() => t('hud.level', { n: String(props.flipp.level.value).padStart(2, '0') }))
 // v7.4.1: defensiv formatering — for veldig store tall blir String() til
 // scientific notation. Bruk toLocaleString så HUD alltid viser ekte siffer.
 function formatScore(n) {
@@ -39,16 +40,16 @@ const overlay = computed(() => {
     // notation) ved store tall. Cap'es ved Number.MAX_SAFE_INTEGER for
     // defensiv beskyttelse mot eldre cascade-bugs.
     return {
-      text: 'GAME OVER',
-      sub: `HIGHSCORE: ${formatScore(hs)}`,
+      text: t('overlay.gameOver'),
+      sub: t('overlay.highscore', { value: formatScore(hs) }),
       color: 'red',
     }
   }
-  if (s === 'won') return { text: 'LEVEL CLEAR!', sub: '', color: 'yellow' }
-  if (s === 'sunk') return { text: 'MISS!', sub: '', color: 'cyan' }
+  if (s === 'won') return { text: t('overlay.levelClear'), sub: '', color: 'yellow' }
+  if (s === 'sunk') return { text: t('overlay.miss'), sub: '', color: 'cyan' }
   if (s === 'countdown') {
     const n = props.flipp.countdown.value
-    return { text: n > 0 ? String(n) : 'GO!', sub: '', color: 'yellow', big: true }
+    return { text: n > 0 ? String(n) : t('overlay.go'), sub: '', color: 'yellow', big: true }
   }
   if (s === 'idle' && props.flipp.lives.value > 0) {
     const isFresh = props.flipp.lives.value === 3 &&
@@ -57,7 +58,7 @@ const overlay = computed(() => {
                     props.flipp.totalScore.value === 0
     return {
       text: '',
-      sub: isFresh ? 'TAP TO START' : 'TAP TO CONTINUE',
+      sub: isFresh ? t('overlay.tapToStart') : t('overlay.tapToContinue'),
       color: 'cyan',
       tappable: true,
     }
@@ -142,15 +143,20 @@ onUnmounted(() => {
 })
 
 // v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
-// når DEBUG_MULTIBALL er på (fjernes med flag i useFlippkart.js når bug
+// når DEBUG_MULTIBALL er på (fjernes med flag i useCurveBall.js når bug
 // er bekreftet løst).
-const DEBUG_KEY = 'flippkart-debug-panel'
+// v8.0.0 rebrand-migrering: les ny + gammel nøkkel, skriv kun ny.
+const DEBUG_KEY_NEW = 'curveball-debug-panel'
+const DEBUG_KEY_OLD = 'flippkart-debug-panel'
 const debugOpen = ref((() => {
-  try { return localStorage.getItem(DEBUG_KEY) !== '0' } catch { return true }
+  try {
+    const v = localStorage.getItem(DEBUG_KEY_NEW) ?? localStorage.getItem(DEBUG_KEY_OLD)
+    return v !== '0'
+  } catch { return true }
 })())
 function toggleDebug() {
   debugOpen.value = !debugOpen.value
-  try { localStorage.setItem(DEBUG_KEY, debugOpen.value ? '1' : '0') } catch {}
+  try { localStorage.setItem(DEBUG_KEY_NEW, debugOpen.value ? '1' : '0') } catch {}
 }
 
 // Live-state ticker — re-render hver 100 ms så stillTime-tellingen er synlig
@@ -256,13 +262,13 @@ async function copyShareUrl() {
 </script>
 
 <template>
-  <div v-if="flipp.active.value" class="flipp-hud">
+  <div v-if="flipp.active.value" class="cb-hud">
     <!-- Top bar -->
-    <div class="flipp-bar">
-      <div class="flipp-cell flipp-cyan">{{ levelStr }}</div>
-      <div class="flipp-cell flipp-yellow">{{ scoreStr }}</div>
-      <div class="flipp-cell flipp-hearts">
-        <svg v-for="i in heartCount" :key="`h-${i}`" viewBox="0 0 9 8" class="flipp-heart">
+    <div class="cb-bar">
+      <div class="cb-cell cb-cyan">{{ levelStr }}</div>
+      <div class="cb-cell cb-yellow">{{ scoreStr }}</div>
+      <div class="cb-cell cb-hearts">
+        <svg v-for="i in heartCount" :key="`h-${i}`" viewBox="0 0 9 8" class="cb-heart">
           <rect x="1" y="1" width="2" height="1" fill="#ff3b3b"/>
           <rect x="6" y="1" width="2" height="1" fill="#ff3b3b"/>
           <rect x="0" y="2" width="9" height="2" fill="#ff3b3b"/>
@@ -271,7 +277,7 @@ async function copyShareUrl() {
           <rect x="3" y="6" width="3" height="1" fill="#ff3b3b"/>
           <rect x="4" y="7" width="1" height="1" fill="#ff3b3b"/>
         </svg>
-        <svg v-for="i in (3 - heartCount)" :key="`he-${i}`" viewBox="0 0 9 8" class="flipp-heart flipp-heart-empty">
+        <svg v-for="i in (3 - heartCount)" :key="`he-${i}`" viewBox="0 0 9 8" class="cb-heart cb-heart-empty">
           <rect x="1" y="1" width="2" height="1" fill="#444"/>
           <rect x="6" y="1" width="2" height="1" fill="#444"/>
           <rect x="0" y="2" width="9" height="2" fill="#444"/>
@@ -284,94 +290,96 @@ async function copyShareUrl() {
     </div>
 
     <!-- Smash-bonus flash -->
-    <div v-if="smashFlash" class="flipp-smash-flash">
-      <div class="flipp-smash-text">SMASH!</div>
-      <div class="flipp-smash-sub">+{{ smashFlash.bonus }}</div>
+    <div v-if="smashFlash" class="cb-smash-flash">
+      <div class="cb-smash-text">{{ t('flash.smash') }}</div>
+      <div class="cb-smash-sub">+{{ smashFlash.bonus }}</div>
     </div>
 
     <!-- Multiball-flash når kula eksploderer i 3 -->
-    <div v-if="multiballFlash" class="flipp-multiball-flash">
-      <div class="flipp-multiball-text">MULTIBALL!</div>
+    <div v-if="multiballFlash" class="cb-multiball-flash">
+      <div class="cb-multiball-text">{{ t('flash.multiball') }}</div>
     </div>
 
     <!-- v7.4.3 Miniball-flash — 12 små baller med dobbel energi -->
-    <div v-if="miniFlash" class="flipp-mini-flash">
-      <div class="flipp-mini-text">MINIBALL!</div>
-      <div class="flipp-mini-sub">×12 · 2× SPEED · 2× POENG</div>
+    <div v-if="miniFlash" class="cb-mini-flash">
+      <div class="cb-mini-text">{{ t('flash.mini') }}</div>
+      <div class="cb-mini-sub">{{ t('flash.miniSub') }}</div>
     </div>
 
-    <!-- v7.4.3 CurveInvaders-flash — formasjonen marsjerer over kurvene -->
-    <div v-if="invaderFlash" class="flipp-invader-flash">
-      <div class="flipp-invader-text">CURVE INVADERS!</div>
-      <div class="flipp-invader-sub">FORMATION INCOMING</div>
+    <!-- v8.0.0 Invaders-flash — formasjonen marsjerer over kurvene.
+         Flash-tekst er kort «INVADERS!» (ikke «CURVE INVADERS!») etter
+         brukerønske 10. mai så det ikke kolliderer med spillnavnet. -->
+    <div v-if="invaderFlash" class="cb-invader-flash">
+      <div class="cb-invader-text">{{ t('flash.invader') }}</div>
+      <div class="cb-invader-sub">{{ t('flash.invaderSub') }}</div>
     </div>
 
     <!-- Chain-flash når multiball-cascade clearer flere levels på rad -->
-    <div v-if="chainFlash" class="flipp-chain-flash">
-      <div class="flipp-chain-mini">LEVEL UP!</div>
-      <div class="flipp-chain-text">CHAIN ×{{ chainFlash.mult }}</div>
-      <div class="flipp-chain-sub">+{{ chainFlash.bonus }}</div>
+    <div v-if="chainFlash" class="cb-chain-flash">
+      <div class="cb-chain-mini">{{ t('flash.chain.label') }}</div>
+      <div class="cb-chain-text">{{ t('flash.chain.text', { mult: chainFlash.mult }) }}</div>
+      <div class="cb-chain-sub">+{{ chainFlash.bonus }}</div>
     </div>
 
     <!-- Bottom-right: exit-knapp -->
-    <button class="flipp-exit" @click="emit('exit')">EXIT</button>
+    <button class="cb-exit" @click="emit('exit')">{{ t('button.exit') }}</button>
 
     <!-- v7.3.5 DEBUG-panel for multiball-feilsøking. Togglebar via DBG-knapp. -->
     <template v-if="flipp.DEBUG_MULTIBALL">
-      <button class="flipp-dbg-toggle" @click="toggleDebug">
+      <button class="cb-dbg-toggle" @click="toggleDebug">
         {{ debugOpen ? '▾ DBG' : '▸ DBG' }}
       </button>
-      <div v-if="debugOpen" class="flipp-dbg-panel">
-        <div class="flipp-dbg-row">
+      <div v-if="debugOpen" class="cb-dbg-panel">
+        <div class="cb-dbg-row">
           <span>balls:{{ flipp.balls.length }}</span>
           <span v-if="ballState">v:{{ ballState.v }}</span>
           <span v-if="ballState">still:{{ ballState.still }}/{{ flipp.STILLNESS_EXPLODE_S }}s</span>
         </div>
-        <div v-if="ballState" class="flipp-dbg-row">
+        <div v-if="ballState" class="cb-dbg-row">
           <span>charge:{{ ballState.charge }}</span>
           <span>canExp:{{ ballState.canExp }}</span>
           <span>hist:{{ ballState.hist }}/60</span>
         </div>
-        <div class="flipp-dbg-row">
+        <div class="cb-dbg-row">
           <span>displ-thr:{{ Math.round(flipp.STILLNESS_DISPL_M) }}m</span>
           <span>status:{{ flipp.status.value }}</span>
         </div>
-        <button class="flipp-dbg-force" @click="onForceMultiball">FORCE MULTIBALL</button>
-        <div class="flipp-dbg-log">
-          <div v-for="(l, i) in flipp.debugLog" :key="`l-${i}`" class="flipp-dbg-line">{{ l }}</div>
-          <div v-if="!flipp.debugLog.length" class="flipp-dbg-line flipp-dbg-empty">(no events yet)</div>
+        <button class="cb-dbg-force" @click="onForceMultiball">FORCE MULTIBALL</button>
+        <div class="cb-dbg-log">
+          <div v-for="(l, i) in flipp.debugLog" :key="`l-${i}`" class="cb-dbg-line">{{ l }}</div>
+          <div v-if="!flipp.debugLog.length" class="cb-dbg-line cb-dbg-empty">(no events yet)</div>
         </div>
       </div>
     </template>
 
     <!-- Center overlay -->
     <div v-if="overlay"
-         class="flipp-overlay"
-         :class="{ 'flipp-tappable': overlay.tappable }"
+         class="cb-overlay"
+         :class="{ 'cb-tappable': overlay.tappable }"
          @click="onOverlayTap">
       <div v-if="overlay.text"
-           class="flipp-overlay-main"
-           :class="[`flipp-${overlay.color}`, overlay.big ? 'flipp-overlay-huge' : '']">
+           class="cb-overlay-main"
+           :class="[`cb-${overlay.color}`, overlay.big ? 'cb-overlay-huge' : '']">
         {{ overlay.text }}
       </div>
       <div v-if="overlay.sub"
-           class="flipp-overlay-sub"
-           :class="`flipp-${overlay.color}`">
+           class="cb-overlay-sub"
+           :class="`cb-${overlay.color}`">
         {{ overlay.sub }}
       </div>
       <div v-if="overlay.tapText"
-           class="flipp-overlay-sub flipp-cyan">
+           class="cb-overlay-sub cb-cyan">
         {{ overlay.tapText }}
       </div>
 
       <!-- v7.4.0: Game-over har «DEL»-knapp ved siden av TAP TO RESTART. Egne
            handlere så tap på Del ikke trigger restart. -->
-      <div v-if="flipp.status.value === 'gameover'" class="flipp-go-actions">
-        <button class="flipp-go-btn flipp-go-restart"
-                @click.stop="emit('restart')">RESTART</button>
+      <div v-if="flipp.status.value === 'gameover'" class="cb-go-actions">
+        <button class="cb-go-btn cb-go-restart"
+                @click.stop="emit('restart')">{{ t('button.restart') }}</button>
         <button v-if="shareInfo"
-                class="flipp-go-btn flipp-go-share"
-                @click.stop="openShare">DEL ▣</button>
+                class="cb-go-btn cb-go-share"
+                @click.stop="openShare">{{ t('button.share') }} ▣</button>
       </div>
 
       <!-- v7.4.0: Turneringsmodus-snarvei — ekstra knapp ved level-clear/idle -->
@@ -379,80 +387,82 @@ async function copyShareUrl() {
                     && flipp.lives.value > 0
                     && flipp.tournamentMode.value === true
                     && tournamentNext"
-              class="flipp-tournament-next"
+              class="cb-tournament-next"
               @click.stop="onTournamentNext">
-        NESTE KART →
-        <span class="flipp-tournament-next-name">{{ tournamentNext.navn }}</span>
+        {{ t('button.nextMap') }}
+        <span class="cb-tournament-next-name">{{ tournamentNext.navn }}</span>
       </button>
     </div>
 
     <!-- v7.4.0: Mode-select-overlay — vises FØR første level. To valg: standard
          eller turnering (krever at brukeren har egne kart). -->
-    <div v-if="flipp.status.value === 'mode-select'" class="flipp-mode-overlay">
-      <div class="flipp-mode-title flipp-yellow">VELG MODUS</div>
-      <div class="flipp-mode-sub flipp-cyan">FØR FØRSTE LEVEL</div>
-      <div class="flipp-mode-grid">
-        <button class="flipp-mode-btn" @click="pickTournament(false)">
-          <div class="flipp-mode-icon">🎯</div>
-          <div class="flipp-mode-label">STANDARD</div>
-          <div class="flipp-mode-desc">spill alle levels på dette kartet</div>
+    <div v-if="flipp.status.value === 'mode-select'" class="cb-mode-overlay">
+      <div class="cb-mode-title cb-yellow">{{ t('mode.title') }}</div>
+      <div class="cb-mode-sub cb-cyan">{{ t('mode.subtitle') }}</div>
+      <div class="cb-mode-grid">
+        <button class="cb-mode-btn" @click="pickTournament(false)">
+          <div class="cb-mode-icon">🎯</div>
+          <div class="cb-mode-label">{{ t('mode.standard.label') }}</div>
+          <div class="cb-mode-desc">{{ t('mode.standard.desc') }}</div>
         </button>
-        <button class="flipp-mode-btn flipp-mode-tour"
+        <button class="cb-mode-btn cb-mode-tour"
                 :disabled="!tournamentNext"
                 @click="pickTournament(true)">
-          <div class="flipp-mode-icon">🏆</div>
-          <div class="flipp-mode-label">TURNERING</div>
-          <div v-if="tournamentNext" class="flipp-mode-desc">
-            snarvei til neste eget kart ved level-clear
+          <div class="cb-mode-icon">🏆</div>
+          <div class="cb-mode-label">{{ t('mode.tournament.label') }}</div>
+          <div v-if="tournamentNext" class="cb-mode-desc">
+            {{ t('mode.tournament.desc') }}
           </div>
-          <div v-else class="flipp-mode-desc flipp-mode-desc-disabled">
-            krever minst ett eget kart i mappa
+          <div v-else class="cb-mode-desc cb-mode-desc-disabled">
+            {{ t('mode.tournament.disabled') }}
           </div>
         </button>
       </div>
     </div>
 
     <!-- v7.4.0: Share-modal (vises når DEL-knappen er trykket på game over) -->
-    <div v-if="shareOpen" class="flipp-share-overlay" @click.self="closeShare">
-      <div class="flipp-share-card">
-        <div class="flipp-share-title flipp-yellow">DEL UTFORDRINGEN</div>
-        <div class="flipp-share-sub flipp-cyan">
-          DIN SCORE: {{ formatScore(flipp.totalScore.value) }}
-          · LEVEL {{ String(flipp.level.value).padStart(2, '0') }}
+    <div v-if="shareOpen" class="cb-share-overlay" @click.self="closeShare">
+      <div class="cb-share-card">
+        <div class="cb-share-title cb-yellow">{{ t('share.title') }}</div>
+        <div class="cb-share-sub cb-cyan">
+          {{ t('share.subtitle', {
+            score: formatScore(flipp.totalScore.value),
+            level: String(flipp.level.value).padStart(2, '0'),
+          }) }}
         </div>
-        <label class="flipp-share-label">DITT NAVN (3 BOKSTAVER)</label>
+        <label class="cb-share-label">{{ t('share.nameLabel') }}</label>
         <input type="text"
-               class="flipp-share-input"
+               class="cb-share-input"
                maxlength="3"
                :value="shareName"
-               placeholder="ABC"
+               :placeholder="t('share.namePlaceholder')"
                autocomplete="off"
                autocapitalize="characters"
                spellcheck="false"
                @input="onShareNameInput">
-        <div v-if="shareUrl" class="flipp-share-url-wrap">
-          <div class="flipp-share-url">{{ shareUrl }}</div>
-          <button class="flipp-share-copy" @click="copyShareUrl">
-            {{ shareCopied ? 'KOPIERT ✓' : 'KOPIER LENKE' }}
+        <div v-if="shareUrl" class="cb-share-url-wrap">
+          <div class="cb-share-url">{{ shareUrl }}</div>
+          <button class="cb-share-copy" @click="copyShareUrl">
+            {{ shareCopied ? t('button.copied') : t('button.copyLink') }}
           </button>
         </div>
-        <div v-else class="flipp-share-hint">Skriv 3 bokstaver for å lage lenke</div>
-        <button class="flipp-share-close" @click="closeShare">LUKK</button>
+        <div v-else class="cb-share-hint">{{ t('share.hint') }}</div>
+        <button class="cb-share-close" @click="closeShare">{{ t('button.close') }}</button>
       </div>
     </div>
 
     <!-- Perk-select-overlay (vises hvert 3. level) -->
-    <div v-if="flipp.status.value === 'perk-select'" class="flipp-perk-overlay">
-      <div class="flipp-perk-title flipp-yellow">CHOOSE PERK</div>
-      <div class="flipp-perk-sub flipp-cyan">LEVEL {{ String(flipp.level.value).padStart(2, '0') }}</div>
-      <div class="flipp-perk-grid">
+    <div v-if="flipp.status.value === 'perk-select'" class="cb-perk-overlay">
+      <div class="cb-perk-title cb-yellow">{{ t('perk.title') }}</div>
+      <div class="cb-perk-sub cb-cyan">{{ t('perk.level', { n: String(flipp.level.value).padStart(2, '0') }) }}</div>
+      <div class="cb-perk-grid">
         <button v-for="p in flipp.perkChoices.value"
                 :key="p.id"
-                class="flipp-perk-btn"
+                class="cb-perk-btn"
                 @click="onPerkChoice(p.id)">
-          <div class="flipp-perk-icon">{{ p.icon }}</div>
-          <div class="flipp-perk-label">{{ p.label }}</div>
-          <div class="flipp-perk-desc">{{ p.desc }}</div>
+          <div class="cb-perk-icon">{{ p.icon }}</div>
+          <div class="cb-perk-label">{{ p.label }}</div>
+          <div class="cb-perk-desc">{{ p.desc }}</div>
         </button>
       </div>
     </div>
@@ -466,7 +476,7 @@ async function copyShareUrl() {
   font-display: swap;
 }
 
-.flipp-hud {
+.cb-hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -476,7 +486,7 @@ async function copyShareUrl() {
   font-smoothing: none;
 }
 
-.flipp-bar {
+.cb-bar {
   position: absolute;
   top: 0; left: 0; right: 0;
   display: flex;
@@ -489,28 +499,28 @@ async function copyShareUrl() {
   border-bottom: 2px solid #222;
 }
 
-.flipp-cell {
+.cb-cell {
   white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.flipp-hearts {
+.cb-hearts {
   gap: 3px;
 }
 
-.flipp-heart {
+.cb-heart {
   width: 18px;
   height: 16px;
   image-rendering: pixelated;
 }
 
-.flipp-cyan { color: #5cefff; }
-.flipp-yellow { color: #ffe24d; }
-.flipp-red { color: #ff3b3b; }
+.cb-cyan { color: #5cefff; }
+.cb-yellow { color: #ffe24d; }
+.cb-red { color: #ff3b3b; }
 
-.flipp-exit {
+.cb-exit {
   position: absolute;
   bottom: 16px; right: 16px;
   pointer-events: auto;
@@ -524,12 +534,12 @@ async function copyShareUrl() {
   border-radius: 0;
   cursor: pointer;
 }
-.flipp-exit:active {
+.cb-exit:active {
   background: #5cefff;
   color: #000;
 }
 
-.flipp-overlay {
+.cb-overlay {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
@@ -540,60 +550,60 @@ async function copyShareUrl() {
   padding: 16px;
   text-align: center;
 }
-.flipp-overlay.flipp-tappable {
+.cb-overlay.cb-tappable {
   pointer-events: auto;
   cursor: pointer;
 }
 
-.flipp-overlay-main {
+.cb-overlay-main {
   font-size: 28px;
   text-shadow: 4px 4px 0 #000;
-  animation: flipp-blink 0.6s steps(2, end) infinite;
+  animation: cb-blink 0.6s steps(2, end) infinite;
 }
-.flipp-overlay-huge {
+.cb-overlay-huge {
   font-size: 96px;
   text-shadow: 6px 6px 0 #000;
-  animation: flipp-pulse 0.4s ease-out;
+  animation: cb-pulse 0.4s ease-out;
 }
 
-.flipp-overlay-sub {
+.cb-overlay-sub {
   font-size: 10px;
   text-shadow: 2px 2px 0 #000;
-  animation: flipp-blink 0.9s steps(2, end) infinite;
+  animation: cb-blink 0.9s steps(2, end) infinite;
 }
 
-@keyframes flipp-blink {
+@keyframes cb-blink {
   0% { opacity: 1; }
   50% { opacity: 0.4; }
   100% { opacity: 1; }
 }
-@keyframes flipp-pulse {
+@keyframes cb-pulse {
   0%   { transform: scale(0.4); opacity: 0; }
   50%  { transform: scale(1.2); opacity: 1; }
   100% { transform: scale(1.0); opacity: 1; }
 }
 
 /* Smash bonus flash midt på skjermen */
-.flipp-smash-flash {
+.cb-smash-flash {
   position: absolute;
   top: 30%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: flipp-smash-rise 1.5s ease-out forwards;
+  animation: cb-smash-rise 1.5s ease-out forwards;
 }
-.flipp-smash-text {
+.cb-smash-text {
   font-size: 36px;
   color: #ffe24d;
   text-shadow: 4px 4px 0 #b91c1c, 8px 8px 0 #000;
 }
-.flipp-smash-sub {
+.cb-smash-sub {
   font-size: 16px;
   color: #ff3b3b;
   margin-top: 0.4em;
   text-shadow: 3px 3px 0 #000;
 }
-@keyframes flipp-smash-rise {
+@keyframes cb-smash-rise {
   0%   { transform: translate(-50%, 50%); opacity: 0; }
   20%  { transform: translate(-50%, -50%); opacity: 1; }
   80%  { transform: translate(-50%, -80%); opacity: 1; }
@@ -601,15 +611,15 @@ async function copyShareUrl() {
 }
 
 /* Multiball-flash midt på skjermen — eksplosivt 8-bit-stil tekst */
-.flipp-multiball-flash {
+.cb-multiball-flash {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: flipp-multiball-shake 2s ease-out forwards;
+  animation: cb-multiball-shake 2s ease-out forwards;
 }
-.flipp-multiball-text {
+.cb-multiball-text {
   font-size: 56px;
   color: #fde047;
   text-shadow:
@@ -617,9 +627,9 @@ async function copyShareUrl() {
     8px 8px 0 #ef4444,
     12px 12px 0 #000;
   letter-spacing: 0.08em;
-  animation: flipp-multiball-pulse 0.25s steps(2, end) infinite;
+  animation: cb-multiball-pulse 0.25s steps(2, end) infinite;
 }
-@keyframes flipp-multiball-shake {
+@keyframes cb-multiball-shake {
   0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
   15%  { transform: translate(-50%, -50%) scale(1.4); opacity: 1; }
   20%  { transform: translate(-52%, -50%) scale(1.2); opacity: 1; }
@@ -628,22 +638,22 @@ async function copyShareUrl() {
   85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(1.2); opacity: 0; }
 }
-@keyframes flipp-multiball-pulse {
+@keyframes cb-multiball-pulse {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.4); }
   100% { filter: brightness(1.0); }
 }
 
 /* v7.4.3 Miniball-flash — lyserosa, energisk vibrating tekst */
-.flipp-mini-flash {
+.cb-mini-flash {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: flipp-mini-burst 2s ease-out forwards;
+  animation: cb-mini-burst 2s ease-out forwards;
 }
-.flipp-mini-text {
+.cb-mini-text {
   font-size: 52px;
   color: #ff77c8;
   text-shadow:
@@ -651,16 +661,16 @@ async function copyShareUrl() {
     6px 6px 0 #4a044e,
     9px 9px 0 #000;
   letter-spacing: 0.09em;
-  animation: flipp-multiball-pulse 0.18s steps(2, end) infinite;
+  animation: cb-multiball-pulse 0.18s steps(2, end) infinite;
 }
-.flipp-mini-sub {
+.cb-mini-sub {
   font-size: 12px;
   color: #fbcfe8;
   margin-top: 0.4em;
   letter-spacing: 0.16em;
   text-shadow: 2px 2px 0 #000;
 }
-@keyframes flipp-mini-burst {
+@keyframes cb-mini-burst {
   0%   { transform: translate(-50%, -50%) scale(0.1) rotate(-8deg); opacity: 0; }
   12%  { transform: translate(-50%, -50%) scale(1.5) rotate( 4deg); opacity: 1; }
   18%  { transform: translate(-52%, -50%) scale(1.25) rotate(-3deg); opacity: 1; }
@@ -671,15 +681,15 @@ async function copyShareUrl() {
 }
 
 /* v7.4.3 CurveInvaders-flash — alien-grønn, monospace-vibe + flicker */
-.flipp-invader-flash {
+.cb-invader-flash {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: flipp-invader-march 2.2s ease-out forwards;
+  animation: cb-invader-march 2.2s ease-out forwards;
 }
-.flipp-invader-text {
+.cb-invader-text {
   font-size: 44px;
   color: #4ade80;
   text-shadow:
@@ -687,16 +697,16 @@ async function copyShareUrl() {
     6px 6px 0 #052e16,
     9px 9px 0 #000;
   letter-spacing: 0.1em;
-  animation: flipp-invader-flicker 0.5s steps(3, end) infinite;
+  animation: cb-invader-flicker 0.5s steps(3, end) infinite;
 }
-.flipp-invader-sub {
+.cb-invader-sub {
   font-size: 11px;
   color: #86efac;
   margin-top: 0.6em;
   letter-spacing: 0.22em;
   text-shadow: 2px 2px 0 #000;
 }
-@keyframes flipp-invader-march {
+@keyframes cb-invader-march {
   0%   { transform: translate(-150%, -50%) scale(1.0); opacity: 0; }
   20%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   40%  { transform: translate(-46%, -50%) scale(1.05); opacity: 1; }
@@ -704,7 +714,7 @@ async function copyShareUrl() {
   80%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   100% { transform: translate(150%, -50%) scale(1.0); opacity: 0; }
 }
-@keyframes flipp-invader-flicker {
+@keyframes cb-invader-flicker {
   0%   { filter: brightness(1.0) contrast(1.0); }
   33%  { filter: brightness(1.3) contrast(1.2); }
   66%  { filter: brightness(0.9) contrast(0.95); }
@@ -713,22 +723,22 @@ async function copyShareUrl() {
 
 /* Chain-flash — vises når multiball-cascade clearer et level (v7.3.7).
    Stiger fra bunn med rainbow-pulserende tekst, scaler med chain-dybde. */
-.flipp-chain-flash {
+.cb-chain-flash {
   position: absolute;
   top: 38%; left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  animation: flipp-chain-burst 1.8s ease-out forwards;
+  animation: cb-chain-burst 1.8s ease-out forwards;
 }
-.flipp-chain-mini {
+.cb-chain-mini {
   font-size: 14px;
   color: #5cefff;
   letter-spacing: 0.1em;
   text-shadow: 2px 2px 0 #000;
   margin-bottom: 0.4em;
 }
-.flipp-chain-text {
+.cb-chain-text {
   font-size: 48px;
   color: #fde047;
   text-shadow:
@@ -737,16 +747,16 @@ async function copyShareUrl() {
     9px 9px 0 #a855f7,
     12px 12px 0 #000;
   letter-spacing: 0.06em;
-  animation: flipp-chain-pulse 0.2s steps(2, end) infinite;
+  animation: cb-chain-pulse 0.2s steps(2, end) infinite;
 }
-.flipp-chain-sub {
+.cb-chain-sub {
   font-size: 22px;
   color: #4ade80;
   margin-top: 0.5em;
   text-shadow: 3px 3px 0 #000;
   letter-spacing: 0.04em;
 }
-@keyframes flipp-chain-burst {
+@keyframes cb-chain-burst {
   0%   { transform: translate(-50%, 30%) scale(0.3); opacity: 0; }
   15%  { transform: translate(-50%, -50%) scale(1.3); opacity: 1; }
   20%  { transform: translate(-52%, -50%) scale(1.15); opacity: 1; }
@@ -755,14 +765,14 @@ async function copyShareUrl() {
   85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   100% { transform: translate(-50%, -110%) scale(1.1); opacity: 0; }
 }
-@keyframes flipp-chain-pulse {
+@keyframes cb-chain-pulse {
   0%   { filter: brightness(1.0) hue-rotate(0deg); }
   50%  { filter: brightness(1.5) hue-rotate(20deg); }
   100% { filter: brightness(1.0) hue-rotate(0deg); }
 }
 
 /* Perk-select overlay — vises ved level-clear hvert 3. level */
-.flipp-perk-overlay {
+.cb-perk-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
@@ -774,24 +784,24 @@ async function copyShareUrl() {
   gap: 1em;
   padding: 1em;
 }
-.flipp-perk-title {
+.cb-perk-title {
   font-size: 22px;
   letter-spacing: 0.1em;
   text-shadow: 3px 3px 0 #000;
 }
-.flipp-perk-sub {
+.cb-perk-sub {
   font-size: 11px;
   letter-spacing: 0.1em;
   text-shadow: 2px 2px 0 #000;
   margin-bottom: 0.5em;
 }
-.flipp-perk-grid {
+.cb-perk-grid {
   display: flex;
   flex-direction: column;
   gap: 0.7em;
   width: min(320px, 90%);
 }
-.flipp-perk-btn {
+.cb-perk-btn {
   font-family: inherit;
   background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
   color: #fff;
@@ -805,22 +815,22 @@ async function copyShareUrl() {
   cursor: pointer;
   transition: transform 80ms, filter 80ms;
 }
-.flipp-perk-btn:active {
+.cb-perk-btn:active {
   transform: scale(0.98);
   filter: brightness(1.3);
 }
-.flipp-perk-icon {
+.cb-perk-icon {
   grid-row: 1 / span 2;
   font-size: 26px;
   text-align: center;
 }
-.flipp-perk-label {
+.cb-perk-label {
   font-size: 10px;
   letter-spacing: 0.05em;
   color: #ffe24d;
   text-shadow: 1px 1px 0 #000;
 }
-.flipp-perk-desc {
+.cb-perk-desc {
   font-size: 8px;
   letter-spacing: 0.05em;
   color: #cbd5e1;
@@ -828,7 +838,7 @@ async function copyShareUrl() {
 }
 
 /* DEBUG-panel (v7.3.5 — fjern når DEBUG_MULTIBALL settes til false) */
-.flipp-dbg-toggle {
+.cb-dbg-toggle {
   position: absolute;
   top: 56px;
   right: 8px;
@@ -842,7 +852,7 @@ async function copyShareUrl() {
   cursor: pointer;
   z-index: 60;
 }
-.flipp-dbg-panel {
+.cb-dbg-panel {
   position: absolute;
   top: 88px;
   right: 8px;
@@ -859,16 +869,16 @@ async function copyShareUrl() {
   flex-direction: column;
   gap: 4px;
 }
-.flipp-dbg-row {
+.cb-dbg-row {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
 }
-.flipp-dbg-row span {
+.cb-dbg-row span {
   white-space: nowrap;
 }
-.flipp-dbg-force {
+.cb-dbg-force {
   pointer-events: auto;
   background: #7f1d1d;
   color: #fff;
@@ -879,8 +889,8 @@ async function copyShareUrl() {
   cursor: pointer;
   margin-top: 2px;
 }
-.flipp-dbg-force:active { background: #ef4444; }
-.flipp-dbg-log {
+.cb-dbg-force:active { background: #ef4444; }
+.cb-dbg-log {
   border-top: 1px dashed #444;
   padding-top: 4px;
   max-height: 140px;
@@ -892,15 +902,15 @@ async function copyShareUrl() {
   font-size: 9px;
   line-height: 1.2;
 }
-.flipp-dbg-line {
+.cb-dbg-line {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.flipp-dbg-empty { color: #666; font-style: italic; }
+.cb-dbg-empty { color: #666; font-style: italic; }
 
 /* ── v7.4.0 mode-select-overlay (FØR første level) ───────────────────────── */
-.flipp-mode-overlay {
+.cb-mode-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.88);
@@ -913,24 +923,24 @@ async function copyShareUrl() {
   padding: 1em;
   z-index: 70;
 }
-.flipp-mode-title {
+.cb-mode-title {
   font-size: 22px;
   letter-spacing: 0.1em;
   text-shadow: 3px 3px 0 #000;
 }
-.flipp-mode-sub {
+.cb-mode-sub {
   font-size: 10px;
   letter-spacing: 0.1em;
   text-shadow: 2px 2px 0 #000;
   margin-bottom: 0.6em;
 }
-.flipp-mode-grid {
+.cb-mode-grid {
   display: flex;
   flex-direction: column;
   gap: 0.7em;
   width: min(320px, 90%);
 }
-.flipp-mode-btn {
+.cb-mode-btn {
   font-family: inherit;
   background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
   color: #fff;
@@ -944,44 +954,44 @@ async function copyShareUrl() {
   cursor: pointer;
   transition: transform 80ms, filter 80ms;
 }
-.flipp-mode-btn:active:not(:disabled) {
+.cb-mode-btn:active:not(:disabled) {
   transform: scale(0.98);
   filter: brightness(1.3);
 }
-.flipp-mode-btn:disabled {
+.cb-mode-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.flipp-mode-tour {
+.cb-mode-tour {
   background: linear-gradient(135deg, #4a044e 0%, #db2777 100%);
   border-color: #fde047;
 }
-.flipp-mode-icon {
+.cb-mode-icon {
   grid-row: 1 / span 2;
   font-size: 28px;
   text-align: center;
 }
-.flipp-mode-label {
+.cb-mode-label {
   font-size: 12px;
   letter-spacing: 0.06em;
   color: #ffe24d;
   text-shadow: 1px 1px 0 #000;
 }
-.flipp-mode-desc {
+.cb-mode-desc {
   font-size: 8px;
   letter-spacing: 0.05em;
   color: #cbd5e1;
   text-transform: lowercase;
 }
-.flipp-mode-desc-disabled { color: #f87171; text-transform: none; }
+.cb-mode-desc-disabled { color: #f87171; text-transform: none; }
 
 /* ── v7.4.0 game-over actions (RESTART + DEL) ────────────────────────────── */
-.flipp-go-actions {
+.cb-go-actions {
   display: flex;
   gap: 12px;
   margin-top: 0.8em;
 }
-.flipp-go-btn {
+.cb-go-btn {
   pointer-events: auto;
   font-family: inherit;
   font-size: 11px;
@@ -992,12 +1002,12 @@ async function copyShareUrl() {
   cursor: pointer;
   transition: filter 80ms, transform 80ms;
 }
-.flipp-go-btn:active { transform: scale(0.96); filter: brightness(1.4); }
-.flipp-go-restart { color: #5cefff; }
-.flipp-go-share   { color: #fde047; }
+.cb-go-btn:active { transform: scale(0.96); filter: brightness(1.4); }
+.cb-go-restart { color: #5cefff; }
+.cb-go-share   { color: #fde047; }
 
 /* ── v7.4.0 turnerings-snarvei (level-clear) ─────────────────────────────── */
-.flipp-tournament-next {
+.cb-tournament-next {
   pointer-events: auto;
   margin-top: 1.2em;
   font-family: inherit;
@@ -1016,8 +1026,8 @@ async function copyShareUrl() {
   max-width: 260px;
   transition: filter 80ms, transform 80ms;
 }
-.flipp-tournament-next:active { transform: scale(0.97); filter: brightness(1.3); }
-.flipp-tournament-next-name {
+.cb-tournament-next:active { transform: scale(0.97); filter: brightness(1.3); }
+.cb-tournament-next-name {
   font-size: 9px;
   color: #fff;
   text-transform: uppercase;
@@ -1029,7 +1039,7 @@ async function copyShareUrl() {
 }
 
 /* ── v7.4.0 share-modal ──────────────────────────────────────────────────── */
-.flipp-share-overlay {
+.cb-share-overlay {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
@@ -1040,7 +1050,7 @@ async function copyShareUrl() {
   z-index: 80;
   padding: 1em;
 }
-.flipp-share-card {
+.cb-share-card {
   width: min(360px, 100%);
   background: #0b1019;
   border: 2px solid #fde047;
@@ -1049,23 +1059,23 @@ async function copyShareUrl() {
   flex-direction: column;
   gap: 10px;
 }
-.flipp-share-title {
+.cb-share-title {
   font-size: 16px;
   letter-spacing: 0.08em;
   text-shadow: 2px 2px 0 #000;
 }
-.flipp-share-sub {
+.cb-share-sub {
   font-size: 10px;
   letter-spacing: 0.06em;
   text-shadow: 1px 1px 0 #000;
 }
-.flipp-share-label {
+.cb-share-label {
   font-size: 9px;
   color: #cbd5e1;
   letter-spacing: 0.08em;
   margin-top: 4px;
 }
-.flipp-share-input {
+.cb-share-input {
   font-family: inherit;
   font-size: 28px;
   letter-spacing: 0.4em;
@@ -1077,14 +1087,14 @@ async function copyShareUrl() {
   text-transform: uppercase;
   outline: none;
 }
-.flipp-share-input:focus { border-color: #fde047; }
-.flipp-share-url-wrap {
+.cb-share-input:focus { border-color: #fde047; }
+.cb-share-url-wrap {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 4px;
 }
-.flipp-share-url {
+.cb-share-url {
   font-family: 'Courier New', monospace;
   font-size: 10px;
   color: #5cefff;
@@ -1095,7 +1105,7 @@ async function copyShareUrl() {
   user-select: all;
   line-height: 1.35;
 }
-.flipp-share-copy {
+.cb-share-copy {
   font-family: inherit;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -1106,8 +1116,8 @@ async function copyShareUrl() {
   cursor: pointer;
   transition: filter 80ms, transform 80ms;
 }
-.flipp-share-copy:active { transform: scale(0.97); filter: brightness(1.4); }
-.flipp-share-hint {
+.cb-share-copy:active { transform: scale(0.97); filter: brightness(1.4); }
+.cb-share-hint {
   font-size: 9px;
   color: #94a3b8;
   letter-spacing: 0.05em;
@@ -1115,7 +1125,7 @@ async function copyShareUrl() {
   padding: 10px;
   border: 1px dashed #334;
 }
-.flipp-share-close {
+.cb-share-close {
   font-family: inherit;
   font-size: 10px;
   letter-spacing: 0.08em;
@@ -1126,5 +1136,5 @@ async function copyShareUrl() {
   cursor: pointer;
   margin-top: 4px;
 }
-.flipp-share-close:active { color: #fff; border-color: #94a3b8; }
+.cb-share-close:active { color: #fff; border-color: #94a3b8; }
 </style>

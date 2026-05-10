@@ -247,13 +247,75 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.4.3 -->
+          <!-- 8.0.0 -->
           <div class="relative">
-            <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
+            <div class="absolute -left-[1.3rem] top-1 w-4 h-4 rounded-full bg-fuchsia-400 ring-4 ring-fuchsia-200/40" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white text-base">7.4.3</span>
-                <span class="text-emerald-300/85">&mdash; nye spawn-modi: Miniball + CurveInvaders</span>
+                <span class="font-semibold text-white text-lg">8.0.0</span>
+                <span class="text-fuchsia-300/90">&mdash; CurveInvaders &amp; i18n 🎷</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <div class="mt-3 text-xs text-white/65 leading-relaxed space-y-3">
+                <p>
+                  Major-bump som setter punktum for en intens formiddagsøkt. Spillet har f&aring;tt
+                  nytt navn, fullstendig rebrandet kodebase, lokaliserings-modul, og en lang rekke
+                  fysikk- og UX-forbedringer fra 7.4-serien.
+                </p>
+                <div>
+                  <div class="text-fuchsia-300/90 font-semibold mb-1">Brand &amp; lokalisering</div>
+                  <ul class="space-y-1 list-disc list-inside text-white/55">
+                    <li>Spillet heter n&aring; <strong class="text-white">CurveInvaders</strong> (brand). Tidligere FlippKart (v7-) → CurveBall (codename, brukt i kodebase) → CurveInvaders (brand) i samme major</li>
+                    <li>Ny lett-vekt i18n-modul (<code>src/lib/i18n.js</code>) med <code>t(key, params)</code>-helper, <code>setLocale()</code>, og persistert valg i <code>localStorage.locale</code>. Norsk bokm&aring;l er default; engelsk-stub f&oslash;lger med</li>
+                    <li>Alle synlige UI-strenger i HUD, mode-select, share-modal, perks, challenge-banner og MapView-knappen kommer fra dictionary &mdash; ingen hardkodet brukertekst igjen i template-ene for spillet</li>
+                    <li>Codename / brand-separasjon: filer (<code>useCurveBall.js</code>, <code>CurveBallHUD.vue</code>), CSS (<code>.cb-*</code>), storage-keys (<code>curveball-*</code>) bruker codename. Brand-navnet er kun en streng i i18n-katalogen &mdash; trivielt &aring; endre uten kode-diff senere</li>
+                    <li>Storage-keys migrert med graceful fallback: leser b&aring;de gammel og ny n&oslash;kkel, skriver kun ny. Eksisterende highscores og turneringer-i-progress overlever rebrand-deploy</li>
+                  </ul>
+                </div>
+                <div>
+                  <div class="text-fuchsia-300/90 font-semibold mb-1">Spawn-modi (multiball-paletten)</div>
+                  <ul class="space-y-1 list-disc list-inside text-white/55">
+                    <li><strong>Multiball</strong> (fra L1): klassisk &mdash; 3 standard baller p&aring; random drop-radius</li>
+                    <li><strong>Miniball</strong> (fra L3): 12 sm&aring; rosa baller med 2&times; fart, 2&times; poeng, lysere klang ved treff</li>
+                    <li><strong>Invaders</strong> (fra L6): 3-12 gr&oslash;nne baller spawner i sirkel-formasjon rundt sentral peak/kolle, holder orbit i 3 sek (kinematisk, ignorerer gravity og bumpers), s&aring; marsjerer mot en valgt ytterkant i formasjon med &plusmn;20% energi-variasjon &rarr; spredningen blir gradvis kaotisk. Flash-tekst forkortet fra &laquo;CURVE INVADERS!&raquo; til &laquo;INVADERS!&raquo; for &aring; unng&aring; kollisjon med spillnavnet</li>
+                    <li>Hard cap p&aring; 16 baller i lufta. Spawn-i-spawn-cascade er forhindret via <code>canExplode</code>-gate &mdash; bare normale baller tikker bumper-counter</li>
+                  </ul>
+                </div>
+                <div>
+                  <div class="text-fuchsia-300/90 font-semibold mb-1">Turneringsmodus &amp; deling</div>
+                  <ul class="space-y-1 list-disc list-inside text-white/55">
+                    <li>Turneringsmodus velges f&oslash;r f&oslash;rste level. Aktivert &rarr; &laquo;Neste kart&raquo;-snarvei vises ved level-clear; level/score/lives/perks/paddle-vekst b&aelig;res gjennom kart-bytte via sessionStorage</li>
+                    <li>Delingslenke ved game over: 3-bokstavers navn + URL med kart-koordinater, kartst&oslash;rrelse, ekvidistanse &rarr; kopier til clipboard. Mottaker lander i kart-velgeren med pre-utfylt sentrum/halfKm/equidistanse + utfordrer-banner</li>
+                    <li>Mottaker av delingslenke: alle valg l&aring;st (read-only), egen «Start CurveInvaders»-CTA, X-knapp som kansellerer utfordringen</li>
+                    <li>Auto-start: bygg kart fra share-URL &rarr; CurveInvaders starter umiddelbart i ny MapView med Curves-tema aktivt &mdash; ingen Curves-tema-easter-egg-tap n&oslash;dvendig</li>
+                  </ul>
+                </div>
+                <div>
+                  <div class="text-fuchsia-300/90 font-semibold mb-1">Fysikk &amp; bane</div>
+                  <ul class="space-y-1 list-disc list-inside text-white/55">
+                    <li>Bumpers spawnes p&aring; alle levels (1-10 random count), tidligere kun partalls-levels (1-5)</li>
+                    <li>Level-m&aring;l-kurven gror jevnere: line&aelig;r base + svak kvadratisk hale (L1=500, L5=3340, L10=8550, L20=25270)</li>
+                    <li>Multiball som ebber ut til &eacute;n ball: settes <code>canExplode=true</code> igjen &mdash; stillness-explode + ny multiball fra bumper kan trigges p&aring; nytt</li>
+                    <li>HIGHSCORE/SCORE bruker tusenskille (<code>toLocaleString</code>) for store tall i stedet for scientific notation</li>
+                    <li>Curves-tema aktiveres ALLTID n&aring;r CurveInvaders starter (manuell start, share-link, turneringsmodus, kart-bytte i turnering)</li>
+                  </ul>
+                </div>
+                <div>
+                  <div class="text-white/45 italic text-[11px] pt-2 border-t border-white/10">
+                    Fantastisk kreativ &oslash;kt &mdash; takk for samspillet 🎷
+                  </div>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <!-- 7.4.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.4.3</span>
+                <span class="text-white/50">&mdash; nye spawn-modi: Miniball + CurveInvaders</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
               </summary>
               <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">

@@ -15,9 +15,9 @@ function ballR(b) { return b?.r ?? ballRadius.value }
 // v7.4.3: ulike spawn-modi får ulik fyll. Mini = lyserød med høy luminans
 // (signaliserer "energi"), invader = grønn-glød (Space Invaders-feel).
 function ballFill(b) {
-  if (b.mode === 'mini') return 'url(#flipp-mini)'
-  if (b.mode === 'invader') return 'url(#flipp-invader)'
-  return 'url(#flipp-chrome)'
+  if (b.mode === 'mini') return 'url(#cb-mini)'
+  if (b.mode === 'invader') return 'url(#cb-invader)'
+  return 'url(#cb-chrome)'
 }
 
 // Subtil grunnfarge-shift per level (v7.2.4). Level 1 = klassisk chrome,
@@ -36,7 +36,7 @@ const ballGradient = computed(() => {
 
 const emit = defineEmits(['drop'])
 
-// Trail-sluttgammel: TRAIL_LEN fra useFlippkart. Holder seg syncet via
+// Trail-sluttgammel: TRAIL_LEN fra useCurveBall. Holder seg syncet via
 // at hver slot har age 0..TRAIL_LEN.
 const trailMaxAge = 14
 
@@ -98,24 +98,24 @@ function onBallTap(b) {
        preserveAspectRatio="xMidYMid meet"
        @click="onClick">
     <defs>
-      <radialGradient id="flipp-chrome" cx="35%" cy="30%">
+      <radialGradient id="cb-chrome" cx="35%" cy="30%">
         <stop offset="0%" :stop-color="ballGradient.inner"/>
         <stop offset="35%" :stop-color="ballGradient.mid"/>
         <stop offset="100%" :stop-color="ballGradient.outer"/>
       </radialGradient>
       <!-- v7.4.3: miniball — energisk lyserosa/cyan glød (signaliserer dobbel fart) -->
-      <radialGradient id="flipp-mini" cx="35%" cy="30%">
+      <radialGradient id="cb-mini" cx="35%" cy="30%">
         <stop offset="0%"  stop-color="#ffe4f0"/>
         <stop offset="40%" stop-color="#ff77c8"/>
         <stop offset="100%" stop-color="#7a1f4e"/>
       </radialGradient>
       <!-- v7.4.3: invader — alien-grønn med dyp midtpunkt (Space Invaders-feel) -->
-      <radialGradient id="flipp-invader" cx="35%" cy="30%">
+      <radialGradient id="cb-invader" cx="35%" cy="30%">
         <stop offset="0%"  stop-color="#d8ffe2"/>
         <stop offset="40%" stop-color="#22c55e"/>
         <stop offset="100%" stop-color="#0f3a1c"/>
       </radialGradient>
-      <filter id="flipp-shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <filter id="cb-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="1.5"/>
         <feOffset dx="0.5" dy="1.5" result="shadow"/>
         <feFlood flood-color="#000" flood-opacity="0.45"/>
@@ -232,7 +232,7 @@ function onBallTap(b) {
       <!-- Marble -->
       <circle :cx="b.x" :cy="b.y" :r="ballR(b)"
               :fill="ballFill(b)"
-              filter="url(#flipp-shadow)"
+              filter="url(#cb-shadow)"
               :style="{
                 filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '',
                 cursor: 'pointer',

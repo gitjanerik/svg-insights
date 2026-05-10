@@ -8,7 +8,7 @@ import { ref, unref, onMounted, onUnmounted } from 'vue'
  * dobbeltklikk/dobbel-tap zoomer 2x på treffpunkt med kort transition.
  *
  * v7.2.2: options.enabled (ref|computed|bool) — handlere skipper input når
- * false. Brukes f.eks. av Flippkart-spillet for å fryse pan/zoom/rotasjon.
+ * false. Brukes f.eks. av CurveBall-spillet for å fryse pan/zoom/rotasjon.
  */
 export function usePinchZoom(elementRef, options = {}) {
   const enabledOpt = options.enabled
