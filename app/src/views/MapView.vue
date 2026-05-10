@@ -167,12 +167,21 @@ function updateMapRect() {
     offsetX = 0
     offsetY = (r.height - contentH) / 2
   }
+  // v8.0.1: HUD-elementer (paddle-tykkelse, topp-bar, hjerter, exit-knapp)
+  // skal skaleres med kart-utsnittets faktiske skjerm-størrelse. Tidligere
+  // var alt fast i CSS-px slik at små kart fikk store paddles. Referansen
+  // 420px tilsvarer ca. en typisk 4×4km-mapRect på telefon i portrait — der
+  // designet var tunet — så scale=1 der. Clampes så HUD aldri blir mikro
+  // eller dominerer hele kartet.
+  const minDim = Math.min(contentW, contentH)
+  const hudScale = Math.max(0.55, Math.min(1.3, minDim / 420))
   mapRect.value = {
     top:    r.top + offsetY,
     left:   r.left + offsetX,
     width:  contentW,
     height: contentH,
     pxPerM: contentW / meta.value.widthM,    // CSS-px per viewBox-meter
+    hudScale,
   }
 }
 
@@ -1303,6 +1312,7 @@ onMounted(() => {
     <CurveBallHUD :flipp="curveball"
                   :tournament-next="tournamentNextMap"
                   :share-info="cbShareInfo"
+                  :map-rect="mapRect"
                   @restart="onCurveBallRestart"
                   @continue="onCurveBallContinue"
                   @exit="stopCurveBall"

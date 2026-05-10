@@ -733,9 +733,10 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start CurveInvaders» —
+    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start Curve Invaders» —
          samme handler kjører bygg + auto-start-flagg, så MapView lander direkte
-         i spillet med Curves-tema aktivert. v8.0.0: tekst kommer fra i18n. -->
+         i spillet med Curves-tema aktivert. v8.0.0: tekst kommer fra i18n.
+         v8.0.1: brand-skrivemåte endret til «Curve Invaders» (med mellomrom). -->
     <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
               class="w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2

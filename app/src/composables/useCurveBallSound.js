@@ -2,7 +2,8 @@
  * CurveBall-lyd — chiptune-style effekter via Web Audio API.
  *
  * (v8.0.0: rebrandet fra useFlippkartSound — funksjons-API uendret. Filen
- * heter CurveBall etter codename; brand-navnet i UI er CurveInvaders.)
+ * heter CurveBall etter codename; brand-navnet i UI er Curve Invaders
+ * (med mellomrom siden v8.0.1).)
  *
  * Ingen eksterne biblioteker. Lazy-init av AudioContext på første bruk
  * (mange browsere krever user-gesture før AudioContext kan starte).
@@ -230,7 +231,7 @@ export function playMiniHit() {
 }
 
 /**
- * v7.4.3 CurveInvaders spawn — Space Invaders-aktig "march"-introduksjon.
+ * v7.4.3 Curve Invaders spawn — Space Invaders-aktig "march"-introduksjon.
  * Lavt menacing brum + 4 stigende toner i halvnøkkel.
  */
 export function playInvaderSpawn() {

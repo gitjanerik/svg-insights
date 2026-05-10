@@ -8,7 +8,13 @@ const props = defineProps({
 })
 
 // Tykkelse på flipper (perpendikulært til kant), i CSS-piksler.
-const PAD_THICKNESS = 35
+// v8.0.1: skaler etter mapRect.hudScale så små kart får tynne paddles og
+// store kart får tykkere. Base-verdi 35px svarer til scale=1 (≈ 4×4km).
+const PAD_THICKNESS_BASE = 35
+function padThickness() {
+  const s = props.mapRect?.hudScale
+  return Number.isFinite(s) ? PAD_THICKNESS_BASE * s : PAD_THICKNESS_BASE
+}
 
 // Hvor mye drag-bevegelse før vi tolker det som drag (ikke tap).
 // Under terskel = tap → energize.
@@ -27,13 +33,14 @@ function paddleStyle(edge) {
 
   const insetM = props.flipp.FLIPPER_INSET_M ?? 280
   const insetPx = (r.pxPerM ?? 0.3) * insetM
+  const thick = padThickness()
 
   if (edge === 'top') {
     return {
-      top:    `${r.top + insetPx - PAD_THICKNESS}px`,
+      top:    `${r.top + insetPx - thick}px`,
       left:   `${r.left + padCenter - padLen / 2}px`,
       width:  `${padLen}px`,
-      height: `${PAD_THICKNESS}px`,
+      height: `${thick}px`,
     }
   }
   if (edge === 'bottom') {
@@ -41,21 +48,21 @@ function paddleStyle(edge) {
       top:    `${r.top + r.height - insetPx}px`,
       left:   `${r.left + padCenter - padLen / 2}px`,
       width:  `${padLen}px`,
-      height: `${PAD_THICKNESS}px`,
+      height: `${thick}px`,
     }
   }
   if (edge === 'left') {
     return {
       top:    `${r.top + padCenter - padLen / 2}px`,
-      left:   `${r.left + insetPx - PAD_THICKNESS}px`,
-      width:  `${PAD_THICKNESS}px`,
+      left:   `${r.left + insetPx - thick}px`,
+      width:  `${thick}px`,
       height: `${padLen}px`,
     }
   }
   return {
     top:    `${r.top + padCenter - padLen / 2}px`,
     left:   `${r.left + r.width - insetPx}px`,
-    width:  `${PAD_THICKNESS}px`,
+    width:  `${thick}px`,
     height: `${padLen}px`,
   }
 }

@@ -11,7 +11,8 @@ import {
  * CurveBall — fysikk og state machine for marble-spillet.
  *
  * (v8.0.0: rebrandet fra useFlippkart — semantikk uendret. Brand-navnet i
- * UI er CurveInvaders, men codename i kildekoden er CurveBall.)
+ * UI er Curve Invaders (med mellomrom siden v8.0.1), men codename i
+ * kildekoden er CurveBall.)
  *
  * v7.2.6 multi-ball:
  *   - balls[] erstatter single ball
@@ -111,6 +112,39 @@ export function useCurveBall() {
   const STILLNESS_EXPLODE_S = 3.0    // når eksplosjon trigger (primary ball)
   const MULTIBALL_STUCK_S = 6.0      // når multi-ball balls bare drukner stille
   const MULTIBALL_COUNT = 3
+
+  // v8.0.2: maks antall stillness-trigget multiball-eksplosjoner per level.
+  // På bratte kart kunne ballen havne i en dal med slik geometri at den
+  // alltid endte i samme valley, eksploderte → multiball → multiball-baller
+  // drukner → primary lever videre, blir stuck igjen → ny eksplosjon →
+  // cascade. Cap'er antallet til 1 per level. Påfølgende stillness-events
+  // gir en «rescue-kick» (kraftig kast mot nærmeste bumper eller oppoverbakke)
+  // i stedet for ny spawn-burst.
+  const STILLNESS_EXPLODE_PER_LEVEL_CAP = 1
+  let stillnessExplodeCount = 0
+
+  // v8.0.2: maksimal kulehastighet med myk level-progresjon. Flate kart med
+  // få høydekurver lot ballen akselerere ubegrenset (paddle BOUNCE_AMPLIFY=1.1
+  // og bumper-bounce ×1.15 komponerte uten friksjons-motstand på flatmark).
+  // Resultatet ble en ball så rask at den var praktisk talt umulig å treffe
+  // med bumpere eller paddles. Cap kalkulerer mykt asymptotisk:
+  //   speedCap(n) = BASE + (MAX − BASE) × (1 − exp(−(n−1)/K))
+  // L1: 650, L5: 781, L10: 871, L20: 953, L∞: 1000.
+  const BALL_SPEED_BASE = 650
+  const BALL_SPEED_MAX  = 1000
+  const BALL_SPEED_LEVEL_K = 10
+  function maxBallSpeed(n) {
+    const lv = Math.max(1, n)
+    const growth = BALL_SPEED_MAX - BALL_SPEED_BASE
+    return BALL_SPEED_BASE + growth * (1 - Math.exp(-(lv - 1) / BALL_SPEED_LEVEL_K))
+  }
+  function clampBallSpeed(b, cap) {
+    const v2 = b.vx * b.vx + b.vy * b.vy
+    if (v2 <= cap * cap) return
+    const k = cap / Math.sqrt(v2)
+    b.vx *= k
+    b.vy *= k
+  }
 
   // balls = aktive baller.
   const balls = reactive([])
@@ -286,6 +320,9 @@ export function useCurveBall() {
       orbitRadius: opts.orbitRadius,
       orbitAngle:  opts.orbitAngle,
       orbitSpeed:  opts.orbitSpeed,         // rad/s
+      // v8.0.2: ekstra invader-felter for kontur-følging
+      orbitDir:    opts.orbitDir ?? 1,      // +1 CCW, -1 CW (rotasjon rundt peak)
+      orbitTarget: opts.orbitTarget,        // target-elevasjon (m) for kontur-vandring
       orbitT:      opts.orbitT ?? 0,
       breakoutVel: opts.breakoutVel,        // {vx, vy}
     }
@@ -335,9 +372,212 @@ export function useCurveBall() {
     return best
   }
 
+  /**
+   * v8.0.2: ray-cast utover fra peak i `angle`-retning og finn punkt der
+   * elevasjon krysser `targetZ`. Bruker liniær interpolasjon mellom de to
+   * sample-punktene som omslutter targetZ. Returnerer null hvis konturen
+   * ikke krysses innen kart-radius.
+   */
+  function findContourPosition(centerX, centerY, peakZ, targetZ, angle) {
+    if (!dem) return null
+    const maxR = Math.min(bounds.width, bounds.height) * 0.45
+    const step = Math.max(15, Math.min(bounds.width, bounds.height) * 0.01)
+    let lastZ = peakZ
+    let lastR = 0
+    for (let r = step; r <= maxR; r += step) {
+      const x = centerX + Math.cos(angle) * r
+      const y = centerY + Math.sin(angle) * r
+      if (x < 0 || x > bounds.width || y < 0 || y > bounds.height) break
+      const z = sampleElevation(dem, x, y)
+      if (!Number.isFinite(z)) { lastZ = NaN; lastR = r; continue }
+      if (Number.isFinite(lastZ)) {
+        const crossed = (lastZ - targetZ) * (z - targetZ) <= 0
+        if (crossed && lastR < r) {
+          const t = (targetZ - lastZ) / (z - lastZ || 1e-6)
+          const rEx = lastR + (r - lastR) * Math.max(0, Math.min(1, t))
+          return {
+            x: centerX + Math.cos(angle) * rEx,
+            y: centerY + Math.sin(angle) * rEx,
+            elev: targetZ,
+          }
+        }
+      }
+      lastZ = z
+      lastR = r
+    }
+    return null
+  }
+
+  /**
+   * v8.0.2: én tidssteg langs en høydekurve for en invader-ball.
+   * Bruker terrenggradienten: tangent til konturen er perpendikulær på
+   * gradienten. Legger på en liten korreksjon tilbake til ball.orbitTarget-
+   * elevasjon så ballen ikke drifter ut av konturen over tid.
+   *
+   * Fall-tilbake til kinematisk sirkel-orbit hvis gradient er for liten
+   * (flatt sadelpunkt eller DEM-hull).
+   */
+  function stepInvaderContour(b, dt) {
+    const grad = sampleGradient(dem, b.x, b.y)
+    const z = sampleElevation(dem, b.x, b.y)
+    const gLen = Math.hypot(grad.dzdx, grad.dzdy)
+    const speed = b.orbitRadius * b.orbitSpeed   // bevar opprinnelig fart-magnitude
+    if (gLen < 1e-5 || !Number.isFinite(z)) {
+      // Fall tilbake til kinematisk sirkel-orbit
+      b.orbitAngle += b.orbitSpeed * dt * b.orbitDir
+      b.x = b.orbitCenter.x + b.orbitRadius * Math.cos(b.orbitAngle)
+      b.y = b.orbitCenter.y + b.orbitRadius * Math.sin(b.orbitAngle)
+      b.vx = -Math.sin(b.orbitAngle) * b.orbitRadius * b.orbitSpeed * b.orbitDir
+      b.vy =  Math.cos(b.orbitAngle) * b.orbitRadius * b.orbitSpeed * b.orbitDir
+      return
+    }
+    // Tangent til kontur (90° rotasjon av gradient). orbitDir +1 = CCW
+    // (mot klokken når y peker NEDOVER på skjermen, som her), −1 = CW.
+    let tx = -grad.dzdy * b.orbitDir
+    let ty =  grad.dzdx * b.orbitDir
+    const tLen = Math.hypot(tx, ty) || 1
+    tx /= tLen; ty /= tLen
+    // Korreksjons-retning: gradient peker oppoverbakke, så +grad går opp,
+    // −grad ned. Hvis vi er under target, gå opp; over target, gå ned.
+    const dz = b.orbitTarget - z
+    // Soft-clamp korreksjonen: ±1 ved |dz| ≥ 8m, mindre nær target.
+    const corr = Math.max(-1, Math.min(1, dz / 8))
+    const gnx = grad.dzdx / gLen
+    const gny = grad.dzdy / gLen
+    // Blend tangent (hoved-bevegelse) og korreksjon (drift-rettelse)
+    const tangentWeight = 0.85
+    const correctionWeight = 0.15
+    let sx = tx * tangentWeight + gnx * corr * correctionWeight
+    let sy = ty * tangentWeight + gny * corr * correctionWeight
+    const sLen = Math.hypot(sx, sy) || 1
+    sx /= sLen; sy /= sLen
+    b.vx = sx * speed
+    b.vy = sy * speed
+    b.x += b.vx * dt
+    b.y += b.vy * dt
+    // Holdt innenfor kart-bounds (forhindrer at konturen tar oss ut av bbox)
+    const r = b.r ?? BALL_RADIUS_M
+    if (b.x < r) b.x = r
+    else if (b.x > bounds.width - r) b.x = bounds.width - r
+    if (b.y < r) b.y = r
+    else if (b.y > bounds.height - r) b.y = bounds.height - r
+  }
+
+  /**
+   * v8.0.2: Billiard-stil elastiske kollisjoner mellom balls. Like masser
+   * (m = r², så større baller har mer treghet) bytter normal-komponenten av
+   * relativ hastighet og separeres slik at de ikke overlapper.
+   *
+   * Skipper baller i orbit-fase (kinematisk styrt). Hopper også over par
+   * hvor begge er multiball-baller (canExplode=false) med identisk mode
+   * dersom de er innenfor 1 frame fra spawn — ellers ville cluster-spawn
+   * fra explodeBall gi en kaos-spray umiddelbart. Vi sjekker via en
+   * `spawnCooldown` (ms) som telles ned per frame.
+   */
+  function handleBallBallCollisions(speedCap) {
+    const n = balls.length
+    if (n < 2) return
+    for (let i = 0; i < n; i++) {
+      const a = balls[i]
+      if (!a.visible) continue
+      if (a.mode === 'invader' && a.invaderPhase === 'orbit') continue
+      for (let j = i + 1; j < n; j++) {
+        const b = balls[j]
+        if (!b.visible) continue
+        if (b.mode === 'invader' && b.invaderPhase === 'orbit') continue
+        const ra = a.r ?? BALL_RADIUS_M
+        const rb = b.r ?? BALL_RADIUS_M
+        const rsum = ra + rb
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dist2 = dx * dx + dy * dy
+        if (dist2 >= rsum * rsum) continue
+        let nx, ny, dist
+        if (dist2 < 1e-6) {
+          // Eksakt overlapp — separer i tilfeldig retning
+          const ang = Math.random() * Math.PI * 2
+          nx = Math.cos(ang); ny = Math.sin(ang)
+          dist = 0
+        } else {
+          dist = Math.sqrt(dist2)
+          nx = dx / dist; ny = dy / dist
+        }
+        // Separer langs normal
+        const overlap = rsum - dist
+        a.x -= nx * overlap * 0.5
+        a.y -= ny * overlap * 0.5
+        b.x += nx * overlap * 0.5
+        b.y += ny * overlap * 0.5
+        // Elastisk kollisjon, masse = r² (større ball mer treg)
+        const ma = ra * ra
+        const mb = rb * rb
+        const rvx = b.vx - a.vx
+        const rvy = b.vy - a.vy
+        const vAlongN = rvx * nx + rvy * ny
+        if (vAlongN >= 0) continue   // separerer allerede
+        // Impulse for elastisk kollisjon (restitution = 1)
+        const J = (2 * vAlongN) / (ma + mb)
+        a.vx += J * mb * nx
+        a.vy += J * mb * ny
+        b.vx -= J * ma * nx
+        b.vy -= J * ma * ny
+        // Cap etter kollisjon (en pre-cap ball kan dele ut over cap-bevegelse)
+        clampBallSpeed(a, speedCap)
+        clampBallSpeed(b, speedCap)
+        // Stillness skal nullstilles på begge — kollisjon = bevegelse
+        a.stillTime = 0; a.chargeT = 0; a.warnIndex = 0
+        b.stillTime = 0; b.chargeT = 0; b.warnIndex = 0
+      }
+    }
+  }
+
+  /**
+   * v8.0.2: rescue-kick når ballen står stille etter at level-capen for
+   * stillness-multiball er nådd. Sikter mot nærmeste bumper for å gi
+   * spilleren en sjanse til poeng. Hvis ingen bumpers finnes, kastes
+   * den oppoverbakke (mot gradient) eller i tilfeldig retning.
+   */
+  function rescueStuckBall(b) {
+    let dx, dy
+    let nearest = null
+    let nearestD = Infinity
+    for (const bp of bumpers) {
+      const d = Math.hypot(bp.x - b.x, bp.y - b.y)
+      if (d < nearestD) { nearestD = d; nearest = bp }
+    }
+    if (nearest) {
+      dx = nearest.x - b.x
+      dy = nearest.y - b.y
+      const len = Math.hypot(dx, dy) || 1
+      dx /= len; dy /= len
+    } else if (dem) {
+      const grad = sampleGradient(dem, b.x, b.y)
+      const gLen = Math.hypot(grad.dzdx, grad.dzdy)
+      if (gLen > 1e-4) {
+        dx = grad.dzdx / gLen
+        dy = grad.dzdy / gLen
+      } else {
+        const a = Math.random() * Math.PI * 2
+        dx = Math.cos(a); dy = Math.sin(a)
+      }
+    } else {
+      const a = Math.random() * Math.PI * 2
+      dx = Math.cos(a); dy = Math.sin(a)
+    }
+    const speed = BUMPER_BOUNCE_SPEED * 1.2
+    b.vx = dx * speed
+    b.vy = dy * speed
+    b.stillTime = 0
+    b.chargeT = 0
+    b.warnIndex = 0
+    if (b.history) b.history.length = 0
+    dlog('rescue-kick', { speed: +speed.toFixed(0), target: nearest ? 'bumper' : 'uphill' })
+  }
+
   function physicsStep(dt) {
     if (!dem || status.value !== 'rolling') return
     const { kGravity, friction } = levelParams(level.value)
+    const speedCap = maxBallSpeed(level.value)
 
     // Iterate baklengs så vi kan splice trygt
     for (let i = balls.length - 1; i >= 0; i--) {
@@ -351,6 +591,10 @@ export function useCurveBall() {
       // (overstyrer gravity, friksjon og bumper-respons). Etter ORBIT-
       // varighet → bytt til breakout-fase som bruker normal physics + den
       // pre-beregnede breakoutVel.
+      // v8.0.2: orbit-fasen følger en HØYDEKURVE rundt sentral peak istedenfor
+      // en fast geometrisk sirkel. Hver invader styres av terrengets gradient
+      // til å gå tangentielt langs konstant elevasjon. Fall-tilbake til
+      // sirkulær orbit hvis gradient er for liten (flatt punkt / DEM-hull).
       if (b.mode === 'invader' && b.invaderPhase === 'orbit') {
         b.orbitT += dt
         if (b.orbitT >= INVADER_ORBIT_DURATION_S) {
@@ -358,12 +602,7 @@ export function useCurveBall() {
           b.vx = b.breakoutVel.vx
           b.vy = b.breakoutVel.vy
         } else {
-          b.orbitAngle += b.orbitSpeed * dt
-          b.x = b.orbitCenter.x + b.orbitRadius * Math.cos(b.orbitAngle)
-          b.y = b.orbitCenter.y + b.orbitRadius * Math.sin(b.orbitAngle)
-          // Sett vx/vy så trail/visualization viser bevegelse
-          b.vx = -Math.sin(b.orbitAngle) * b.orbitRadius * b.orbitSpeed
-          b.vy =  Math.cos(b.orbitAngle) * b.orbitRadius * b.orbitSpeed
+          stepInvaderContour(b, dt)
           // Skip bumper, edge, stillness — orbit-fasen er invulnerabel
           continue
         }
@@ -374,6 +613,8 @@ export function useCurveBall() {
       const ay = -kGravity * grad.dzdy - friction * b.vy
       b.vx += ax * dt
       b.vy += ay * dt
+      // v8.0.2: clamp etter integrasjon (slope + friksjon kan ha pushet fart over)
+      clampBallSpeed(b, speedCap)
       const prevX = b.x, prevY = b.y
       b.x += b.vx * dt
       b.y += b.vy * dt
@@ -383,6 +624,8 @@ export function useCurveBall() {
 
       // Bumper-collisions
       handleBumperCollisions(b)
+      // Bumper-bounce kan også pushet fart over cap (max(min, incoming*1.15))
+      clampBallSpeed(b, speedCap)
 
       // Bounds-check pr ball
       if (!handleEdgesForBall(b)) {
@@ -390,6 +633,8 @@ export function useCurveBall() {
         balls.splice(i, 1)
         continue
       }
+      // Paddle-kick kan også pushe over cap
+      clampBallSpeed(b, speedCap)
 
       // Stillness-detection
       checkStillness(b, dt)
@@ -399,6 +644,11 @@ export function useCurveBall() {
         continue
       }
     }
+
+    // v8.0.2: billiard-stil ball-til-ball-kollisjoner. Kjøres etter at hver
+    // ball er integrert og kollidert med bumpers/edges/stillness, så vi har
+    // konsistente posisjoner og hastigheter for hele paret.
+    handleBallBallCollisions(speedCap)
 
     // v7.4.0: Når multiball ebbet ut til én ball igjen — promoter den til
     // normal ball (canExplode = true) så stillness-detektor og videre
@@ -474,8 +724,17 @@ export function useCurveBall() {
         }
       }
       if (b.stillTime >= STILLNESS_EXPLODE_S) {
-        dlog('stillness → explode', { stillTime: +b.stillTime.toFixed(2) })
-        explodeBall(b)
+        // v8.0.2: cap stillness-trigget multiball til CAP-stk per level.
+        // Etter capen er nådd, gi en rescue-kick i stedet for ny eksplosjon
+        // så vi unngår cascade på bratte kart.
+        if (stillnessExplodeCount >= STILLNESS_EXPLODE_PER_LEVEL_CAP) {
+          dlog('stillness → rescue', { stillTime: +b.stillTime.toFixed(2), cap: STILLNESS_EXPLODE_PER_LEVEL_CAP })
+          rescueStuckBall(b)
+        } else {
+          dlog('stillness → explode', { stillTime: +b.stillTime.toFixed(2) })
+          stillnessExplodeCount += 1
+          explodeBall(b)
+        }
       }
     } else {
       if (b.stillTime >= MULTIBALL_STUCK_S) {
@@ -739,13 +998,46 @@ export function useCurveBall() {
     const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
     const invaderR = BALL_RADIUS_M * INVADER_RADIUS_FRAC
 
-    dlog('invader-spawn', { count, peak: { x: Math.round(peak.x), y: Math.round(peak.y) }, orbitR: Math.round(orbitR) })
+    // v8.0.2: invaders går rundt en HØYDEKURVE i stedet for en fast sirkel.
+    // Velg target-elevasjon under peak (typisk 30-60m under topp, eller
+    // proporsjonalt med terreng-range hvis DEM er kjent). Ray-cast utover
+    // fra peak i N retninger og finn punkter der elevasjonen krysser targetZ;
+    // disse blir startposisjoner. Alle invaders deler samme target-elevasjon
+    // og roterer i samme retning så formasjonen holder seg samlet.
+    let targetZ = peak.elev - 50
+    if (dem?.data && dem.noData != null) {
+      let mn = Infinity, mx = -Infinity
+      const nd = dem.noData
+      for (let i = 0; i < dem.data.length; i++) {
+        const z = dem.data[i]
+        if (z === nd || !Number.isFinite(z)) continue
+        if (z < mn) mn = z
+        if (z > mx) mx = z
+      }
+      const range = (mx - mn) > 0 ? (mx - mn) : 100
+      // Mellom 10 % og 25 % under peak, men minst 20 m for å unngå micro-konturer
+      targetZ = peak.elev - Math.max(20, range * 0.15)
+    }
+    const orbitDir = Math.random() < 0.5 ? 1 : -1   // CCW eller CW
 
+    dlog('invader-spawn', {
+      count,
+      peak: { x: Math.round(peak.x), y: Math.round(peak.y), z: Math.round(peak.elev) },
+      targetZ: Math.round(targetZ),
+      dir: orbitDir,
+    })
+
+    let placed = 0
     for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
       const angle = (k / count) * Math.PI * 2
-      const x = peak.x + orbitR * Math.cos(angle)
-      const y = peak.y + orbitR * Math.sin(angle)
-      // Energi-variasjon: ±20% fart per ball så formasjonen sprer seg
+      // Prøv å finne kontur-skjæring i denne retningen; fall til sirkel hvis intet treff
+      const pos = findContourPosition(peak.x, peak.y, peak.elev, targetZ, angle)
+      const x = pos ? pos.x : peak.x + orbitR * Math.cos(angle)
+      const y = pos ? pos.y : peak.y + orbitR * Math.sin(angle)
+      // Faktisk avstand fra peak — brukt som orbitRadius for fart-magnitude og
+      // sirkulær fallback i stepInvaderContour.
+      const rActual = Math.hypot(x - peak.x, y - peak.y) || orbitR
+      // Energi-variasjon: ±20 % fart per ball så formasjonen sprer seg gradvis
       const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
       spawnBall(x, y, {
         canExplode: false,
@@ -754,16 +1046,20 @@ export function useCurveBall() {
         scoreMult: INVADER_SCORE_MULT,
         invaderPhase: 'orbit',
         orbitCenter: { x: peak.x, y: peak.y },
-        orbitRadius: orbitR,
+        orbitRadius: rActual,
         orbitAngle: angle,
         orbitSpeed,
+        orbitDir,
+        orbitTarget: pos ? targetZ : (Number.isFinite(peak.elev) ? peak.elev - 30 : 0),
         orbitT: 0,
         breakoutVel: {
           vx: edgeDir.vx * breakoutSpeed * energy,
           vy: edgeDir.vy * breakoutSpeed * energy,
         },
       })
+      placed += 1
     }
+    dlog('invader-spawn:placed', { placed })
     // Lyd-cue når formasjonen forlater orbit
     setTimeout(() => playInvaderBreakout(), INVADER_ORBIT_DURATION_S * 1000)
   }
@@ -1046,6 +1342,7 @@ export function useCurveBall() {
       balls.length = 0
       lastHitEdge = null
       lastElev = NaN
+      stillnessExplodeCount = 0
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
       pendingPerkSelect = false
@@ -1162,6 +1459,7 @@ export function useCurveBall() {
     perks.linkedFlippers = false
     levelChain = 0
     pendingPerkSelect = false
+    stillnessExplodeCount = 0
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
@@ -1217,6 +1515,7 @@ export function useCurveBall() {
     lastHitEdge = null
     lastElev = NaN
     levelChain = 0
+    stillnessExplodeCount = 0
     pendingPerkSelect = !!state.pendingPerkSelect
     perkChoices.value = []
     if (state.perks) Object.assign(perks, state.perks)

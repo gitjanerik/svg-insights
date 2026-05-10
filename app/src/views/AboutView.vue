@@ -247,10 +247,44 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.0.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.0.2</span>
+                <span class="text-emerald-300/90">&mdash; fysikk-balansering &amp; konturmarsj</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Kulehastighets-cap:</strong> myk asymptotisk vekst per level (L1 = 650, L10 ≈ 871, L∞ = 1000). Tidligere kunne ballen p&aring; flate kart akkumulere fart ubegrenset via paddle BOUNCE_AMPLIFY &times; bumper-bounce &times; manglende friksjon &mdash; den ble praktisk talt umulig &aring; treffe. Capen klipper n&aring; etter integrasjon, bumper-bounce og paddle-kick i samme frame</li>
+                <li><strong>Stillness-multiball-cap:</strong> p&aring; bratte kart havnet ballen i samme dal igjen og igjen &rarr; stillness &rarr; multiball &rarr; multi-balls druknet &rarr; primary ble stuck p&aring; nytt &rarr; cascade. Maks 1 stillness-trigget multiball per level; etter capen aktiveres en <strong>rescue-kick</strong> mot n&aelig;rmeste bumper (eller oppoverbakke hvis ingen bumpers) i stedet for ny eksplosjon</li>
+                <li><strong>Invaders-formasjonen f&oslash;lger n&aring; en h&oslash;ydekurve</strong> rundt sentral peak i stedet for fast geometrisk sirkel. Ray-casting fra peak finner kontur-skj&aelig;ringer ved m&aring;l-elevasjon (15 % av terreng-range under topp), tangenten til konturen styrer banen, og en mild korreksjon mot m&aring;l-h&oslash;yden hindrer drift. Fallback til sirkel-orbit p&aring; flate sadelpunkter eller DEM-hull</li>
+                <li><strong>Billiard-stil ball-til-ball-kollisjoner:</strong> baller treffer hverandre n&aring; elastisk med masse &prop; r&sup2; (st&oslash;rre baller mer treg), separasjon langs kollisjons-normal, klamp p&aring; cap etter impuls. Skipper baller i invader-orbit-fase som er kinematisk styrt</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 8.0.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group">
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.0.1</span>
+                <span class="text-white/50">&mdash; dynamisk HUD-skala + brand-mellomrom</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>HUD-elementer (topp-bar, hjerter, exit-knapp, paddle-tykkelse) skalerer n&aring; med kart-utsnittets faktiske skjerm-st&oslash;rrelse via <code>mapRect.hudScale</code> &mdash; sm&aring; 1&times;1 km-kart f&aring;r lett HUD, store 10&times;10 km-kart f&aring;r kraftigere HUD. Referansescale 1 = ~420px minDim, clampet [0.55, 1.3]</li>
+                <li>Spillnavnet skrives n&aring; <strong class="text-white">Curve Invaders</strong> (med mellomrom). Tidligere skrevet sammen som «CurveInvaders» i UI &mdash; brand er fortsatt kun en i18n-streng, ingen kode-rename. Codename <code>CurveBall</code> i kildekoden er ur&oslash;rt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.0.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-4 h-4 rounded-full bg-fuchsia-400 ring-4 ring-fuchsia-200/40" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white text-lg">8.0.0</span>
                 <span class="text-fuchsia-300/90">&mdash; CurveInvaders &amp; i18n 🎷</span>
