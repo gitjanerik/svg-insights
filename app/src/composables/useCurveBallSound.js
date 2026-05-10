@@ -1,5 +1,8 @@
 /**
- * Flippkart-lyd — chiptune-style effekter via Web Audio API.
+ * CurveBall-lyd — chiptune-style effekter via Web Audio API.
+ *
+ * (v8.0.0: rebrandet fra useFlippkartSound — funksjons-API uendret. Filen
+ * heter CurveBall etter codename; brand-navnet i UI er CurveInvaders.)
  *
  * Ingen eksterne biblioteker. Lazy-init av AudioContext på første bruk
  * (mange browsere krever user-gesture før AudioContext kan starte).

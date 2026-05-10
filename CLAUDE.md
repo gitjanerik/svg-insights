@@ -89,7 +89,7 @@ Sjøkart-fetcher prøver multi-endpoint (`wfs.sjokart_dybdedata` → `wfs.dybded
 - **WFS-kilder leverer ikke alltid i nettleser** (CORS / nett-tilgang). Sjøkart, N50 og DEM-fetchere har graceful fallback. CI-build (Vardåsen-workflow) har full nettverkstilgang og fungerer
 - **Diagnose-modus** finnes for å verifisere visuelt: regenerer kart, tap "Diagnose-modus" i drawer (Visning-seksjon), polygoner farges etter kilde
 - **Test-suite**: 143 tester passerer (`npm run test` i app/)
-- **Flippkart på MS Edge Android (v7.4.1, rapportert 10. mai 2026):** spillet fungerer, men kart-bakgrunnen rendres lys (default-tema istedenfor mørkt) og flipperballen vises som helt sort sirkel uten chrome-gradient. Sannsynlig årsak: Edge har problemer med å resolve `<radialGradient id="...">`-fill-referanser i SVG-elementer som er flyttet/klonet via DOM, eller `fill="url(#...)"` faller tilbake til sort når gradient-noden ikke finnes i scope. Sjekk `FlippkartLayer.vue` ball-rendering — vurder eksplisitt `xlink:href`-fallback eller flat circle-fill ved degradering. Opera Android og Chrome Android fungerer som forventet
+- **CurveBall på MS Edge Android (v7.4.1, rapportert 10. mai 2026):** spillet fungerer, men kart-bakgrunnen rendres lys (default-tema istedenfor mørkt) og kula vises som helt sort sirkel uten chrome-gradient. Sannsynlig årsak: Edge har problemer med å resolve `<radialGradient id="...">`-fill-referanser i SVG-elementer som er flyttet/klonet via DOM, eller `fill="url(#...)"` faller tilbake til sort når gradient-noden ikke finnes i scope. Sjekk `CurveBallLayer.vue` ball-rendering — vurder eksplisitt `xlink:href`-fallback eller flat circle-fill ved degradering. Opera Android og Chrome Android fungerer som forventet
 
 ## Viktig arkitektur-merknad (v6.8.0+)
 
@@ -295,20 +295,19 @@ Brukeren har identifisert disse for neste sesjon:
 3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
 4. **Generelt UI-polish i MapView**
 
-## Todo: rebrand FlippKart → CurveBall (egen PR senere)
+## Spillnavn — CurveInvaders (brand) / CurveBall (codename)
 
-Brukeren har bestilt 10. mai 2026 (etter v7.4.3): «FlippKart» dur ikke internasjonalt — for spesifikt norsk og mangler schwung. Døp om til **CurveBall**. Krever bredt omfang:
+Spillet het tidligere «FlippKart» (norskspesifikk og uten schwung). Rebrandet 10. mai 2026 til **CurveInvaders** i v8.0.0. Samme PR introduserte en lett-vekt i18n-modul (`src/lib/i18n.js`) — norsk bokmål er default, engelsk-stub følger med. Brand-navnet «CurveInvaders» er konstant på tvers av locales.
 
-- `useFlippkart()` → `useCurveBall()` (composable)
-- `FlippkartHUD.vue`, `FlippkartLayer.vue`, `FlippkartFlippers.vue` → `CurveBallHUD.vue` osv.
-- Alle CSS-klasser `.flipp-*` → `.cb-*` (eller `.curveball-*`)
-- `useFlippkartSound.js` → `useCurveBallSound.js`
-- localStorage-/sessionStorage-keys: `flippkart-highscore`, `flippkart-debug-panel`, `flippkart-tournament-state`, `flippkart-autostart-mapId` → `curveball-*`. NB: trenger graceful migrering (les begge nøkler i en overgangsperiode, skriv kun ny)
-- UI-strenger: «Flippkart», «🎮 Flippkart», «Start FlippKart» → «CurveBall», «🎮 CurveBall», «Start CurveBall». «FLIPPKART»-tekst i splash-skjermen om noen
-- Norske kommentarer kan beholdes (intern kontekst), men brukervendte tekster bør være engelske eller verdt en re-review
-- Endringslogg-tone: det er en cosmetic rebrand, ikke en omimplementering — fortrinnsvis én atomisk PR med en tydelig commit-melding så historie-graven er enkel
+Brukervendt brand er **CurveInvaders**. Interne identifiers (filnavn, funksjoner, CSS-klasser, storage-keys) er **CurveBall** — det er et codename, ikke en brand. Den separasjonen er bevisst: rebrand av brukertekster (i18n-dict) er en triviell endring; rebrand av kodebase er en stor diff med migrerings-disiplin. Codename = stabilitet, brand = fleksibilitet.
 
-Ta dette i en egen PR — IKKE bland inn andre fix-er, slik at evt. revert er triviell.
+Migrert i v8.0.0:
+- Filer/komponenter: `useCurveBall.js`, `useCurveBallSound.js`, `CurveBallHUD.vue`, `CurveBallLayer.vue`, `CurveBallFlippers.vue`
+- CSS-prefiks: `.flipp-*` → `.cb-*` (også SVG-defs-id'er som `flipp-chrome` → `cb-chrome`)
+- localStorage-nøkler med fallback-read: `flippkart-highscore` → `curveball-highscore`, `flippkart-debug-panel` → `curveball-debug-panel`
+- sessionStorage-nøkler med fallback-read: `flippkart-tournament-state` → `curveball-tournament-state`, `flippkart-autostart-mapId` → `curveball-autostart-mapId`
+- Spawn-modus-navn: `'curveInvaders'` → `'invaders'` (intern), flash-tekst forkortet fra «CURVE INVADERS!» → «INVADERS!»
+- Fallback-read-pattern beholdes til vi er trygge på at ingen aktive klienter ligger på gamle nøkler. Kan ryddes vekk i en senere versjon.
 
 ## Lærdommer fra 5.0-pakken (30. april 2026)
 

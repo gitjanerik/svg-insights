@@ -11,10 +11,11 @@ import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { fetchDEM } from '../lib/demFetcher.js'
-import { useFlippkart } from '../composables/useFlippkart.js'
-import FlippkartLayer from '../components/FlippkartLayer.vue'
-import FlippkartHUD from '../components/FlippkartHUD.vue'
-import FlippkartFlippers from '../components/FlippkartFlippers.vue'
+import { useCurveBall } from '../composables/useCurveBall.js'
+import CurveBallLayer from '../components/CurveBallLayer.vue'
+import CurveBallHUD from '../components/CurveBallHUD.vue'
+import CurveBallFlippers from '../components/CurveBallFlippers.vue'
+import { t } from '../lib/i18n.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -26,10 +27,10 @@ const loadError = ref(null)
 const meta = ref(null)
 const mapTitle = ref('Turkart')
 
-// Flippkart easter egg: synlig først etter at brukeren tapper Curves-tema.
+// CurveBall easter egg: synlig først etter at brukeren tapper Curves-tema.
 // Holdes i memory pr session — ingen persistering.
-const flippUnlocked = ref(false)
-const flippkart = useFlippkart()
+const cbUnlocked = ref(false)
+const curveball = useCurveBall()
 const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
 const storedHighestPoint = ref(null)
 
@@ -37,7 +38,20 @@ const storedHighestPoint = ref(null)
 // userMaps: alle brukerens egne kart (sortert av listMaps i opprettet-desc).
 // visitedMapIds: hvilke kart turneringen allerede har spilt (lagres i sessionStorage).
 const userMaps = ref([])
-const TOURNAMENT_KEY = 'flippkart-tournament-state'
+// v8.0.0 rebrand-migrering: skriv kun ny nøkkel, men les begge så turneringer
+// fra før-deploy fortsetter å virke. Legacy-keys leses og ryddes etter konsumering.
+const TOURNAMENT_KEY = 'curveball-tournament-state'
+const TOURNAMENT_KEY_LEGACY = 'flippkart-tournament-state'
+
+function readTournamentRaw() {
+  try {
+    return sessionStorage.getItem(TOURNAMENT_KEY)
+        ?? sessionStorage.getItem(TOURNAMENT_KEY_LEGACY)
+  } catch { return null }
+}
+function clearTournamentLegacy() {
+  try { sessionStorage.removeItem(TOURNAMENT_KEY_LEGACY) } catch { /* ignore */ }
+}
 
 // Neste kart i turneringen — første userMap som ikke er gjeldende kart og
 // ikke i visitedMapIds. null hvis ingen flere kart finnes.
@@ -55,7 +69,7 @@ const tournamentNextMap = computed(() => {
 
 function readVisitedMapIds() {
   try {
-    const raw = sessionStorage.getItem(TOURNAMENT_KEY)
+    const raw = readTournamentRaw()
     if (!raw) return []
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed.visitedMapIds) ? parsed.visitedMapIds : []
@@ -63,7 +77,7 @@ function readVisitedMapIds() {
 }
 
 // shareInfo for HUD-modal — bygges fra meta + base-URL. null hvis meta mangler.
-const flippShareInfo = computed(() => {
+const cbShareInfo = computed(() => {
   const m = meta.value
   if (!m || !m.bbox) return null
   const lat = (m.bbox.south + m.bbox.north) / 2
@@ -82,8 +96,8 @@ async function loadUserMapsForTournament() {
 
 async function onTournamentNext(next) {
   if (!next?.id) return
-  // Lagre flippkart-state + visited-list for restoring i ny MapView-mount
-  const state = flippkart.serializeForTournament()
+  // Lagre curveball-state + visited-list for restoring i ny MapView-mount
+  const state = curveball.serializeForTournament()
   const visited = readVisitedMapIds()
   if (!visited.includes(route.params.id)) visited.push(route.params.id)
   try {
@@ -93,39 +107,42 @@ async function onTournamentNext(next) {
       pendingNextMapId: next.id,
     }))
   } catch { /* QuotaExceeded — fall through, restore vil ikke trigge */ }
-  flippkart.deactivate()
+  curveball.deactivate()
   router.push({ name: 'kart-vis', params: { id: next.id } })
 }
 
 function consumeTournamentRestore() {
   try {
-    const raw = sessionStorage.getItem(TOURNAMENT_KEY)
+    const raw = readTournamentRaw()
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (parsed?.pendingNextMapId !== route.params.id) {
       // Mounted på et annet kart enn forventet — turneringen er brutt.
       sessionStorage.removeItem(TOURNAMENT_KEY)
+      clearTournamentLegacy()
       return null
     }
     // Behold visitedMapIds for senere "Neste kart"-kjeder, men fjern
-    // state+pendingNextMapId så vi ikke restorer dobbelt.
+    // state+pendingNextMapId så vi ikke restorer dobbelt. Tøm legacy også
+    // så vi ikke ender med to konkurrerende verdier.
     sessionStorage.setItem(TOURNAMENT_KEY, JSON.stringify({
       visitedMapIds: parsed.visitedMapIds ?? [],
     }))
+    clearTournamentLegacy()
     return parsed.state ?? null
   } catch { return null }
 }
-const flippViewBox = computed(() => {
+const cbViewBox = computed(() => {
   if (!meta.value) return '0 0 1 1'
   return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
 })
 
-// Skjerm-rekt for kart-SVG-en, oppdatert når flippkart er aktiv så Pong-paddles
+// Skjerm-rekt for kart-SVG-en, oppdatert når curveball er aktiv så Pong-paddles
 // kan posisjoneres relativt til kartets ekte plass på skjermen (etter pinch/pan).
 const mapRect = ref(null)
 
 function updateMapRect() {
-  if (!flippkart.active.value) {
+  if (!curveball.active.value) {
     mapRect.value = null
     return
   }
@@ -206,21 +223,21 @@ const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
 
-// Easter egg: tapping Curves-tema låser opp Flippkart-knappen i drawer.
+// Easter egg: tapping Curves-tema låser opp CurveBall-knappen i drawer.
 function onThemeTap(key) {
   currentTheme.value = key
-  if (key === 'curves') flippUnlocked.value = true
+  if (key === 'curves') cbUnlocked.value = true
 }
 
 // v7.3.1: ekstra state for built-in maps som mangler stored DEM
-const flippDemFetching = ref(false)
-const flippDemError = ref(null)
+const cbDemFetching = ref(false)
+const cbDemError = ref(null)
 
-async function ensureDemForFlippkart() {
+async function ensureDemForCurveBall() {
   if (storedDem.value || !meta.value) return !!storedDem.value
   // Lazy-fetch DEM for built-in maps (Vardåsen) som mangler IndexedDB-DEM
-  flippDemFetching.value = true
-  flippDemError.value = null
+  cbDemFetching.value = true
+  cbDemError.value = null
   try {
     const m = meta.value
     const utmBbox = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
@@ -230,46 +247,48 @@ async function ensureDemForFlippkart() {
       storedHighestPoint.value = findHighestPoint(dem)
     }
   } catch (e) {
-    flippDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
+    cbDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
   }
-  flippDemFetching.value = false
+  cbDemFetching.value = false
   return !!storedDem.value
 }
 
-async function startFlippkart() {
-  if (!meta.value || flippDemFetching.value) return
-  const ok = await ensureDemForFlippkart()
+async function startCurveBall() {
+  if (!meta.value || cbDemFetching.value) return
+  const ok = await ensureDemForCurveBall()
   if (!ok) return
-  // v7.4.2: Flippkart skal ALLTID kjøres med Curves-tema aktivt — også i
-  // turneringsmodus, share-link-flow og direkte fra Flippkart-knappen.
+  // v7.4.2: CurveBall skal ALLTID kjøres med Curves-tema aktivt — også i
+  // turneringsmodus, share-link-flow og direkte fra CurveBall-knappen.
   // Bryterhåndtering bevares (currentTheme er en ref, watch kjører applyTheme).
   currentTheme.value = 'curves'
-  flippkart.init({
+  curveball.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
   })
-  flippkart.restart()
+  curveball.restart()
   // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
   reset()
-  flippkart.activate()
+  curveball.activate()
   closeDrawer()
 }
 
-function stopFlippkart() {
-  flippkart.deactivate()
+function stopCurveBall() {
+  curveball.deactivate()
 }
 
-function onFlippRestart() {
+function onCurveBallRestart() {
   // v7.4.0: full restart fra game over → glem turneringens visited-list
-  // så neste runde kan re-besøke samme kart.
+  // så neste runde kan re-besøke samme kart. v8.0.0: tøm også legacy-key
+  // for sikkerhet under rebrand-overgangen.
   try { sessionStorage.removeItem(TOURNAMENT_KEY) } catch { /* noop */ }
-  flippkart.restart()
+  clearTournamentLegacy()
+  curveball.restart()
 }
 
 // Tap på kart eller HUD-overlay → start nedtelling. Auto-drop ved 0.
-function onFlippContinue() {
-  flippkart.startCountdown()
+function onCurveBallContinue() {
+  curveball.startCountdown()
 }
 
 function toggleLayer(key) {
@@ -299,18 +318,18 @@ function applyLayerVisibility() {
   }
 }
 
-// Pinch/pan/rotate fryses i Flippkart-modus (kart skal stå i ro under spill).
-const pinchEnabled = computed(() => !flippkart.active.value)
+// Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
+const pinchEnabled = computed(() => !curveball.active.value)
 const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
 // faktisk er applied i DOM før vi måler.
 watch([scale, translateX, translateY, rotation], () => {
-  if (flippkart.active.value) nextTick(updateMapRect)
+  if (curveball.active.value) nextTick(updateMapRect)
 })
 
-watch(() => flippkart.active.value, (active) => {
+watch(() => curveball.active.value, (active) => {
   if (active) {
     nextTick(updateMapRect)
     // Reset() animerer scale/translate over 200ms — re-mål når transitionen er ferdig.
@@ -494,7 +513,7 @@ async function loadMap() {
       if (!stored) throw new Error('Kart ikke funnet i lagring')
       mapTitle.value = stored.navn
       text = stored.svg
-      // v7.2.0: hent DEM hvis lagret (forberedt for Flippkart)
+      // v7.2.0: hent DEM hvis lagret (forberedt for CurveBall)
       if (stored.dem) {
         try { storedDem.value = unpackDem(stored.dem) } catch { storedDem.value = null }
       }
@@ -816,14 +835,18 @@ function clearMapTypePreference() {
 }
 
 /**
- * v7.4.1: Auto-start flippkart hvis brukeren akkurat bygde dette kartet
+ * v7.4.1: Auto-start curveball hvis brukeren akkurat bygde dette kartet
  * fra en delingslenke. Skipper Curves-tema-easter-eggen helt — share-flowen
- * er ekvivalent med at Flippkart-knappen ble trykket.
+ * er ekvivalent med at CurveBall-knappen ble trykket.
  */
 function consumeShareAutostart() {
   try {
-    const flagId = sessionStorage.getItem('flippkart-autostart-mapId')
+    // v8.0.0: les både ny og legacy share-autostart-key. Begge ryddes
+    // etter konsumering så vi ikke ender med to konkurrerende verdier.
+    const flagId = sessionStorage.getItem('curveball-autostart-mapId')
+                ?? sessionStorage.getItem('flippkart-autostart-mapId')
     if (!flagId || flagId !== route.params.id) return false
+    sessionStorage.removeItem('curveball-autostart-mapId')
     sessionStorage.removeItem('flippkart-autostart-mapId')
     return true
   } catch { return false }
@@ -831,50 +854,50 @@ function consumeShareAutostart() {
 
 async function maybeAutostartFromShare() {
   if (!consumeShareAutostart()) return
-  flippUnlocked.value = true
+  cbUnlocked.value = true
   if (!meta.value) {
     const stop = watch(meta, async (m) => {
-      if (m) { stop(); await startFlippkart() }
+      if (m) { stop(); await startCurveBall() }
     })
   } else {
-    await startFlippkart()
+    await startCurveBall()
   }
 }
 
 async function maybeRestoreTournament() {
   // Sjekk om vi mountet på dette kartet pga «Neste kart»-snarvei. Hvis ja,
-  // init+aktivér flippkart med restorert state. Krever at kartet og DEM
+  // init+aktivér curveball med restorert state. Krever at kartet og DEM
   // er ferdig lastet, så vi venter på loadMap().
   const state = consumeTournamentRestore()
   if (!state) return
-  flippUnlocked.value = true
+  cbUnlocked.value = true
   await loadUserMapsForTournament()
   // Vent til meta er klar — loadMap settes ferdig før onMounted-callback returnerer
   // hvis kartet ligger i IndexedDB. Hvis ikke, watch på meta nedenfor håndterer det.
   if (!meta.value) {
     const stop = watch(meta, async (m) => {
-      if (m) { stop(); await activateRestoredFlipp(state) }
+      if (m) { stop(); await activateRestoredCurveBall(state) }
     })
   } else {
-    await activateRestoredFlipp(state)
+    await activateRestoredCurveBall(state)
   }
 }
 
-async function activateRestoredFlipp(state) {
+async function activateRestoredCurveBall(state) {
   if (!meta.value) return
-  const ok = await ensureDemForFlippkart()
+  const ok = await ensureDemForCurveBall()
   if (!ok) return
   // v7.4.2: Curves-tema aktivt for hele turneringsmoduset, ikke bare ved
   // første start. Sikrer konsistent visuell stil mellom kart-bytter.
   currentTheme.value = 'curves'
-  flippkart.init({
+  curveball.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
   })
-  flippkart.restoreFromTournament(state)
+  curveball.restoreFromTournament(state)
   reset()
-  flippkart.activate()
+  curveball.activate()
   closeDrawer()
 }
 
@@ -923,8 +946,8 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Kompass-rose (skjult i Flippkart-modus) -->
-    <div v-if="!flippkart.active.value"
+    <!-- Kompass-rose (skjult i CurveBall-modus) -->
+    <div v-if="!curveball.active.value"
          class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
               class="w-14 h-14 rounded-full bg-zinc-950
@@ -951,8 +974,8 @@ onMounted(() => {
     <!-- FAB-stack: zoom inn / zoom ut / sentrer. Synlig både når drawer er
          åpen og lukket. Når drawer er åpen flyttes FAB-en opp over drawer-
          toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
-         ligger over drawer (z-30). Skjult i Flippkart-modus. -->
-    <div v-if="!flippkart.active.value"
+         ligger over drawer (z-30). Skjult i CurveBall-modus. -->
+    <div v-if="!curveball.active.value"
          class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
          :style="{
            bottom: showControls
@@ -998,10 +1021,10 @@ onMounted(() => {
       <div class="w-full h-full" :style="transformStyle">
         <div class="w-full h-full relative" :style="rotateStyle">
           <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
-          <FlippkartLayer
-            :flipp="flippkart"
-            :view-box="flippViewBox"
-            @drop="onFlippContinue"/>
+          <CurveBallLayer
+            :flipp="curveball"
+            :view-box="cbViewBox"
+            @drop="onCurveBallContinue"/>
         </div>
       </div>
     </div>
@@ -1049,8 +1072,8 @@ onMounted(() => {
       Du er utenfor dette kartet.
     </div>
 
-    <!-- Skala + ekvidistanse + ISOM-info (skjult i Flippkart-modus) -->
-    <div v-if="!loading && !flippkart.active.value"
+    <!-- Skala + ekvidistanse + ISOM-info (skjult i CurveBall-modus) -->
+    <div v-if="!loading && !curveball.active.value"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
       <div class="px-3 py-2 rounded-lg bg-zinc-950 text-white text-[11px]
                   font-medium space-y-1.5 shadow-lg">
@@ -1073,8 +1096,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Attribusjon (skjult i Flippkart-modus) -->
-    <div v-if="!loading && !flippkart.active.value"
+    <!-- Attribusjon (skjult i CurveBall-modus) -->
+    <div v-if="!loading && !curveball.active.value"
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
@@ -1158,21 +1181,21 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- Easter egg: Flippkart-knapp synlig etter Curves-tema-tap -->
-          <button v-if="flippUnlocked"
-                  @click="startFlippkart"
-                  :disabled="flippDemFetching"
+          <!-- Easter egg: CurveBall-knapp synlig etter Curves-tema-tap -->
+          <button v-if="cbUnlocked"
+                  @click="startCurveBall"
+                  :disabled="cbDemFetching"
                   class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
                          border border-fuchsia-400/40 text-white text-[12px]
                          active:scale-[0.98] flex items-center justify-center gap-2
                          disabled:opacity-60">
-            <span v-if="flippDemFetching">⏳ Henter høydedata …</span>
-            <span v-else>🎮 Flippkart</span>
+            <span v-if="cbDemFetching">⏳ {{ t('mapview.gameLoading') }}</span>
+            <span v-else>{{ t('mapview.gameButton', { emoji: t('game.emoji'), gameName: t('game.name') }) }}</span>
           </button>
-          <div v-if="flippUnlocked && flippDemError"
+          <div v-if="cbUnlocked && cbDemError"
                class="w-full mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
                       text-red-200 text-[11px] text-center">
-            {{ flippDemError }}
+            {{ cbDemError }}
           </div>
 
           <button @click="router.push('/tegnforklaring')"
@@ -1276,17 +1299,17 @@ onMounted(() => {
       </div>
     </Transition>
 
-    <!-- Flippkart-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
-    <FlippkartHUD :flipp="flippkart"
+    <!-- CurveBall-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
+    <CurveBallHUD :flipp="curveball"
                   :tournament-next="tournamentNextMap"
-                  :share-info="flippShareInfo"
-                  @restart="onFlippRestart"
-                  @continue="onFlippContinue"
-                  @exit="stopFlippkart"
+                  :share-info="cbShareInfo"
+                  @restart="onCurveBallRestart"
+                  @continue="onCurveBallContinue"
+                  @exit="stopCurveBall"
                   @tournament-next="onTournamentNext"/>
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
-    <FlippkartFlippers :flipp="flippkart" :map-rect="mapRect"/>
+    <CurveBallFlippers :flipp="curveball" :map-rect="mapRect"/>
   </div>
 </template>
 

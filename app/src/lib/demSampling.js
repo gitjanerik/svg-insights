@@ -1,5 +1,5 @@
 /**
- * DEM-sampling for Flippkart-fysikk.
+ * DEM-sampling for CurveBall-fysikk.
  *
  * DEM-strukturen (fra demFetcher.js) har:
  *   data:      Float32Array av lengde cols*rows, indeksert [row*cols + col]
