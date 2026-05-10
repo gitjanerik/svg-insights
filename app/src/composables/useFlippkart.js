@@ -4,6 +4,7 @@ import {
   playIntro, playKick, playEnergize, playSplash, playWin,
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
   playStillWarning, playExplosion, playMultiSpawn, playBumperHit,
+  playMiniSpawn, playMiniHit, playInvaderSpawn, playInvaderBreakout,
 } from './useFlippkartSound.js'
 
 /**
@@ -128,7 +129,31 @@ export function useFlippkart() {
   // v7.4.1: hard cap på baller i lufta. Stopper spawn-i-spawn-cascade
   // (rapport 10. mai: score løp opp i 7.48e+52 fordi multiball-baller
   // fortsatte å trigge nye multiballs på bumpers, eksponentielt).
-  const MAX_BALLS_IN_PLAY = 8
+  // v7.4.3: økt til 16 fordi miniball-modus spawner 12 små baller +
+  // eksisterende. Cascade-prevention er fortsatt på via canExplode-gate.
+  const MAX_BALLS_IN_PLAY = 16
+
+  // v7.4.3 spawn-modi. Pool vokser med level — variasjon kommer etter hvert
+  // som vanskelighetsgrad øker. Legg merke til at modusene KUN trigges av
+  // canExplode=true-baller (se handleBumperCollisions), så cascade er ikke
+  // mulig uavhengig av modus.
+  const SPAWN_MODE_LVL = {
+    multiball: 1,         // tilgjengelig fra level 1
+    miniball: 3,          // fra level 3
+    curveInvaders: 6,     // fra level 6
+  }
+  const MINI_COUNT = 12
+  const MINI_SPEED_MULT = 2.0
+  const MINI_RADIUS_FRAC = 0.5        // av BALL_RADIUS_M
+  const MINI_SCORE_MULT = 2
+
+  const INVADER_MIN_COUNT = 3
+  const INVADER_MAX_COUNT = 12
+  const INVADER_RADIUS_FRAC = 0.6     // av BALL_RADIUS_M
+  const INVADER_SCORE_MULT = 1.5
+  const INVADER_ORBIT_DURATION_S = 3.0
+  const INVADER_BREAKOUT_SPEED_MULT = 1.4
+  const INVADER_ENERGY_VARIATION = 0.4   // ±20% per ball
 
   const splash = reactive({
     x: 0, y: 0,
@@ -216,18 +241,86 @@ export function useFlippkart() {
     }
   }
 
-  /** Spawn én ny ball — returnerer ball-objektet. */
-  function spawnBall(x, y, vx = 0, vy = 0, canExplode = true) {
+  /**
+   * Spawn én ny ball — returnerer ball-objektet.
+   *
+   * v7.4.3: signaturen tar nå et opts-objekt for å støtte spawn-modi
+   * (mini, invader). Backward-compatible: gamle (x, y, vx, vy, canExplode)-
+   * positional-kall fortsetter å funke fordi vi sjekker om 3. arg er objekt.
+   */
+  function spawnBall(x, y, optsOrVx = {}, vyArg, canExplodeArg) {
+    let opts
+    if (typeof optsOrVx === 'object' && optsOrVx !== null) {
+      opts = optsOrVx
+    } else {
+      // gamle positional: (x, y, vx, vy, canExplode)
+      opts = { vx: optsOrVx, vy: vyArg, canExplode: canExplodeArg }
+    }
     const b = {
-      x, y, vx, vy,
+      x, y,
+      vx: opts.vx ?? 0,
+      vy: opts.vy ?? 0,
       visible: true,
       stillTime: 0,
       chargeT: 0,
       warnIndex: 0,
-      canExplode,
+      canExplode: opts.canExplode ?? true,
+      mode: opts.mode ?? 'normal',          // 'normal' | 'mini' | 'invader'
+      r: opts.r ?? BALL_RADIUS_M,           // ball-radius i viewBox-units
+      scoreMult: opts.scoreMult ?? 1,       // multiplier for paddle/bumper-score
+      // CurveInvaders-felter (kun satt hvis mode==='invader')
+      invaderPhase: opts.invaderPhase,      // 'orbit' | 'breakout' | undefined
+      orbitCenter: opts.orbitCenter,        // {x, y}
+      orbitRadius: opts.orbitRadius,
+      orbitAngle:  opts.orbitAngle,
+      orbitSpeed:  opts.orbitSpeed,         // rad/s
+      orbitT:      opts.orbitT ?? 0,
+      breakoutVel: opts.breakoutVel,        // {vx, vy}
     }
     balls.push(b)
     return b
+  }
+
+  /**
+   * Pick spawn-modus basert på nåværende level. Pool vokser progressivt.
+   * v7.4.3: random pick fra pool — variasjon hver gang multiball-trigger
+   * inntreffer, og nye modi blir tilgjengelig etterhvert.
+   */
+  function pickSpawnMode() {
+    const lvl = level.value
+    const pool = []
+    for (const [name, minLvl] of Object.entries(SPAWN_MODE_LVL)) {
+      if (lvl >= minLvl) pool.push(name)
+    }
+    if (pool.length === 0) return 'multiball'
+    return pool[Math.floor(Math.random() * pool.length)]
+  }
+
+  /**
+   * Finn central peak / kolle ved å sample DEM i sentrale 50% av kartet.
+   * Brukes av CurveInvaders for å plassere orbiten rundt en hill-feature.
+   * Faller tilbake til geometrisk sentrum hvis DEM mangler.
+   */
+  function findCentralPeak() {
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+    if (!dem) return { x: cx, y: cy, elev: 0 }
+    const halfW = bounds.width * 0.25
+    const halfH = bounds.height * 0.25
+    let best = { x: cx, y: cy, elev: -Infinity }
+    const N = 11
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const px = cx - halfW + (i / (N - 1)) * 2 * halfW
+        const py = cy - halfH + (j / (N - 1)) * 2 * halfH
+        const elev = sampleElevation(dem, px, py)
+        if (Number.isFinite(elev) && elev > best.elev) {
+          best = { x: px, y: py, elev }
+        }
+      }
+    }
+    if (!Number.isFinite(best.elev)) return { x: cx, y: cy, elev: 0 }
+    return best
   }
 
   function physicsStep(dt) {
@@ -241,6 +334,29 @@ export function useFlippkart() {
         balls.splice(i, 1)
         continue
       }
+
+      // v7.4.3: CurveInvaders i orbit-fase bruker kinematisk oppdatering
+      // (overstyrer gravity, friksjon og bumper-respons). Etter ORBIT-
+      // varighet → bytt til breakout-fase som bruker normal physics + den
+      // pre-beregnede breakoutVel.
+      if (b.mode === 'invader' && b.invaderPhase === 'orbit') {
+        b.orbitT += dt
+        if (b.orbitT >= INVADER_ORBIT_DURATION_S) {
+          b.invaderPhase = 'breakout'
+          b.vx = b.breakoutVel.vx
+          b.vy = b.breakoutVel.vy
+        } else {
+          b.orbitAngle += b.orbitSpeed * dt
+          b.x = b.orbitCenter.x + b.orbitRadius * Math.cos(b.orbitAngle)
+          b.y = b.orbitCenter.y + b.orbitRadius * Math.sin(b.orbitAngle)
+          // Sett vx/vy så trail/visualization viser bevegelse
+          b.vx = -Math.sin(b.orbitAngle) * b.orbitRadius * b.orbitSpeed
+          b.vy =  Math.cos(b.orbitAngle) * b.orbitRadius * b.orbitSpeed
+          // Skip bumper, edge, stillness — orbit-fasen er invulnerabel
+          continue
+        }
+      }
+
       const grad = sampleGradient(dem, b.x, b.y)
       const ax = -kGravity * grad.dzdx - friction * b.vx
       const ay = -kGravity * grad.dzdy - friction * b.vy
@@ -390,7 +506,8 @@ export function useFlippkart() {
 
   /** Sjekk om ball treffer noen bumper og handter bounce + multiball-trigger. */
   function handleBumperCollisions(b) {
-    const r = BALL_RADIUS_M + BUMPER_RADIUS_M
+    // v7.4.3: ball-spesifikk radius for små miniballs / invaders
+    const r = (b.r ?? BALL_RADIUS_M) + BUMPER_RADIUS_M
     for (const bp of bumpers) {
       const dx = b.x - bp.x
       const dy = b.y - bp.y
@@ -429,13 +546,17 @@ export function useFlippkart() {
       // mot multiball-trigger. v7.4.1: tidligere tikket alle baller, så 4
       // multiball-baller kunne trigge ny multiball på en bumper i én frame
       // → spawn-i-spawn-cascade.
-      score.value += Math.round(BUMPER_HIT_SCORE * level.value * perks.hitScoreMult)
+      // v7.4.3: b.scoreMult (mini=2, invader=1.5, normal=1) ganger på score.
+      score.value += Math.round(BUMPER_HIT_SCORE * level.value * perks.hitScoreMult * (b.scoreMult ?? 1))
       if (b.canExplode) {
         bp.hits += 1
         const remaining = BUMPER_HITS_TO_MULTIBALL - bp.hits
         playBumperHit(remaining)
+      } else if (b.mode === 'mini') {
+        // Lysere klang for miniball-treff (signaliserer "mer energi = mer poeng")
+        playMiniHit()
       } else {
-        // Multiball-baller bare bouncer; nøytral lyd (remaining = full).
+        // Multiball/invader-baller: nøytral lyd (remaining = full).
         playBumperHit(BUMPER_HITS_TO_MULTIBALL)
       }
 
@@ -495,21 +616,34 @@ export function useFlippkart() {
     explodeBall(b)
   }
 
-  /** Multiball trigget av bumper-treff (samme drop-pattern som explodeBall). */
+  /**
+   * v7.4.3: dispatcher — pick spawn-mode og kjør riktig spawner.
+   * Kalt fra både bumper-trigger og stillness-explode. Backward-compat-
+   * navn `triggerMultiballFromBumper` beholdt så HUD-events ikke knekker.
+   */
   function triggerMultiballFromBumper(sx, sy) {
-    splash.x = sx
-    splash.y = sy
-    splash.active = true
-    splash.t = 0
-    splash.kind = 'explode'
+    const mode = pickSpawnMode()
+    dlog('bumper → spawn', { mode, ballsBefore: balls.length })
+    spawnByMode(mode, sx, sy)
+  }
+
+  function spawnByMode(mode, sx, sy) {
+    switch (mode) {
+      case 'miniball':      return spawnMiniballs(sx, sy)
+      case 'curveInvaders': return spawnCurveInvaders(sx, sy)
+      case 'multiball':
+      default:              return spawnMultiball(sx, sy)
+    }
+  }
+
+  /** Klassisk multiball: 3 normalstore baller på random drop-radius. */
+  function spawnMultiball(sx, sy) {
+    splash.x = sx; splash.y = sy
+    splash.active = true; splash.t = 0; splash.kind = 'explode'
     playExplosion()
     setTimeout(() => playMultiSpawn(), 250)
     lastEvent.value = { kind: 'multiball', at: Date.now() }
-    dlog('bumper → multiball', { ballsBefore: balls.length })
 
-    // 3 baller dropped på random posisjoner med random kick — uten kick
-    // ville nye baller stått stille på flatmark og blitt stuck-cleanet ut.
-    // v7.4.1: respekter MAX_BALLS_IN_PLAY så vi aldri overshooter.
     const cx = bounds.width / 2
     const cy = bounds.height / 2
     const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
@@ -519,43 +653,118 @@ export function useFlippkart() {
       const x = cx + Math.cos(angle) * r
       const y = cy + Math.sin(angle) * r
       const kickAngle = Math.random() * Math.PI * 2
-      const vx = Math.cos(kickAngle) * KICK_SPEED
-      const vy = Math.sin(kickAngle) * KICK_SPEED
-      spawnBall(x, y, vx, vy, false)
+      spawnBall(x, y, {
+        vx: Math.cos(kickAngle) * KICK_SPEED,
+        vy: Math.sin(kickAngle) * KICK_SPEED,
+        canExplode: false,
+        mode: 'normal',
+      })
     }
+  }
+
+  /**
+   * Miniball: 12 små baller med 2× fart — lysere lyd, doble poeng.
+   * Tilgjengelig fra level 3.
+   */
+  function spawnMiniballs(sx, sy) {
+    splash.x = sx; splash.y = sy
+    splash.active = true; splash.t = 0; splash.kind = 'explode'
+    playExplosion()
+    setTimeout(() => playMiniSpawn(), 200)
+    lastEvent.value = { kind: 'mini', at: Date.now() }
+    dlog('mini-spawn', { count: MINI_COUNT })
+
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+    const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
+    const miniR = BALL_RADIUS_M * MINI_RADIUS_FRAC
+    const miniSpeed = KICK_SPEED * MINI_SPEED_MULT
+    for (let k = 0; k < MINI_COUNT && balls.length < MAX_BALLS_IN_PLAY; k++) {
+      const angle = Math.random() * Math.PI * 2
+      const r = Math.sqrt(Math.random()) * R
+      const x = cx + Math.cos(angle) * r
+      const y = cy + Math.sin(angle) * r
+      const kickAngle = Math.random() * Math.PI * 2
+      spawnBall(x, y, {
+        vx: Math.cos(kickAngle) * miniSpeed,
+        vy: Math.sin(kickAngle) * miniSpeed,
+        canExplode: false,
+        mode: 'mini',
+        r: miniR,
+        scoreMult: MINI_SCORE_MULT,
+      })
+    }
+  }
+
+  /**
+   * CurveInvaders: 3-12 minibanker spawner i sirkel-formasjon rundt central
+   * peak (en kolle / fjell i sentrale 50%). Faser:
+   *   1. ORBIT (~3s) — kinematisk: følger sirkel rundt peak, ignorerer
+   *      gravity og bumpers. Denne fasen er Space-Invaders-marsjen.
+   *   2. BREAKOUT — alle baller får samme retning mot en valgt ytterkant
+   *      med ±20% energi-variasjon → spredning blir mer kaotisk over tid.
+   * Tilgjengelig fra level 6.
+   */
+  function spawnCurveInvaders(sx, sy) {
+    splash.x = sx; splash.y = sy
+    splash.active = true; splash.t = 0; splash.kind = 'explode'
+    playExplosion()
+    setTimeout(() => playInvaderSpawn(), 200)
+    lastEvent.value = { kind: 'invader', at: Date.now() }
+
+    const peak = findCentralPeak()
+    const orbitR = 0.18 * Math.min(bounds.width, bounds.height)
+    const count = INVADER_MIN_COUNT +
+                  Math.floor(Math.random() * (INVADER_MAX_COUNT - INVADER_MIN_COUNT + 1))
+    const orbitSpeed = 1.5 + Math.random() * 0.6   // rad/s
+    const edges = [
+      { vx:  0, vy: -1 },   // toppkant
+      { vx:  0, vy:  1 },   // bunnkant
+      { vx: -1, vy:  0 },   // venstre kant
+      { vx:  1, vy:  0 },   // høyre kant
+    ]
+    const edgeDir = edges[Math.floor(Math.random() * 4)]
+    const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
+    const invaderR = BALL_RADIUS_M * INVADER_RADIUS_FRAC
+
+    dlog('invader-spawn', { count, peak: { x: Math.round(peak.x), y: Math.round(peak.y) }, orbitR: Math.round(orbitR) })
+
+    for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
+      const angle = (k / count) * Math.PI * 2
+      const x = peak.x + orbitR * Math.cos(angle)
+      const y = peak.y + orbitR * Math.sin(angle)
+      // Energi-variasjon: ±20% fart per ball så formasjonen sprer seg
+      const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
+      spawnBall(x, y, {
+        canExplode: false,
+        mode: 'invader',
+        r: invaderR,
+        scoreMult: INVADER_SCORE_MULT,
+        invaderPhase: 'orbit',
+        orbitCenter: { x: peak.x, y: peak.y },
+        orbitRadius: orbitR,
+        orbitAngle: angle,
+        orbitSpeed,
+        orbitT: 0,
+        breakoutVel: {
+          vx: edgeDir.vx * breakoutSpeed * energy,
+          vy: edgeDir.vy * breakoutSpeed * energy,
+        },
+      })
+    }
+    // Lyd-cue når formasjonen forlater orbit
+    setTimeout(() => playInvaderBreakout(), INVADER_ORBIT_DURATION_S * 1000)
   }
 
   function explodeBall(b) {
     dlog('explodeBall:enter', { canExp: b.canExplode, before: balls.length })
     try {
-      splash.x = b.x
-      splash.y = b.y
-      splash.active = true
-      splash.t = 0
-      splash.kind = 'explode'
-
-      try { playExplosion() } catch (err) { dlog('!playExplosion', { e: String(err).slice(0, 60) }) }
-      try { setTimeout(() => playMultiSpawn(), 250) } catch (err) { dlog('!setTimeout', { e: String(err).slice(0, 60) }) }
-
-      lastEvent.value = { kind: 'multiball', at: Date.now() }
-      dlog('explode → multiball')
-
+      // v7.4.3: stillness-explode bruker også spawn-mode-dispatcheren
+      // så ulike modi kan trigges fra både bumper og stillness.
       b.exploded = true
-
-      const cx = bounds.width / 2
-      const cy = bounds.height / 2
-      const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
-      // v7.4.1: respekter cap så stillness-explode ikke overshooter heller
-      for (let k = 0; k < MULTIBALL_COUNT && balls.length < MAX_BALLS_IN_PLAY; k++) {
-        const angle = Math.random() * Math.PI * 2
-        const r = Math.sqrt(Math.random()) * R
-        const x = cx + Math.cos(angle) * r
-        const y = cy + Math.sin(angle) * r
-        const kickAngle = Math.random() * Math.PI * 2
-        const vx = Math.cos(kickAngle) * KICK_SPEED
-        const vy = Math.sin(kickAngle) * KICK_SPEED
-        spawnBall(x, y, vx, vy, false)
-      }
+      const mode = pickSpawnMode()
+      dlog('explode → spawn', { mode })
+      spawnByMode(mode, b.x, b.y)
       dlog('explodeBall:exit', { after: balls.length })
     } catch (err) {
       dlog('!explodeBall', { e: String(err).slice(0, 80) })
@@ -598,7 +807,9 @@ export function useFlippkart() {
   /** Kant-handling pr ball. Returner false hvis ball drukner. */
   function handleEdgesForBall(b) {
     const w = bounds.width, h = bounds.height
-    const r = BALL_RADIUS_M
+    // v7.4.3: bruk ball-spesifikk radius (miniballs er ~50%, invaders ~60%
+    // av normal). Faller tilbake til BALL_RADIUS_M for eldre baller uten r.
+    const r = b.r ?? BALL_RADIUS_M
     const inset = FLIPPER_INSET_M
 
     if (b.y - r < inset && b.vy < 0) {
@@ -665,7 +876,8 @@ export function useFlippkart() {
   function registerHit(b, flipper, edge) {
     const kickLevel = flipper.kickLevel
     flipper.kickLevel = 0
-    score.value += Math.round(100 * level.value * perks.hitScoreMult)
+    // v7.4.3: scoreMult fra ball-mode (mini=2, invader=1.5, normal=1)
+    score.value += Math.round(100 * level.value * perks.hitScoreMult * (b.scoreMult ?? 1))
     playKick(kickLevel)
 
     // Reset stillness-state på treff (inkl posisjon-historikk)
