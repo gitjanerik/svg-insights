@@ -240,6 +240,10 @@ async function startFlippkart() {
   if (!meta.value || flippDemFetching.value) return
   const ok = await ensureDemForFlippkart()
   if (!ok) return
+  // v7.4.2: Flippkart skal ALLTID kjøres med Curves-tema aktivt — også i
+  // turneringsmodus, share-link-flow og direkte fra Flippkart-knappen.
+  // Bryterhåndtering bevares (currentTheme er en ref, watch kjører applyTheme).
+  currentTheme.value = 'curves'
   flippkart.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
@@ -860,6 +864,9 @@ async function activateRestoredFlipp(state) {
   if (!meta.value) return
   const ok = await ensureDemForFlippkart()
   if (!ok) return
+  // v7.4.2: Curves-tema aktivt for hele turneringsmoduset, ikke bare ved
+  // første start. Sikrer konsistent visuell stil mellom kart-bytter.
+  currentTheme.value = 'curves'
   flippkart.init({
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
