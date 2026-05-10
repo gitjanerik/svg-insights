@@ -125,6 +125,10 @@ export function useFlippkart() {
   // (tidligere kun partalls-levels og 1-5 stk). Mer pinball-tett bane.
   const BUMPER_MAX_PER_LEVEL = 10
   let BUMPER_MIN_DISTANCE_M = 250   // min avstand mellom bumpers
+  // v7.4.1: hard cap på baller i lufta. Stopper spawn-i-spawn-cascade
+  // (rapport 10. mai: score løp opp i 7.48e+52 fordi multiball-baller
+  // fortsatte å trigge nye multiballs på bumpers, eksponentielt).
+  const MAX_BALLS_IN_PLAY = 8
 
   const splash = reactive({
     x: 0, y: 0,
@@ -420,11 +424,20 @@ export function useFlippkart() {
           b.vy = ny * outMag
         }
       }
-      // Score + sound + state
-      bp.hits += 1
+      // Score + sound + state. Score gis for ALLE treff (multiball-baller
+      // også), men bare normale baller (canExplode=true) tikker hit-counter
+      // mot multiball-trigger. v7.4.1: tidligere tikket alle baller, så 4
+      // multiball-baller kunne trigge ny multiball på en bumper i én frame
+      // → spawn-i-spawn-cascade.
       score.value += Math.round(BUMPER_HIT_SCORE * level.value * perks.hitScoreMult)
-      const remaining = BUMPER_HITS_TO_MULTIBALL - bp.hits
-      playBumperHit(remaining)
+      if (b.canExplode) {
+        bp.hits += 1
+        const remaining = BUMPER_HITS_TO_MULTIBALL - bp.hits
+        playBumperHit(remaining)
+      } else {
+        // Multiball-baller bare bouncer; nøytral lyd (remaining = full).
+        playBumperHit(BUMPER_HITS_TO_MULTIBALL)
+      }
 
       // Reset stillness på ball (ball kollidert = ikke stuck).
       // NB: clear ikke history-array, bare stillTime — ellers blir
@@ -435,10 +448,15 @@ export function useFlippkart() {
 
       checkLevelComplete()
 
-      if (bp.hits >= BUMPER_HITS_TO_MULTIBALL) {
-        // Trigg multi-ball + reset bumperen
+      // v7.4.1: bare normale baller med canExplode=true kan trigge multiball
+      // (se kommentar over). Ekstra cap på balls.length som siste forsvar
+      // mot uventet cascade.
+      if (b.canExplode && bp.hits >= BUMPER_HITS_TO_MULTIBALL && balls.length < MAX_BALLS_IN_PLAY) {
         bp.hits = 0
         triggerMultiballFromBumper(bp.x, bp.y)
+      } else if (bp.hits >= BUMPER_HITS_TO_MULTIBALL) {
+        // Hold counter på maks så vi ikke "lurer" til en gigant-spawn senere
+        bp.hits = BUMPER_HITS_TO_MULTIBALL
       }
       // En ball kan kun treffe én bumper per frame
       break
@@ -490,11 +508,12 @@ export function useFlippkart() {
     dlog('bumper → multiball', { ballsBefore: balls.length })
 
     // 3 baller dropped på random posisjoner med random kick — uten kick
-    // ville nye baller stått stille på flatmark og blitt stuck-cleanet ut
+    // ville nye baller stått stille på flatmark og blitt stuck-cleanet ut.
+    // v7.4.1: respekter MAX_BALLS_IN_PLAY så vi aldri overshooter.
     const cx = bounds.width / 2
     const cy = bounds.height / 2
     const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
-    for (let k = 0; k < MULTIBALL_COUNT; k++) {
+    for (let k = 0; k < MULTIBALL_COUNT && balls.length < MAX_BALLS_IN_PLAY; k++) {
       const angle = Math.random() * Math.PI * 2
       const r = Math.sqrt(Math.random()) * R
       const x = cx + Math.cos(angle) * r
@@ -526,7 +545,8 @@ export function useFlippkart() {
       const cx = bounds.width / 2
       const cy = bounds.height / 2
       const R = RANDOM_DROP_R_FRAC * Math.min(bounds.width, bounds.height)
-      for (let k = 0; k < MULTIBALL_COUNT; k++) {
+      // v7.4.1: respekter cap så stillness-explode ikke overshooter heller
+      for (let k = 0; k < MULTIBALL_COUNT && balls.length < MAX_BALLS_IN_PLAY; k++) {
         const angle = Math.random() * Math.PI * 2
         const r = Math.sqrt(Math.random()) * R
         const x = cx + Math.cos(angle) * r
