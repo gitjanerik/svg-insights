@@ -28,6 +28,19 @@ const customName = ref('')
 // banner med info om hvem som har utfordret + spillforklaring.
 const challenge = ref(null)   // { name, score, level } eller null
 
+// v7.4.2: i utfordringsmodus skal alle valg (sted, navn, størrelse, ekvi-
+// distanse, preview drag/pinch) være read-only. Brukeren skal akkurat det
+// kartet som ble delt — ikke noe annet. Bruk én computed-flag overalt.
+const isLocked = computed(() => challenge.value !== null)
+
+function cancelChallenge() {
+  // Fjerner banneret + lås, og clearer URL-query så f.eks. F5 ikke gir
+  // utfordring igjen. Gir brukeren mulighet til å gjøre vanlig kart-bygg.
+  challenge.value = null
+  customName.value = ''
+  router.replace({ name: 'kart-nytt', query: {} })
+}
+
 function parseShareQuery() {
   const q = route.query
   if (!q || !q.lat || !q.lon || !q.n) return null
@@ -403,6 +416,7 @@ function panShiftToCenter(dxPx, dyPx) {
 }
 
 function onPreviewTouchStart(e) {
+  if (isLocked.value) return
   if (e.touches.length === 2) {
     pinching = true
     panning = false
@@ -420,6 +434,7 @@ function onPreviewTouchStart(e) {
   }
 }
 function onPreviewTouchMove(e) {
+  if (isLocked.value) return
   if (pinching && e.touches.length === 2) {
     e.preventDefault()
     const d = touchDist(e)
@@ -447,6 +462,7 @@ function touchDist(e) {
 
 // Desktop: musedrag = pan
 function onPreviewMouseDown(e) {
+  if (isLocked.value) return
   if (e.button !== 0) return
   panning = true
   panStart = {
@@ -456,6 +472,7 @@ function onPreviewMouseDown(e) {
   e.preventDefault()
 }
 function onPreviewMouseMove(e) {
+  if (isLocked.value) return
   if (!panning || !panStart) return
   e.preventDefault()
   const dxPx = e.clientX - panStart.x
@@ -469,6 +486,7 @@ function onPreviewMouseUp() {
 }
 // Desktop: scroll-hjul = zoom (pinch-ekvivalent)
 function onPreviewWheel(e) {
+  if (isLocked.value) return
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
@@ -501,10 +519,22 @@ onMounted(() => {
     </div>
 
     <!-- v7.4.0: Banner ved share-link — pre-populer felter, vis utfordrer +
-         spillforklaring så mottaker forstår hva de er invitert til. -->
+         spillforklaring så mottaker forstår hva de er invitert til.
+         v7.4.2: alle valg låst (read-only). Eget X-button kansellerer
+         utfordringen og frigjør feltene. -->
     <div v-if="challenge"
-         class="mx-4 mt-4 rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
-      <div class="flex items-center gap-3">
+         class="relative mx-4 mt-4 rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
+      <button @click="cancelChallenge"
+              aria-label="Avbryt utfordring"
+              class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
+                     text-amber-200/70 hover:text-amber-100 hover:bg-amber-400/15
+                     active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <div class="flex items-center gap-3 pr-8">
         <div class="shrink-0 w-10 h-10 rounded-full bg-amber-400/20 border border-amber-300/40
                     flex items-center justify-center text-amber-200 text-base font-bold tracking-widest">
           {{ challenge.name }}
@@ -521,11 +551,12 @@ onMounted(() => {
       <div class="mt-2.5 text-[11px] text-white/70 leading-relaxed">
         Spillet er <strong class="text-white">Flippkart</strong> — en flipperspill-fysikk over et
         ekte turkart. Trill kula over høydekurver for poeng, treff bumpere, hold den i lufta med
-        paddles på alle fire kanter. Lag kartet med samme oppsett, og se om du kan slå
-        utfordrerens score.
+        paddles på alle fire kanter. Trykk «Start FlippKart» for å spille på samme kart som
+        {{ challenge.name }} — og se om du kan slå scoren.
       </div>
       <div class="mt-2 text-[10px] text-white/45">
-        Sentrum, kartstørrelse og ekvidistanse er pre-utfylt fra lenken.
+        Sentrum, kartstørrelse og ekvidistanse er låst til utfordrerens oppsett. Trykk ✕ øverst
+        for å avbryte og lage et eget kart.
       </div>
     </div>
 
@@ -538,10 +569,11 @@ onMounted(() => {
           <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
         </svg>
         <input v-model="query" type="search" autocomplete="off" autocorrect="off"
-               placeholder="f.eks. Sognsvann, 0855, Vardåsen Asker"
+               :readonly="isLocked" :disabled="isLocked"
+               :placeholder="isLocked ? 'Søk låst i utfordringsmodus' : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
                class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
-                      focus:border-slate-300/50 transition" />
+                      focus:border-slate-300/50 transition disabled:opacity-50 disabled:cursor-not-allowed" />
         <div v-if="isSearching"
              class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15
                     border-t-white/70 rounded-full animate-spin" />
@@ -574,8 +606,9 @@ onMounted(() => {
         <div class="flex items-baseline justify-between gap-3">
           <input v-model="customName"
                  type="text" placeholder="Navn på kart"
+                 :readonly="isLocked"
                  class="flex-1 bg-transparent text-[15px] font-semibold focus:outline-none
-                        placeholder-white/25" />
+                        placeholder-white/25 read-only:opacity-70" />
           <div class="text-[10px] text-white/50 tabular-nums shrink-0">
             {{ center.lat.toFixed(4) }}°N, {{ center.lon.toFixed(4) }}°E
           </div>
@@ -586,11 +619,13 @@ onMounted(() => {
     <!-- Mini-preview + bbox -->
     <div class="flex-1 px-4 pb-3 flex flex-col gap-3 min-h-0">
       <div class="text-white/65 text-[11px] uppercase tracking-wide">
-        Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse
+        <template v-if="isLocked">Forhåndsvisning — låst til utfordrerens kartutsnitt</template>
+        <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
       <div ref="previewRef"
            class="flex-1 min-h-[220px] rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
-                  relative touch-none cursor-move"
+                  relative touch-none"
+           :class="isLocked ? 'cursor-not-allowed opacity-90' : 'cursor-move'"
            @touchstart="onPreviewTouchStart"
            @touchmove="onPreviewTouchMove"
            @touchend="onPreviewTouchEnd"
@@ -644,7 +679,8 @@ onMounted(() => {
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
         <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
-               class="w-full accent-slate-400" />
+               :disabled="isLocked"
+               class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
           <span>1 km</span><span>4 km</span><span>10 km</span>
         </div>
@@ -658,8 +694,10 @@ onMounted(() => {
         </div>
         <div class="grid grid-cols-5 gap-1.5">
           <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
+                  :disabled="isLocked"
                   @click="equidistanceM = opt.value"
-                  class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition"
+                  class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition
+                         disabled:cursor-not-allowed disabled:opacity-50"
                   :class="equidistanceM === opt.value
                           ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
                           : 'bg-white/5 border-white/10 text-white/65'">
@@ -672,15 +710,25 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Bygg-knapp -->
+    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start FlippKart» —
+         samme handler kjører bygg + auto-start-flagg, så MapView lander direkte
+         i spillet med Curves-tema aktivert. -->
     <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
-              class="w-full py-4 rounded-xl bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800
-                     disabled:opacity-60 text-white font-semibold flex items-center justify-center gap-2
-                     active:scale-[0.99] transition">
+              class="w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2
+                     active:scale-[0.99] transition disabled:opacity-60"
+              :class="isLocked
+                      ? 'bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900'
+                      : 'bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800'">
         <div v-if="buildState !== 'idle' && buildState !== 'error'"
              class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
-        <span>{{ buildState === 'idle' || buildState === 'error' ? 'Lag turkart' : buildProgress }}</span>
+        <span v-if="buildState !== 'idle' && buildState !== 'error'">{{ buildProgress }}</span>
+        <template v-else>
+          <svg v-if="isLocked" viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor">
+            <polygon points="5,3 19,12 5,21"/>
+          </svg>
+          <span>{{ isLocked ? 'Start FlippKart' : 'Lag turkart' }}</span>
+        </template>
       </button>
       <div v-if="buildError"
            class="mt-3 px-3 py-2 rounded-lg bg-slate-500/20 border border-slate-300/30
