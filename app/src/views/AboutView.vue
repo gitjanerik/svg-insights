@@ -247,12 +247,30 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 7.4.2 -->
+          <!-- 7.5.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-emerald-200/40" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white text-base">7.4.2</span>
+                <span class="font-semibold text-white text-base">7.5.0</span>
+                <span class="text-emerald-300/85">&mdash; rebrand FlippKart &rarr; CurveBall + i18n</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
+              </summary>
+              <ul class="mt-2 text-xs text-white/55 space-y-1.5 list-disc list-inside">
+                <li>Rebrand av spillet: «FlippKart» (norskspesifikk) &rarr; «CurveBall» (internasjonalt). Filer, komponenter, CSS-klasser, SVG-id&rsquo;er og storage-keys er oppgradert &mdash; gamle nøkler leses fortsatt for graceful migrering</li>
+                <li>Ny <code>src/lib/i18n.js</code>-modul med <code>t(key, params)</code>-helper. Norsk bokmål er default; engelsk-stub følger med. Brukere kan bytte språk runtime via <code>setLocale()</code>; valget persisteres i <code>localStorage.locale</code></li>
+                <li>Alle synlige UI-strenger i CurveBall-HUD-en, MapPicker challenge-banner og MapView-knappen kommer fra i18n-katalogen &mdash; ingen hardkodet tekst igjen i template-ene for spillet</li>
+                <li>Spillnavnet «CurveBall» er bevisst konstant p&aring; tvers av locales (det er en brand, ikke en oversettelse)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 7.4.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white/85">7.4.2</span>
                 <span class="text-emerald-300/85">&mdash; utfordringsmodus + auto-Curves</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">10. mai 2026</span>
               </summary>
@@ -314,7 +332,7 @@ const TABS = [
                 <li>Ny CHAIN-flash på skjermen ved hver level-up under multiball</li>
                 <li>Ny perk: <strong>Koblede paddles</strong> — bunn+venstre og topp+høyre lader sammen ved tap</li>
                 <li>Web Audio er nå defensivt try/catch'et — TypeError på Android stopper ikke spillet</li>
-                <li>Debug-panel skjult (flag i useFlippkart.js, beholdt for senere bruk)</li>
+                <li>Debug-panel skjult (flag i useCurveBall.js, beholdt for senere bruk)</li>
               </ul>
             </details>
           </div>

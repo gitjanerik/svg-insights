@@ -11,6 +11,7 @@ import { findHighestPoint, packDem } from '../lib/demSampling.js'
 import { wgs84ToUtm32 } from '../lib/utm.js'
 import { saveMap, generateMapId } from '../lib/mapStorage.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
+import { t } from '../lib/i18n.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -41,6 +42,24 @@ function cancelChallenge() {
   router.replace({ name: 'kart-nytt', query: {} })
 }
 
+// HTML-escape for trygg interpolering i v-html (kun for utfordrernavn)
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+
+// Utfordrings-intro renderet med <strong> rundt spillnavnet. Bruker v-html
+// fordi vi vil bolde gameName uten å forurense i18n-stringen med markup.
+const challengeIntroHtml = computed(() => {
+  if (!challenge.value) return ''
+  return t('challenge.intro', {
+    gameName: `<strong class="text-white">${escapeHtml(t('game.name'))}</strong>`,
+    startBtn: escapeHtml(t('button.startGame')),
+    name: escapeHtml(challenge.value.name),
+  })
+})
+
 function parseShareQuery() {
   const q = route.query
   if (!q || !q.lat || !q.lon || !q.n) return null
@@ -57,7 +76,7 @@ function parseShareQuery() {
   if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 50, 100].includes(eq)) equidistanceM.value = eq
   const name = String(q.n).slice(0, 3).toUpperCase()
-  customName.value = `Utfordring fra ${name}`
+  customName.value = t('challenge.from', { name })
   return {
     name,
     score: Number.isFinite(score) ? score : null,
@@ -321,7 +340,7 @@ async function proceedWithMapType(mapType) {
     const id = generateMapId()
     const navn = customName.value.trim() || center.value.name || 'Uten navn'
 
-    // v7.2.0: Persistere DEM med kartet (for Flippkart-fysikk og fremtidige
+    // v7.2.0: Persistere DEM med kartet (for CurveBall-fysikk og fremtidige
     // DEM-baserte features). Hopper over for syntetisk DEM siden den ikke
     // representerer ekte terreng.
     const isRealDem = dem && !dem.source?.startsWith('synthetic')
@@ -346,9 +365,14 @@ async function proceedWithMapType(mapType) {
     await saveMap(entry)
     // v7.4.1: hvis kartet er bygget fra en delingslenke → marker for auto-
     // start av flippkart i ny MapView. Brukeren skal rett inn i spillet,
-    // ikke måtte tappe Curves-tema og deretter Flippkart-knappen.
+    // ikke måtte tappe Curves-tema og deretter CurveBall-knappen.
     if (challenge.value) {
-      try { sessionStorage.setItem('flippkart-autostart-mapId', id) } catch { /* QuotaExceeded */ }
+      // v7.5.0: ny nøkkel etter rebrand. Fjern eventuell legacy-key så vi
+      // ikke ender med to konkurrerende verdier i sessionStorage.
+      try {
+        sessionStorage.setItem('curveball-autostart-mapId', id)
+        sessionStorage.removeItem('flippkart-autostart-mapId')
+      } catch { /* QuotaExceeded */ }
     }
     router.push({ name: 'kart-vis', params: { id } })
   } catch (e) {
@@ -525,7 +549,7 @@ onMounted(() => {
     <div v-if="challenge"
          class="relative mx-4 mt-4 rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
       <button @click="cancelChallenge"
-              aria-label="Avbryt utfordring"
+              :aria-label="t('challenge.cancel')"
               class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
                      text-amber-200/70 hover:text-amber-100 hover:bg-amber-400/15
                      active:scale-95 transition">
@@ -541,22 +565,22 @@ onMounted(() => {
         </div>
         <div class="flex-1 min-w-0">
           <div class="text-[13px] font-semibold text-amber-100">
-            Utfordring fra {{ challenge.name }}
+            {{ t('challenge.from', { name: challenge.name }) }}
           </div>
           <div v-if="challenge.score !== null" class="text-[11px] text-amber-100/70">
-            Score: {{ challenge.score.toLocaleString('no-NO') }}<span v-if="challenge.level"> · level {{ challenge.level }}</span>
+            <template v-if="challenge.level">
+              {{ t('challenge.scoreLevel', { score: challenge.score.toLocaleString('no-NO'), level: challenge.level }) }}
+            </template>
+            <template v-else>
+              {{ t('challenge.score', { score: challenge.score.toLocaleString('no-NO') }) }}
+            </template>
           </div>
         </div>
       </div>
-      <div class="mt-2.5 text-[11px] text-white/70 leading-relaxed">
-        Spillet er <strong class="text-white">Flippkart</strong> — en flipperspill-fysikk over et
-        ekte turkart. Trill kula over høydekurver for poeng, treff bumpere, hold den i lufta med
-        paddles på alle fire kanter. Trykk «Start FlippKart» for å spille på samme kart som
-        {{ challenge.name }} — og se om du kan slå scoren.
-      </div>
+      <div class="mt-2.5 text-[11px] text-white/70 leading-relaxed"
+           v-html="challengeIntroHtml"></div>
       <div class="mt-2 text-[10px] text-white/45">
-        Sentrum, kartstørrelse og ekvidistanse er låst til utfordrerens oppsett. Trykk ✕ øverst
-        for å avbryte og lage et eget kart.
+        {{ t('challenge.locked') }}
       </div>
     </div>
 
@@ -570,7 +594,7 @@ onMounted(() => {
         </svg>
         <input v-model="query" type="search" autocomplete="off" autocorrect="off"
                :readonly="isLocked" :disabled="isLocked"
-               :placeholder="isLocked ? 'Søk låst i utfordringsmodus' : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
+               :placeholder="isLocked ? t('picker.searchLockedPlaceholder') : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
                class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
                       focus:border-slate-300/50 transition disabled:opacity-50 disabled:cursor-not-allowed" />
@@ -619,7 +643,7 @@ onMounted(() => {
     <!-- Mini-preview + bbox -->
     <div class="flex-1 px-4 pb-3 flex flex-col gap-3 min-h-0">
       <div class="text-white/65 text-[11px] uppercase tracking-wide">
-        <template v-if="isLocked">Forhåndsvisning — låst til utfordrerens kartutsnitt</template>
+        <template v-if="isLocked">{{ t('picker.previewLockedHint') }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
       <div ref="previewRef"
@@ -710,9 +734,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start FlippKart» —
+    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start CurveBall» —
          samme handler kjører bygg + auto-start-flagg, så MapView lander direkte
-         i spillet med Curves-tema aktivert. -->
+         i spillet med Curves-tema aktivert. v7.5.0: tekst kommer fra i18n. -->
     <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
               class="w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2
@@ -727,7 +751,7 @@ onMounted(() => {
           <svg v-if="isLocked" viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor">
             <polygon points="5,3 19,12 5,21"/>
           </svg>
-          <span>{{ isLocked ? 'Start FlippKart' : 'Lag turkart' }}</span>
+          <span>{{ isLocked ? t('button.startGame') : t('picker.makeMap') }}</span>
         </template>
       </button>
       <div v-if="buildError"

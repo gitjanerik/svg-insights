@@ -1,11 +1,13 @@
 /**
- * Flippkart-lyd — chiptune-style effekter via Web Audio API.
+ * CurveBall-lyd — chiptune-style effekter via Web Audio API.
  *
  * Ingen eksterne biblioteker. Lazy-init av AudioContext på første bruk
  * (mange browsere krever user-gesture før AudioContext kan starte).
  *
  * Alle funksjoner er no-ops hvis AudioContext-init feiler — spillet skal
  * fortsatt fungere uten lyd.
+ *
+ * (v7.5.0: rebrandet fra useFlippkartSound — funksjons-API uendret.)
  */
 
 let audioCtx = null

@@ -26,7 +26,7 @@ const ballGradient = computed(() => {
 
 const emit = defineEmits(['drop'])
 
-// Trail-sluttgammel: TRAIL_LEN fra useFlippkart. Holder seg syncet via
+// Trail-sluttgammel: TRAIL_LEN fra useCurveBall. Holder seg syncet via
 // at hver slot har age 0..TRAIL_LEN.
 const trailMaxAge = 14
 
@@ -88,12 +88,12 @@ function onBallTap(b) {
        preserveAspectRatio="xMidYMid meet"
        @click="onClick">
     <defs>
-      <radialGradient id="flipp-chrome" cx="35%" cy="30%">
+      <radialGradient id="cb-chrome" cx="35%" cy="30%">
         <stop offset="0%" :stop-color="ballGradient.inner"/>
         <stop offset="35%" :stop-color="ballGradient.mid"/>
         <stop offset="100%" :stop-color="ballGradient.outer"/>
       </radialGradient>
-      <filter id="flipp-shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <filter id="cb-shadow" x="-50%" y="-50%" width="200%" height="200%">
         <feGaussianBlur stdDeviation="1.5"/>
         <feOffset dx="0.5" dy="1.5" result="shadow"/>
         <feFlood flood-color="#000" flood-opacity="0.45"/>
@@ -197,8 +197,8 @@ function onBallTap(b) {
       </circle>
       <!-- Marble -->
       <circle :cx="b.x" :cy="b.y" :r="ballRadius"
-              fill="url(#flipp-chrome)"
-              filter="url(#flipp-shadow)"
+              fill="url(#cb-chrome)"
+              filter="url(#cb-shadow)"
               :style="{
                 filter: b.chargeT > 0.7 ? `hue-rotate(${(b.chargeT - 0.7) * 600}deg) brightness(${1 + b.chargeT * 0.3})` : '',
                 cursor: 'pointer',

@@ -61,7 +61,7 @@ function paddleStyle(edge) {
 }
 
 function chargeClass(edge) {
-  return `flipp-charge-${props.flipp.flippers[edge].kickLevel}`
+  return `cb-charge-${props.flipp.flippers[edge].kickLevel}`
 }
 
 function onPointerDown(edge, e) {
@@ -109,34 +109,34 @@ function onPointerUp(e) {
 </script>
 
 <template>
-  <div v-if="flipp.active.value && mapRect" class="flipp-paddles">
+  <div v-if="flipp.active.value && mapRect" class="cb-paddles">
     <div v-for="edge in ['top', 'bottom', 'left', 'right']"
          :key="edge"
-         class="flipp-paddle"
+         class="cb-paddle"
          :class="[
-           `flipp-paddle-${edge}`,
+           `cb-paddle-${edge}`,
            chargeClass(edge),
-           dragState?.edge === edge && dragState?.movedAsDrag ? 'flipp-paddle-active' : '',
+           dragState?.edge === edge && dragState?.movedAsDrag ? 'cb-paddle-active' : '',
          ]"
          :style="paddleStyle(edge)"
          @pointerdown="onPointerDown(edge, $event)"
          @pointermove="onPointerMove"
          @pointerup="onPointerUp"
          @pointercancel="onPointerUp">
-      <div class="flipp-paddle-grip"/>
+      <div class="cb-paddle-grip"/>
     </div>
   </div>
 </template>
 
 <style scoped>
-.flipp-paddles {
+.cb-paddles {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 45;
 }
 
-.flipp-paddle {
+.cb-paddle {
   position: fixed;
   pointer-events: auto;
   touch-action: none;
@@ -151,49 +151,49 @@ function onPointerUp(e) {
 
 /* v7.3.0: Utvidet touch-sone via ::before pseudo-element. Paddle visuelt
    står som før, men kan grabbes 70px ekstra INN mot kart-senter. */
-.flipp-paddle::before {
+.cb-paddle::before {
   content: '';
   position: absolute;
   background: transparent;
 }
-.flipp-paddle-top::before    { inset:    0  0 -70px  0; }
-.flipp-paddle-bottom::before { inset: -70px  0    0  0; }
-.flipp-paddle-left::before   { inset:    0 -70px  0  0; }
-.flipp-paddle-right::before  { inset:    0    0  0 -70px; }
+.cb-paddle-top::before    { inset:    0  0 -70px  0; }
+.cb-paddle-bottom::before { inset: -70px  0    0  0; }
+.cb-paddle-left::before   { inset:    0 -70px  0  0; }
+.cb-paddle-right::before  { inset:    0    0  0 -70px; }
 
-.flipp-paddle:active,
-.flipp-paddle.flipp-paddle-active {
+.cb-paddle:active,
+.cb-paddle.cb-paddle-active {
   cursor: grabbing;
   filter: brightness(1.15);
 }
 
 /* Charge stages — kald → varm via kickLevel.
    0 = blå (normal), 1 = gul, 2 = oransj, 3 = rød (max). */
-.flipp-charge-0 {
+.cb-charge-0 {
   background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.55), inset 0 0 4px rgba(0,0,0,0.3);
 }
-.flipp-charge-1 {
+.cb-charge-1 {
   background: linear-gradient(135deg, #fde047 0%, #facc15 100%);
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.75), inset 0 0 4px rgba(0,0,0,0.3);
 }
-.flipp-charge-2 {
+.cb-charge-2 {
   background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
   box-shadow: 0 0 14px rgba(251, 146, 60, 0.85), inset 0 0 4px rgba(0,0,0,0.3);
 }
-.flipp-charge-3 {
+.cb-charge-3 {
   background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
   box-shadow: 0 0 18px rgba(239, 68, 68, 0.95), inset 0 0 6px rgba(0,0,0,0.4);
-  animation: flipp-pulse-red 0.5s steps(2, end) infinite;
+  animation: cb-pulse-red 0.5s steps(2, end) infinite;
 }
-@keyframes flipp-pulse-red {
+@keyframes cb-pulse-red {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.3); }
   100% { filter: brightness(1.0); }
 }
 
 /* Diagonal grip-stripe i 8-bit-stil for visuell feedback */
-.flipp-paddle-grip {
+.cb-paddle-grip {
   background: repeating-linear-gradient(
     45deg,
     rgba(0, 0, 0, 0.25),
@@ -202,13 +202,13 @@ function onPointerUp(e) {
     transparent 8px
   );
 }
-.flipp-paddle-top .flipp-paddle-grip,
-.flipp-paddle-bottom .flipp-paddle-grip {
+.cb-paddle-top .cb-paddle-grip,
+.cb-paddle-bottom .cb-paddle-grip {
   width: 60%;
   height: 6px;
 }
-.flipp-paddle-left .flipp-paddle-grip,
-.flipp-paddle-right .flipp-paddle-grip {
+.cb-paddle-left .cb-paddle-grip,
+.cb-paddle-right .cb-paddle-grip {
   width: 6px;
   height: 60%;
 }

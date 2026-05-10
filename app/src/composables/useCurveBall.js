@@ -4,10 +4,11 @@ import {
   playIntro, playKick, playEnergize, playSplash, playWin,
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
   playStillWarning, playExplosion, playMultiSpawn, playBumperHit,
-} from './useFlippkartSound.js'
+} from './useCurveBallSound.js'
 
 /**
- * Flippkart — fysikk og state machine for marble-spillet.
+ * CurveBall — fysikk og state machine for marble-spillet.
+ * (v7.5.0: rebrandet fra useFlippkart — semantikk uendret.)
  *
  * v7.2.6 multi-ball:
  *   - balls[] erstatter single ball
@@ -16,7 +17,7 @@ import {
  *   - Game continues til ALLE baller er ute (drown / out-of-edge), så -1 liv
  *   - Stillness reset på paddle-treff og bevegelse (>STILLNESS_DIST_M)
  */
-export function useFlippkart() {
+export function useCurveBall() {
   const active = ref(false)
   // 'idle' | 'countdown' | 'rolling' | 'sunk' | 'won' | 'gameover' | 'mode-select' | 'perk-select'
   const status = ref('idle')
@@ -48,7 +49,7 @@ export function useFlippkart() {
     const t = new Date()
     const stamp = `${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}.${String(t.getMilliseconds()).padStart(3,'0').slice(0,2)}`
     const line = data === undefined ? `${stamp} ${msg}` : `${stamp} ${msg} ${JSON.stringify(data)}`
-    console.log('[Flippkart]', msg, data ?? '')
+    console.log('[CurveBall]', msg, data ?? '')
     debugLog.push(line)
     while (debugLog.length > 12) debugLog.shift()
   }
@@ -192,17 +193,26 @@ export function useFlippkart() {
     return Math.round(500 + 600 * (lv - 1) + 60 * Math.pow(lv - 1, 2))
   }
 
+  // v7.5.0 rebrand-migrering: les begge nøkler i overgangsperioden, skriv
+  // kun ny. Bytt til kun `curveball-highscore` om noen versjoner senere når
+  // alle aktive klienter har migrert via en spilleøkt.
+  const HIGHSCORE_KEY_NEW = 'curveball-highscore'
+  const HIGHSCORE_KEY_OLD = 'flippkart-highscore'
+
   function loadHighscore() {
     if (typeof localStorage === 'undefined') return 0
     try {
-      const v = parseInt(localStorage.getItem('flippkart-highscore') ?? '0', 10)
+      const raw = localStorage.getItem(HIGHSCORE_KEY_NEW)
+                ?? localStorage.getItem(HIGHSCORE_KEY_OLD)
+                ?? '0'
+      const v = parseInt(raw, 10)
       return Number.isFinite(v) ? v : 0
     } catch { return 0 }
   }
 
   function saveHighscore(value) {
     if (typeof localStorage === 'undefined') return
-    try { localStorage.setItem('flippkart-highscore', String(value)) } catch {}
+    try { localStorage.setItem(HIGHSCORE_KEY_NEW, String(value)) } catch {}
   }
 
   function levelParams(n) {
