@@ -11,7 +11,8 @@ import {
  * CurveBall — fysikk og state machine for marble-spillet.
  *
  * (v8.0.0: rebrandet fra useFlippkart — semantikk uendret. Brand-navnet i
- * UI er CurveInvaders, men codename i kildekoden er CurveBall.)
+ * UI er Curve Invaders (med mellomrom siden v8.0.1), men codename i
+ * kildekoden er CurveBall.)
  *
  * v7.2.6 multi-ball:
  *   - balls[] erstatter single ball

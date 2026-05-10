@@ -2,8 +2,9 @@
  * i18n.js — Lett-vekt lokalisering for SVG Insights.
  *
  * Default-språk er norsk bokmål ('no'). Andre språk kan legges til ved å
- * supplere `dictionaries`-objektet. Spillnavnet «CurveInvaders» er bevisst
- * konstant på tvers av locales — det er en brand, ikke en oversettelse.
+ * supplere `dictionaries`-objektet. Spillnavnet «Curve Invaders» (med
+ * mellomrom — v8.0.1) er bevisst konstant på tvers av locales — det er en
+ * brand, ikke en oversettelse.
  *
  * Bruk:
  *   import { t } from '../lib/i18n.js'
@@ -29,18 +30,19 @@ const DEFAULT_LOCALE = 'no'   // norsk bokmål
  * først; deretter speiler du dem i andre locales etter behov. Ny-tilføyde
  * nøkler som mangler i andre språk faller pent tilbake til norsk.
  *
- * Brand-navnet «CurveInvaders» er bevisst konstant i alle dicts. Interne
+ * Brand-navnet «Curve Invaders» (v8.0.1: med mellomrom — tidligere skrevet
+ * sammen som «CurveInvaders») er bevisst konstant i alle dicts. Interne
  * identifiers (filnavn, funksjoner, CSS-klasser, storage-keys) er fortsatt
  * «CurveBall» — det er et codename, ikke en brand.
  */
 const no = {
   // ── Brand ────────────────────────────────────────────────────────────
-  'game.name': 'CurveInvaders',
+  'game.name': 'Curve Invaders',
   'game.emoji': '🎮',
   'game.tagline': 'flipperspill-fysikk over et ekte turkart',
 
   // ── Knapper / generelt ──────────────────────────────────────────────
-  'button.startGame': 'Start CurveInvaders',
+  'button.startGame': 'Start Curve Invaders',
   'button.exit': 'EXIT',
   'button.restart': 'RESTART',
   'button.share': 'DEL',
@@ -73,10 +75,9 @@ const no = {
   // ── Flash-meldinger ─────────────────────────────────────────────────
   'flash.smash': 'SMASH!',
   'flash.multiball': 'MULTIBALL!',
-  // v7.4.3 spawn-modi (Miniball + CurveInvaders) — NB: «CURVE INVADERS!»-
-  // flash er funksjonen «invader-spawn-modus», ikke spillnavnet (selv om
-  // de tilfeldigvis matcher etter v8 brand-shift). Beholdes som «CURVE
-  // INVADERS!» for retro-arkadefølelsen.
+  // v7.4.3 spawn-modi (Miniball + Curve Invaders) — NB: flash-teksten «INVADERS!»
+  // refererer til spawn-modusen (invader-formasjon), ikke spillnavnet. Holdes
+  // kort så den ikke kolliderer med brandnavnet «Curve Invaders».
   'flash.mini': 'MINIBALL!',
   'flash.miniSub': '×12 · 2× SPEED · 2× POENG',
   'flash.invader': 'INVADERS!',
@@ -119,11 +120,11 @@ const no = {
  * til norsk via `t()`-helperen. Brand-navnet er det samme.
  */
 const en = {
-  'game.name': 'CurveInvaders',
+  'game.name': 'Curve Invaders',
   'game.emoji': '🎮',
   'game.tagline': 'pinball physics on a real hiking map',
 
-  'button.startGame': 'Start CurveInvaders',
+  'button.startGame': 'Start Curve Invaders',
   'button.exit': 'EXIT',
   'button.restart': 'RESTART',
   'button.share': 'SHARE',

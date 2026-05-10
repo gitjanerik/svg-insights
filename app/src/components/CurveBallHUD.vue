@@ -11,6 +11,15 @@ const props = defineProps({
   // shareInfo: { lat, lon, sizeKm, equidistanceM, baseUrl } — alt HUD trenger
   // for å bygge en delings-URL ved game over. Null hvis ikke tilgjengelig.
   shareInfo: { type: Object, default: null },
+  // v8.0.1: skjerm-rekt for kart-SVG-en. Brukes til å skalere HUD-elementer
+  // (topp-bar, hjerter, exit-knapp) etter kart-utsnittets faktiske størrelse
+  // slik at små kart får lett HUD og store kart får større.
+  mapRect: { type: Object, default: null },
+})
+
+const hudScaleVar = computed(() => {
+  const s = props.mapRect?.hudScale
+  return Number.isFinite(s) ? s : 1
 })
 
 const emit = defineEmits(['restart', 'exit', 'continue', 'tournamentNext'])
@@ -262,7 +271,7 @@ async function copyShareUrl() {
 </script>
 
 <template>
-  <div v-if="flipp.active.value" class="cb-hud">
+  <div v-if="flipp.active.value" class="cb-hud" :style="{ '--cb-hud-scale': hudScaleVar }">
     <!-- Top bar -->
     <div class="cb-bar">
       <div class="cb-cell cb-cyan">{{ levelStr }}</div>
@@ -484,6 +493,9 @@ async function copyShareUrl() {
   font-family: 'Press Start 2P', 'Courier New', monospace;
   -webkit-font-smoothing: none;
   font-smoothing: none;
+  /* v8.0.1: dynamic-HUD-scale settes via inline style fra MapView. Fallback
+     1 hvis ingen mapRect (uvanlig — HUD vises bare når spillet kjører). */
+  --cb-hud-scale: 1;
 }
 
 .cb-bar {
@@ -492,9 +504,9 @@ async function copyShareUrl() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 12px;
+  padding: calc(12px * var(--cb-hud-scale)) calc(12px * var(--cb-hud-scale));
   background: #000;
-  font-size: 10px;
+  font-size: calc(10px * var(--cb-hud-scale));
   letter-spacing: 0.6px;
   border-bottom: 2px solid #222;
 }
@@ -503,16 +515,16 @@ async function copyShareUrl() {
   white-space: nowrap;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--cb-hud-scale));
 }
 
 .cb-hearts {
-  gap: 3px;
+  gap: calc(3px * var(--cb-hud-scale));
 }
 
 .cb-heart {
-  width: 18px;
-  height: 16px;
+  width: calc(18px * var(--cb-hud-scale));
+  height: calc(16px * var(--cb-hud-scale));
   image-rendering: pixelated;
 }
 
@@ -522,14 +534,15 @@ async function copyShareUrl() {
 
 .cb-exit {
   position: absolute;
-  bottom: 16px; right: 16px;
+  bottom: calc(16px * var(--cb-hud-scale));
+  right:  calc(16px * var(--cb-hud-scale));
   pointer-events: auto;
   background: #000;
   color: #5cefff;
   font-family: inherit;
-  font-size: 10px;
+  font-size: calc(10px * var(--cb-hud-scale));
   letter-spacing: 0.6px;
-  padding: 8px 12px;
+  padding: calc(8px * var(--cb-hud-scale)) calc(12px * var(--cb-hud-scale));
   border: 2px solid #5cefff;
   border-radius: 0;
   cursor: pointer;
@@ -680,7 +693,7 @@ async function copyShareUrl() {
   100% { transform: translate(-50%, -130%) scale(1.2); opacity: 0; }
 }
 
-/* v7.4.3 CurveInvaders-flash — alien-grønn, monospace-vibe + flicker */
+/* v7.4.3 Curve Invaders-flash — alien-grønn, monospace-vibe + flicker */
 .cb-invader-flash {
   position: absolute;
   top: 50%; left: 50%;
