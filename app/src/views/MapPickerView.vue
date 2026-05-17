@@ -92,6 +92,29 @@ const EQUIDISTANCE_OPTIONS = [
   { value: 50,  label: '50 m',  desc: 'oversikt — for store områder' },
 ]
 
+// v8.2.3: minste tillatte ekvidistanse skaleres med bbox-bredde. Tett
+// kontur-rendering er meningsløst på store kart (overlappende streker,
+// rotete kart uten lesbarhet). Regler:
+//   bredde <  4 km  → alle valg (5/10/20/25/50)
+//   4 ≤ bredde < 8  → min 10 m (5 m utelukket)
+//   8 ≤ bredde < 10 → min 20 m (5/10 m utelukket)
+//   bredde ≥ 10 km  → min 25 m (5/10/20 m utelukket)
+const minEquidistance = computed(() => {
+  const km = halfKm.value * 2
+  if (km >= 10) return 25
+  if (km >= 8) return 20
+  if (km >= 4) return 10
+  return 5
+})
+
+// Auto-bump ekvidistanse n&aring;r bredde &oslash;kes forbi en grense og
+// gjeldende valg blir ulovlig.
+watch(minEquidistance, (minEq) => {
+  if (equidistanceM.value < minEq) {
+    equidistanceM.value = minEq
+  }
+})
+
 const { query, results, isSearching, error: searchError } = useNominatim()
 
 const showResults = computed(() =>
@@ -722,10 +745,13 @@ onMounted(() => {
         </div>
         <div class="grid grid-cols-5 gap-1.5">
           <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
-                  :disabled="isLocked"
+                  :disabled="isLocked || opt.value < minEquidistance"
+                  :title="opt.value < minEquidistance
+                          ? `Krever bredde < ${opt.value === 5 ? 4 : opt.value === 10 ? 8 : 10} km`
+                          : opt.desc"
                   @click="equidistanceM = opt.value"
                   class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition
-                         disabled:cursor-not-allowed disabled:opacity-50"
+                         disabled:cursor-not-allowed disabled:opacity-40"
                   :class="equidistanceM === opt.value
                           ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
                           : 'bg-white/5 border-white/10 text-white/65'">
