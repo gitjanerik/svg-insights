@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.8 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-orange-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.8</span>
+                <span class="text-orange-200/90">&mdash; smalere oransje hovedveier</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>Hovedvei (ISOM 502) er n&aring; ~15% smalere &mdash; casing 0.34mm (fra 0.40mm), overlay 0.29mm (fra 0.34mm). Reduserer tendensen til at parallelle oransje hovedveier vokser inn i hverandre i tett bebyggelse</li>
+                <li>R&oslash;de motorveier (501) og sm&aring;veier (503) er ur&oslash;rt &mdash; v8.5.7-casing-pattern h&aring;ndterer kryss riktig uansett bredde</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.7 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.7</span>
                 <span class="text-rose-200/90">&mdash; casing-pattern for veier i kryss</span>
