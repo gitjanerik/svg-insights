@@ -24,6 +24,38 @@ const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*ha
 const equidistanceM = ref(20)  // høydekurve-intervall, 5/10/20/25/50 m
 const customName = ref('')
 
+// v8.5.1: Sentrer på GPS. Forhindrer at brukeren ender med et kart sentrert
+// på Nominatim-koordinaten for stedsnavnet (som kan ligge en stund vekk fra
+// hvor brukeren faktisk står), og dermed får GPS-prikken utenfor sitt eget
+// kart når de bruker det. Ingen watcher — én engangs hent på request.
+const gpsState = ref({ status: 'idle', error: null })  // idle | locating | ok | error
+
+function onCenterOnMe() {
+  if (isLocked.value) return
+  if (!navigator.geolocation) {
+    gpsState.value = { status: 'error', error: 'Nettleseren støtter ikke GPS' }
+    return
+  }
+  gpsState.value = { status: 'locating', error: null }
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude
+      const lon = pos.coords.longitude
+      center.value = { lat, lon, name: customName.value || 'Min posisjon' }
+      gpsState.value = { status: 'ok', error: null }
+    },
+    (err) => {
+      const map = {
+        1: 'GPS-tillatelse avvist',
+        2: 'GPS-posisjon ikke tilgjengelig',
+        3: 'GPS-forespørsel tok for lang tid',
+      }
+      gpsState.value = { status: 'error', error: map[err.code] ?? 'GPS-feil' }
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  )
+}
+
 // v7.4.0: Delings-utfordring. Hvis URL har ?n=ABC&lat=...&lon=...&km=...&eq=...
 // så kommer brukeren fra en delings-lenke — pre-populer alle felter og vis
 // banner med info om hvem som har utfordret + spillforklaring.
@@ -651,6 +683,36 @@ onMounted(() => {
       </Transition>
 
       <div v-if="searchError" class="mt-2 text-[11px] text-slate-300">{{ searchError }}</div>
+
+      <!-- v8.5.1: GPS-snarvei. Sentrer kartet på din n&aring;v&aelig;rende posisjon i
+           stedet for &aring; m&aring;tte s&oslash;ke etter stedsnavn (som ofte ligger annen-
+           hvor i bygda enn der du faktisk st&aring;r). -->
+      <button v-if="!isLocked"
+              @click="onCenterOnMe"
+              :disabled="gpsState.status === 'locating'"
+              class="mt-2 w-full px-3 py-2 rounded-lg border border-white/15
+                     bg-white/[0.04] text-white/80 text-[12px] font-medium
+                     active:bg-white/[0.08] active:scale-[0.99] transition
+                     disabled:opacity-60 flex items-center justify-center gap-2">
+        <svg v-if="gpsState.status === 'locating'"
+             viewBox="0 0 24 24" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round">
+          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+        </svg>
+        <svg v-else viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <circle cx="12" cy="12" r="2.5" fill="currentColor"/>
+          <line x1="12" y1="1" x2="12" y2="5"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="1" y1="12" x2="5" y2="12"/>
+          <line x1="19" y1="12" x2="23" y2="12"/>
+        </svg>
+        <span v-if="gpsState.status === 'locating'">Henter posisjon …</span>
+        <span v-else>Sentrer kartet på meg (GPS)</span>
+      </button>
+      <div v-if="gpsState.error"
+           class="mt-2 text-[11px] text-amber-300">{{ gpsState.error }}</div>
     </div>
 
     <!-- Valgt sted -->

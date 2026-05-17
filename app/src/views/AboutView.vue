@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.1</span>
+                <span class="text-emerald-200/90">&mdash; «Sentrer kart p&aring; meg (GPS)» i picker</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>Ny knapp i kart-velgeren henter din GPS-posisjon og setter kart-sentrum n&oslash;yaktig der du st&aring;r. Forhindrer at GPS-prikken havner utenfor kartet n&aring;r Nominatim sin koordinat for et stedsnavn ligger en stund vekk fra hvor du faktisk er (typisk problem ved Gulsvik der Nominatim peker p&aring; sentrum-omr&aring;det selv om du st&aring;r ved sj&oslash;kanten)</li>
+                <li>Diagnose: kartet og GPS-prikken bruker n&oslash;yaktig samme projeksjons-matematikk, s&aring; mismatchet du opplevde var alltid at bbox-en var sentrert et annet sted enn der du sto &mdash; ikke en kode-bug. «&Aring;pne picker, trykk GPS, lag kart» gir n&aring; et kart der du alltid er midt i</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.0</span>
                 <span class="text-fuchsia-200/90">&mdash; snarvei til Curve Invaders fra kart-listen</span>
