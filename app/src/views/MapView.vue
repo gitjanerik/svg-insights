@@ -386,6 +386,12 @@ let lastSvgString = ''      // huskes til print-eksport
 
 watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
 
+// Lilla ring rundt symbolene er en hint for at man er i annoteringsmodus
+// — re-render når modusen toggles slik at ringen forsvinner ut av modus.
+// Per-type visibility (Annoteringer-laget) trigger også re-render.
+watch(() => annot.isAnnotateMode.value, () => renderAnnotations())
+watch(() => annot.visibleTypes.value, () => renderAnnotations())
+
 // Re-render symboler (annoteringer + bruker-pos dot) når pinch-zoom endrer
 // seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
 watch(scale, () => { renderAnnotations(); updateUserDot() })
@@ -457,37 +463,132 @@ function renderAnnotations() {
     if (a.type !== 'point') continue
     const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
     if (!sym) continue
+    // Per-type synlighet (drawer-laget «Annoteringer»). Når brukeren skjuler
+    // f.eks. alle «Knaus» beholdes annotasjonen i lagring men ikke rendres.
+    if (!annot.visibleTypes.value.has(sym.symbolKey)) continue
 
     const g = document.createElementNS(ns, 'g')
     g.setAttribute('transform', `translate(${a.x},${a.y})`)
     g.setAttribute('data-annot-id', a.id)
+    g.setAttribute('data-annot-type', sym.symbolKey)
 
-    // Lys ring bak symbolet så det alltid er lesbart over hvilken som
-    // helst kart-bakgrunn (skog, vann, åpen mark). vector-effect=non-
-    // scaling-stroke holder ringen 2 CSS-px tykk uansett zoom.
-    const halo = document.createElementNS(ns, 'circle')
-    halo.setAttribute('cx', '0')
-    halo.setAttribute('cy', '0')
-    halo.setAttribute('r', String(HALF * 0.95))
-    halo.setAttribute('fill', '#fffef0')
-    halo.setAttribute('fill-opacity', '0.9')
-    halo.setAttribute('stroke', '#7a3aa3')
-    halo.setAttribute('stroke-width', '2')
-    halo.setAttribute('vector-effect', 'non-scaling-stroke')
-    g.appendChild(halo)
+    // Lys ring (lilla) bak symbolet er et editor-hint som vises kun mens
+    // brukeren er i annoteringsmodus. Når modusen lukkes (deselect i
+    // drawer) forsvinner ringen og symbolet rendres «rent» som på print.
+    if (annot.isAnnotateMode.value) {
+      const halo = document.createElementNS(ns, 'circle')
+      halo.setAttribute('cx', '0')
+      halo.setAttribute('cy', '0')
+      halo.setAttribute('r', String(HALF * 0.95))
+      halo.setAttribute('fill', '#fffef0')
+      halo.setAttribute('fill-opacity', '0.9')
+      halo.setAttribute('stroke', '#7a3aa3')
+      halo.setAttribute('stroke-width', '2')
+      halo.setAttribute('vector-effect', 'non-scaling-stroke')
+      g.appendChild(halo)
+    }
 
-    const use = document.createElementNS(ns, 'use')
-    const href = `#iso-sym-${sym.symbolKey}`
-    use.setAttribute('href', href)
-    use.setAttributeNS(xlink, 'xlink:href', href)
-    use.setAttribute('x', String(-HALF))
-    use.setAttribute('y', String(-HALF))
-    use.setAttribute('width', String(SYMBOL_M))
-    use.setAttribute('height', String(SYMBOL_M))
-    g.appendChild(use)
+    if (sym.symbolKey === 'geocache') {
+      // Geocache er bonus-annotering med SMIL-animasjon — pulsende gul
+      // glow, roterende stjerne-rays og blinkende rød X i sentrum.
+      // Tegnes inline istedenfor <use> så vi kan legge til <animate>/
+      // <animateTransform>.
+      appendGeocacheSymbol(g, HALF)
+    } else {
+      const use = document.createElementNS(ns, 'use')
+      const href = `#iso-sym-${sym.symbolKey}`
+      use.setAttribute('href', href)
+      use.setAttributeNS(xlink, 'xlink:href', href)
+      use.setAttribute('x', String(-HALF))
+      use.setAttribute('y', String(-HALF))
+      use.setAttribute('width', String(SYMBOL_M))
+      use.setAttribute('height', String(SYMBOL_M))
+      g.appendChild(use)
+    }
 
     layer.appendChild(g)
   }
+}
+
+/**
+ * Bygg det animerte Geocache-symbolet inn i en eksisterende g-node.
+ * - s   = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
+ * - parent g er allerede translate-positionert til annotasjonens (x,y)
+ *
+ * Tre lag med SMIL-animasjoner som kjører kontinuerlig i nettleseren:
+ *   1) Gul glow-circle med pulserende r + opacity (news-flash-feel)
+ *   2) 8 stjerne-rays som roterer rundt sentrum (sparkle)
+ *   3) Rød X som blinker på/av («X marks the spot»)
+ *
+ * Animasjonene er rene SVG (SMIL `<animate>`) — ingen JS-timer, ingen
+ * requestAnimationFrame. Browseren håndterer alt på compositor-tråden,
+ * så det går ikke utover map-rendering eller pinch-zoom-ytelse.
+ */
+function appendGeocacheSymbol(parent, s) {
+  const ns = 'http://www.w3.org/2000/svg'
+  const mk = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag)
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v)
+    return el
+  }
+
+  // 1) Pulsende gul glow
+  const glow = mk('circle', {
+    cx: '0', cy: '0', r: String(s * 0.75),
+    fill: '#fbbf24', opacity: '0.55',
+  })
+  glow.appendChild(mk('animate', {
+    attributeName: 'r',
+    values: `${s * 0.6};${s * 0.95};${s * 0.6}`,
+    dur: '0.7s', repeatCount: 'indefinite',
+  }))
+  glow.appendChild(mk('animate', {
+    attributeName: 'opacity',
+    values: '0.35;0.8;0.35',
+    dur: '0.7s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(glow)
+
+  // 2) Roterende stjerne-rays (8 stk, peker utover fra liten indre radius
+  // så de ikke overskriver X-en i midten)
+  const rays = mk('g', {
+    stroke: '#b45309',
+    'stroke-width': String(Math.max(1, s * 0.13)),
+    'stroke-linecap': 'round',
+  })
+  const N = 8
+  const innerR = s * 0.32
+  const outerR = s * 0.98
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2
+    const cos = Math.cos(a), sin = Math.sin(a)
+    rays.appendChild(mk('line', {
+      x1: String(cos * innerR), y1: String(sin * innerR),
+      x2: String(cos * outerR), y2: String(sin * outerR),
+    }))
+  }
+  rays.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'rotate',
+    from: '0', to: '360',
+    dur: '6s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(rays)
+
+  // 3) Blinkende rød X
+  const xMark = mk('g', {
+    stroke: '#dc2626',
+    'stroke-width': String(Math.max(1.5, s * 0.2)),
+    'stroke-linecap': 'round',
+  })
+  const xR = s * 0.38
+  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(-xR), x2: String(xR), y2: String(xR) }))
+  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(xR), x2: String(xR), y2: String(-xR) }))
+  xMark.appendChild(mk('animate', {
+    attributeName: 'opacity',
+    values: '1;0.25;1',
+    dur: '0.55s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(xMark)
 }
 
 function selectSymbol(key) {
@@ -1363,8 +1464,52 @@ onUnmounted(stopGpsTick)
                       :class="annot.selectedSymbol.value === s.symbolKey
                               ? 'bg-slate-400/30 border-slate-200/60 text-white'
                               : 'bg-white/5 border-white/10 text-white/70'">
-                <svg viewBox="-1 -1 2 2" class="w-4 h-4">
-                  <use :href="`#iso-sym-${s.symbolKey}`"/>
+                <!-- Inline drawer-ikon. Bruker IKKE <use href="#iso-sym-..."> fordi
+                     ISOM-symbolene har 0.07–0.10 mm strek (print-spec) som blir
+                     usynlig på 16px-knapper — særlig «Knaus» som er ren strek.
+                     Inline ikoner med synlig strek matcher symbolets intensjon. -->
+                <svg viewBox="0 0 16 16" class="w-4 h-4 shrink-0" fill="none">
+                  <template v-if="s.symbolKey === 'knaus'">
+                    <path d="M3 10.5 A5 4 0 0 1 13 10.5"
+                          stroke="#b07845" stroke-width="1.8" stroke-linecap="round"/>
+                  </template>
+                  <template v-else-if="s.symbolKey === 'stein'">
+                    <polygon points="8,3 13.2,12 2.8,12" fill="#1a1a1a"/>
+                  </template>
+                  <template v-else-if="s.symbolKey === 'brønn'">
+                    <circle cx="8" cy="8" r="5" stroke="#0099cc" stroke-width="1.6"/>
+                    <line x1="3" y1="8" x2="13" y2="8" stroke="#0099cc" stroke-width="1.6"/>
+                    <line x1="8" y1="3" x2="8" y2="13" stroke="#0099cc" stroke-width="1.6"/>
+                  </template>
+                  <template v-else-if="s.symbolKey === 'bro'">
+                    <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="#1a1a1a" stroke-width="1.8"/>
+                    <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="#1a1a1a" stroke-width="1.8"/>
+                  </template>
+                  <template v-else-if="s.symbolKey === 'geocache'">
+                    <!-- Pulserende gul glow + roterende stjerne-rays + blinkende rød X.
+                         Samme tre-lags-animasjon som på kartet, skalert til 16-px-button. -->
+                    <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
+                      <animate attributeName="r" values="5;7;5" dur="0.7s" repeatCount="indefinite"/>
+                      <animate attributeName="opacity" values="0.35;0.8;0.35" dur="0.7s" repeatCount="indefinite"/>
+                    </circle>
+                    <g stroke="#b45309" stroke-width="1" stroke-linecap="round">
+                      <line x1="8" y1="2.5" x2="8" y2="4.5"/>
+                      <line x1="8" y1="11.5" x2="8" y2="13.5"/>
+                      <line x1="2.5" y1="8" x2="4.5" y2="8"/>
+                      <line x1="11.5" y1="8" x2="13.5" y2="8"/>
+                      <line x1="4.1" y1="4.1" x2="5.5" y2="5.5"/>
+                      <line x1="10.5" y1="10.5" x2="11.9" y2="11.9"/>
+                      <line x1="4.1" y1="11.9" x2="5.5" y2="10.5"/>
+                      <line x1="10.5" y1="5.5" x2="11.9" y2="4.1"/>
+                      <animateTransform attributeName="transform" type="rotate"
+                                        from="0 8 8" to="360 8 8" dur="6s" repeatCount="indefinite"/>
+                    </g>
+                    <g stroke="#dc2626" stroke-width="1.6" stroke-linecap="round">
+                      <line x1="6" y1="6" x2="10" y2="10"/>
+                      <line x1="6" y1="10" x2="10" y2="6"/>
+                      <animate attributeName="opacity" values="1;0.25;1" dur="0.55s" repeatCount="indefinite"/>
+                    </g>
+                  </template>
                 </svg>
                 {{ s.label }}
               </button>
@@ -1375,6 +1520,66 @@ onUnmounted(stopGpsTick)
                       @click="annot.clearAll(); annot.persist()"
                       class="ml-auto text-red-300 active:text-red-100">Slett alle</button>
             </div>
+          </div>
+
+          <!-- Plasserte annoteringer som egne lag (toggleable, med teller).
+               Brukeren kan skjule alle «Knaus» uten å slette dem. Bare typer
+               som faktisk er plassert vises som lag-knapp. -->
+          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
+               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Annoteringer (lag)</div>
+          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
+               class="grid grid-cols-2 gap-2 mb-4">
+            <button v-for="s in ANNOTATION_SYMBOLS.filter(x => annot.countByType.value[x.symbolKey] > 0)"
+                    :key="s.code"
+                    @click="annot.toggleTypeVisibility(s.symbolKey)"
+                    class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition
+                           flex items-center gap-2"
+                    :class="annot.visibleTypes.value.has(s.symbolKey)
+                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/45'">
+              <svg viewBox="0 0 16 16" class="w-4 h-4 shrink-0" fill="none">
+                <template v-if="s.symbolKey === 'knaus'">
+                  <path d="M3 10.5 A5 4 0 0 1 13 10.5"
+                        stroke="#b07845" stroke-width="1.8" stroke-linecap="round"/>
+                </template>
+                <template v-else-if="s.symbolKey === 'stein'">
+                  <polygon points="8,3 13.2,12 2.8,12" fill="currentColor"/>
+                </template>
+                <template v-else-if="s.symbolKey === 'brønn'">
+                  <circle cx="8" cy="8" r="5" stroke="#0099cc" stroke-width="1.6"/>
+                  <line x1="3" y1="8" x2="13" y2="8" stroke="#0099cc" stroke-width="1.6"/>
+                  <line x1="8" y1="3" x2="8" y2="13" stroke="#0099cc" stroke-width="1.6"/>
+                </template>
+                <template v-else-if="s.symbolKey === 'bro'">
+                  <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="currentColor" stroke-width="1.8"/>
+                  <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.8"/>
+                </template>
+                <template v-else-if="s.symbolKey === 'geocache'">
+                  <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
+                    <animate attributeName="r" values="5;7;5" dur="0.7s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.35;0.8;0.35" dur="0.7s" repeatCount="indefinite"/>
+                  </circle>
+                  <g stroke="#b45309" stroke-width="1" stroke-linecap="round">
+                    <line x1="8" y1="2.5" x2="8" y2="4.5"/>
+                    <line x1="8" y1="11.5" x2="8" y2="13.5"/>
+                    <line x1="2.5" y1="8" x2="4.5" y2="8"/>
+                    <line x1="11.5" y1="8" x2="13.5" y2="8"/>
+                    <line x1="4.1" y1="4.1" x2="5.5" y2="5.5"/>
+                    <line x1="10.5" y1="10.5" x2="11.9" y2="11.9"/>
+                    <line x1="4.1" y1="11.9" x2="5.5" y2="10.5"/>
+                    <line x1="10.5" y1="5.5" x2="11.9" y2="4.1"/>
+                    <animateTransform attributeName="transform" type="rotate"
+                                      from="0 8 8" to="360 8 8" dur="6s" repeatCount="indefinite"/>
+                  </g>
+                  <g stroke="#dc2626" stroke-width="1.6" stroke-linecap="round">
+                    <line x1="6" y1="6" x2="10" y2="10"/>
+                    <line x1="6" y1="10" x2="10" y2="6"/>
+                    <animate attributeName="opacity" values="1;0.25;1" dur="0.55s" repeatCount="indefinite"/>
+                  </g>
+                </template>
+              </svg>
+              <span class="text-[12px]">{{ s.label }} ({{ annot.countByType.value[s.symbolKey] }})</span>
+            </button>
           </div>
 
           <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Eksport</div>

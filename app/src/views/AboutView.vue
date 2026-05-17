@@ -247,10 +247,46 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.6.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.6.1</span>
+                <span class="text-amber-200/90">&mdash; animert Geocache-annotering &#x2728;</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Ny annoteringstype: «Geocache».</strong> Fungerer som de fire ISOM-symbolene (plasseres med klikk, lagres i IndexedDB, egen lag-toggle med teller) &mdash; men istedenfor et statisk ikon rendres en ren SVG-animasjon: pulserende gul glow, 8 roterende stjerne-rays og blinkende r&oslash;d X i sentrum. «X marks the spot.»</li>
+                <li><strong>Ren SMIL, ingen JS-timer.</strong> Animasjonen bruker <code>&lt;animate&gt;</code> og <code>&lt;animateTransform&gt;</code> direkte i SVG-en &mdash; nettleseren kj&oslash;rer alt p&aring; compositor-tr&aring;den. Ingen <code>requestAnimationFrame</code>, ingen ekstra render-arbeid, ingen p&aring;virkning p&aring; pinch-zoom-ytelse. Animasjonen overlever ogs&aring; SVG-eksport (statisk snapshot ved render-tid)</li>
+                <li><strong>Drawer-ikonet animerer ogs&aring;.</strong> Knappen som velger Geocache-symbolet og lag-toggle-knappen viser samme tre-lags-animasjon, skalert til 16-px viewBox. Vue-templaten inneholder SMIL-tagger direkte &mdash; ingen JS-orkestrering</li>
+                <li>Drevet av at hele poenget med SVG Insights er &aring; utforske formatet. Statiske ikoner er bra, men en blinkende geocache p&aring; kartet skader ikke &#x1f60e;</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 8.5.9 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-300" />
+            <details class="group">
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.9</span>
+                <span class="text-violet-200/90">&mdash; annoteringer som egne lag + ikon-polish</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Knaus-ikon synlig i drawer.</strong> ISOM-symbolene har 0.07&ndash;0.10 mm strek (print-spec ved 1:10000) som blir usynlig p&aring; 16 px-knapper &mdash; s&aelig;rlig knaus som er ren strek. Drawer-knappene bruker n&aring; inline-ikoner med synlig strek som matcher symbolets intensjon. Selve kart-renderingen er ur&oslash;rt</li>
+                <li><strong>Lilla ring kun i annoteringsmodus.</strong> Editor-hintet (lilla halo bak symbolet) vises mens du plasserer symboler. N&aring;r du avslutter annoteringsmodus (tapp aktiv knapp p&aring; nytt) forsvinner ringen og symbolet rendres rent som p&aring; print</li>
+                <li><strong>Annoteringer som egne lag.</strong> Hver plassert type f&aring;r en toggleable lag-knapp med teller (f.eks. &laquo;Knaus (2)&raquo;) under &laquo;Annoteringer (lag)&raquo;-seksjonen. Skjul alle Knaus uten &aring; slette dem. Verifiserer ogs&aring; visuelt at annoteringene er persistert i IndexedDB &mdash; tellinga vises p&aring; nytt etter reload</li>
+                <li><strong>Verifisert persistens.</strong> <code>useMapAnnotations.persist()</code> skriver fortsatt til <code>entry.annotations</code> i IndexedDB pr <code>addPoint</code>/<code>clearAll</code>. Den nye lag-seksjonen med tellere er den synlige bekreftelsen p&aring; at lagringen virker</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.8 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-orange-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.8</span>
                 <span class="text-orange-200/90">&mdash; smalere oransje hovedveier</span>
