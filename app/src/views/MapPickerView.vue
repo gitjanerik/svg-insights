@@ -69,6 +69,9 @@ function parseShareQuery() {
   const eq = parseInt(q.eq, 10)
   const score = parseInt(q.score, 10)
   const lv = parseInt(q.lv, 10)
+  // v8.4.0: utfordrerens Map Master-prestasjoner (Cartographer-rang). Valgfri
+  // — eldre lenker uten 'mm' tolkes som 0.
+  const mm = parseInt(q.mm, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
@@ -81,6 +84,7 @@ function parseShareQuery() {
     name,
     score: Number.isFinite(score) ? score : null,
     level: Number.isFinite(lv) ? lv : null,
+    mapMasters: Number.isFinite(mm) && mm >= 0 ? mm : 0,
   }
 }
 
@@ -596,6 +600,10 @@ onMounted(() => {
             <template v-else>
               {{ t('challenge.score', { score: challenge.score.toLocaleString('no-NO') }) }}
             </template>
+          </div>
+          <div v-if="challenge.mapMasters > 0" class="text-[11px] text-amber-300/85 mt-0.5">
+            {{ challenge.mapMasters }} × MAP MASTER ·
+            Cartographer Lv {{ String(challenge.mapMasters).padStart(2, '0') }}
           </div>
         </div>
       </div>

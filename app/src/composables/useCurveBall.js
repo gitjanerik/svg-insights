@@ -31,6 +31,7 @@ export function useCurveBall() {
   const totalScore = ref(0)
   const countdown = ref(0)
   const highscore = ref(loadHighscore())
+  const mapMasters = ref(loadMapMasters())
   const lastEvent = ref(null)
 
   // v7.4.0 turneringsmodus: settes FØR første level (mode-select-overlay).
@@ -39,34 +40,6 @@ export function useCurveBall() {
   //           gjennom navigering via sessionStorage
   //   false → standard, bli på samme kart hele runden
   const tournamentMode = ref(null)
-
-  // v8.3.0: enhåndsmodus. Lar én finger på én flipper styre ALLE fire
-  // samtidig, i to diagonale mønstre. Faktisk kobling implementert i
-  // CurveBallFlippers.vue#diagonalTargets (se den for komplett spec).
-  //   'off'   — uavhengig: hver flipper dras for seg (default)
-  //   'sw-ne' — drag topp/venstre høyre/ned → samler ved NØ+SV-hjørnene
-  //             (topp+høyre møtes ved NØ, bunn+venstre møtes ved SV)
-  //   'se-nw' — drag bunn/høyre høyre/ned → samler ved NV+SØ-hjørnene
-  //             (topp+venstre møtes ved NV, bunn+høyre møtes ved SØ)
-  // Persisters i localStorage så valget overlever sesjon/refresh.
-  const ONE_HAND_MODES = ['off', 'sw-ne', 'se-nw']
-  const ONE_HAND_KEY = 'curveball-onehand-mode'
-  function loadOneHandMode() {
-    if (typeof localStorage === 'undefined') return 'off'
-    try {
-      const v = localStorage.getItem(ONE_HAND_KEY)
-      return ONE_HAND_MODES.includes(v) ? v : 'off'
-    } catch { return 'off' }
-  }
-  const oneHandMode = ref(loadOneHandMode())
-  function cycleOneHandMode() {
-    const i = ONE_HAND_MODES.indexOf(oneHandMode.value)
-    const next = ONE_HAND_MODES[(i + 1) % ONE_HAND_MODES.length]
-    oneHandMode.value = next
-    if (typeof localStorage !== 'undefined') {
-      try { localStorage.setItem(ONE_HAND_KEY, next) } catch {}
-    }
-  }
 
   // v7.3.4: debug-flag for å verifisere multiball-pipelinen. v7.3.7: skrudd
   // av — alt debug-stillas (panel, dlog, force-multiball) er bevart i koden
@@ -260,9 +233,13 @@ export function useCurveBall() {
   // v8.0.4: orbit-fasen forlenget 3.0 → 7.0 sek etter brukerønske —
   // formasjonen får mer tid til å rulle langs konturen i Space-Invaders-stil
   // før den breaks out.
+  // v8.4.0: roligere surfing langs konturen og uniform release-fart slik at
+  // hele formasjonen forlater i samme retning samtidig (klassisk arcade-
+  // feel). Tidligere hadde hver ball ±20 % energi-variasjon som ga en
+  // ujevn breakout-spray.
   const INVADER_ORBIT_DURATION_S = 7.0
-  const INVADER_BREAKOUT_SPEED_MULT = 1.4
-  const INVADER_ENERGY_VARIATION = 0.4   // ±20% per ball
+  const INVADER_BREAKOUT_SPEED_MULT = 1.0
+  const INVADER_ENERGY_VARIATION = 0   // alle baller har identisk breakout-fart
   // v8.0.4: invaders ruller nå rundt en STØRRE høydekurve. Tidligere 15 %
   // under peak-elevasjon, nå 30 % for større omkrets og lengre marsj-distanse.
   const INVADER_CONTOUR_DEPTH_FRAC = 0.30
@@ -330,6 +307,12 @@ export function useCurveBall() {
   let levelChain = 0
   let pendingPerkSelect = false
 
+  // v8.4.0: hvis spilleren krysser level-target mens invader-formasjonen
+  // er i lufta, skal level-clear utsettes til formasjonen er ferdig så
+  // brukeren får spille den ut. Hvis den klares uten å miste alle livene
+  // er det en «Map Master»-prestasjon.
+  let pendingInvaderWin = false
+
   let dem = null
   let bounds = { width: 0, height: 0 }
   let equidistanceM = 20
@@ -378,6 +361,23 @@ export function useCurveBall() {
   function saveHighscore(value) {
     if (typeof localStorage === 'undefined') return
     try { localStorage.setItem(HIGHSCORE_KEY_NEW, String(value)) } catch {}
+  }
+
+  // v8.4.0: Map Master-prestasjoner — antallet ganger spilleren har
+  // overlevd en invader-formasjon mens level-targetet ble nådd. Disse
+  // akkumuleres på tvers av runder (lagres i localStorage) og kartlegger
+  // 1:1 til Cartographer-rang (1 MM = Cartographer Lv 1, 3 MM = Lv 3 osv).
+  const MAP_MASTERS_KEY = 'curveball-map-masters'
+  function loadMapMasters() {
+    if (typeof localStorage === 'undefined') return 0
+    try {
+      const v = parseInt(localStorage.getItem(MAP_MASTERS_KEY) ?? '0', 10)
+      return Number.isFinite(v) && v >= 0 ? v : 0
+    } catch { return 0 }
+  }
+  function saveMapMasters(value) {
+    if (typeof localStorage === 'undefined') return
+    try { localStorage.setItem(MAP_MASTERS_KEY, String(value)) } catch {}
   }
 
   function levelParams(n) {
@@ -834,6 +834,17 @@ export function useCurveBall() {
     // v8.0.4: deaktiver invader-modus når siste invader-ball er borte.
     if (invaderModeActive.value && !balls.some(b => b.mode === 'invader')) {
       invaderModeActive.value = false
+      // v8.4.0: hvis spilleren krysset level-target mens formasjonen var i
+      // lufta og fortsatt er i 'rolling' (dvs. ikke døde under spawn), er
+      // dette en Map Master-prestasjon. Bump MM-telleren og utløs win()
+      // som vanlig — flash-eventen sørger for animasjonen.
+      if (pendingInvaderWin) {
+        pendingInvaderWin = false
+        if (status.value === 'rolling') {
+          awardMapMaster()
+          win()
+        }
+      }
     }
 
     // v7.4.0: Når multiball ebbet ut til én ball igjen — promoter den til
@@ -1184,7 +1195,10 @@ export function useCurveBall() {
     const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
     const count = INVADER_MIN_COUNT +
                   Math.floor(Math.random() * (INVADER_MAX_COUNT - INVADER_MIN_COUNT + 1))
-    const orbitSpeed = 1.5 + Math.random() * 0.6   // rad/s
+    // v8.4.0: roligere orbit (1.5–2.1 → 0.6–0.9 rad/s) så formasjonen
+    // tydeligere "surfer" langs konturen. Lineær fart ≈ orbitRadius · orbitSpeed
+    // i stepInvaderContour, så omtrent halvering av visuell hastighet.
+    const orbitSpeed = 0.6 + Math.random() * 0.3   // rad/s
     const edges = [
       { vx:  0, vy: -1 },   // toppkant
       { vx:  0, vy:  1 },   // bunnkant
@@ -1428,8 +1442,27 @@ export function useCurveBall() {
     checkLevelComplete()
   }
 
+  // v8.4.0: prestasjonsbump + event som HUD-flashen fanger.
+  function awardMapMaster() {
+    mapMasters.value += 1
+    saveMapMasters(mapMasters.value)
+    lastEvent.value = {
+      kind: 'map-master',
+      count: mapMasters.value,
+      at: Date.now(),
+    }
+  }
+
   function checkLevelComplete() {
     if (score.value >= levelTarget.value && status.value === 'rolling') {
+      // v8.4.0: utsett level-clear hvis en invader-formasjon er aktiv —
+      // brukeren skal få spille spawn-modusen ferdig før level-bumpen.
+      // Når invader-modus ender (i physicsStep) sjekker vi flagget og
+      // utløser win() med Map Master-prestasjon.
+      if (invaderModeActive.value) {
+        pendingInvaderWin = true
+        return
+      }
       win()
     }
   }
@@ -1505,6 +1538,11 @@ export function useCurveBall() {
     lastHitEdge = null
     lastElev = NaN
     levelChain = 0
+    // v8.4.0: Hvis spilleren døde under invader-formasjonen — spawnen er
+    // tapt, så Map Master-prestasjonen utløper. Nullstill invader-state
+    // så neste drop starter rent.
+    pendingInvaderWin = false
+    invaderModeActive.value = false
 
     if (lives.value === 0) {
       const finalTotal = totalScore.value + score.value
@@ -1706,6 +1744,7 @@ export function useCurveBall() {
     perks.linkedFlippers = false
     levelChain = 0
     pendingPerkSelect = false
+    pendingInvaderWin = false
     lastStillnessExplodeAt = 0
     invaderModeActive.value = false
     for (const e of ['top', 'bottom', 'left', 'right']) {
@@ -1764,6 +1803,7 @@ export function useCurveBall() {
     lastHitEdge = null
     lastElev = NaN
     levelChain = 0
+    pendingInvaderWin = false
     lastStillnessExplodeAt = 0
     invaderModeActive.value = false
     pendingPerkSelect = !!state.pendingPerkSelect
@@ -1873,13 +1913,12 @@ export function useCurveBall() {
     perks, perkChoices,
     tournamentMode,
     invaderModeActive,
-    oneHandMode,
+    mapMasters,
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
     kickBall, forceMultiball,
     setTournamentMode,
-    cycleOneHandMode,
     serializeForTournament, restoreFromTournament,
     levelParams,
     debugLog,
