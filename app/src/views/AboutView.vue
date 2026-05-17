@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.6 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.6</span>
+                <span class="text-amber-200/90">&mdash; tips om Presis posisjon + kopier-lat/lng</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>Verifisert i felt: v8.5.5-debug-readouten viste &plusmn;2000 m accuracy &mdash; ikke GPS, men celletower-fallback. &Aring;rsak: nettleseren hadde kun &laquo;Omtrentlig&raquo; lokasjon-tilgang i Android. Etter &aring; ha sl&aring;tt p&aring; &laquo;Presis posisjon&raquo; ble accuracy &plusmn;20 m og prikken la seg n&oslash;yaktig der den skulle</li>
+                <li>F&oslash;rstegangs-tips i drawer som forklarer &laquo;Presis posisjon&raquo;-innstillingen. Dismissible, husker valg p&aring; tvers av sesjoner</li>
+                <li>Synlig advarsels-banner over kartet n&aring;r accuracy &gt; 100 m &mdash; peker brukeren mot riktig sted i Android-innstillingene uten at de m&aring; &aring;pne drawer. Dismissible per sesjon</li>
+                <li>Kopier-knapp ved siden av lat/lng kopierer Google Maps-URL (<code>maps.google.com/?q=lat,lng</code>) til utklippstavla &mdash; tappable lenke i meldinger, &aring;pner Maps direkte</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.5 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.5</span>
                 <span class="text-emerald-200/90">&mdash; avvis d&aring;rlige GPS-fix-er + debug-readout</span>

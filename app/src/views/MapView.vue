@@ -954,6 +954,52 @@ const gpsDebugLine = computed(() => {
   return `${lat}, ${lon} · ${acc} · ${ageS}s · ${src}${rej}`
 })
 
+// v8.5.6: kopier raw lat/lng som Google Maps-URL. Universelt format —
+// blir tappable lenke i meldinger og åpner Maps-appen direkte.
+const copyState = ref('idle') // 'idle' | 'copied' | 'failed'
+async function copyGpsCoords() {
+  if (userPos.latRaw == null || userPos.lonRaw == null) return
+  const lat = userPos.latRaw.toFixed(6)
+  const lon = userPos.lonRaw.toFixed(6)
+  const url = `https://www.google.com/maps?q=${lat},${lon}`
+  try {
+    await navigator.clipboard.writeText(url)
+    copyState.value = 'copied'
+  } catch {
+    copyState.value = 'failed'
+  }
+  setTimeout(() => { copyState.value = 'idle' }, 1500)
+}
+
+// v8.5.6: førstegangs-tips om «Presis posisjon» (Android 12+). Vi gikk i
+// fella selv — `enableHighAccuracy: true` gir 2000 m fallback hvis appen
+// kun har «Omtrentlig» lokasjon. Vis i drawer første gang GPS aktiveres,
+// dismissible. localStorage husker dismissal på tvers av sesjoner.
+const GPS_TIP_KEY = 'svg-insights-gps-tip-seen'
+const gpsTipDismissed = ref(false)
+try { gpsTipDismissed.value = localStorage.getItem(GPS_TIP_KEY) === '1' } catch {}
+const showGpsTip = computed(() => userPos.isWatching && !gpsTipDismissed.value)
+function dismissGpsTip() {
+  gpsTipDismissed.value = true
+  try { localStorage.setItem(GPS_TIP_KEY, '1') } catch {}
+}
+
+// v8.5.6: in-map advarsels-banner når accuracy er dårlig (>100m).
+// Synlig over kartet uten at brukeren må åpne drawer. Dismissable
+// per sesjon — resettes når GPS toggles off→on.
+const LOW_ACCURACY_THRESHOLD_M = 100
+const lowAccuracyDismissed = ref(false)
+const showLowAccuracyBanner = computed(() =>
+  userPos.isWatching &&
+  userPos.accuracyM != null &&
+  userPos.accuracyM > LOW_ACCURACY_THRESHOLD_M &&
+  !lowAccuracyDismissed.value &&
+  !userPos.error &&
+  !userPos.isOutsideMap
+)
+function dismissLowAccuracy() { lowAccuracyDismissed.value = true }
+watch(() => userPos.isWatching, (on) => { if (on) lowAccuracyDismissed.value = false })
+
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -1129,6 +1175,31 @@ onUnmounted(stopGpsTick)
          class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
                 bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
       Du er utenfor dette kartet.
+    </div>
+
+    <!-- v8.5.6: advarsel ved lav GPS-nøyaktighet — peker bruker mot
+         «Presis posisjon»-innstillingen, som er den vanligste rotårsaken. -->
+    <div v-else-if="!loading && showLowAccuracyBanner"
+         class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2.5 rounded-lg backdrop-blur
+                bg-amber-600/95 border border-amber-300/40 text-white text-[12px] shadow-lg
+                flex items-start gap-2">
+      <div class="flex-1 leading-snug">
+        <div class="font-semibold mb-0.5">
+          Unøyaktig posisjon (&plusmn;{{ Math.round(userPos.accuracyM) }} m)
+        </div>
+        <div class="text-white/90">
+          Sjekk at appen har «Presis posisjon» (Android: Innstillinger →
+          Apper → din nettleser → Tillatelser → Posisjon).
+        </div>
+      </div>
+      <button @click="dismissLowAccuracy" aria-label="Skjul advarsel"
+              class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
+                     text-white/85 active:scale-90 hover:bg-white/10 shrink-0">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+             stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+        </svg>
+      </button>
     </div>
 
     <!-- Skala + ekvidistanse + ISOM-info (skjult i CurveBall-modus) -->
@@ -1348,13 +1419,47 @@ onUnmounted(stopGpsTick)
             </button>
           </div>
 
-          <!-- v8.5.5: GPS-debug-readout. Lar brukeren sammenligne raw lat/lng
-               mot kartet og se accuracy + alder + kilde (W=watchPosition,
-               P=poll). Vis kun når GPS er aktivt. -->
+          <!-- v8.5.6: GPS-debug-readout med kopier-knapp. Lar brukeren
+               sammenligne raw lat/lng mot kartet, se accuracy + alder +
+               kilde (W=watchPosition, P=poll), og kopiere posisjonen som
+               Google Maps-URL. Vis kun når GPS er aktivt. -->
           <div v-if="userPos.isWatching"
-               class="text-white/60 text-[10.5px] font-mono leading-snug
-                      bg-white/5 border border-white/10 rounded-lg px-3 py-2 mb-2 tabular-nums">
-            {{ gpsDebugLine }}
+               class="flex items-stretch gap-2 mb-2">
+            <div class="flex-1 text-white/60 text-[10.5px] font-mono leading-snug
+                        bg-white/5 border border-white/10 rounded-lg px-3 py-2 tabular-nums
+                        flex items-center">
+              {{ gpsDebugLine }}
+            </div>
+            <button @click="copyGpsCoords"
+                    :disabled="userPos.latRaw == null"
+                    :aria-label="copyState === 'copied' ? 'Kopiert' : 'Kopier posisjon som Google Maps-lenke'"
+                    class="px-3 rounded-lg border text-[11px] active:scale-[0.98] transition disabled:opacity-40"
+                    :class="copyState === 'copied'
+                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+                            : copyState === 'failed'
+                              ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                              : 'bg-white/5 border-white/10 text-white/75'">
+              {{ copyState === 'copied' ? 'Kopiert' : copyState === 'failed' ? 'Feil' : 'Kopier' }}
+            </button>
+          </div>
+
+          <!-- v8.5.6: førstegangs-tips om Android «Presis posisjon». -->
+          <div v-if="showGpsTip"
+               class="relative text-[11px] leading-snug bg-amber-500/15 border border-amber-400/40
+                      text-amber-50/95 rounded-lg px-3 py-2.5 mb-2 pr-8">
+            <button @click="dismissGpsTip"
+                    aria-label="Skjul tips"
+                    class="absolute top-1.5 right-1.5 w-6 h-6 flex items-center justify-center
+                           rounded-md text-amber-100/70 active:scale-90 hover:bg-white/10">
+              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                   stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+            <div class="font-semibold text-amber-100 mb-0.5">Tips: Sjekk «Presis posisjon»</div>
+            Hvis prikken ligger langt unna deg, har nettleseren sannsynligvis bare «Omtrentlig»
+            posisjon (~2 km nøyaktighet). På Android 12+: Innstillinger → Apper → din nettleser →
+            Tillatelser → Posisjon → velg <b>Presis</b>.
           </div>
 
           <div class="text-white/40 text-[10px] leading-relaxed mt-4">
