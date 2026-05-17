@@ -247,10 +247,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.2.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.2.1</span>
+                <span class="text-sky-300/90">&mdash; ingen scroll-rest etter kart-generering</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Scroll resettes til topp ved hver navigasjon</strong> i vue-router. Tidligere beholdt browseren scroll-posisjonen fra forrige rute — s&aring; n&aring;r brukeren scrollet ned i MapPicker for &aring; trykke «Lag turkart», beholdt MapView den samme offset'en. Kartet er <code>h-[100dvh] overflow-hidden</code> men body-scrollen overstyrte det visuelt, og brukeren s&aring; tomt sort omr&aring;de under kartet. <code>scrollBehavior</code> bevarer <code>savedPosition</code> ved tilbake-navigasjon (back-button), s&aring; man havner der man var i listen</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.2.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.2.0</span>
                 <span class="text-violet-300/90">&mdash; magnetiske flippere &amp; lag-defaults</span>
