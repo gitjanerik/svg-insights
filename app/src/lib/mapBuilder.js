@@ -640,7 +640,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
   const isomCss = buildIsomCss(isomCatalog, patternIds)
 
-  const layerSvg = (code) => {
+  const layerSvg = (code, phase = 'both') => {
     const els = buckets[code]
     if (!els.length) return `  <g data-layer="${categoryFor(code)}" data-iso="${code}"></g>\n`
     const cat = categoryFor(code)
@@ -776,10 +776,17 @@ export function buildSvg(elements, bbox, options = {}) {
       // ble aldri overlay-pathene emittet og roads ble bare sort casing.
       const hasOverlay = !!getIsomDef(code, isomCatalog, false)?.overlayStroke
       if (hasOverlay) {
+        // v8.5.7: To-fase rendering støtter "casing pattern". Når veier
+        // emitteres separat som casing- og overlay-pass over flere koder,
+        // bryter call-site dette opp slik at sorte omriss ikke stacker
+        // oppå nabosegmentets fargefyll i kryss. Default 'both' beholder
+        // gammel atferd for andre koder.
         const lines = []
-        for (const d of paths) {
-          lines.push(`    <path d="${d}"/>`)
-          lines.push(`    <path d="${d}" class="overlay"/>`)
+        if (phase !== 'overlay') {
+          for (const d of paths) lines.push(`    <path d="${d}"/>`)
+        }
+        if (phase !== 'casing') {
+          for (const d of paths) lines.push(`    <path d="${d}" class="overlay"/>`)
         }
         return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
       }
@@ -1263,7 +1270,21 @@ export function buildSvg(elements, bbox, options = {}) {
   const groundLayers = renderCodes(GROUND_CODES)
   const waterLayers  = renderCodes(WATER_CODES)
   const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
-  const roadLayers   = renderCodes(ROAD_CODES)
+  // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
+  // (casings) først, så ALLE fargefyll (overlays). Det forhindrer at sorte
+  // omriss på nabosegmenter ligger oppå fargefyll i kryss ("pølse"-blobsene
+  // som vises der mange OSM-veisegmenter møtes). Overlay-passet kjøres i
+  // omvendt ROAD_CODES-rekkefølge så større veier renderes sist og dominerer
+  // i kryss: motorvei (501) > hovedvei (502) > småvei (503). Jernbane (515)
+  // og trail-koder (504-511) beholder dagens enkel-stroke-rendering.
+  const roadOverlayCodes = ROAD_CODES.filter(c =>
+    c !== '515' && !!getIsomDef(c, isomCatalog, false)?.overlayStroke
+  )
+  const roadOtherCodes = ROAD_CODES.filter(c => !roadOverlayCodes.includes(c))
+  const roadLayers =
+    roadOverlayCodes.map(c => layerSvg(c, 'casing')).join('') +
+    [...roadOverlayCodes].reverse().map(c => layerSvg(c, 'overlay')).join('') +
+    roadOtherCodes.map(c => layerSvg(c)).join('')
   const upperLayers  = renderCodes(UPPER_CODES)
   const placeholderLayers = renderCodes(PLACEHOLDER_CODES)
   const labelLayer = labelSvg()
