@@ -18,9 +18,11 @@ export function useUserPosition(getMeta) {
     error: null,
     isWatching: false,
     isOutsideMap: false,
+    lastFixAt: null,   // ms timestamp av siste position update
   })
 
   let watchId = null
+  let pollTimer = null
   let lastCoords = null
 
   function recompute() {
@@ -34,6 +36,17 @@ export function useUserPosition(getMeta) {
       p.x < 0 || p.x > meta.widthM || p.y < 0 || p.y > meta.heightM
   }
 
+  function applyPos(pos) {
+    const c = pos.coords
+    lastCoords = { latitude: c.latitude, longitude: c.longitude }
+    state.accuracyM = c.accuracy ?? null
+    state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
+    state.speedMs = Number.isFinite(c.speed) ? c.speed : null
+    state.error = null
+    state.lastFixAt = Date.now()
+    recompute()
+  }
+
   function start() {
     if (!navigator.geolocation) {
       state.error = 'Nettleseren støtter ikke GPS'
@@ -44,15 +57,7 @@ export function useUserPosition(getMeta) {
     state.error = null
 
     watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const c = pos.coords
-        lastCoords = { latitude: c.latitude, longitude: c.longitude }
-        state.accuracyM = c.accuracy ?? null
-        state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
-        state.speedMs = Number.isFinite(c.speed) ? c.speed : null
-        state.error = null
-        recompute()
-      },
+      applyPos,
       (err) => {
         const map = {
           1: 'Du har avvist GPS-tillatelse',
@@ -63,23 +68,29 @@ export function useUserPosition(getMeta) {
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     )
+
+    // v8.5.4: Active polling for å motvirke at watchPosition throttles på
+    // mobile nettlesere. På toget er watchPosition observert å henge på
+    // gammel posisjon i flere minutter (= 1 km+ feil ved 60 km/t). En
+    // eksplisitt getCurrentPosition hvert 3. sekund tvinger ny GPS-fix
+    // og holder lastCoords ferskt selv om watchPosition ikke fyrer.
+    pollTimer = setInterval(() => {
+      if (!navigator.geolocation) return
+      navigator.geolocation.getCurrentPosition(
+        applyPos,
+        () => { /* ignorer enkelt-feil, watchPosition fanger varige */ },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+      )
+    }, 3000)
   }
 
-  // Tving en fersk GPS-fix (one-shot), uavhengig av om watchPosition
-  // henger på en cached koordinat. Nyttig n&aring;r brukeren beveger seg raskt
-  // (f.eks. p&aring; toget) og browseren throttler watch-callbacks.
+  // Manuell fersk-fix (one-shot) — utløst av FAB-en. Polling-loopen gir
+  // automatisk friske fix-er, men brukeren kan trykke knappen for å tvinge
+  // en før neste poll.
   function refresh() {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const c = pos.coords
-        lastCoords = { latitude: c.latitude, longitude: c.longitude }
-        state.accuracyM = c.accuracy ?? null
-        state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
-        state.speedMs = Number.isFinite(c.speed) ? c.speed : null
-        state.error = null
-        recompute()
-      },
+      applyPos,
       () => { /* behold forrige posisjon hvis fersk fix feiler */ },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
     )
@@ -89,6 +100,10 @@ export function useUserPosition(getMeta) {
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId)
       watchId = null
+    }
+    if (pollTimer !== null) {
+      clearInterval(pollTimer)
+      pollTimer = null
     }
     state.isWatching = false
   }
