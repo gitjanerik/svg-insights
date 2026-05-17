@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.2</span>
+                <span class="text-sky-200/90">&mdash; GPS-polish (tog-modus)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>«Sentrer»-FAB-en oppdaterer n&aring; ogs&aring; GPS-posisjonen</strong> n&aring;r GPS er aktiv. Liten bl&aring; indikator-prikk i hj&oslash;rnet av FAB-en n&aring;r watchPosition kj&oslash;rer. Tvinger fersk getCurrentPosition med maximumAge=0 s&aring; man slipper cached koordinater fra t.d. forrige tunnel</li>
+                <li>watchPosition bruker n&aring; maximumAge=0 (var 1000 ms) for r&aring;ere oppdateringer p&aring; raskt bevegelige enheter (tog, sykkel)</li>
+                <li><strong>Accuracy-ringen er capped p&aring; ~28 CSS-px radius</strong> &mdash; d&aring;rlig GPS i tog/tunnel/urban f&oslash;rte til at ringen kunne dekke halve skjermen og skjule kart-innholdet. Opacity ogs&aring; lavere</li>
+                <li>Bruker-laget har <code>pointer-events="none"</code> s&aring; pinch-zoom-gester aldri snubler over GPS-ringen/prikken</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.1</span>
                 <span class="text-emerald-200/90">&mdash; «Sentrer kart p&aring; meg (GPS)» i picker</span>

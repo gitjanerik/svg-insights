@@ -61,7 +61,27 @@ export function useUserPosition(getMeta) {
         }
         state.error = map[err.code] ?? 'GPS-feil'
       },
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+    )
+  }
+
+  // Tving en fersk GPS-fix (one-shot), uavhengig av om watchPosition
+  // henger på en cached koordinat. Nyttig n&aring;r brukeren beveger seg raskt
+  // (f.eks. p&aring; toget) og browseren throttler watch-callbacks.
+  function refresh() {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const c = pos.coords
+        lastCoords = { latitude: c.latitude, longitude: c.longitude }
+        state.accuracyM = c.accuracy ?? null
+        state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
+        state.speedMs = Number.isFinite(c.speed) ? c.speed : null
+        state.error = null
+        recompute()
+      },
+      () => { /* behold forrige posisjon hvis fersk fix feiler */ },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
     )
   }
 
@@ -75,5 +95,5 @@ export function useUserPosition(getMeta) {
 
   onUnmounted(stop)
 
-  return Object.assign(state, { start, stop, recompute })
+  return Object.assign(state, { start, stop, recompute, refresh })
 }
