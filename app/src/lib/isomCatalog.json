@@ -339,9 +339,10 @@
           "color": "#000",
           "widthMm": 0.16,
           "dasharray": [
-            0.5,
-            0.5
+            0.45,
+            0.4
           ],
+          "linecap": "round",
           "linejoin": "round"
         }
       },
@@ -351,9 +352,10 @@
           "color": "#000",
           "widthMm": 0.13,
           "dasharray": [
-            0.23,
-            0.3
+            0.3,
+            0.27
           ],
+          "linecap": "round",
           "linejoin": "round"
         }
       },

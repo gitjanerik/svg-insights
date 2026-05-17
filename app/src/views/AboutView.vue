@@ -247,10 +247,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.1.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.1.3</span>
+                <span class="text-emerald-300/90">&mdash; sti-dash med avrundede ender</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Sti-styling polish</strong> — ISOM 505 (godt l&oslash;p) og 506 (uklar) f&aring;r n&aring; <code>stroke-linecap: round</code>. Hver dash blir en oval i stedet for rektangel, noe som gir st&oslash;rre visuell vekt mot tette h&oslash;ydekurver. Avrundingen utvider dashen visuelt med en halv linjebredde p&aring; hver ende, s&aring; dasharrays er strammet samtidig (505: 0.5/0.5 → 0.45/0.4; 506: 0.23/0.3 → 0.30/0.27). Resultat: stier som tidligere forsvant i contour-rotet er n&aring; tydelig adskilbare</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.1.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.1.2</span>
                 <span class="text-red-300/90">&mdash; veier viser endelig farge</span>
