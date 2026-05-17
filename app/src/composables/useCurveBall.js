@@ -40,6 +40,34 @@ export function useCurveBall() {
   //   false → standard, bli på samme kart hele runden
   const tournamentMode = ref(null)
 
+  // v8.3.0: enhåndsmodus. Lar én finger på én flipper styre ALLE fire
+  // samtidig, i to diagonale mønstre. Faktisk kobling implementert i
+  // CurveBallFlippers.vue#diagonalTargets (se den for komplett spec).
+  //   'off'   — uavhengig: hver flipper dras for seg (default)
+  //   'sw-ne' — drag topp/venstre høyre/ned → samler ved NØ+SV-hjørnene
+  //             (topp+høyre møtes ved NØ, bunn+venstre møtes ved SV)
+  //   'se-nw' — drag bunn/høyre høyre/ned → samler ved NV+SØ-hjørnene
+  //             (topp+venstre møtes ved NV, bunn+høyre møtes ved SØ)
+  // Persisters i localStorage så valget overlever sesjon/refresh.
+  const ONE_HAND_MODES = ['off', 'sw-ne', 'se-nw']
+  const ONE_HAND_KEY = 'curveball-onehand-mode'
+  function loadOneHandMode() {
+    if (typeof localStorage === 'undefined') return 'off'
+    try {
+      const v = localStorage.getItem(ONE_HAND_KEY)
+      return ONE_HAND_MODES.includes(v) ? v : 'off'
+    } catch { return 'off' }
+  }
+  const oneHandMode = ref(loadOneHandMode())
+  function cycleOneHandMode() {
+    const i = ONE_HAND_MODES.indexOf(oneHandMode.value)
+    const next = ONE_HAND_MODES[(i + 1) % ONE_HAND_MODES.length]
+    oneHandMode.value = next
+    if (typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(ONE_HAND_KEY, next) } catch {}
+    }
+  }
+
   // v7.3.4: debug-flag for å verifisere multiball-pipelinen. v7.3.7: skrudd
   // av — alt debug-stillas (panel, dlog, force-multiball) er bevart i koden
   // for senere bruk, bare gated på dette flagget.
@@ -76,14 +104,15 @@ export function useCurveBall() {
     linkedFlippers: false, // tap → energize parret flipper også (v7.3.7)
   })
 
-  // v7.3.7: når perks.linkedFlippers er aktiv, energiserer ett tap to flippere
-  // i diagonal par. Hvis du tapper bunn lader også venstre, og omvendt — likeens
-  // for topp ↔ høyre. Lar én finger drive en hel diagonal-halvdel.
+  // v8.3.0: linkedFlippers-perken parres nå AKSIALT i stedet for diagonalt.
+  // Tap på topp lader også bunn; tap på venstre lader også høyre. Lar én
+  // finger lade et helt par så fart-multiplikatoren bygges symmetrisk på
+  // motstående sider av brettet.
   const LINKED_PAIRS = {
-    bottom: 'left',
-    left: 'bottom',
-    top: 'right',
-    right: 'top',
+    top: 'bottom',
+    bottom: 'top',
+    left: 'right',
+    right: 'left',
   }
 
   // v8.0.4: under invader-modus parres flipperne aksialt (motstående) i
@@ -118,7 +147,7 @@ export function useCurveBall() {
     { id: 'extra-life',     icon: '❤️', label: '+1 LIV',              desc: 'Maks 5 totalt' },
     { id: 'low-friction',   icon: '❄️', label: '−20% FRIKSJON',       desc: 'Ball glir lenger' },
     { id: 'pre-charged',    icon: '⚡', label: 'FORHÅNDSLADET',       desc: 'Flippere starter med +1 kick' },
-    { id: 'linked-flippers',icon: '🔗', label: 'KOBLEDE PADDLES',     desc: 'Bunn+venstre og topp+høyre lader sammen' },
+    { id: 'linked-flippers',icon: '🔗', label: 'KOBLEDE PADDLES',     desc: 'Topp+bunn og venstre+høyre lader sammen' },
   ]
 
   // v7.3.0: rolling-window position-history deteksjon
@@ -1553,9 +1582,13 @@ export function useCurveBall() {
       // v8.1.0: nullstill flipper-kraft mellom levels. Innenfor samme level
       // beholdes kickLevel mellom treff (se registerHit) — kun ved nytt
       // level starter brukeren fra blå/grunnplan igjen.
+      // v8.3.0: også posisjon resettes til sentrert (0.5). Hvert level
+      // starter alltid med flippere midtstilt, så brukeren ikke arver en
+      // tilfeldig drag-posisjon fra forrige level.
       for (const e of ['top', 'bottom', 'left', 'right']) {
         flippers[e].kickLevel = 0
         flippers[e].repelUntil = 0
+        flippers[e].position = 0.5
       }
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
@@ -1840,11 +1873,13 @@ export function useCurveBall() {
     perks, perkChoices,
     tournamentMode,
     invaderModeActive,
+    oneHandMode,
     // actions
     init, activate, deactivate,
     startCountdown, restart, energize, applyPerk,
     kickBall, forceMultiball,
     setTournamentMode,
+    cycleOneHandMode,
     serializeForTournament, restoreFromTournament,
     levelParams,
     debugLog,

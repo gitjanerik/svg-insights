@@ -247,10 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.3.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.3.0</span>
+                <span class="text-amber-300/90">&mdash; enh&aring;ndsmodus &amp; aksiale par</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Enh&aring;ndsmodus.</strong> Ny toggle-knapp i nederste venstre hj&oslash;rne av brettet sykler gjennom tre tilstander: AV (uavhengige flippere), N&Oslash;/SV (alle fire f&oslash;lger &eacute;n finger i diagonal-N&Oslash;-SV-m&oslash;nster) og NV/S&Oslash; (samme diagonal speilet). Kompassn&aring;l i knappen viser aktiv retning. Valget persisteres i localStorage</li>
+                <li><strong>Aksial flipper-par for &laquo;KOBLEDE PADDLES&raquo;-perken.</strong> Tidligere paret perken diagonalt (bunn+venstre, topp+h&oslash;yre). N&aring; lader topp+bunn og venstre+h&oslash;yre sammen — en mer intuitiv mental modell. Symmetrien bygger fart-multiplikatoren p&aring; motst&aring;ende sider, ikke kryss og tvers</li>
+                <li><strong>Posisjon nullstilles ved level-opp.</strong> Hver gang et nytt level starter sentreres alle fire flippere igjen, samtidig med at lade-niv&aring;et g&aring;r tilbake til bl&aring; (allerede etablert i v8.1.0). Innenfor samme level bevares b&aring;de farge og posisjon mellom treff slik at brukeren f&aring;r utbytte av &aring; lade opp og posisjonere strategisk</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.2.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.2.3</span>
                 <span class="text-fuchsia-300/90">&mdash; ekvidistanse-grenser pr kart-st&oslash;rrelse</span>
