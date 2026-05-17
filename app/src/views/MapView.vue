@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
@@ -929,6 +929,31 @@ async function activateRestoredCurveBall(state) {
   closeDrawer()
 }
 
+// v8.5.5: tikker hvert sekund mens GPS er på, så debug-readout (alder
+// på siste fix) oppdaterer seg jevnt uten å bero på nye GPS-events.
+const gpsNow = ref(Date.now())
+let gpsTickTimer = null
+function startGpsTick() {
+  if (gpsTickTimer) return
+  gpsTickTimer = setInterval(() => { gpsNow.value = Date.now() }, 1000)
+}
+function stopGpsTick() {
+  if (gpsTickTimer) { clearInterval(gpsTickTimer); gpsTickTimer = null }
+}
+watch(() => userPos.isWatching, (on) => on ? startGpsTick() : stopGpsTick())
+
+const gpsDebugLine = computed(() => {
+  if (!userPos.isWatching) return ''
+  if (userPos.latRaw == null || userPos.lonRaw == null) return 'Venter på fix …'
+  const lat = userPos.latRaw.toFixed(6)
+  const lon = userPos.lonRaw.toFixed(6)
+  const acc = userPos.accuracyM != null ? `±${Math.round(userPos.accuracyM)} m` : '±? m'
+  const ageS = Math.max(0, Math.round((gpsNow.value - userPos.lastFixAt) / 1000))
+  const src = userPos.lastFixSource === 'poll' ? 'P' : 'W'
+  const rej = userPos.rejectedCount ? ` · ${userPos.rejectedCount} avvist` : ''
+  return `${lat}, ${lon} · ${acc} · ${ageS}s · ${src}${rej}`
+})
+
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -939,6 +964,8 @@ onMounted(() => {
   maybeRestoreTournament()
   maybeAutostartFromShare()
 })
+
+onUnmounted(stopGpsTick)
 </script>
 
 <template>
@@ -1319,6 +1346,15 @@ onMounted(() => {
                             : 'bg-white/5 border-white/10 text-white/75'">
               {{ compass.isActive ? 'Kompass på' : 'Aktiver kompass' }}
             </button>
+          </div>
+
+          <!-- v8.5.5: GPS-debug-readout. Lar brukeren sammenligne raw lat/lng
+               mot kartet og se accuracy + alder + kilde (W=watchPosition,
+               P=poll). Vis kun når GPS er aktivt. -->
+          <div v-if="userPos.isWatching"
+               class="text-white/60 text-[10.5px] font-mono leading-snug
+                      bg-white/5 border border-white/10 rounded-lg px-3 py-2 mb-2 tabular-nums">
+            {{ gpsDebugLine }}
           </div>
 
           <div class="text-white/40 text-[10px] leading-relaxed mt-4">

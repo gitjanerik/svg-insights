@@ -12,13 +12,17 @@ export function useUserPosition(getMeta) {
   const state = reactive({
     svgX: null,
     svgY: null,
+    latRaw: null,      // siste rapporterte WGS84-lat (for debug-readout)
+    lonRaw: null,      // siste rapporterte WGS84-lon
     accuracyM: null,
     headingDeg: null,
     speedMs: null,
     error: null,
     isWatching: false,
     isOutsideMap: false,
-    lastFixAt: null,   // ms timestamp av siste position update
+    lastFixAt: null,    // ms (Date.now) da fix-en ble brukt
+    lastFixSource: null, // 'watch' | 'poll' — for debug
+    rejectedCount: 0,    // hvor mange polls vi har avvist pga dårlig accuracy
   })
 
   let watchId = null
@@ -36,14 +40,36 @@ export function useUserPosition(getMeta) {
       p.x < 0 || p.x > meta.widthM || p.y < 0 || p.y > meta.heightM
   }
 
-  function applyPos(pos) {
+  // v8.5.5: avvis fix-er som ville overskrive en fersk, bedre lesning.
+  // Hypotese: getCurrentPosition med maximumAge:0 timer ofte ut når GPS
+  // ikke svarer på 5s, og browseren returnerer wifi/celle-basert fallback
+  // med 200–500 m nøyaktighet. Det ga 200–300m systematisk offset selv
+  // når watchPosition leverte god GPS sekundet før.
+  function shouldReject(newAccM) {
+    if (state.accuracyM == null || state.lastFixAt == null) return false
+    const ageMs = Date.now() - state.lastFixAt
+    if (ageMs >= 10000) return false        // gammel ankerfix → alt nytt aksepteres
+    if (newAccM <= state.accuracyM) return false  // nytt er like bra eller bedre
+    if (newAccM <= 75) return false         // < 75m er fortsatt brukbart
+    return newAccM > state.accuracyM * 1.8
+  }
+
+  function applyPos(pos, source = 'watch') {
     const c = pos.coords
+    const newAcc = c.accuracy ?? Infinity
+    if (shouldReject(newAcc)) {
+      state.rejectedCount = (state.rejectedCount ?? 0) + 1
+      return
+    }
     lastCoords = { latitude: c.latitude, longitude: c.longitude }
-    state.accuracyM = c.accuracy ?? null
+    state.latRaw = c.latitude
+    state.lonRaw = c.longitude
+    state.accuracyM = Number.isFinite(newAcc) ? newAcc : null
     state.headingDeg = Number.isFinite(c.heading) ? c.heading : null
     state.speedMs = Number.isFinite(c.speed) ? c.speed : null
     state.error = null
     state.lastFixAt = Date.now()
+    state.lastFixSource = source
     recompute()
   }
 
@@ -57,7 +83,7 @@ export function useUserPosition(getMeta) {
     state.error = null
 
     watchId = navigator.geolocation.watchPosition(
-      applyPos,
+      (pos) => applyPos(pos, 'watch'),
       (err) => {
         const map = {
           1: 'Du har avvist GPS-tillatelse',
@@ -77,7 +103,7 @@ export function useUserPosition(getMeta) {
     pollTimer = setInterval(() => {
       if (!navigator.geolocation) return
       navigator.geolocation.getCurrentPosition(
-        applyPos,
+        (pos) => applyPos(pos, 'poll'),
         () => { /* ignorer enkelt-feil, watchPosition fanger varige */ },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
       )
@@ -90,7 +116,7 @@ export function useUserPosition(getMeta) {
   function refresh() {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(
-      applyPos,
+      (pos) => applyPos(pos, 'poll'),
       () => { /* behold forrige posisjon hvis fersk fix feiler */ },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
     )

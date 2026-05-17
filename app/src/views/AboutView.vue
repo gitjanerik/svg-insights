@@ -247,10 +247,27 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.5 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.5</span>
+                <span class="text-emerald-200/90">&mdash; avvis d&aring;rlige GPS-fix-er + debug-readout</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>Bruker rapporterte fortsatt ~200&ndash;300 m systematisk offset ogs&aring; n&aring;r de var stasjon&aelig;re. Hypotese: v8.5.4-pollingen (<code>getCurrentPosition</code> hvert 3. sekund) timer ut p&aring; 5s n&aring;r GPS ikke svarer, og browseren returnerer wifi/celle-fallback med 200&ndash;500 m n&oslash;yaktighet. Den overskriver en god <code>watchPosition</code>-fix vi nettopp fikk</li>
+                <li>Fix: <code>applyPos</code> avviser nye fix-er som er markant verre (&gt;1.8&times;) enn current og current er fersk (&lt;10s). Watch-fix overlever poll-fallback, men hvis ankeret blir gammelt aksepteres alt nytt s&aring; brukeren ikke fryser p&aring; en stale posisjon</li>
+                <li>Debug-readout under GPS-knappen viser raw lat/lng (6 desimaler), accuracy &plusmn;m, alder p&aring; siste fix og kilde (<code>W</code>=watchPosition, <code>P</code>=poll), pluss antall avviste polls. Gj&oslash;r det mulig &aring; verifisere om offset er enheten eller v&aring;r konvertering</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-teal-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.4</span>
                 <span class="text-teal-200/90">&mdash; aktiv GPS-polling hvert 3. sekund</span>
