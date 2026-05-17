@@ -16,10 +16,10 @@ export const ANNOTATION_SYMBOLS = [
   { code: '212', symbolKey: 'stein', label: 'Stein' },
   { code: '310', symbolKey: 'brønn', label: 'Brønn / kilde' },
   { code: '509', symbolKey: 'bro',   label: 'Bro / klopp' },
-  // Bonus — ikke en ISOM-kode. Animert «X marks the spot» med pulsende
-  // gul glow og roterende stjerne-rays. Egen kode 999 reserverer plass
-  // utenfor ISOM-rommet.
-  { code: '999', symbolKey: 'skatt', label: 'Skatt' },
+  // Bonus — ikke en ISOM-kode. Animert geocache-markør med pulsende
+  // gul glow, roterende stjerne-rays og blinkende rød X («X marks the
+  // spot»). Egen kode 999 reserverer plass utenfor ISOM-rommet.
+  { code: '999', symbolKey: 'geocache', label: 'Geocache' },
 ]
 
 export function useMapAnnotations(mapId) {

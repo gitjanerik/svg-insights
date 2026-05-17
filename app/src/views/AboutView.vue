@@ -247,20 +247,20 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
-          <!-- 8.6.0 -->
+          <!-- 8.6.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
             <details class="group" open>
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
-                <span class="font-semibold text-white">8.6.0</span>
-                <span class="text-amber-200/90">&mdash; animert Skatt-annotering &#x2728;</span>
+                <span class="font-semibold text-white">8.6.1</span>
+                <span class="text-amber-200/90">&mdash; animert Geocache-annotering &#x2728;</span>
                 <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
               </summary>
               <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
-                <li><strong>Ny annoteringstype: «Skatt».</strong> Fungerer som de fire ISOM-symbolene (plasseres med klikk, lagres i IndexedDB, egen lag-toggle med teller) &mdash; men istedenfor et statisk ikon rendres en ren SVG-animasjon: pulserende gul glow, 8 roterende stjerne-rays og blinkende r&oslash;d X i sentrum. «X marks the spot.»</li>
+                <li><strong>Ny annoteringstype: «Geocache».</strong> Fungerer som de fire ISOM-symbolene (plasseres med klikk, lagres i IndexedDB, egen lag-toggle med teller) &mdash; men istedenfor et statisk ikon rendres en ren SVG-animasjon: pulserende gul glow, 8 roterende stjerne-rays og blinkende r&oslash;d X i sentrum. «X marks the spot.»</li>
                 <li><strong>Ren SMIL, ingen JS-timer.</strong> Animasjonen bruker <code>&lt;animate&gt;</code> og <code>&lt;animateTransform&gt;</code> direkte i SVG-en &mdash; nettleseren kj&oslash;rer alt p&aring; compositor-tr&aring;den. Ingen <code>requestAnimationFrame</code>, ingen ekstra render-arbeid, ingen p&aring;virkning p&aring; pinch-zoom-ytelse. Animasjonen overlever ogs&aring; SVG-eksport (statisk snapshot ved render-tid)</li>
-                <li><strong>Drawer-ikonet animerer ogs&aring;.</strong> Knappen som velger Skatt-symbolet og lag-toggle-knappen viser samme tre-lags-animasjon, skalert til 16-px viewBox. Vue-templaten inneholder SMIL-tagger direkte &mdash; ingen JS-orkestrering</li>
-                <li>Drevet av at hele poenget med SVG Insights er &aring; utforske formatet. Statiske ikoner er bra, men en blinkende skatt p&aring; kartet skader ikke &#x1f60e;</li>
+                <li><strong>Drawer-ikonet animerer ogs&aring;.</strong> Knappen som velger Geocache-symbolet og lag-toggle-knappen viser samme tre-lags-animasjon, skalert til 16-px viewBox. Vue-templaten inneholder SMIL-tagger direkte &mdash; ingen JS-orkestrering</li>
+                <li>Drevet av at hele poenget med SVG Insights er &aring; utforske formatet. Statiske ikoner er bra, men en blinkende geocache p&aring; kartet skader ikke &#x1f60e;</li>
               </ul>
             </details>
           </div>

@@ -488,11 +488,12 @@ function renderAnnotations() {
       g.appendChild(halo)
     }
 
-    if (sym.symbolKey === 'skatt') {
-      // Skatt er bonus-annotering med SMIL-animasjon — pulsende gul glow,
-      // roterende stjerne-rays og blinkende rød X i sentrum. Tegnes inline
-      // istedenfor <use> så vi kan legge til <animate>/<animateTransform>.
-      appendSkattSymbol(g, HALF)
+    if (sym.symbolKey === 'geocache') {
+      // Geocache er bonus-annotering med SMIL-animasjon — pulsende gul
+      // glow, roterende stjerne-rays og blinkende rød X i sentrum.
+      // Tegnes inline istedenfor <use> så vi kan legge til <animate>/
+      // <animateTransform>.
+      appendGeocacheSymbol(g, HALF)
     } else {
       const use = document.createElementNS(ns, 'use')
       const href = `#iso-sym-${sym.symbolKey}`
@@ -510,7 +511,7 @@ function renderAnnotations() {
 }
 
 /**
- * Bygg det animerte Skatt-symbolet inn i en eksisterende g-node.
+ * Bygg det animerte Geocache-symbolet inn i en eksisterende g-node.
  * - s   = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
  * - parent g er allerede translate-positionert til annotasjonens (x,y)
  *
@@ -523,7 +524,7 @@ function renderAnnotations() {
  * requestAnimationFrame. Browseren håndterer alt på compositor-tråden,
  * så det går ikke utover map-rendering eller pinch-zoom-ytelse.
  */
-function appendSkattSymbol(parent, s) {
+function appendGeocacheSymbol(parent, s) {
   const ns = 'http://www.w3.org/2000/svg'
   const mk = (tag, attrs) => {
     const el = document.createElementNS(ns, tag)
@@ -1484,7 +1485,7 @@ onUnmounted(stopGpsTick)
                     <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="#1a1a1a" stroke-width="1.8"/>
                     <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="#1a1a1a" stroke-width="1.8"/>
                   </template>
-                  <template v-else-if="s.symbolKey === 'skatt'">
+                  <template v-else-if="s.symbolKey === 'geocache'">
                     <!-- Pulserende gul glow + roterende stjerne-rays + blinkende rød X.
                          Samme tre-lags-animasjon som på kartet, skalert til 16-px-button. -->
                     <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
@@ -1553,7 +1554,7 @@ onUnmounted(stopGpsTick)
                   <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="currentColor" stroke-width="1.8"/>
                   <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.8"/>
                 </template>
-                <template v-else-if="s.symbolKey === 'skatt'">
+                <template v-else-if="s.symbolKey === 'geocache'">
                   <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
                     <animate attributeName="r" values="5;7;5" dur="0.7s" repeatCount="indefinite"/>
                     <animate attributeName="opacity" values="0.35;0.8;0.35" dur="0.7s" repeatCount="indefinite"/>
