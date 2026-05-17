@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.0</span>
+                <span class="text-fuchsia-200/90">&mdash; snarvei til Curve Invaders fra kart-listen</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li>H&aring;ndkonsoll-knapp p&aring; hvert kart i oversikten (inkl. innebygde) starter spillet direkte uten omveien om kart-tema. P&aring; brukerens egne kart ligger knappen ved siden av slett-knappen; p&aring; innebygde kart helt til h&oslash;yre</li>
+                <li>Curve Invaders-knappen inne i kart-innstillingene er n&aring; alltid synlig &mdash; tidligere m&aring;tte man tappe Curves-temaet f&oslash;rst (easter-egg fjernet siden popularit&eacute;t har gjort snarveien til en hovedfunksjon)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.4.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.4.1</span>
                 <span class="text-sky-200/90">&mdash; ekvidistanse-fix p&aring; Vard&aring;sen-demoen</span>

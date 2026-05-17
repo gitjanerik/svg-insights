@@ -26,6 +26,14 @@ function openMap(id) {
   router.push({ name: 'kart-vis', params: { id } })
 }
 
+function onStartGame(id) {
+  try {
+    sessionStorage.setItem('curveball-autostart-mapId', id)
+    sessionStorage.removeItem('flippkart-autostart-mapId')
+  } catch { /* QuotaExceeded */ }
+  router.push({ name: 'kart-vis', params: { id } })
+}
+
 async function onDelete(id, navn) {
   if (!confirm(`Slett kart "${navn}"?`)) return
   await deleteMap(id)
@@ -92,27 +100,38 @@ function formatDate(ts) {
 
       <!-- Innebygde kart -->
       <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
-      <button v-for="m in builtin" :key="m.id"
-              @click="openMap(m.id)"
-              class="w-full mb-2 rounded-lg px-4 py-3 flex items-center gap-3 text-left
-                     bg-white/[0.04] border border-white/10 active:bg-white/[0.07] active:scale-[0.99] transition">
-        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
-                    flex items-center justify-center text-white/70">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+      <div v-for="m in builtin" :key="m.id"
+           class="w-full mb-2 rounded-lg flex items-center gap-3
+                  bg-white/[0.04] border border-white/10 overflow-hidden">
+        <div class="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 active:bg-white/[0.07]"
+             @click="openMap(m.id)">
+          <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
+                      flex items-center justify-center text-white/70">
+            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+              <path d="M9 4 V18 M15 6 V20"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
+            <div class="text-[12px] text-white/50">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
+          </div>
+        </div>
+        <button @click.stop="onStartGame(m.id)"
+                aria-label="Start Curve Invaders"
+                class="shrink-0 mr-2 w-9 h-9 rounded-lg flex items-center justify-center
+                       text-fuchsia-300/75 active:bg-fuchsia-500/15 active:text-fuchsia-200">
+          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
-            <path d="M9 4 V18 M15 6 V20"/>
+            <rect x="5" y="3" width="14" height="18" rx="2"/>
+            <rect x="8" y="6" width="8" height="6" rx="0.5"/>
+            <path d="M8 16 H11 M9.5 14.5 V17.5"/>
+            <circle cx="14" cy="16" r="0.9" fill="currentColor" stroke="none"/>
+            <circle cx="16" cy="17" r="0.9" fill="currentColor" stroke="none"/>
           </svg>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
-          <div class="text-[12px] text-white/50">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
-        </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </button>
+        </button>
+      </div>
 
       <!-- Brukergenererte kart -->
       <div v-if="maps.length > 0 || loading"
@@ -142,6 +161,19 @@ function formatDate(ts) {
               <span>{{ formatDate(m.opprettet) }}</span>
             </div>
           </div>
+          <button @click.stop="onStartGame(m.id)"
+                  aria-label="Start Curve Invaders"
+                  class="w-9 h-9 rounded-lg flex items-center justify-center
+                         text-fuchsia-300/75 active:bg-fuchsia-500/15 active:text-fuchsia-200">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="3" width="14" height="18" rx="2"/>
+              <rect x="8" y="6" width="8" height="6" rx="0.5"/>
+              <path d="M8 16 H11 M9.5 14.5 V17.5"/>
+              <circle cx="14" cy="16" r="0.9" fill="currentColor" stroke="none"/>
+              <circle cx="16" cy="17" r="0.9" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
           <button @click.stop="onDelete(m.id, m.navn)"
                   class="w-9 h-9 rounded-lg flex items-center justify-center text-white/35
                          active:bg-white/10 active:text-white/70">
