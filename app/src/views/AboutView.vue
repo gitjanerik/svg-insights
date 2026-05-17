@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.7.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-fuchsia-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.7.0</span>
+                <span class="text-fuchsia-200/90">&mdash; annoteringer som custom bumpers i Curve Invaders &#x1f3af;</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Plasser annotering p&aring; kartet &rarr; bumper i spillet.</strong> Alle annoteringene du har plassert (knaus, stein, br&oslash;nn, bro, geocache) blir n&aring; ogs&aring; bumpers i Curve Invaders, p&aring; samme posisjon p&aring; kartet. Beholdes p&aring; tvers av levels &mdash; random per-level-bumpers fylles p&aring; rundt dem. F&aring;r du annoteringene strategisk plassert i et godt sloped omr&aring;de, har du dine egne &laquo;hjemmebane&raquo;-bumpers</li>
+                <li><strong>Geocache trigger Invaders-modus direkte.</strong> Random bumpers velger spawn-modus tilfeldig (multiball/miniball/invaders), men en geocache-bumper bypasser pickSpawnMode og fyrer ALLTID Invaders-formasjonen ved 4 hits. Bel&oslash;nning for &aring; plassere geocaches strategisk f&oslash;r du starter spillet</li>
+                <li><strong>Animasjonen f&oslash;lger med inn i spillet.</strong> Geocache-bumperen viser samme tre-lags-animasjon som p&aring; kartet (pulsende gul glow + 8 roterende stjerne-rays + blinkende r&oslash;d X). Ren SMIL &mdash; ingen JS-overhead</li>
+                <li><strong>Tekniske detaljer:</strong> <code>curveball.init()</code> tar n&aring; <code>annotations</code> som ctx-felt. <code>annotationBumperSeeds</code> caches mappingen <code>isomCode &rarr; symbolKey</code> via ANNOTATION_SYMBOLS-katalogen (&eacute;tt kilde-til-sannhet). <code>generateBumpersForLevel()</code> plasserer annoterings-bumpers f&oslash;rst, deretter random-bumpers med min-avstand-sjekk mot dem. Annoteringer utenfor playable area (innenfor flipper-marginen) hoppes over</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.6.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.6.2</span>
                 <span class="text-cyan-200/90">&mdash; annoterings-liste + tryggere persistens</span>

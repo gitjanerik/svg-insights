@@ -1,5 +1,6 @@
 import { ref, reactive, computed, onUnmounted } from 'vue'
 import { sampleGradient, sampleElevation } from '../lib/demSampling.js'
+import { ANNOTATION_SYMBOLS } from './useMapAnnotations.js'
 import {
   playIntro, playKick, playEnergize, playSplash, playWin,
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
@@ -189,6 +190,11 @@ export function useCurveBall() {
   // av. Etter BUMPER_HITS_TO_MULTIBALL treff på samme bumper → multi-ball
   // trigges. Genereres bare på partalls-levels (level % 2 === 0).
   const bumpers = reactive([])
+  // v8.7.0: kart-annoteringer (knaus/stein/brønn/bro/geocache) blir custom
+  // bumpers i tillegg til de random pr level. User-plasserte → faste
+  // posisjoner, beholdes på tvers av levels. Geocache trigger Invaders-
+  // modus direkte (override av pickSpawnMode).
+  let annotationBumperSeeds = []
   // v7.3.1: spatial konstanter skaleres med map-size i init(). Default-verdier
   // er kalibrert for 4×4km kart.
   let BUMPER_RADIUS_M = 90          // collision-radius (i meter, viewBox)
@@ -954,10 +960,25 @@ export function useCurveBall() {
 
   function generateBumpersForLevel() {
     bumpers.length = 0
-    const count = 1 + Math.floor(Math.random() * BUMPER_MAX_PER_LEVEL)
     const margin = FLIPPER_INSET_M + BUMPER_RADIUS_M + 100
+
+    // v8.7.0: User-plasserte annoteringer kommer FØRST som faste bumpers.
+    // Beholdes på tvers av levels (samme posisjoner hver runde) — random
+    // bumpers fylles på etterpå rundt dem. Hopper over annoteringer som
+    // ligger utenfor playable area (innenfor flipper-margin) så de ikke
+    // gjør spillet uspillbart.
+    for (const seed of annotationBumperSeeds) {
+      if (seed.x < margin || seed.x > bounds.width - margin) continue
+      if (seed.y < margin || seed.y > bounds.height - margin) continue
+      bumpers.push({ x: seed.x, y: seed.y, hits: 0, kind: seed.kind, fromAnnotation: true })
+    }
+
+    // Random bumpers på toppen — count er antall NYE pr level (ikke totalt),
+    // så annoterings-bumpers er et rent tillegg.
+    const count = 1 + Math.floor(Math.random() * BUMPER_MAX_PER_LEVEL)
     let attempts = 0
-    while (bumpers.length < count && attempts < 100) {
+    let added = 0
+    while (added < count && attempts < 200) {
       attempts++
       const x = margin + Math.random() * (bounds.width - 2 * margin)
       const y = margin + Math.random() * (bounds.height - 2 * margin)
@@ -970,6 +991,7 @@ export function useCurveBall() {
       if (ok) {
         const kind = BUMPER_KINDS[Math.floor(Math.random() * BUMPER_KINDS.length)]
         bumpers.push({ x, y, hits: 0, kind })
+        added++
       }
     }
   }
@@ -1045,7 +1067,11 @@ export function useCurveBall() {
       // mot uventet cascade.
       if (b.canExplode && bp.hits >= BUMPER_HITS_TO_MULTIBALL && balls.length < MAX_BALLS_IN_PLAY) {
         bp.hits = 0
-        triggerMultiballFromBumper(bp.x, bp.y)
+        // v8.7.0: geocache-bumper (kart-annotering) triggrer ALLTID Invaders-
+        // modus — bypassing pickSpawnMode-randomen. Belønner spilleren for å
+        // plassere geocaches strategisk på kartet før spillet starter.
+        const forceMode = bp.kind === 'geocache' ? 'invaders' : null
+        triggerMultiballFromBumper(bp.x, bp.y, forceMode)
       } else if (bp.hits >= BUMPER_HITS_TO_MULTIBALL) {
         // Hold counter på maks så vi ikke "lurer" til en gigant-spawn senere
         bp.hits = BUMPER_HITS_TO_MULTIBALL
@@ -1092,9 +1118,10 @@ export function useCurveBall() {
    * Kalt fra både bumper-trigger og stillness-explode. Backward-compat-
    * navn `triggerMultiballFromBumper` beholdt så HUD-events ikke knekker.
    */
-  function triggerMultiballFromBumper(sx, sy) {
-    const mode = pickSpawnMode()
-    dlog('bumper → spawn', { mode, ballsBefore: balls.length })
+  function triggerMultiballFromBumper(sx, sy, forceMode = null) {
+    // v8.7.0: forceMode bypasser pickSpawnMode (brukes av geocache-bumper).
+    const mode = forceMode ?? pickSpawnMode()
+    dlog('bumper → spawn', { mode, forced: !!forceMode, ballsBefore: balls.length })
     spawnByMode(mode, sx, sy)
   }
 
@@ -1836,6 +1863,17 @@ export function useCurveBall() {
     dem = ctx.dem
     bounds = ctx.bounds
     equidistanceM = ctx.equidistanceM ?? 20
+
+    // v8.7.0: lagre annoteringer som faste bumper-seeds. Mapping fra
+    // isomCode → bumper-kind via ANNOTATION_SYMBOLS-katalogen så vi
+    // bevarer ett kilde-til-sannhet. Skip annoteringer uten kjent kode.
+    annotationBumperSeeds = (ctx.annotations ?? [])
+      .filter(a => a?.type === 'point' && Number.isFinite(a.x) && Number.isFinite(a.y))
+      .map(a => {
+        const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
+        return sym ? { x: a.x, y: a.y, kind: sym.symbolKey } : null
+      })
+      .filter(Boolean)
 
     // v7.3.1: Skala spatial-konstanter etter kart-størrelse. Defaults var
     // tunet for 4×4km kart. Mindre kart (1km, 2km, 3km) trengte mindre
