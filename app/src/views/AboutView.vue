@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.5.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.5.3</span>
+                <span class="text-cyan-200/90">&mdash; GPS-prikk: stroke skalerer riktig ved pinch-zoom</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><code>vector-effect="non-scaling-stroke"</code> p&aring; den hvite kantlinjen rundt GPS-prikken virket bare for SVG-interne transformer, ikke for CSS-transformene som pinch-zoom-wrapperen p&aring;f&oslash;rer. Resultat: ved h&oslash;y zoom ble den hvite kantlinjen s&aring; tykk at den nesten dekket det bl&aring; fyllet</li>
+                <li>Fix: stroke-bredden beregnes n&aring; via <code>pxToUserUnits</code> p&aring; samme m&aring;te som prikkens radius, og oppdateres ved hver zoom-endring. Prikken er n&aring; alltid en bl&aring; sirkel med tynn hvit halo uansett zoom-niv&aring;</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.5.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.5.2</span>
                 <span class="text-sky-200/90">&mdash; GPS-polish (tog-modus)</span>
