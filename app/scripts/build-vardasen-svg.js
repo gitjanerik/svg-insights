@@ -76,7 +76,7 @@ console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution.toFix
 const dom = await fetchDOM(utmBbox, 5)
 if (dom) console.log(`DOM: ${dom.cols} × ${dom.rows} (kilde: ${dom.source})`)
 
-const { svg, counts, meta } = buildSvg(elements, bbox, { dem, dom, contourIntervalM: 5 })
+const { svg, counts, meta } = buildSvg(elements, bbox, { dem, dom, contourIntervalM: 10 })
 console.log('Klassifisering:', counts)
 console.log(`Konturer: ekvidistanse ${meta.equidistance} m, høyde ${meta.elevationRange?.min}–${meta.elevationRange?.max} m`)
 
