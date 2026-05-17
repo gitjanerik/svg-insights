@@ -11,6 +11,7 @@ import {
   isTrigPoint,
   buildIsomDefs,
   buildIsomCss,
+  getIsomDef,
   isomCatalog,
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
@@ -770,7 +771,10 @@ export function buildSvg(elements, bbox, options = {}) {
       // på toppen). CSS i symbolizer.js styler `path.overlay` separat. Gir
       // den klassiske ISOM-veiestilen med tydelig sort omriss rundt farget
       // veifyll — uten en casing forsvinner små veier i bg-cream-fargen.
-      const hasOverlay = !!isomCatalog.categories?.[cat]?.[code]?.overlayStroke
+      // v8.1.2 fix: bruker getIsomDef som slår opp på ISOM-kategori (manmade),
+      // ikke UI-kategorien (vei-stor) som ble brukt i v8.1.0/v8.1.1 — derfor
+      // ble aldri overlay-pathene emittet og roads ble bare sort casing.
+      const hasOverlay = !!getIsomDef(code, isomCatalog, false)?.overlayStroke
       if (hasOverlay) {
         const lines = []
         for (const d of paths) {

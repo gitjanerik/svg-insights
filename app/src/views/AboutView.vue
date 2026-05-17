@@ -247,10 +247,25 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.1.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.1.2</span>
+                <span class="text-red-300/90">&mdash; veier viser endelig farge</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Bug i 8.1.0 / 8.1.1:</strong> Veiene rendret som ren sort selv om CSS sa rødt/oransje fyll. &Aring;rsak: <code>mapBuilder.js</code> sjekket om en kode hadde <code>overlayStroke</code> via UI-kategorien (<code>vei-stor</code>), men kataloget bruker ISOM-kategorien (<code>manmade</code>). Sjekken returnerte alltid <code>false</code>, s&aring; overlay-pathen ble aldri emittet — bare basen (sort casing). N&aring; via <code>getIsomDef(code)</code> som sl&aring;r opp p&aring; tvers av ISOM-kategorier. Veiene viser n&aring; b&aring;de sort omriss OG farget fyll som tenkt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.1.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.1.1</span>
                 <span class="text-amber-300/90">&mdash; tynnere vei-omriss</span>
