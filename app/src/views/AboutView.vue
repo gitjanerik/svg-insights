@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.2.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-pink-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.2.2</span>
+                <span class="text-pink-300/90">&mdash; kvadratisk preview &amp; 25m h&oslash;ydekurver</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Preview-utsnittet er n&aring; kvadratisk</strong> (<code>aspect-square</code>) slik at brukeren tydelig ser at det ferdige turkartet ogs&aring; blir kvadratisk. Tidligere var preview-en <code>flex-1</code> som ble rektangul&aelig;rt p&aring; h&oslash;ye telefoner og misledet om proporsjonene</li>
+                <li><strong>Bruttokartet vises p&aring; 100% opacity</strong> b&aring;de innenfor og utenfor netto-rammen — den lysegr&aring;e semitransparente maskeringen (<code>shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]</code>) er fjernet. Netto-rammen markeres n&aring; med en hvit-p&aring;-sort konturlinje s&aring; den st&aring;r tydelig fram mot kartet uten &aring; dimme konteksten</li>
+                <li><strong>Pinch / scroll-zoom-rammen var allerede aktiv</strong> — endrer st&oslash;rrelse mellom 1&ndash;10 km bbox med samme grenser som slideren. Det blir n&aring; tydeligere n&aring;r preview-en er kvadratisk</li>
+                <li><strong>H&oslash;ydekurver: 100 m fjernet, 25 m lagt til</strong>. Nye valg: 5, 10, 20, 25, 50 m. 25 m matcher norsk N50-standard og er nyttig der bbox er for stort for 20 m men ikke trenger 50 m oversikt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.2.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-sky-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.2.1</span>
                 <span class="text-sky-300/90">&mdash; ingen scroll-rest etter kart-generering</span>
