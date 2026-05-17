@@ -289,6 +289,14 @@ function stopCurveBall() {
   curveball.deactivate()
 }
 
+// v8.5.2: «Sentrer»-FAB resetter pinch/zoom OG tvinger en fersk GPS-fix
+// hvis GPS er aktivert. P&aring; toget kan watchPosition henge p&aring; en cached
+// koordinat — getCurrentPosition med maximumAge=0 gir alltid ny m&aring;ling.
+function onResetAndRefreshGps() {
+  reset()
+  if (userPos.isWatching) userPos.refresh()
+}
+
 function onCurveBallRestart() {
   // v7.4.0: full restart fra game over → glem turneringens visited-list
   // så neste runde kan re-besøke samme kart. v8.0.0: tøm også legacy-key
@@ -597,6 +605,9 @@ function setupHostSvg(sourceRoot) {
   }
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
+  // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester n&aring;r brukerens
+  // finger lander p&aring; prikken/ringen.
+  userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
 }
@@ -620,18 +631,20 @@ function updateUserDot() {
 
   // Dynamiske skjerm-størrelser. Dot er fast 14 CSS-px, kjegle 60 CSS-px
   // ut fra dot. Accuracy-ringen reflekterer ekte fysisk usikkerhet (i meter)
-  // — kan bli stor hvis GPS er upresis, men det er meningen.
+  // men cappes p&aring; ~28 CSS-px radius slik at d&aring;rlig GPS (urban / tog / tunnel)
+  // ikke spr&aring;ker ringen utover halve skjermen og d&oslash;mmer kart-innholdet.
   const dotR = pxToUserUnits(7)         // ~14 CSS-px diameter
   const coneR = pxToUserUnits(30)       // ~60 CSS-px ut fra dot
   const minRingR = pxToUserUnits(12)    // ringen blir aldri mindre enn dot+halo
-  const ringR = Math.max(minRingR, acc)
+  const maxRingR = pxToUserUnits(28)    // visuelt cap — ekte usikkerhet i tooltip om n&oslash;dvendig
+  const ringR = Math.min(maxRingR, Math.max(minRingR, acc))
 
   const ring = document.createElementNS(ns, 'circle')
   ring.setAttribute('cx', x)
   ring.setAttribute('cy', y)
   ring.setAttribute('r', ringR)
-  ring.setAttribute('fill', 'rgba(56, 189, 248, 0.15)')
-  ring.setAttribute('stroke', 'rgba(56, 189, 248, 0.55)')
+  ring.setAttribute('fill', 'rgba(56, 189, 248, 0.10)')
+  ring.setAttribute('stroke', 'rgba(56, 189, 248, 0.40)')
   ring.setAttribute('stroke-width', '1')
   ring.setAttribute('vector-effect', 'non-scaling-stroke')
   layer.appendChild(ring)
@@ -1010,9 +1023,9 @@ onMounted(() => {
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
       </button>
-      <button @click="reset()" aria-label="Sentrer"
+      <button @click="onResetAndRefreshGps" :aria-label="userPos.isWatching ? 'Sentrer + oppdater GPS' : 'Sentrer'"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
-                     flex items-center justify-center active:scale-95 transition">
+                     flex items-center justify-center active:scale-95 transition relative">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
@@ -1021,6 +1034,10 @@ onMounted(() => {
           <line x1="2" y1="12" x2="5" y2="12"/>
           <line x1="19" y1="12" x2="22" y2="12"/>
         </svg>
+        <!-- v8.5.2: liten GPS-indikator-prikk i hjørnet n&aring;r GPS er aktiv,
+             s&aring; brukeren ser at knappen ogs&aring; refresher posisjonen. -->
+        <span v-if="userPos.isWatching"
+              class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.8)]" />
       </button>
     </div>
 
