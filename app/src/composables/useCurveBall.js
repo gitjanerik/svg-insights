@@ -254,11 +254,21 @@ export function useCurveBall() {
   })
 
   const flippers = reactive({
-    top:    { position: 0.5, length: 0.25, kickLevel: 0 },
-    bottom: { position: 0.5, length: 0.25, kickLevel: 0 },
-    left:   { position: 0.5, length: 0.25, kickLevel: 0 },
-    right:  { position: 0.5, length: 0.25, kickLevel: 0 },
+    top:    { position: 0.5, length: 0.25, kickLevel: 0, repelUntil: 0 },
+    bottom: { position: 0.5, length: 0.25, kickLevel: 0, repelUntil: 0 },
+    left:   { position: 0.5, length: 0.25, kickLevel: 0, repelUntil: 0 },
+    right:  { position: 0.5, length: 0.25, kickLevel: 0, repelUntil: 0 },
   })
+
+  // v8.2.0: Elektromagnetiske flippere. Ved hver lade-nivå (kickLevel)
+  // utøver flipperen en attrahende kraft på ballen som skalerer med
+  // KICK_MULTIPLIERS (blå=0, gul=1×, oransj=3×, rød=5× av base). Ved
+  // ball-treff snus polariteten i REPEL_DURATION_MS (2s) → ballen
+  // skytes ut med ekstra fart. Initialiseres med mapScale i init() så
+  // skjerm-tid blir kart-størrelse-uavhengig.
+  const REPEL_DURATION_MS = 2000
+  const MAGNETIC_REPEL_MULT = 1.6   // repel-kraft = attract-kraft × dette
+  let MAGNETIC_BASE_M_S2 = 200      // re-skaleres i init()
 
   // v7.3.1: spatial konstanter skaleres i init() basert på map-size
   let BALL_RADIUS_M = 90
@@ -650,7 +660,58 @@ export function useCurveBall() {
     dlog('rescue-kick', { speed: +speed.toFixed(0), target: nearest ? 'bumper' : 'uphill' })
   }
 
-  function physicsStep(dt) {
+  // v8.2.0: Elektromagnetisk kraft fra alle fire flippere på én ball.
+  // Hver flipper utøver en kraft mot nærmeste punkt på paddle-linja,
+  // skalert med kickLevel (blå=0, gul=1×, oransj=3×, rød=5×). Lineær
+  // falloff over en effektiv rekkevidde (40 % av minste bbox-dim). Når
+  // flipper er i repel-modus (etter et hit, 2s) snus retningen og
+  // kraften forsterkes med MAGNETIC_REPEL_MULT.
+  function applyFlipperMagnetism(b, dt, now) {
+    if (b.mode === 'invader' && b.invaderPhase === 'orbit') return
+    const w = bounds.width, h = bounds.height
+    const range = 0.4 * Math.min(w, h)
+    const inset = FLIPPER_INSET_M
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      const f = flippers[edge]
+      if (f.kickLevel === 0) continue
+      let tx, ty
+      if (edge === 'top') {
+        const c = f.position * w
+        const half = f.length * w * 0.5
+        tx = Math.max(c - half, Math.min(c + half, b.x))
+        ty = inset
+      } else if (edge === 'bottom') {
+        const c = f.position * w
+        const half = f.length * w * 0.5
+        tx = Math.max(c - half, Math.min(c + half, b.x))
+        ty = h - inset
+      } else if (edge === 'left') {
+        const c = f.position * h
+        const half = f.length * h * 0.5
+        tx = inset
+        ty = Math.max(c - half, Math.min(c + half, b.y))
+      } else {
+        const c = f.position * h
+        const half = f.length * h * 0.5
+        tx = w - inset
+        ty = Math.max(c - half, Math.min(c + half, b.y))
+      }
+      const dx = tx - b.x
+      const dy = ty - b.y
+      const r = Math.hypot(dx, dy)
+      if (r > range || r < 1) continue
+      const falloff = 1 - r / range
+      const strength = MAGNETIC_BASE_M_S2 * (KICK_MULTIPLIERS[f.kickLevel] - 1)
+      const isRepel = f.repelUntil > now
+      const sign = isRepel ? -MAGNETIC_REPEL_MULT : 1
+      const mag = sign * strength * falloff
+      const inv = 1 / r
+      b.vx += mag * dx * inv * dt
+      b.vy += mag * dy * inv * dt
+    }
+  }
+
+  function physicsStep(dt, now) {
     if (!dem || status.value !== 'rolling') return
     const { kGravity, friction } = levelParams(level.value)
     const speedCap = maxBallSpeed(level.value)
@@ -684,6 +745,10 @@ export function useCurveBall() {
         }
       }
 
+      // v8.2.0: elektromagnetisk attract/repel fra alle 4 flippere — kjøres
+      // før slope/friksjon-integrasjonen så total-akselerasjonen er summen
+      // av terrenggravitet + magnetisme.
+      applyFlipperMagnetism(b, dt, now)
       const grad = sampleGradient(dem, b.x, b.y)
       // v8.1.0: climb-boost decay — boosten dør sakte ut hvis ballen ikke
       // krysser nye oppover-kurver. ~0.5/s decay-rate så typisk varighet
@@ -1307,6 +1372,13 @@ export function useCurveBall() {
     // bytte slik at brukeren får utbytte av å lade opp før et avgjørende
     // hit — opprettholder fargen (eks. rød = MAX) gjennom flere treff i
     // samme runde. Nullstilles i win()-callbacken når nytt level starter.
+    // v8.2.0: flipper-polaritet snus midlertidig (2s) ved hit slik at den
+    // går fra attract til repel — ballen skytes ut med ekstra fart fra
+    // den magnetiske «push»-en. Kun aktive flippere (kickLevel > 0) har
+    // magnetisk effekt overhodet, så blå paddle gir vanlig bounce.
+    if (kickLevel > 0) {
+      flipper.repelUntil = performance.now() + REPEL_DURATION_MS
+    }
     // v7.4.3: scoreMult fra ball-mode (mini=2, invader=1.5, normal=1)
     score.value += Math.round(100 * level.value * perks.hitScoreMult * (b.scoreMult ?? 1))
     playKick(kickLevel)
@@ -1374,7 +1446,7 @@ export function useCurveBall() {
     const substeps = Math.max(1, Math.ceil(dt / 0.016))
     const subDt = dt / substeps
     for (let i = 0; i < substeps && status.value === 'rolling'; i++) {
-      physicsStep(subDt)
+      physicsStep(subDt, now)
     }
     updateTrail()
 
@@ -1483,6 +1555,7 @@ export function useCurveBall() {
       // level starter brukeren fra blå/grunnplan igjen.
       for (const e of ['top', 'bottom', 'left', 'right']) {
         flippers[e].kickLevel = 0
+        flippers[e].repelUntil = 0
       }
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
@@ -1606,6 +1679,7 @@ export function useCurveBall() {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
       flippers[e].kickLevel = 0
+      flippers[e].repelUntil = 0
     }
     bumpers.length = 0
     generateBumpersForLevel()
@@ -1671,6 +1745,7 @@ export function useCurveBall() {
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].kickLevel = 0
+      flippers[e].repelUntil = 0
     }
     bumpers.length = 0
     generateBumpersForLevel()
@@ -1733,6 +1808,9 @@ export function useCurveBall() {
     // den vanlige ballen
     KICK_SPEED          = 330 * mapScale * flatBoost
     BUMPER_BOUNCE_SPEED = 350 * mapScale * flatBoost
+    // v8.2.0: magnetisk base-kraft skaleres med mapScale så attract/repel
+    // har samme skjerm-effekt uansett kart-størrelse.
+    MAGNETIC_BASE_M_S2  = 220 * mapScale
   }
 
   function activate() {

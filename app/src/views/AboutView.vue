@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.2.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-violet-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.2.0</span>
+                <span class="text-violet-300/90">&mdash; magnetiske flippere &amp; lag-defaults</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Elektromagnetiske flippere.</strong> Hver flipper utøver n&aring; en attrahende kraft p&aring; ballen som skalerer med lade-niv&aring;: bl&aring; gir ingen, gul mild, oransj merkbar, r&oslash;d sterk. Etter et hit snus polariteten i 2 sekunder s&aring; flipperen blir <em>fr&aring;st&oslash;tende</em> — ballen skytes ut med ekstra fart (1.6&times; av attract-kraften). Skaper et tydelig &laquo;sucked in then blasted out&raquo;-feel som premierer lade-opp f&oslash;r treff. Krefter skalerer med <code>mapScale</code> s&aring; effekten kjennes lik p&aring; alle kart-st&oslash;rrelser</li>
+                <li><strong>Lag-defaults justert:</strong> <q>Lysl&oslash;ype</q> er n&aring; AV som default (lite relevant for de fleste turkart-bbox), og <q>Stedsnavn</q>-overlegget er ON som default (st&oslash;rre omr&aring;denavn er nyttig kontekst). Begge kan slik tidligere tappes p&aring;/av i drawer'en</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.1.3 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.1.3</span>
                 <span class="text-emerald-300/90">&mdash; sti-dash med avrundede ender</span>
