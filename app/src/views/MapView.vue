@@ -278,6 +278,9 @@ async function startCurveBall() {
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
+    // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
+    // Geocache-bumper trigger Invaders-modus direkte ved multiball-trigger.
+    annotations: annot.annotations.value,
   })
   curveball.restart()
   // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
@@ -1036,6 +1039,9 @@ async function activateRestoredCurveBall(state) {
     dem: storedDem.value,
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
+    // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
+    // Geocache-bumper trigger Invaders-modus direkte ved multiball-trigger.
+    annotations: annot.annotations.value,
   })
   curveball.restoreFromTournament(state)
   reset()

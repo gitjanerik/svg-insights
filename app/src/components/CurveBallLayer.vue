@@ -172,6 +172,40 @@ function onBallTap(b) {
                 stroke="#000" :stroke-width="ballRadius * 0.12"/>
         </g>
 
+        <!-- v8.7.0: Geocache (kun fra kart-annotering, ikke random spawn).
+             Treff trigger Invaders-modus direkte. Pulsende gul glow,
+             roterende stjerne-rays og blinkende rød X — samme tre-lags-
+             SMIL-animasjon som annotering-renderingen i MapView. -->
+        <g v-else-if="bp.kind === 'geocache'">
+          <circle cx="0" cy="0" :r="ballRadius * 0.62" fill="#fbbf24" opacity="0.55">
+            <animate attributeName="r"
+                     :values="`${ballRadius * 0.5};${ballRadius * 0.72};${ballRadius * 0.5}`"
+                     dur="0.7s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="0.35;0.8;0.35"
+                     dur="0.7s" repeatCount="indefinite"/>
+          </circle>
+          <g stroke="#b45309" :stroke-width="ballRadius * 0.08" stroke-linecap="round">
+            <line x1="0" :y1="-ballRadius*0.78" x2="0" :y2="-ballRadius*0.32"/>
+            <line x1="0" :y1="ballRadius*0.32"  x2="0" :y2="ballRadius*0.78"/>
+            <line :x1="-ballRadius*0.78" y1="0" :x2="-ballRadius*0.32" y2="0"/>
+            <line :x1="ballRadius*0.32"  y1="0" :x2="ballRadius*0.78"  y2="0"/>
+            <line :x1="-ballRadius*0.55" :y1="-ballRadius*0.55" :x2="-ballRadius*0.23" :y2="-ballRadius*0.23"/>
+            <line :x1="ballRadius*0.23"  :y1="ballRadius*0.23"  :x2="ballRadius*0.55"  :y2="ballRadius*0.55"/>
+            <line :x1="-ballRadius*0.55" :y1="ballRadius*0.55"  :x2="-ballRadius*0.23" :y2="ballRadius*0.23"/>
+            <line :x1="ballRadius*0.23"  :y1="-ballRadius*0.23" :x2="ballRadius*0.55"  :y2="-ballRadius*0.55"/>
+            <animateTransform attributeName="transform" type="rotate"
+                              from="0 0 0" to="360 0 0" dur="6s" repeatCount="indefinite"/>
+          </g>
+          <g stroke="#dc2626" :stroke-width="ballRadius * 0.14" stroke-linecap="round">
+            <line :x1="-ballRadius*0.28" :y1="-ballRadius*0.28"
+                  :x2="ballRadius*0.28"  :y2="ballRadius*0.28"/>
+            <line :x1="-ballRadius*0.28" :y1="ballRadius*0.28"
+                  :x2="ballRadius*0.28"  :y2="-ballRadius*0.28"/>
+            <animate attributeName="opacity" values="1;0.25;1"
+                     dur="0.55s" repeatCount="indefinite"/>
+          </g>
+        </g>
+
         <!-- Hits-counter: 4 LED-firkanter over halo (matcher annotation-stil)  -->
         <g :transform="`translate(${-ballRadius * 0.55}, ${-ballRadius * 1.25})`">
           <rect v-for="n in flipp.BUMPER_HITS_TO_MULTIBALL"
