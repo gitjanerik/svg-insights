@@ -193,6 +193,14 @@ function onForceMultiball() {
   props.flipp.forceMultiball?.()
 }
 
+// v8.3.0 enhåndsmodus tooltip — beskriver hva neste tap vil bytte til.
+const oneHandTitle = computed(() => {
+  const m = props.flipp.oneHandMode?.value ?? 'off'
+  if (m === 'off') return 'Enhåndsmodus: AV (trykk for NØ/SV)'
+  if (m === 'sw-ne') return 'Enhåndsmodus: NØ/SV (trykk for NV/SØ)'
+  return 'Enhåndsmodus: NV/SØ (trykk for AV)'
+})
+
 // ── v7.4.0 turneringsmodus ─────────────────────────────────────────────────
 function pickTournament(yes) {
   props.flipp.setTournamentMode?.(yes)
@@ -332,6 +340,36 @@ async function copyShareUrl() {
 
     <!-- Bottom-right: exit-knapp -->
     <button class="cb-exit" @click="emit('exit')">{{ t('button.exit') }}</button>
+
+    <!-- Bottom-left: enhåndsmodus-toggle. Sykler off → sw-ne → se-nw → off.
+         Kompassnål peker mot retningen som er aktiv (NØ eller NV); en
+         gjennomstreket nål markerer OFF. -->
+    <button class="cb-onehand"
+            :class="`cb-onehand-${flipp.oneHandMode.value}`"
+            :aria-label="`Enhåndsmodus: ${flipp.oneHandMode.value}`"
+            :title="oneHandTitle"
+            @click="flipp.cycleOneHandMode()">
+      <svg viewBox="0 0 24 24" class="cb-onehand-icon">
+        <!-- Kompass-ring -->
+        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <circle cx="12" cy="12" r="1.3" fill="currentColor"/>
+        <!-- Nål: roteres etter modus. OFF = ingen nål, kun en diagonal strek. -->
+        <template v-if="flipp.oneHandMode.value === 'sw-ne'">
+          <!-- Pil NØ: rød spiss mot øvre høyre, hvit hale mot SV -->
+          <polygon points="12,12 18,6 14,11" fill="#ff3b3b"/>
+          <polygon points="12,12 6,18 10,13" fill="#e2e8f0"/>
+        </template>
+        <template v-else-if="flipp.oneHandMode.value === 'se-nw'">
+          <!-- Pil NV: rød spiss mot øvre venstre, hvit hale mot SØ -->
+          <polygon points="12,12 6,6 10,11" fill="#ff3b3b"/>
+          <polygon points="12,12 18,18 14,13" fill="#e2e8f0"/>
+        </template>
+        <template v-else>
+          <!-- OFF: streket nål, ingen retning -->
+          <line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </template>
+      </svg>
+    </button>
 
     <!-- v7.3.5 DEBUG-panel for multiball-feilsøking. Togglebar via DBG-knapp. -->
     <template v-if="flipp.DEBUG_MULTIBALL">
@@ -551,6 +589,44 @@ async function copyShareUrl() {
   background: #5cefff;
   color: #000;
 }
+
+/* v8.3.0 enhåndsmodus-toggle — bottom-left, sykler off → sw-ne → se-nw.
+   Bruker samme arkadestil som EXIT-knappen, men firkantet med kompass-icon. */
+.cb-onehand {
+  position: absolute;
+  bottom: calc(16px * var(--cb-hud-scale));
+  left:   calc(16px * var(--cb-hud-scale));
+  pointer-events: auto;
+  background: #000;
+  color: #94a3b8;
+  border: 2px solid #94a3b8;
+  width:  calc(36px * var(--cb-hud-scale));
+  height: calc(36px * var(--cb-hud-scale));
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 0;
+  transition: filter 80ms, transform 80ms, border-color 120ms, color 120ms;
+}
+.cb-onehand:active {
+  transform: scale(0.94);
+  filter: brightness(1.4);
+}
+.cb-onehand-icon {
+  width: 75%;
+  height: 75%;
+}
+.cb-onehand-sw-ne {
+  color: #ffe24d;
+  border-color: #ffe24d;
+}
+.cb-onehand-se-nw {
+  color: #5cefff;
+  border-color: #5cefff;
+}
+.cb-onehand-off { opacity: 0.7; }
 
 .cb-overlay {
   position: absolute;
