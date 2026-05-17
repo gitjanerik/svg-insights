@@ -270,6 +270,11 @@ async function startCurveBall() {
   if (!meta.value || cbDemFetching.value) return
   const ok = await ensureDemForCurveBall()
   if (!ok) return
+  // v8.7.1: rydd annoteringsmodus så indikator-tooltipet ikke henger
+  // inne i spillet (og så et map-tap ikke kan plassere en annotering
+  // bak game-overlayet).
+  annot.selectedSymbol.value = null
+  annot.isAnnotateMode.value = false
   // v7.4.2: CurveBall skal ALLTID kjøres med Curves-tema aktivt — også i
   // turneringsmodus, share-link-flow og direkte fra CurveBall-knappen.
   // Bryterhåndtering bevares (currentTheme er en ref, watch kjører applyTheme).
@@ -1138,8 +1143,13 @@ onUnmounted(stopGpsTick)
   <div class="relative w-full h-[100dvh] overflow-hidden"
        :class="isDark ? 'bg-zinc-900' : 'bg-stone-100'">
 
-    <!-- Toppbar -->
-    <div class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
+    <!-- Toppbar. v8.7.1: skjult i Curve Invaders-modus — den lå tidligere
+         halvveis bak game-HUD-en, og hamburger-knappen i høyre hjørne var
+         delvis klikkbar med uønskede effekter (drawer åpnet seg midt i
+         spillet). Skjuler hele toppbaren, matcher kompass-rosen og andre
+         map-only UI som allerede har samme v-if. -->
+    <div v-if="!curveball.active.value"
+         class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
                 pointer-events-none">
       <button @click="router.push('/kart')"
               class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
@@ -1254,8 +1264,10 @@ onUnmounted(stopGpsTick)
       </div>
     </div>
 
-    <!-- Annoteringsmodus indikator -->
-    <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value"
+    <!-- Annoteringsmodus indikator. v8.7.1: skjules eksplisitt mens
+         Curve Invaders kjører — ellers ble den hengende inne i spill-
+         viewet og så ut som en stor «utilsiktet bumper» midt på kartet. -->
+    <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value && !curveball.active.value"
          class="absolute top-[16rem] right-3 z-20 px-2.5 py-1.5 rounded-md bg-slate-600
                 text-white text-[11px] font-medium shadow-lg pointer-events-none">
       Trykk på kartet for å plassere

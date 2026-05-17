@@ -129,8 +129,13 @@ function onBallTap(b) {
          Hits-counter som LED-rad over symbolet (4 firkanter, lyser grønn). -->
     <g v-for="(bp, i) in flipp.bumpers" :key="`bumper-${i}`" pointer-events="none">
       <g :transform="`translate(${bp.x} ${bp.y})`">
-        <!-- Halo: kremgul fyll, lilla 2px ring (matcher annoterings-stil) -->
-        <circle cx="0" cy="0"
+        <!-- Halo: kremgul fyll + lilla ring (matcher annoterings-stil i editor-
+             modus). v8.7.1: skjules for annoterings-bumpers (bp.fromAnnotation)
+             — haloen + den animerte geocache-en sammen ble visuelt for stor.
+             Random-spawnede bumpers beholder haloen for synlighet på Curves-
+             temaet hvor de ellers ville druknet i konturene. -->
+        <circle v-if="!bp.fromAnnotation"
+                cx="0" cy="0"
                 :r="ballRadius * 0.95"
                 fill="#fffef0"
                 fill-opacity="0.92"
