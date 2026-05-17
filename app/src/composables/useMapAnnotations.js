@@ -45,7 +45,12 @@ export function useMapAnnotations(mapId) {
     if (!mapId || mapId.startsWith('vardasen')) return
     const entry = await loadMap(mapId)
     if (!entry) return
-    entry.annotations = annotations.value
+    // Unwrap Vue reactive proxy før IndexedDB serialiserer. structuredClone
+    // håndterer Proxy i moderne nettlesere, men eldre Safari/iOS-versjoner
+    // har throwet «DataCloneError» på reactive arrays. JSON-round-trip gir
+    // garantert plain JS-objekter og er trivielt billig på en håndfull
+    // punkt-annoteringer.
+    entry.annotations = JSON.parse(JSON.stringify(annotations.value))
     await saveMap(entry)
     isDirty.value = false
   }
