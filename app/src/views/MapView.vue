@@ -222,7 +222,10 @@ const LAYERS = [
 // v8.1.0: Stedsnavn-overlay er AV som default — det er et stort tekst-
 // overlegg over kartet som brukeren slår på når de trenger områdenavn
 // med stor skrift (matcher tradisjonell turkart-stil).
-const DEFAULT_OFF_LAYERS = new Set(['stedsnavn'])
+// v8.2.0: lysloype skjules som default (lite relevant for de fleste
+// turkart-bbox), og stedsnavn vises som default (større områdenavn er
+// nyttig kontekst).
+const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
 const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
