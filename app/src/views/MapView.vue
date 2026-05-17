@@ -488,18 +488,106 @@ function renderAnnotations() {
       g.appendChild(halo)
     }
 
-    const use = document.createElementNS(ns, 'use')
-    const href = `#iso-sym-${sym.symbolKey}`
-    use.setAttribute('href', href)
-    use.setAttributeNS(xlink, 'xlink:href', href)
-    use.setAttribute('x', String(-HALF))
-    use.setAttribute('y', String(-HALF))
-    use.setAttribute('width', String(SYMBOL_M))
-    use.setAttribute('height', String(SYMBOL_M))
-    g.appendChild(use)
+    if (sym.symbolKey === 'skatt') {
+      // Skatt er bonus-annotering med SMIL-animasjon — pulsende gul glow,
+      // roterende stjerne-rays og blinkende rød X i sentrum. Tegnes inline
+      // istedenfor <use> så vi kan legge til <animate>/<animateTransform>.
+      appendSkattSymbol(g, HALF)
+    } else {
+      const use = document.createElementNS(ns, 'use')
+      const href = `#iso-sym-${sym.symbolKey}`
+      use.setAttribute('href', href)
+      use.setAttributeNS(xlink, 'xlink:href', href)
+      use.setAttribute('x', String(-HALF))
+      use.setAttribute('y', String(-HALF))
+      use.setAttribute('width', String(SYMBOL_M))
+      use.setAttribute('height', String(SYMBOL_M))
+      g.appendChild(use)
+    }
 
     layer.appendChild(g)
   }
+}
+
+/**
+ * Bygg det animerte Skatt-symbolet inn i en eksisterende g-node.
+ * - s   = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
+ * - parent g er allerede translate-positionert til annotasjonens (x,y)
+ *
+ * Tre lag med SMIL-animasjoner som kjører kontinuerlig i nettleseren:
+ *   1) Gul glow-circle med pulserende r + opacity (news-flash-feel)
+ *   2) 8 stjerne-rays som roterer rundt sentrum (sparkle)
+ *   3) Rød X som blinker på/av («X marks the spot»)
+ *
+ * Animasjonene er rene SVG (SMIL `<animate>`) — ingen JS-timer, ingen
+ * requestAnimationFrame. Browseren håndterer alt på compositor-tråden,
+ * så det går ikke utover map-rendering eller pinch-zoom-ytelse.
+ */
+function appendSkattSymbol(parent, s) {
+  const ns = 'http://www.w3.org/2000/svg'
+  const mk = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag)
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v)
+    return el
+  }
+
+  // 1) Pulsende gul glow
+  const glow = mk('circle', {
+    cx: '0', cy: '0', r: String(s * 0.75),
+    fill: '#fbbf24', opacity: '0.55',
+  })
+  glow.appendChild(mk('animate', {
+    attributeName: 'r',
+    values: `${s * 0.6};${s * 0.95};${s * 0.6}`,
+    dur: '0.7s', repeatCount: 'indefinite',
+  }))
+  glow.appendChild(mk('animate', {
+    attributeName: 'opacity',
+    values: '0.35;0.8;0.35',
+    dur: '0.7s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(glow)
+
+  // 2) Roterende stjerne-rays (8 stk, peker utover fra liten indre radius
+  // så de ikke overskriver X-en i midten)
+  const rays = mk('g', {
+    stroke: '#b45309',
+    'stroke-width': String(Math.max(1, s * 0.13)),
+    'stroke-linecap': 'round',
+  })
+  const N = 8
+  const innerR = s * 0.32
+  const outerR = s * 0.98
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2
+    const cos = Math.cos(a), sin = Math.sin(a)
+    rays.appendChild(mk('line', {
+      x1: String(cos * innerR), y1: String(sin * innerR),
+      x2: String(cos * outerR), y2: String(sin * outerR),
+    }))
+  }
+  rays.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'rotate',
+    from: '0', to: '360',
+    dur: '6s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(rays)
+
+  // 3) Blinkende rød X
+  const xMark = mk('g', {
+    stroke: '#dc2626',
+    'stroke-width': String(Math.max(1.5, s * 0.2)),
+    'stroke-linecap': 'round',
+  })
+  const xR = s * 0.38
+  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(-xR), x2: String(xR), y2: String(xR) }))
+  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(xR), x2: String(xR), y2: String(-xR) }))
+  xMark.appendChild(mk('animate', {
+    attributeName: 'opacity',
+    values: '1;0.25;1',
+    dur: '0.55s', repeatCount: 'indefinite',
+  }))
+  parent.appendChild(xMark)
 }
 
 function selectSymbol(key) {
@@ -1396,6 +1484,31 @@ onUnmounted(stopGpsTick)
                     <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="#1a1a1a" stroke-width="1.8"/>
                     <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="#1a1a1a" stroke-width="1.8"/>
                   </template>
+                  <template v-else-if="s.symbolKey === 'skatt'">
+                    <!-- Pulserende gul glow + roterende stjerne-rays + blinkende rød X.
+                         Samme tre-lags-animasjon som på kartet, skalert til 16-px-button. -->
+                    <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
+                      <animate attributeName="r" values="5;7;5" dur="0.7s" repeatCount="indefinite"/>
+                      <animate attributeName="opacity" values="0.35;0.8;0.35" dur="0.7s" repeatCount="indefinite"/>
+                    </circle>
+                    <g stroke="#b45309" stroke-width="1" stroke-linecap="round">
+                      <line x1="8" y1="2.5" x2="8" y2="4.5"/>
+                      <line x1="8" y1="11.5" x2="8" y2="13.5"/>
+                      <line x1="2.5" y1="8" x2="4.5" y2="8"/>
+                      <line x1="11.5" y1="8" x2="13.5" y2="8"/>
+                      <line x1="4.1" y1="4.1" x2="5.5" y2="5.5"/>
+                      <line x1="10.5" y1="10.5" x2="11.9" y2="11.9"/>
+                      <line x1="4.1" y1="11.9" x2="5.5" y2="10.5"/>
+                      <line x1="10.5" y1="5.5" x2="11.9" y2="4.1"/>
+                      <animateTransform attributeName="transform" type="rotate"
+                                        from="0 8 8" to="360 8 8" dur="6s" repeatCount="indefinite"/>
+                    </g>
+                    <g stroke="#dc2626" stroke-width="1.6" stroke-linecap="round">
+                      <line x1="6" y1="6" x2="10" y2="10"/>
+                      <line x1="6" y1="10" x2="10" y2="6"/>
+                      <animate attributeName="opacity" values="1;0.25;1" dur="0.55s" repeatCount="indefinite"/>
+                    </g>
+                  </template>
                 </svg>
                 {{ s.label }}
               </button>
@@ -1439,6 +1552,29 @@ onUnmounted(stopGpsTick)
                 <template v-else-if="s.symbolKey === 'bro'">
                   <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="currentColor" stroke-width="1.8"/>
                   <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.8"/>
+                </template>
+                <template v-else-if="s.symbolKey === 'skatt'">
+                  <circle cx="8" cy="8" r="6" fill="#fbbf24" opacity="0.55">
+                    <animate attributeName="r" values="5;7;5" dur="0.7s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" values="0.35;0.8;0.35" dur="0.7s" repeatCount="indefinite"/>
+                  </circle>
+                  <g stroke="#b45309" stroke-width="1" stroke-linecap="round">
+                    <line x1="8" y1="2.5" x2="8" y2="4.5"/>
+                    <line x1="8" y1="11.5" x2="8" y2="13.5"/>
+                    <line x1="2.5" y1="8" x2="4.5" y2="8"/>
+                    <line x1="11.5" y1="8" x2="13.5" y2="8"/>
+                    <line x1="4.1" y1="4.1" x2="5.5" y2="5.5"/>
+                    <line x1="10.5" y1="10.5" x2="11.9" y2="11.9"/>
+                    <line x1="4.1" y1="11.9" x2="5.5" y2="10.5"/>
+                    <line x1="10.5" y1="5.5" x2="11.9" y2="4.1"/>
+                    <animateTransform attributeName="transform" type="rotate"
+                                      from="0 8 8" to="360 8 8" dur="6s" repeatCount="indefinite"/>
+                  </g>
+                  <g stroke="#dc2626" stroke-width="1.6" stroke-linecap="round">
+                    <line x1="6" y1="6" x2="10" y2="10"/>
+                    <line x1="6" y1="10" x2="10" y2="6"/>
+                    <animate attributeName="opacity" values="1;0.25;1" dur="0.55s" repeatCount="indefinite"/>
+                  </g>
                 </template>
               </svg>
               <span class="text-[12px]">{{ s.label }} ({{ annot.countByType.value[s.symbolKey] }})</span>
