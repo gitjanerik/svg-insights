@@ -86,52 +86,30 @@ function onPointerDown(edge, e) {
   }
 }
 
-// v8.3.0: enhåndsmodus styrer hvordan posisjons-endring forplanter seg til
-// de andre flipperne. Tre moduser fra useCurveBall:
-//   'off'   — bare den dratte flipperen flyttes (uavhengig)
-//   'sw-ne' — diagonal-NØ/SV: alle fire følger ett drag. Topp+venstre i
-//              synkron retning, bunn+høyre i motsatt — alle fire roterer
-//              rundt brettet slik at topp+høyre møtes ved NØ, bunn+venstre
-//              ved SV
-//   'se-nw' — diagonal-NV/SØ: topp+høyre synkrone, bunn+venstre motsatte
-// Invader-modus tvinger aksial speiling (topp↔bunn, venstre↔høyre) på toppen
-// av dette — det er en separat midlertidig spillmekanikk og bevares.
-const AXIAL_PARTNER = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
-
-function clampToHalf(f, pos) {
-  const half = f.length / 2
-  return Math.max(half, Math.min(1 - half, pos))
-}
-
-// Beregn de tre andre flippernes posisjon gitt at `edge` er på `pos` og
-// modusen er sw-ne eller se-nw. Returnerer { top, bottom, left, right }.
+// v8.4.0: enhåndsmodus er nå alltid på (toggle-knappen fjernet).
+// Ett drag på én flipper styrer ALLE fire i et diagonalt NØ/SV-mønster:
 //
 // Posisjons-konvensjon (kant: 0→1 retning):
 //   top:    NV → NØ   |   bottom: SV → SØ
 //   left:   NV → SV   |   right:  NØ → SØ
 //
 // Et hjørnemøte krever to flippere på samme korner-koordinat:
-//   NØ-møte (topp + høyre): top.pos = 1, right.pos = 0  →  top + right = 1
-//   SV-møte (bunn + venstre): bottom.pos = 0, left.pos = 1  →  bottom + left = 1
-//   NV-møte (topp + venstre): top.pos = 0, left.pos = 0  →  top = left
-//   SØ-møte (bunn + høyre):   bottom.pos = 1, right.pos = 1  →  bottom = right
+//   NØ-møte (topp + høyre): top.pos = 1, right.pos = 0  → top + right = 1
+//   SV-møte (bunn + venstre): bottom.pos = 0, left.pos = 1 → bottom + left = 1
 //
-// sw-ne: én T ∈ [0,1] der T=1 betyr NØ+SV-konsentrasjon:
-//   top=T, right=1-T, bottom=1-T, left=T
-//   → Brukeren drar topp/venstre høyre/ned for å samle ved NØ+SV.
-//
-// se-nw: én T ∈ [0,1] der T=1 betyr NV+SØ-konsentrasjon:
-//   top=1-T, left=1-T, bottom=T, right=T
-//   → Brukeren drar bunn/høyre høyre/ned for å samle ved NV+SØ.
-function diagonalTargets(edge, pos, mode) {
-  if (mode === 'sw-ne') {
-    // edge → T:  topp/venstre direkte, bunn/høyre invertert
-    const T = (edge === 'top' || edge === 'left') ? pos : 1 - pos
-    return { top: T, left: T, bottom: 1 - T, right: 1 - T }
-  }
-  // se-nw: edge → T:  bunn/høyre direkte, topp/venstre invertert
-  const T = (edge === 'bottom' || edge === 'right') ? pos : 1 - pos
-  return { top: 1 - T, left: 1 - T, bottom: T, right: T }
+// Én T ∈ [0,1] hvor T=1 = NØ+SV-konsentrasjon:
+//   top = T, right = 1-T, bottom = 1-T, left = T
+// Brukeren drar topp/venstre høyre/ned for å samle ved NØ+SV; bunn/høyre i
+// motsatt retning gir samme konsentrasjon.
+function clampToHalf(f, pos) {
+  const half = f.length / 2
+  return Math.max(half, Math.min(1 - half, pos))
+}
+
+function diagonalTargets(edge, pos) {
+  // Avled T fra den dratte kanten: topp/venstre direkte, bunn/høyre invertert.
+  const T = (edge === 'top' || edge === 'left') ? pos : 1 - pos
+  return { top: T, left: T, bottom: 1 - T, right: 1 - T }
 }
 
 function onPointerMove(e) {
@@ -149,21 +127,11 @@ function onPointerMove(e) {
   const next = clampToHalf(f, ds.startPos + delta)
   f.position = next
 
-  const mode = props.flipp.oneHandMode?.value ?? 'off'
+  const targets = diagonalTargets(ds.edge, next)
   const flips = props.flipp.flippers
-  const invaderActive = props.flipp.invaderModeActive?.value === true
-
-  if (mode === 'sw-ne' || mode === 'se-nw') {
-    // Enhåndsmodus: alle fire flippere følger den primære i diagonalmønsteret.
-    const targets = diagonalTargets(ds.edge, next, mode)
-    for (const e2 of ['top', 'bottom', 'left', 'right']) {
-      if (e2 === ds.edge) continue
-      flips[e2].position = clampToHalf(flips[e2], targets[e2])
-    }
-  } else if (invaderActive) {
-    // Beholder gammel invader-aksial-speiling som spill-mekanikk.
-    const partner = flips[AXIAL_PARTNER[ds.edge]]
-    if (partner) partner.position = clampToHalf(partner, next)
+  for (const e2 of ['top', 'bottom', 'left', 'right']) {
+    if (e2 === ds.edge) continue
+    flips[e2].position = clampToHalf(flips[e2], targets[e2])
   }
 }
 

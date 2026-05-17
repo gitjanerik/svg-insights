@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.4.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-yellow-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.4.0</span>
+                <span class="text-yellow-200/90">&mdash; Map Master &amp; Cartographer-rang</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Map Master-prestasjon.</strong> Hvis level-target n&aring;s mens en invader-formasjon er i lufta, utsettes level-clear til formasjonen er ferdig. Overlever spilleren spawn-modusen telles det som en Map Master — gull-stjerne-flash med Cartographer-rang. 1 MM = Cartographer Lv 1, 3 MM = Lv 3 osv. Prestasjonen persisterer i localStorage og vises b&aring;de i share-modalen og som ekstra linje i delings-bannerets utfordrer-kort</li>
+                <li><strong>Roligere invader-formasjon.</strong> Orbit-fart halvert (1.5&ndash;2.1 → 0.6&ndash;0.9 rad/s) s&aring; ballene tydeligere &laquo;surfer&raquo; langs konturen i 7 sekunder. Etter breakout har alle baller identisk fart og retning (energi-variasjon 20 % → 0 %) — klassisk arcade-march som lar spilleren reagere p&aring; en samlet bevegelse heller enn en spray</li>
+                <li><strong>Enh&aring;ndsmodus er n&aring; alltid p&aring; (toggle fjernet).</strong> v8.3.0 introduserte en tri-state-knapp (off / N&Oslash;-SV / NV-S&Oslash;) for &aring; eksperimentere med diagonalmappingen. Brukeren ville heller ha &eacute;n fast oppf&oslash;rsel s&aring; knappen er fjernet og N&Oslash;-SV-diagonalen er default. Ett drag p&aring; &eacute;n flipper styrer fortsatt alle fire</li>
+                <li><strong>Map Master i URL.</strong> Delings-lenken inneholder n&aring; <code>mm=&lt;antall&gt;</code> i tillegg til score og level, s&aring; en utfordring fra en Cartographer Lv 5 viser tydelig rangen p&aring; mottakerens utfordrer-kort</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.3.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.3.0</span>
                 <span class="text-amber-300/90">&mdash; enh&aring;ndsmodus &amp; aksiale par</span>

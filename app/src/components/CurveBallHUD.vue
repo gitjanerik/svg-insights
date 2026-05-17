@@ -112,6 +112,12 @@ let miniTimer = null
 const invaderFlash = ref(null)
 let invaderTimer = null
 
+// v8.4.0: Map Master-flash — vises når spilleren overlever en invader-
+// formasjon mens level-target ble nådd. Cartographer-rang vises i samme
+// animasjon (1 MM = Lv 1 Cartographer osv).
+const mapMasterFlash = ref(null)
+let mapMasterTimer = null
+
 watch(() => props.flipp.lastEvent.value, (e) => {
   if (e?.kind === 'multiball') {
     multiballFlash.value = e
@@ -141,6 +147,13 @@ watch(() => props.flipp.lastEvent.value, (e) => {
       invaderFlash.value = null
       invaderTimer = null
     }, 2200)
+  } else if (e?.kind === 'map-master') {
+    mapMasterFlash.value = e
+    if (mapMasterTimer) clearTimeout(mapMasterTimer)
+    mapMasterTimer = setTimeout(() => {
+      mapMasterFlash.value = null
+      mapMasterTimer = null
+    }, 3200)
   }
 })
 
@@ -149,6 +162,7 @@ onUnmounted(() => {
   if (chainTimer) clearTimeout(chainTimer)
   if (miniTimer) clearTimeout(miniTimer)
   if (invaderTimer) clearTimeout(invaderTimer)
+  if (mapMasterTimer) clearTimeout(mapMasterTimer)
 })
 
 // v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
@@ -193,14 +207,6 @@ function onForceMultiball() {
   props.flipp.forceMultiball?.()
 }
 
-// v8.3.0 enhåndsmodus tooltip — beskriver hva neste tap vil bytte til.
-const oneHandTitle = computed(() => {
-  const m = props.flipp.oneHandMode?.value ?? 'off'
-  if (m === 'off') return 'Enhåndsmodus: AV (trykk for NØ/SV)'
-  if (m === 'sw-ne') return 'Enhåndsmodus: NØ/SV (trykk for NV/SØ)'
-  return 'Enhåndsmodus: NV/SØ (trykk for AV)'
-})
-
 // ── v7.4.0 turneringsmodus ─────────────────────────────────────────────────
 function pickTournament(yes) {
   props.flipp.setTournamentMode?.(yes)
@@ -241,6 +247,7 @@ const shareUrl = computed(() => {
   const eq = Number(s.equidistanceM)
   const score = Number(props.flipp.totalScore.value || 0)
   const lv = Number(props.flipp.level.value || 1)
+  const mm = Number(props.flipp.mapMasters?.value || 0)
   const params = new URLSearchParams({
     n: shareName.value,
     lat, lon,
@@ -248,6 +255,7 @@ const shareUrl = computed(() => {
     eq: String(eq),
     score: String(score),
     lv: String(lv),
+    mm: String(mm),
   })
   const base = (s.baseUrl ?? '').replace(/\/$/, '')
   return `${base}/kart/nytt?${params.toString()}`
@@ -331,6 +339,16 @@ async function copyShareUrl() {
       <div class="cb-invader-sub">{{ t('flash.invaderSub') }}</div>
     </div>
 
+    <!-- v8.4.0 Map Master-flash — spilleren overlevde en invader-formasjon
+         mens level-target ble nådd. Cartographer-rang er 1:1 med MM-count. -->
+    <div v-if="mapMasterFlash" class="cb-mm-flash">
+      <div class="cb-mm-badge">★</div>
+      <div class="cb-mm-text">MAP MASTER</div>
+      <div class="cb-mm-sub">
+        Cartographer · Lv {{ String(mapMasterFlash.count).padStart(2, '0') }}
+      </div>
+    </div>
+
     <!-- Chain-flash når multiball-cascade clearer flere levels på rad -->
     <div v-if="chainFlash" class="cb-chain-flash">
       <div class="cb-chain-mini">{{ t('flash.chain.label') }}</div>
@@ -340,36 +358,6 @@ async function copyShareUrl() {
 
     <!-- Bottom-right: exit-knapp -->
     <button class="cb-exit" @click="emit('exit')">{{ t('button.exit') }}</button>
-
-    <!-- Bottom-left: enhåndsmodus-toggle. Sykler off → sw-ne → se-nw → off.
-         Kompassnål peker mot retningen som er aktiv (NØ eller NV); en
-         gjennomstreket nål markerer OFF. -->
-    <button class="cb-onehand"
-            :class="`cb-onehand-${flipp.oneHandMode.value}`"
-            :aria-label="`Enhåndsmodus: ${flipp.oneHandMode.value}`"
-            :title="oneHandTitle"
-            @click="flipp.cycleOneHandMode()">
-      <svg viewBox="0 0 24 24" class="cb-onehand-icon">
-        <!-- Kompass-ring -->
-        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/>
-        <circle cx="12" cy="12" r="1.3" fill="currentColor"/>
-        <!-- Nål: roteres etter modus. OFF = ingen nål, kun en diagonal strek. -->
-        <template v-if="flipp.oneHandMode.value === 'sw-ne'">
-          <!-- Pil NØ: rød spiss mot øvre høyre, hvit hale mot SV -->
-          <polygon points="12,12 18,6 14,11" fill="#ff3b3b"/>
-          <polygon points="12,12 6,18 10,13" fill="#e2e8f0"/>
-        </template>
-        <template v-else-if="flipp.oneHandMode.value === 'se-nw'">
-          <!-- Pil NV: rød spiss mot øvre venstre, hvit hale mot SØ -->
-          <polygon points="12,12 6,6 10,11" fill="#ff3b3b"/>
-          <polygon points="12,12 18,18 14,13" fill="#e2e8f0"/>
-        </template>
-        <template v-else>
-          <!-- OFF: streket nål, ingen retning -->
-          <line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </template>
-      </svg>
-    </button>
 
     <!-- v7.3.5 DEBUG-panel for multiball-feilsøking. Togglebar via DBG-knapp. -->
     <template v-if="flipp.DEBUG_MULTIBALL">
@@ -476,6 +464,10 @@ async function copyShareUrl() {
             score: formatScore(flipp.totalScore.value),
             level: String(flipp.level.value).padStart(2, '0'),
           }) }}
+        </div>
+        <div v-if="flipp.mapMasters?.value > 0" class="cb-share-sub cb-mm-line">
+          {{ flipp.mapMasters.value }} × MAP MASTER
+          · CARTOGRAPHER Lv {{ String(flipp.mapMasters.value).padStart(2, '0') }}
         </div>
         <label class="cb-share-label">{{ t('share.nameLabel') }}</label>
         <input type="text"
@@ -589,44 +581,6 @@ async function copyShareUrl() {
   background: #5cefff;
   color: #000;
 }
-
-/* v8.3.0 enhåndsmodus-toggle — bottom-left, sykler off → sw-ne → se-nw.
-   Bruker samme arkadestil som EXIT-knappen, men firkantet med kompass-icon. */
-.cb-onehand {
-  position: absolute;
-  bottom: calc(16px * var(--cb-hud-scale));
-  left:   calc(16px * var(--cb-hud-scale));
-  pointer-events: auto;
-  background: #000;
-  color: #94a3b8;
-  border: 2px solid #94a3b8;
-  width:  calc(36px * var(--cb-hud-scale));
-  height: calc(36px * var(--cb-hud-scale));
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 0;
-  transition: filter 80ms, transform 80ms, border-color 120ms, color 120ms;
-}
-.cb-onehand:active {
-  transform: scale(0.94);
-  filter: brightness(1.4);
-}
-.cb-onehand-icon {
-  width: 75%;
-  height: 75%;
-}
-.cb-onehand-sw-ne {
-  color: #ffe24d;
-  border-color: #ffe24d;
-}
-.cb-onehand-se-nw {
-  color: #5cefff;
-  border-color: #5cefff;
-}
-.cb-onehand-off { opacity: 0.7; }
 
 .cb-overlay {
   position: absolute;
@@ -808,6 +762,58 @@ async function copyShareUrl() {
   33%  { filter: brightness(1.3) contrast(1.2); }
   66%  { filter: brightness(0.9) contrast(0.95); }
   100% { filter: brightness(1.0) contrast(1.0); }
+}
+
+/* v8.4.0 Map Master-flash — gull-badge med rangering, lengre animasjon enn
+   andre flash så prestasjonen markeres tydelig (3.2s totalt). */
+.cb-mm-flash {
+  position: absolute;
+  top: 42%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: cb-mm-rise 3.2s ease-out forwards;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3em;
+}
+.cb-mm-badge {
+  font-size: 72px;
+  color: #fde047;
+  text-shadow:
+    0 0 12px rgba(253, 224, 71, 0.9),
+    4px 4px 0 #b45309,
+    8px 8px 0 #000;
+  animation: cb-mm-spin 1.4s ease-out;
+}
+.cb-mm-text {
+  font-size: 36px;
+  color: #ffe24d;
+  text-shadow:
+    3px 3px 0 #f97316,
+    6px 6px 0 #b91c1c,
+    9px 9px 0 #000;
+  letter-spacing: 0.12em;
+}
+.cb-mm-sub {
+  font-size: 12px;
+  color: #fef3c7;
+  text-shadow: 2px 2px 0 #000;
+  letter-spacing: 0.16em;
+  margin-top: 0.3em;
+}
+@keyframes cb-mm-rise {
+  0%   { transform: translate(-50%, 20%) scale(0.4); opacity: 0; }
+  12%  { transform: translate(-50%, -50%) scale(1.25); opacity: 1; }
+  20%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  85%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -110%) scale(1.1); opacity: 0; }
+}
+@keyframes cb-mm-spin {
+  0%   { transform: rotate(-180deg) scale(0.2); }
+  60%  { transform: rotate(20deg) scale(1.4); }
+  100% { transform: rotate(0deg) scale(1.0); }
 }
 
 /* Chain-flash — vises når multiball-cascade clearer et level (v7.3.7).
@@ -1157,6 +1163,10 @@ async function copyShareUrl() {
   font-size: 10px;
   letter-spacing: 0.06em;
   text-shadow: 1px 1px 0 #000;
+}
+.cb-mm-line {
+  color: #fde047;
+  margin-top: -4px;
 }
 .cb-share-label {
   font-size: 9px;
