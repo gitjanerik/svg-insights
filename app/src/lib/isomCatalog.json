@@ -298,13 +298,13 @@
         "label": "Hovedvei",
         "stroke": {
           "color": "#1a1a1a",
-          "widthMm": 0.4,
+          "widthMm": 0.34,
           "linecap": "round",
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#e15a3a",
-          "widthMm": 0.34,
+          "widthMm": 0.29,
           "linecap": "round",
           "linejoin": "round"
         }
