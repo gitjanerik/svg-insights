@@ -247,10 +247,30 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.1.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-orange-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.1.0</span>
+                <span class="text-orange-300/90">&mdash; veifarger, stedsnavn-overlegg &amp; climb-boost</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">17. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Veier (ISOM 501&ndash;503) f&aring;r n&aring; klassisk turkart-stil</strong> med tydelig sort omriss rundt farget veifyll. Motorvei = bred r&oslash;d, hovedvei = r&oslash;dorange, sm&aring;vei/villa = oransje &mdash; alle med sort casing. Tidligere blandet beige-fargen seg inn i kremgul bakgrunn p&aring; landkart slik at sm&aring;veier ble omtrent usynlige. Rendert som dual <code>&lt;path&gt;</code> (casing + fyll) via samme overlayStroke-mekanisme som jernbane (515)</li>
+                <li><strong>Nytt <q>Stedsnavn</q>-overlegg (default AV)</strong> i kart-drawer'en. N&aring;r p&aring; vises alle <code>place=*</code>-noder (lokalitet, gard, bygd, tettsted, by, bydel) med stor fet skrift og hvit halo &mdash; et tydelig omr&aring;denavn-lag som matcher tradisjonelle turkart. Bytt p&aring; eller av i &laquo;Lag&raquo;-seksjonen uten &aring; p&aring;virke andre tekster (peak-navn, vann-navn, kontur-tall styres fortsatt av <q>Navn</q>-knappen)</li>
+                <li><strong>Climb-boost i spillmodus.</strong> N&aring;r ballen krysser flere h&oslash;ydekurver oppoverbakke p&aring; kort tid akkumuleres en boost (0&ndash;1) som dramatisk reduserer friksjonen (ned til 15&nbsp;%) slik at ballen f&aring;r momentum-hjelp til &aring; klatre over toppene i bratt fjell-landskap. Reset til 0 idet ballen krysser en kurve nedoverbakke (= over toppen, ruller ned andre siden). Decay ~0.5/s s&aring; boosten d&oslash;r ut hvis ingen nye kurver krysses</li>
+                <li><strong>Flipper-kraft beholdes mellom treff.</strong> Tidligere ble <code>kickLevel</code> nullstilt p&aring; hver paddle-hit, slik at brukeren m&aring;tte gjenlade fra bl&aring; for hvert treff. N&aring; beholdes ladenivlet (eks. r&oslash;d = MAX) gjennom hele runden &mdash; bare ny level resetter alle flipperne til bl&aring;. Premierer brukere som lader opp f&oslash;r et avgj&oslash;rende treff</li>
+                <li><strong>Aksial flipper-synk er n&aring; standard.</strong> Drag av topp speiles til bunn, drag av venstre speiles til h&oslash;yre. &Eacute;n finger styrer hele nord-s&oslash;r- eller &oslash;st-vest-aksen — paddles henger sammen som et par. Tidligere kun under invader-modus; n&aring; alltid p&aring;. Tap-energerer fortsatt kun den ene siden</li>
+                <li><strong>Test-kart-presets fjernet</strong> fra kart-velgeren. De var midlertidig for &aring; teste Curve-Invaders-fysikk p&aring; ulik topografi; bruker s&oslash;k eller mobil GPS for sentrum-velg som vanlig n&aring;</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.0.5 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-cyan-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.0.5</span>
                 <span class="text-cyan-300/90">&mdash; multiball-rescue, mer trøkk, test-presets</span>

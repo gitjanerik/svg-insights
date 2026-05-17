@@ -765,6 +765,20 @@ export function buildSvg(elements, bbox, options = {}) {
         return `  <g data-layer="${cat}" data-iso="${code}">\n${pathParts.join('\n')}\n  </g>\n`
       }
       const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
+      // v8.1.0: koder som har overlayStroke (f.eks. veier 501-503) får dual
+      // path: base = casing (sort, breiere), overlay = farget fyll (smalere,
+      // på toppen). CSS i symbolizer.js styler `path.overlay` separat. Gir
+      // den klassiske ISOM-veiestilen med tydelig sort omriss rundt farget
+      // veifyll — uten en casing forsvinner små veier i bg-cream-fargen.
+      const hasOverlay = !!isomCatalog.categories?.[cat]?.[code]?.overlayStroke
+      if (hasOverlay) {
+        const lines = []
+        for (const d of paths) {
+          lines.push(`    <path d="${d}"/>`)
+          lines.push(`    <path d="${d}" class="overlay"/>`)
+        }
+        return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
+      }
       return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
     }
     return ''
@@ -800,13 +814,24 @@ export function buildSvg(elements, bbox, options = {}) {
       }
       parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})">${symbol}${lines.join('')}</g>`)
     }
+    if (!parts.length) return '  <g data-layer="navn"></g>\n'
+    return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
+  }
+
+  // v8.1.0: stedsnavn-overlay (default AV). Vises som eget data-layer
+  // med større skrift slik at bruker kan slå på et tydelig områdenavn-
+  // overlegg uten å rote til hovedkartet. Inkluderer ALLE place=*-noder
+  // (locality, hamlet, village, town, city, suburb, neighbourhood,
+  // quarter, isolated_dwelling, farm).
+  const stedsnavnSvg = () => {
+    const parts = []
     for (const el of places) {
       if (!el.tags?.name) continue
       const p = project(el.lat, el.lon)
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="place">${xmlEscape(el.tags.name)}</text>`)
+      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn">${xmlEscape(el.tags.name)}</text>`)
     }
-    if (!parts.length) return '  <g data-layer="navn"></g>\n'
-    return `  <g data-layer="navn">\n${parts.join('\n')}\n  </g>\n`
+    if (!parts.length) return '  <g data-layer="stedsnavn" style="display:none"></g>\n'
+    return `  <g data-layer="stedsnavn" style="display:none">\n${parts.join('\n')}\n  </g>\n`
   }
 
   // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
@@ -1238,6 +1263,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const upperLayers  = renderCodes(UPPER_CODES)
   const placeholderLayers = renderCodes(PLACEHOLDER_CODES)
   const labelLayer = labelSvg()
+  const stedsnavnLayer = stedsnavnSvg()
 
   const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
     ? `  <g data-layer="kontur"${contourMaskAttr}>\n` +
@@ -1348,7 +1374,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }

@@ -493,6 +493,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   // halo for å være synlig mot blå sjø-bg.
   rules.push(`${root} [data-label="skjaer-navn"] { font-size: 1.8mm; font-style: italic; fill: #1f3a5c; paint-order: stroke; stroke: #fff; stroke-width: 0.4mm; stroke-linejoin: round; }`)
 
+  // v8.1.0: stedsnavn-overlay — stor, fet skrift med tydelig hvit halo
+  // som overlay over kartet. Toggleable via 'Stedsnavn'-knapp i drawer
+  // (default AV). Bruker --label-stedsnavn-* CSS-vars så tema kan tilpasse.
+  rules.push(`${root} [data-label="stedsnavn"] { font-size: 6.4mm; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: 1.2mm; stroke-linejoin: round; pointer-events: none; }`)
+
   return rules.join(' ')
 }
 

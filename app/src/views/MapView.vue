@@ -216,9 +216,14 @@ const LAYERS = [
   { key: 'staker',     label: 'Sjømerker / staker' },
   { key: 'dybde',      label: 'Dybdetall' },
   { key: 'navn',       label: 'Navn' },
+  { key: 'stedsnavn',  label: 'Stedsnavn' },
 ]
 
-const visibleLayers = ref(new Set(LAYERS.map(l => l.key)))
+// v8.1.0: Stedsnavn-overlay er AV som default — det er et stort tekst-
+// overlegg over kartet som brukeren slår på når de trenger områdenavn
+// med stor skrift (matcher tradisjonell turkart-stil).
+const DEFAULT_OFF_LAYERS = new Set(['stedsnavn'])
+const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
 const currentTheme = ref('light')
@@ -317,11 +322,12 @@ function applyLayerVisibility() {
       g.style.display = visibleLayers.value.has(lay.key) ? '' : 'none'
     }
   }
-  // Hvis 'navn' er av, skjul også vann-/kontur-tall (data-label) som
+  // Hvis 'navn' er av, skjul også vann-/kontur-/peak-tall (data-label) som
   // ligger inni andre lag-grupper. Da blir Navn-toggle en konsistent
-  // "all text on/off"-bryter.
+  // "all text on/off"-bryter — men labels inne i 'stedsnavn'-laget styres
+  // separat (se under).
   const showLabels = visibleLayers.value.has('navn')
-  const labelEls = root.querySelectorAll('[data-label]')
+  const labelEls = root.querySelectorAll('[data-label]:not([data-label="stedsnavn"])')
   for (const el of labelEls) {
     el.style.display = showLabels ? '' : 'none'
   }
@@ -802,7 +808,7 @@ function onThemeChange(newTheme, oldTheme) {
   if (newT?.autoHideLayers) {
     visibleLayers.value = new Set(['kontur'])
   } else if (oldT?.autoHideLayers) {
-    visibleLayers.value = new Set(LAYERS.map(l => l.key))
+    visibleLayers.value = new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key))
   }
   applyLayerVisibility()
 }

@@ -92,50 +92,6 @@ const EQUIDISTANCE_OPTIONS = [
   { value: 100, label: '100 m', desc: 'glissen — for store områder' },
 ]
 
-// v8.0.5: forhåndsdefinerte test-kart-presets for å rask-teste
-// Curve-Invaders-fysikk på topografisk veldig ulike kart. Hvert preset setter
-// sentrum, størrelse og høydekurve-intervall — bygg-knappen er den vanlige.
-// Kommentarene beskriver forventet topografi så det er lett å vurdere
-// gameplay-feel etter at kartet er bygd.
-const TEST_PRESETS = [
-  {
-    id: 'flat-kyst',
-    label: 'Flat kyst',
-    desc: 'Lista (Farsund) — sandstrand, lavland',
-    icon: '🏖️',
-    lat: 58.1015, lon: 6.6234, halfKm: 1.5, eqM: 10,
-  },
-  {
-    id: 'bratt-fjell',
-    label: 'Bratt fjell',
-    desc: 'Romsdalen — Trolltindene, alpint',
-    icon: '⛰️',
-    lat: 62.4540, lon: 7.7400, halfKm: 2.5, eqM: 50,
-  },
-  {
-    id: 'lite-tett',
-    label: 'Lite & tett',
-    desc: 'Sognsvann (Oslo) — kupert skog',
-    icon: '🌲',
-    lat: 59.9706, lon: 10.7239, halfKm: 0.6, eqM: 10,
-  },
-  {
-    id: 'stort-variert',
-    label: 'Stort & variert',
-    desc: 'Jotunheimen — alpint, store flater',
-    icon: '🗻',
-    lat: 61.6362, lon: 8.3122, halfKm: 4.0, eqM: 50,
-  },
-]
-
-function applyTestPreset(p) {
-  if (isLocked.value) return
-  center.value = { lat: p.lat, lon: p.lon, name: p.label }
-  halfKm.value = p.halfKm
-  equidistanceM.value = p.eqM
-  customName.value = p.label
-}
-
 const { query, results, isSearching, error: searchError } = useNominatim()
 
 const showResults = computed(() =>
@@ -624,25 +580,6 @@ onMounted(() => {
            v-html="challengeIntroHtml"></div>
       <div class="mt-2 text-[10px] text-white/45">
         {{ t('challenge.locked') }}
-      </div>
-    </div>
-
-    <!-- v8.0.5: Test-kart-presets — én-tap utvalg av topografisk forskjellige
-         kart for å enkelt teste Curve-Invaders-gameplay på flatt vs bratt vs
-         lite vs stort terreng. Skjules i utfordringsmodus (alt er låst da). -->
-    <div v-if="!isLocked" class="px-4 pt-4 pb-1">
-      <label class="text-white/65 text-[11px] uppercase tracking-wide block mb-2">Test-kart</label>
-      <div class="grid grid-cols-2 gap-2">
-        <button v-for="p in TEST_PRESETS" :key="p.id"
-                @click="applyTestPreset(p)"
-                class="flex items-start gap-2 px-3 py-2 rounded-lg bg-white/[0.05] border border-white/10
-                       hover:bg-white/[0.10] active:bg-white/[0.15] transition text-left">
-          <span class="text-[18px] leading-none shrink-0">{{ p.icon }}</span>
-          <span class="flex-1 min-w-0">
-            <span class="block text-[12px] font-semibold text-white truncate">{{ p.label }}</span>
-            <span class="block text-[10px] text-white/50 truncate">{{ p.desc }}</span>
-          </span>
-        </button>
       </div>
     </div>
 
