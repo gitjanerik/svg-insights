@@ -633,11 +633,17 @@ function updateUserDot() {
   // ut fra dot. Accuracy-ringen reflekterer ekte fysisk usikkerhet (i meter)
   // men cappes p&aring; ~28 CSS-px radius slik at d&aring;rlig GPS (urban / tog / tunnel)
   // ikke spr&aring;ker ringen utover halve skjermen og d&oslash;mmer kart-innholdet.
+  // v8.5.3: stroke-bredder via pxToUserUnits — non-scaling-stroke virker
+  // ikke n&aring;r SVG-en CSS-transformeres av pinch-zoom-wrapperen, s&aring; stroke
+  // ble fete p&aring; h&oslash;y zoom og det bl&aring; fyllet forsvant under den hvite kant-
+  // linjen. N&aring; skaleres bredden eksplisitt p&aring; samme m&aring;te som radius.
   const dotR = pxToUserUnits(7)         // ~14 CSS-px diameter
+  const dotStroke = pxToUserUnits(1.6)  // tynn hvit halo
   const coneR = pxToUserUnits(30)       // ~60 CSS-px ut fra dot
   const minRingR = pxToUserUnits(12)    // ringen blir aldri mindre enn dot+halo
-  const maxRingR = pxToUserUnits(28)    // visuelt cap — ekte usikkerhet i tooltip om n&oslash;dvendig
+  const maxRingR = pxToUserUnits(28)    // visuelt cap
   const ringR = Math.min(maxRingR, Math.max(minRingR, acc))
+  const ringStroke = pxToUserUnits(0.8)
 
   const ring = document.createElementNS(ns, 'circle')
   ring.setAttribute('cx', x)
@@ -645,8 +651,7 @@ function updateUserDot() {
   ring.setAttribute('r', ringR)
   ring.setAttribute('fill', 'rgba(56, 189, 248, 0.10)')
   ring.setAttribute('stroke', 'rgba(56, 189, 248, 0.40)')
-  ring.setAttribute('stroke-width', '1')
-  ring.setAttribute('vector-effect', 'non-scaling-stroke')
+  ring.setAttribute('stroke-width', ringStroke)
   layer.appendChild(ring)
 
   if (Number.isFinite(heading)) {
@@ -669,8 +674,7 @@ function updateUserDot() {
   dot.setAttribute('r', dotR)
   dot.setAttribute('fill', '#0ea5e9')
   dot.setAttribute('stroke', '#fff')
-  dot.setAttribute('stroke-width', '2.5')
-  dot.setAttribute('vector-effect', 'non-scaling-stroke')
+  dot.setAttribute('stroke-width', dotStroke)
   layer.appendChild(dot)
 }
 
