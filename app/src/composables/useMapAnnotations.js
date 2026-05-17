@@ -10,11 +10,22 @@
 import { ref, computed } from 'vue'
 import { loadMap, saveMap } from '../lib/mapStorage.js'
 
+/** Tilgjengelige punktsymboler i annoteringsmodus. */
+export const ANNOTATION_SYMBOLS = [
+  { code: '213', symbolKey: 'knaus', label: 'Knaus' },
+  { code: '212', symbolKey: 'stein', label: 'Stein' },
+  { code: '310', symbolKey: 'brønn', label: 'Brønn / kilde' },
+  { code: '509', symbolKey: 'bro',   label: 'Bro / klopp' },
+]
+
 export function useMapAnnotations(mapId) {
   const annotations = ref([])
   const isAnnotateMode = ref(false)
   const selectedSymbol = ref(null)        // 'knaus' | 'stein' | 'brønn' | null
   const isDirty = ref(false)
+  // Per-type synlighet — brukeren kan skjule f.eks. alle plasserte
+  // «Knaus»-symboler uten å slette dem. Default: alt synlig.
+  const visibleTypes = ref(new Set(ANNOTATION_SYMBOLS.map(s => s.symbolKey)))
 
   async function load() {
     if (!mapId || mapId.startsWith('vardasen')) {
@@ -54,16 +65,27 @@ export function useMapAnnotations(mapId) {
     isDirty.value = true
   }
 
+  function toggleTypeVisibility(symbolKey) {
+    const next = new Set(visibleTypes.value)
+    if (next.has(symbolKey)) next.delete(symbolKey)
+    else next.add(symbolKey)
+    visibleTypes.value = next
+  }
+
+  /** Antall plasserte annoteringer pr symbolKey ({ knaus: 2, stein: 0, ... }). */
+  const countByType = computed(() => {
+    const result = {}
+    for (const sym of ANNOTATION_SYMBOLS) result[sym.symbolKey] = 0
+    for (const a of annotations.value) {
+      const sym = ANNOTATION_SYMBOLS.find(s => s.code === a.isomCode)
+      if (sym) result[sym.symbolKey]++
+    }
+    return result
+  })
+
   return {
-    annotations, isAnnotateMode, selectedSymbol, isDirty,
-    load, persist, addPoint, remove, clearAll,
+    annotations, isAnnotateMode, selectedSymbol, isDirty, visibleTypes,
+    countByType,
+    load, persist, addPoint, remove, clearAll, toggleTypeVisibility,
   }
 }
-
-/** Tilgjengelige punktsymboler i annoteringsmodus. */
-export const ANNOTATION_SYMBOLS = [
-  { code: '213', symbolKey: 'knaus', label: 'Knaus' },
-  { code: '212', symbolKey: 'stein', label: 'Stein' },
-  { code: '310', symbolKey: 'brønn', label: 'Brønn / kilde' },
-  { code: '509', symbolKey: 'bro',   label: 'Bro / klopp' },
-]
