@@ -21,7 +21,7 @@ const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
 
 const center = ref({ ...DEFAULT_CENTER })
 const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*halfKm
-const equidistanceM = ref(20)  // høydekurve-intervall, 10/20/50/100 m
+const equidistanceM = ref(20)  // høydekurve-intervall, 5/10/20/25/50 m
 const customName = ref('')
 
 // v7.4.0: Delings-utfordring. Hvis URL har ?n=ABC&lat=...&lon=...&km=...&eq=...
@@ -74,7 +74,7 @@ function parseShareQuery() {
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
   if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
-  if (Number.isFinite(eq) && [5, 10, 20, 50, 100].includes(eq)) equidistanceM.value = eq
+  if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   const name = String(q.n).slice(0, 3).toUpperCase()
   customName.value = t('challenge.from', { name })
   return {
@@ -88,8 +88,8 @@ const EQUIDISTANCE_OPTIONS = [
   { value: 5,   label: '5 m',   desc: 'ISOM-orientering — krever 1m DTM' },
   { value: 10,  label: '10 m',  desc: 'tett — for små områder' },
   { value: 20,  label: '20 m',  desc: 'turkart-standard' },
-  { value: 50,  label: '50 m',  desc: 'oversikt' },
-  { value: 100, label: '100 m', desc: 'glissen — for store områder' },
+  { value: 25,  label: '25 m',  desc: 'norsk N50-standard' },
+  { value: 50,  label: '50 m',  desc: 'oversikt — for store områder' },
 ]
 
 const { query, results, isSearching, error: searchError } = useNominatim()
@@ -640,13 +640,18 @@ onMounted(() => {
     </div>
 
     <!-- Mini-preview + bbox -->
-    <div class="flex-1 px-4 pb-3 flex flex-col gap-3 min-h-0">
+    <div class="px-4 pb-3 flex flex-col gap-3">
       <div class="text-white/65 text-[11px] uppercase tracking-wide">
         <template v-if="isLocked">{{ t('picker.previewLockedHint') }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
+      <!-- v8.2.2: preview er nå et kvadrat slik at brukeren tydelig ser at
+           sluttkartet blir kvadratisk. Bruttokartet (tile-mosaikken) fyller
+           hele kvadratet på 100% opacity — ingen lysegrå semitransparent
+           maskering rundt netto-rammen. Netto-rammen er bare en stiplet
+           kontur med subtilt fokus (drop-shadow + indre kant). -->
       <div ref="previewRef"
-           class="flex-1 min-h-[220px] rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
+           class="aspect-square w-full rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
                   relative touch-none"
            :class="isLocked ? 'cursor-not-allowed opacity-90' : 'cursor-move'"
            @touchstart="onPreviewTouchStart"
@@ -666,10 +671,11 @@ onMounted(() => {
              :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
              draggable="false" />
 
-        <!-- Kvadratisk frame fast i sentrum. Brukeren drar kartet UNDER
-             rammen for å velge utsnitt. Pinch / scroll endrer størrelse. -->
-        <div class="absolute pointer-events-none border-2 border-slate-300 rounded-sm
-                    shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+        <!-- Kvadratisk netto-frame fast i sentrum. Brukeren drar kartet UNDER
+             rammen for å velge utsnitt. Pinch / scroll endrer størrelse. Ingen
+             dark-mask rundt — bruttokartet skal være synlig på 100% opacity. -->
+        <div class="absolute pointer-events-none border-2 border-white rounded-sm
+                    shadow-[0_0_0_2px_rgba(0,0,0,0.5)]"
              :style="{
                width:  bboxOverlayPx.w + 'px',
                height: bboxOverlayPx.h + 'px',
@@ -677,11 +683,10 @@ onMounted(() => {
                top:    (previewSize.h - bboxOverlayPx.h) / 2 + 'px',
                transition: 'width 200ms cubic-bezier(0.2,0.8,0.2,1), height 200ms cubic-bezier(0.2,0.8,0.2,1)',
              }">
-          <div class="absolute inset-0 border border-slate-200/60 rounded-sm pointer-events-none"></div>
           <!-- Senter-kryss -->
           <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none">
-            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-400 -translate-y-1/2"></div>
-            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-slate-400 -translate-x-1/2"></div>
+            <div class="absolute top-1/2 left-0 right-0 h-0.5 bg-white/85 -translate-y-1/2 shadow-[0_0_2px_rgba(0,0,0,0.7)]"></div>
+            <div class="absolute left-1/2 top-0 bottom-0 w-0.5 bg-white/85 -translate-x-1/2 shadow-[0_0_2px_rgba(0,0,0,0.7)]"></div>
           </div>
         </div>
 
