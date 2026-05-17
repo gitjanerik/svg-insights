@@ -86,8 +86,11 @@ function onPointerDown(edge, e) {
   }
 }
 
-// v8.0.4: i invader-modus skal motstående paddles holdes synkronisert i posisjon
-// så én finger styrer hele aksen. top↔bottom og left↔right speiles.
+// Motst&aring;ende paddles speiles aksialt: top↔bottom og left↔right. v8.1.0
+// flytter denne speilingen til standardadferd (tidligere kun aktiv under
+// invader-modus) slik at brukeren styrer hele nord-s&oslash;r- eller
+// &oslash;st-vest-aksen med &eacute;n finger. Tap p&aring; én side energerer
+// fortsatt bare den siden — kun drag-posisjon synkroniseres.
 const AXIAL_PARTNER = { top: 'bottom', bottom: 'top', left: 'right', right: 'left' }
 
 function onPointerMove(e) {
@@ -105,13 +108,11 @@ function onPointerMove(e) {
   const half = f.length / 2
   const next = Math.max(half, Math.min(1 - half, ds.startPos + delta))
   f.position = next
-  // Speil til aksial partner under invader-modus
-  if (props.flipp.invaderModeActive?.value) {
-    const partner = props.flipp.flippers[AXIAL_PARTNER[ds.edge]]
-    if (partner) {
-      const pHalf = partner.length / 2
-      partner.position = Math.max(pHalf, Math.min(1 - pHalf, next))
-    }
+  // Speil alltid til aksial partner — én finger styrer hele aksen.
+  const partner = props.flipp.flippers[AXIAL_PARTNER[ds.edge]]
+  if (partner) {
+    const pHalf = partner.length / 2
+    partner.position = Math.max(pHalf, Math.min(1 - pHalf, next))
   }
 }
 

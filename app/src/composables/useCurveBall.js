@@ -382,6 +382,14 @@ export function useCurveBall() {
       mode: opts.mode ?? 'normal',          // 'normal' | 'mini' | 'invader'
       r: opts.r ?? BALL_RADIUS_M,           // ball-radius i viewBox-units
       scoreMult: opts.scoreMult ?? 1,       // multiplier for paddle/bumper-score
+      // v8.1.0: climb-boost — i bratt fjell-landskap har ballen vanskelig
+      // for å komme over toppene. Når den krysser flere kurver oppoverbakke
+      // på kort tid bygger climbBoost seg opp (0..1) og reduserer friksjon
+      // midlertidig så ballen får momentum-hjelp til å klatre videre. Reset
+      // til 0 ved nedoverbakke-kryssing eller når den ligger i ro.
+      climbBoost: 0,
+      lastClimbContour: null,
+      lastClimbAt: 0,
       // Invaders-felter (kun satt hvis mode==='invader')
       invaderPhase: opts.invaderPhase,      // 'orbit' | 'breakout' | undefined
       orbitCenter: opts.orbitCenter,        // {x, y}
@@ -677,8 +685,19 @@ export function useCurveBall() {
       }
 
       const grad = sampleGradient(dem, b.x, b.y)
-      const ax = -kGravity * grad.dzdx - friction * b.vx
-      const ay = -kGravity * grad.dzdy - friction * b.vy
+      // v8.1.0: climb-boost decay — boosten dør sakte ut hvis ballen ikke
+      // krysser nye oppover-kurver. ~0.5/s decay-rate så typisk varighet
+      // er 1-2 sekunder før den må re-akkumuleres via nye konturkrysninger.
+      if (b.climbBoost > 0) {
+        b.climbBoost = Math.max(0, b.climbBoost - 0.5 * dt)
+      }
+      // Boostens effekt: dramatisk redusert friksjon (ned til 15%) så
+      // ballen beholder momentum oppover bakkene. Slope-kraften kGravity
+      // er uendret — boosten er en momentum-bevarer, ikke en aktiv
+      // klatre-kraft. Ballen må fortsatt selv ha bevegelses-energi.
+      const fricMult = 1 - b.climbBoost * 0.85
+      const ax = -kGravity * grad.dzdx - friction * fricMult * b.vx
+      const ay = -kGravity * grad.dzdy - friction * fricMult * b.vy
       b.vx += ax * dt
       b.vy += ay * dt
       // v8.0.2: clamp etter integrasjon (slope + friksjon kan ha pushet fart over)
@@ -1193,6 +1212,20 @@ export function useCurveBall() {
         }
       }
       playContourTick(thick)
+      // v8.1.0: climb-boost-akkumulering på primary ball. Oppoverbakke-
+      // kryssinger bygger boosten (+0.4 pr kontur, capped på 1). Nedover-
+      // kryssing resetter — ballen er over toppen og ruller ned andre
+      // siden, da skal boosten dø ut umiddelbart.
+      const primary = balls[0]
+      if (primary) {
+        const numCrossings = hi - lo
+        if (curContour > prevContour) {
+          primary.climbBoost = Math.min(1, primary.climbBoost + 0.4 * numCrossings)
+          primary.lastClimbAt = performance.now()
+        } else {
+          primary.climbBoost = 0
+        }
+      }
       checkLevelComplete()
     }
     lastElev = cur
@@ -1269,7 +1302,11 @@ export function useCurveBall() {
 
   function registerHit(b, flipper, edge) {
     const kickLevel = flipper.kickLevel
-    flipper.kickLevel = 0
+    // v8.1.0: flipper-kraft beholdes etter treff (tidligere ble kickLevel
+    // resatt til 0 ved hver hit). Nå lades flipperen kun ned ved level-
+    // bytte slik at brukeren får utbytte av å lade opp før et avgjørende
+    // hit — opprettholder fargen (eks. rød = MAX) gjennom flere treff i
+    // samme runde. Nullstilles i win()-callbacken når nytt level starter.
     // v7.4.3: scoreMult fra ball-mode (mini=2, invader=1.5, normal=1)
     score.value += Math.round(100 * level.value * perks.hitScoreMult * (b.scoreMult ?? 1))
     playKick(kickLevel)
@@ -1441,6 +1478,12 @@ export function useCurveBall() {
       lastElev = NaN
       lastStillnessExplodeAt = 0
       invaderModeActive.value = false
+      // v8.1.0: nullstill flipper-kraft mellom levels. Innenfor samme level
+      // beholdes kickLevel mellom treff (se registerHit) — kun ved nytt
+      // level starter brukeren fra blå/grunnplan igjen.
+      for (const e of ['top', 'bottom', 'left', 'right']) {
+        flippers[e].kickLevel = 0
+      }
       generateBumpersForLevel()
       const triggerPerk = pendingPerkSelect || (level.value - 1) % PERK_INTERVAL === 0
       pendingPerkSelect = false
