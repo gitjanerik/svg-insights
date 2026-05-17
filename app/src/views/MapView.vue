@@ -27,9 +27,6 @@ const loadError = ref(null)
 const meta = ref(null)
 const mapTitle = ref('Turkart')
 
-// CurveBall easter egg: synlig først etter at brukeren tapper Curves-tema.
-// Holdes i memory pr session — ingen persistering.
-const cbUnlocked = ref(false)
 const curveball = useCurveBall()
 const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
 const storedHighestPoint = ref(null)
@@ -240,10 +237,8 @@ const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
 
-// Easter egg: tapping Curves-tema låser opp CurveBall-knappen i drawer.
 function onThemeTap(key) {
   currentTheme.value = key
-  if (key === 'curves') cbUnlocked.value = true
 }
 
 // v7.3.1: ekstra state for built-in maps som mangler stored DEM
@@ -872,7 +867,6 @@ function consumeShareAutostart() {
 
 async function maybeAutostartFromShare() {
   if (!consumeShareAutostart()) return
-  cbUnlocked.value = true
   if (!meta.value) {
     const stop = watch(meta, async (m) => {
       if (m) { stop(); await startCurveBall() }
@@ -888,7 +882,6 @@ async function maybeRestoreTournament() {
   // er ferdig lastet, så vi venter på loadMap().
   const state = consumeTournamentRestore()
   if (!state) return
-  cbUnlocked.value = true
   await loadUserMapsForTournament()
   // Vent til meta er klar — loadMap settes ferdig før onMounted-callback returnerer
   // hvis kartet ligger i IndexedDB. Hvis ikke, watch på meta nedenfor håndterer det.
@@ -1199,9 +1192,8 @@ onMounted(() => {
             </button>
           </div>
 
-          <!-- Easter egg: CurveBall-knapp synlig etter Curves-tema-tap -->
-          <button v-if="cbUnlocked"
-                  @click="startCurveBall"
+          <!-- Curve Invaders-knapp alltid synlig (uavhengig av tema-valg) -->
+          <button @click="startCurveBall"
                   :disabled="cbDemFetching"
                   class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
                          border border-fuchsia-400/40 text-white text-[12px]
@@ -1210,7 +1202,7 @@ onMounted(() => {
             <span v-if="cbDemFetching">⏳ {{ t('mapview.gameLoading') }}</span>
             <span v-else>{{ t('mapview.gameButton', { emoji: t('game.emoji'), gameName: t('game.name') }) }}</span>
           </button>
-          <div v-if="cbUnlocked && cbDemError"
+          <div v-if="cbDemError"
                class="w-full mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
                       text-red-200 text-[11px] text-center">
             {{ cbDemError }}
