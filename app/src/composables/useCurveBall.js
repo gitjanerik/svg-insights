@@ -1688,6 +1688,16 @@ export function useCurveBall() {
     }
   }
 
+  // v8.8.7: cheat-code for å rakst teste/utløse Invaders-modus. 10 raske
+  // tap på bunn-flipperen (innen 5 sek mellom hvert tap) trigger spawn ved
+  // kart-senter. Brukt for debug og dev-testing av Invaders-spawn-modi
+  // (orbit, march, snake). Counter resettes hvis ingen tap innen vindu,
+  // eller etter at cheaten har fyrt.
+  const INVADER_CHEAT_TAPS = 10
+  const INVADER_CHEAT_WINDOW_MS = 5000
+  let bottomTapCount = 0
+  let bottomTapLastT = 0
+
   function energize(edge) {
     const f = flippers[edge]
     if (!f) return
@@ -1705,6 +1715,19 @@ export function useCurveBall() {
       const link = INVADER_LINKED_PAIRS[edge]
       const lf = link && flippers[link]
       if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
+    }
+    // v8.8.7: bunn-flipper-tap teller mot Invaders-cheat. Aktiv kun mens
+    // spillet kjører og Invaders ikke allerede er på gang.
+    if (edge === 'bottom' && active.value && !invaderModeActive.value) {
+      const now = performance.now()
+      if (now - bottomTapLastT > INVADER_CHEAT_WINDOW_MS) bottomTapCount = 0
+      bottomTapCount++
+      bottomTapLastT = now
+      if (bottomTapCount >= INVADER_CHEAT_TAPS) {
+        bottomTapCount = 0
+        dlog('cheat:invader', { x: bounds.width / 2, y: bounds.height / 2 })
+        spawnInvaders(bounds.width / 2, bounds.height / 2)
+      }
     }
   }
 

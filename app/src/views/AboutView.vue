@@ -247,10 +247,26 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.7 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-yellow-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.7</span>
+                <span class="text-yellow-200/90">&mdash; cheat-snarvei til Invaders-spawn</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">20. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>10 raske tap p&aring; bunn-flipperen</strong> (innen 5 sek mellom hvert tap) trigger Invaders-spawn ved kart-senter. Brukt for &aring; rakst teste/utl&oslash;se Invaders-spawn-modi (orbit, march, snake) uten &aring; m&aring;tte bygge opp 4 treff p&aring; en bumper. Counter resettes hvis ingen tap innen vindu, eller etter at cheaten har fyrt</li>
+                <li><strong>Aktiv kun under aktivt spill</strong> &mdash; ikke under TAP TO START og ikke hvis Invaders allerede kj&oslash;rer (forhindrer kaos-cascade)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.6 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-teal-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.6</span>
                 <span class="text-teal-200/90">&mdash; Invaders march = snake-formasjon (Gjessekortesje)</span>
