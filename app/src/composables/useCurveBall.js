@@ -1418,7 +1418,7 @@ export function useCurveBall() {
           invaderPhase: 'march',
           marchVx: marchDir.x * marchSpeed,
           marchVy: marchDir.y * marchSpeed,
-          marchTotalDuration,
+          marchTotalDuration: totalMarchDuration,
           orbitT: 0,
           breakoutVel: {
             vx: edgeDir.vx * breakoutSpeed * energy,
