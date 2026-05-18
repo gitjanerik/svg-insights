@@ -449,8 +449,7 @@ export function useCurveBall() {
       // v8.8.5: march-phase felter (kun satt hvis invaderPhase==='march')
       marchVx: opts.marchVx,
       marchVy: opts.marchVy,
-      marchWraps: opts.marchWraps ?? 0,
-      marchTotalWraps: opts.marchTotalWraps ?? 3,
+      marchTotalDuration: opts.marchTotalDuration ?? 0,
     }
     balls.push(b)
     return b
@@ -785,28 +784,29 @@ export function useCurveBall() {
         }
       }
 
-      // v8.8.5: march-fase. Kinematisk konstant fart i en retning, wrap
-      // rundt kart-edges. Etter marchTotalWraps wraps → breakout.
+      // v8.8.5/6: march-fase = snake-formasjon (Gjessekortesje). Kinematisk
+      // konstant fart langs marchVx/marchVy. Wrap rundt kart-edges (passere
+      // ut → kom inn diametralt motsatt). Tid-basert breakout: alle baller
+      // får samme orbitT-tikk, så de breakouter synkron etter
+      // marchTotalDuration.
       if (b.mode === 'invader' && b.invaderPhase === 'march') {
+        b.orbitT += dt
+        if (b.orbitT >= b.marchTotalDuration) {
+          b.invaderPhase = 'breakout'
+          b.vx = b.breakoutVel.vx
+          b.vy = b.breakoutVel.vy
+          continue
+        }
         b.x += b.marchVx * dt
         b.y += b.marchVy * dt
         b.vx = b.marchVx
         b.vy = b.marchVy
         const r = b.r ?? BALL_RADIUS_M
         const W = bounds.width, H = bounds.height
-        let wrapped = false
-        if (b.x < -r) { b.x += W + 2 * r; wrapped = true }
-        else if (b.x > W + r) { b.x -= W + 2 * r; wrapped = true }
-        if (b.y < -r) { b.y += H + 2 * r; wrapped = true }
-        else if (b.y > H + r) { b.y -= H + 2 * r; wrapped = true }
-        if (wrapped) {
-          b.marchWraps = (b.marchWraps ?? 0) + 1
-          if (b.marchWraps >= (b.marchTotalWraps ?? 3)) {
-            b.invaderPhase = 'breakout'
-            b.vx = b.breakoutVel.vx
-            b.vy = b.breakoutVel.vy
-          }
-        }
+        if (b.x < -r) b.x += W + 2 * r
+        else if (b.x > W + r) b.x -= W + 2 * r
+        if (b.y < -r) b.y += H + 2 * r
+        else if (b.y > H + r) b.y -= H + 2 * r
         // Skip bumper, edge, stillness — march-fase er invulnerabel
         continue
       }
@@ -1372,21 +1372,43 @@ export function useCurveBall() {
     // ellers en unit-vector for march-retning.
     const marchDir = detectMarchDirection()
     if (marchDir) {
+      // v8.8.6: Snake-formasjon (Gjessekortesje): balls i linje ALONG march-
+      // retning, leder først og resten følger etter. Tidligere brukte vi
+      // perpendikulær linje som beveget seg sideveis — visuelt ble det en
+      // rigid strek og ingen "leder + følgere"-dynamikk.
+      //
+      // Fart 2× orbit-fart så snake-en rekker å passere ut og inn flere
+      // ganger innen INVADER_ORBIT_DURATION_S. Tid-basert breakout (i steden
+      // for wrap-counter) sikrer at hele formasjonen breakouter samtidig.
       const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
-      const marchSpeed = orbitR * orbitSpeed
-      const perpX = -marchDir.y
-      const perpY = marchDir.x
-      const spacing = invaderR * 3
-      const totalWraps = 3
+      const marchSpeed = orbitR * orbitSpeed * 2
+      const minDim = Math.min(bounds.width, bounds.height)
+      // ~3 wraps før breakout (siden snake-en kan strekke seg over halve
+      // diagonalen, gir det 3–4 traverseringer for leder-ballen).
+      const totalMarchDuration = Math.max(
+        INVADER_ORBIT_DURATION_S,
+        (minDim / marchSpeed) * 3,
+      )
+      // Spacing: ~4× invader-radius mellom sentrum-til-sentrum. Krymper hvis
+      // snake-en ikke ville passet innenfor map-bounds ved spawn.
+      const naturalSpacing = invaderR * 4
+      const maxHalfLength = minDim / 2 - invaderR * 2
+      const halfLength = ((count - 1) / 2) * naturalSpacing
+      const spacing = halfLength > maxHalfLength && count > 1
+        ? (maxHalfLength * 2) / (count - 1)
+        : naturalSpacing
       dlog('invader-spawn:march', {
         count,
         dir: { x: marchDir.x.toFixed(2), y: marchDir.y.toFixed(2) },
         speed: Math.round(marchSpeed),
+        dur: totalMarchDuration.toFixed(1),
+        spacing: Math.round(spacing),
       })
       for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
+        // k=0 er bakerst, k=count-1 er leder. Offset langs march-retning.
         const offset = (k - (count - 1) / 2) * spacing
-        const x = bounds.width / 2 + perpX * offset
-        const y = bounds.height / 2 + perpY * offset
+        const x = bounds.width / 2 + marchDir.x * offset
+        const y = bounds.height / 2 + marchDir.y * offset
         const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
         spawnBall(x, y, {
           canExplode: false,
@@ -1396,18 +1418,15 @@ export function useCurveBall() {
           invaderPhase: 'march',
           marchVx: marchDir.x * marchSpeed,
           marchVy: marchDir.y * marchSpeed,
-          marchWraps: 0,
-          marchTotalWraps: totalWraps,
+          marchTotalDuration,
+          orbitT: 0,
           breakoutVel: {
             vx: edgeDir.vx * breakoutSpeed * energy,
             vy: edgeDir.vy * breakoutSpeed * energy,
           },
         })
       }
-      // Sound-cue når formasjonen forlater march. Estimat: én wrap tar
-      // ca. minDim / marchSpeed sekunder, så totalWraps wraps ≈ orbit-
-      // varigheten. Bruker INVADER_ORBIT_DURATION_S som proxy.
-      setTimeout(() => playInvaderBreakout(), INVADER_ORBIT_DURATION_S * 1000)
+      setTimeout(() => playInvaderBreakout(), totalMarchDuration * 1000)
       return
     }
 
