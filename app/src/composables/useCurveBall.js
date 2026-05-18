@@ -436,7 +436,7 @@ export function useCurveBall() {
       lastClimbContour: null,
       lastClimbAt: 0,
       // Invaders-felter (kun satt hvis mode==='invader')
-      invaderPhase: opts.invaderPhase,      // 'orbit' | 'breakout' | undefined
+      invaderPhase: opts.invaderPhase,      // 'orbit' | 'march' | 'breakout' | undefined
       orbitCenter: opts.orbitCenter,        // {x, y}
       orbitRadius: opts.orbitRadius,
       orbitAngle:  opts.orbitAngle,
@@ -446,6 +446,11 @@ export function useCurveBall() {
       orbitTarget: opts.orbitTarget,        // target-elevasjon (m) for kontur-vandring
       orbitT:      opts.orbitT ?? 0,
       breakoutVel: opts.breakoutVel,        // {vx, vy}
+      // v8.8.5: march-phase felter (kun satt hvis invaderPhase==='march')
+      marchVx: opts.marchVx,
+      marchVy: opts.marchVy,
+      marchWraps: opts.marchWraps ?? 0,
+      marchTotalWraps: opts.marchTotalWraps ?? 3,
     }
     balls.push(b)
     return b
@@ -601,11 +606,11 @@ export function useCurveBall() {
     for (let i = 0; i < n; i++) {
       const a = balls[i]
       if (!a.visible) continue
-      if (a.mode === 'invader' && a.invaderPhase === 'orbit') continue
+      if (a.mode === 'invader' && (a.invaderPhase === 'orbit' || a.invaderPhase === 'march')) continue
       for (let j = i + 1; j < n; j++) {
         const b = balls[j]
         if (!b.visible) continue
-        if (b.mode === 'invader' && b.invaderPhase === 'orbit') continue
+        if (b.mode === 'invader' && (b.invaderPhase === 'orbit' || b.invaderPhase === 'march')) continue
         const ra = a.r ?? BALL_RADIUS_M
         const rb = b.r ?? BALL_RADIUS_M
         const rsum = ra + rb
@@ -702,7 +707,7 @@ export function useCurveBall() {
   // flipper er i repel-modus (etter et hit, 2s) snus retningen og
   // kraften forsterkes med MAGNETIC_REPEL_MULT.
   function applyFlipperMagnetism(b, dt, now) {
-    if (b.mode === 'invader' && b.invaderPhase === 'orbit') return
+    if (b.mode === 'invader' && (b.invaderPhase === 'orbit' || b.invaderPhase === 'march')) return
     const w = bounds.width, h = bounds.height
     const range = 0.4 * Math.min(w, h)
     const inset = FLIPPER_INSET_M
@@ -778,6 +783,32 @@ export function useCurveBall() {
           // Skip bumper, edge, stillness — orbit-fasen er invulnerabel
           continue
         }
+      }
+
+      // v8.8.5: march-fase. Kinematisk konstant fart i en retning, wrap
+      // rundt kart-edges. Etter marchTotalWraps wraps → breakout.
+      if (b.mode === 'invader' && b.invaderPhase === 'march') {
+        b.x += b.marchVx * dt
+        b.y += b.marchVy * dt
+        b.vx = b.marchVx
+        b.vy = b.marchVy
+        const r = b.r ?? BALL_RADIUS_M
+        const W = bounds.width, H = bounds.height
+        let wrapped = false
+        if (b.x < -r) { b.x += W + 2 * r; wrapped = true }
+        else if (b.x > W + r) { b.x -= W + 2 * r; wrapped = true }
+        if (b.y < -r) { b.y += H + 2 * r; wrapped = true }
+        else if (b.y > H + r) { b.y -= H + 2 * r; wrapped = true }
+        if (wrapped) {
+          b.marchWraps = (b.marchWraps ?? 0) + 1
+          if (b.marchWraps >= (b.marchTotalWraps ?? 3)) {
+            b.invaderPhase = 'breakout'
+            b.vx = b.breakoutVel.vx
+            b.vy = b.breakoutVel.vy
+          }
+        }
+        // Skip bumper, edge, stillness — march-fase er invulnerabel
+        continue
       }
 
       // v8.2.0: elektromagnetisk attract/repel fra alle 4 flippere — kjøres
@@ -1203,6 +1234,105 @@ export function useCurveBall() {
    *      med ±20% energi-variasjon → spredning blir mer kaotisk over tid.
    * Tilgjengelig fra level 6.
    */
+  /**
+   * v8.8.5: Sjekk om kartet har brukbare høydekurver i sentrum for orbit-
+   * modus. Hvis ja → null (bruk standard kontur-følgende orbit). Hvis nei
+   * → returner en march-direction {x, y} som unit-vektor.
+   *
+   * Detekjsjons-strategi:
+   *   1) Sample gradient i sentrale 40% (radius 0.20*minDim). Hvis snitt-
+   *      magnitude er over flat-threshold (0.03 m/m), → null (orbit modus).
+   *   2) Hvis flatt sentrum: sample gradient i perifert ring (0.35*minDim).
+   *      Bruk structure tensor (sum av grad⊗grad) for å finne dominant
+   *      gradient-akse. March-retning = perpendikulært (langs perifer
+   *      kontur). Slik passerer formasjonen "midt mellom" høydekurver.
+   *   3) Hvis ingen perifert signal heller: return en tilfeldig diagonal
+   *      (π/4 + n·π/2). Snorrett linje i en av fire diagonaler.
+   */
+  function detectMarchDirection() {
+    if (!dem) return randomDiagonalDir()
+
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+
+    // Steg 1: er sentrum flatt?
+    const centralR = Math.min(bounds.width, bounds.height) * 0.20
+    let centralGradSum = 0
+    let centralSamples = 0
+    const N = 7
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        const px = cx - centralR + (i / (N - 1)) * 2 * centralR
+        const py = cy - centralR + (j / (N - 1)) * 2 * centralR
+        const g = sampleGradient(dem, px, py)
+        const gMag = Math.hypot(g.dzdx, g.dzdy)
+        if (Number.isFinite(gMag)) {
+          centralGradSum += gMag
+          centralSamples++
+        }
+      }
+    }
+    if (centralSamples >= 4) {
+      const avgCentralGrad = centralGradSum / centralSamples
+      if (avgCentralGrad >= 0.03) {
+        // Sentriske høydekurver finnes — bruk standard orbit
+        return null
+      }
+    }
+
+    // Steg 2: flatt sentrum. Bruk structure tensor på perifert ring for
+    // å finne dominant gradient-akse. Vanlig avg-gradient kan kansellere
+    // (gradienter peker utover fra en sentrisk topp), men grad⊗grad er
+    // alltid positiv-definitt og bevarer retnings-info.
+    const peripheralR = Math.min(bounds.width, bounds.height) * 0.35
+    let sxx = 0, sxy = 0, syy = 0
+    let gradSamples = 0
+    const samples = 24
+    for (let k = 0; k < samples; k++) {
+      const angle = (k / samples) * Math.PI * 2
+      const px = cx + Math.cos(angle) * peripheralR
+      const py = cy + Math.sin(angle) * peripheralR
+      if (px < 0 || px > bounds.width || py < 0 || py > bounds.height) continue
+      const g = sampleGradient(dem, px, py)
+      if (!Number.isFinite(g.dzdx) || !Number.isFinite(g.dzdy)) continue
+      sxx += g.dzdx * g.dzdx
+      sxy += g.dzdx * g.dzdy
+      syy += g.dzdy * g.dzdy
+      gradSamples++
+    }
+
+    if (gradSamples < 6 || (sxx + syy) < 1e-6) {
+      // Ingen perifert signal heller — random diagonal
+      return randomDiagonalDir()
+    }
+
+    // Eigenvector av største eigenvalue for [[sxx, sxy], [sxy, syy]]
+    const trace = sxx + syy
+    const det = sxx * syy - sxy * sxy
+    const disc = Math.sqrt(Math.max(0, (trace * trace) / 4 - det))
+    const lam1 = trace / 2 + disc
+    let vx, vy
+    if (Math.abs(sxy) > 1e-6) {
+      vx = sxy
+      vy = lam1 - sxx
+    } else {
+      // Off-diagonal er null → akse-justert tensor
+      if (sxx >= syy) { vx = 1; vy = 0 } else { vx = 0; vy = 1 }
+    }
+    const vLen = Math.hypot(vx, vy) || 1
+    vx /= vLen
+    vy /= vLen
+    // March-retning = perpendikulær til dominant gradient (= langs kontur)
+    return { x: -vy, y: vx }
+  }
+
+  /** Random diagonal (π/4 + n·π/2). Snorrett linje i en av fire retninger. */
+  function randomDiagonalDir() {
+    const i = Math.floor(Math.random() * 4)
+    const angle = Math.PI / 4 + i * (Math.PI / 2)
+    return { x: Math.cos(angle), y: Math.sin(angle) }
+  }
+
   function spawnInvaders(sx, sy) {
     splash.x = sx; splash.y = sy
     splash.active = true; splash.t = 0; splash.kind = 'explode'
@@ -1235,6 +1365,51 @@ export function useCurveBall() {
     const edgeDir = edges[Math.floor(Math.random() * 4)]
     const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
     const invaderR = BALL_RADIUS_M * INVADER_RADIUS_FRAC
+
+    // v8.8.5: Hvis sentrum mangler høydekurver, bruk MARCH-formasjon i stedet
+    // for å unngå at formasjonen henger i periferien. detectMarchDirection()
+    // returnerer null hvis sentrisk kontur finnes (= bruk orbit som før),
+    // ellers en unit-vector for march-retning.
+    const marchDir = detectMarchDirection()
+    if (marchDir) {
+      const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
+      const marchSpeed = orbitR * orbitSpeed
+      const perpX = -marchDir.y
+      const perpY = marchDir.x
+      const spacing = invaderR * 3
+      const totalWraps = 3
+      dlog('invader-spawn:march', {
+        count,
+        dir: { x: marchDir.x.toFixed(2), y: marchDir.y.toFixed(2) },
+        speed: Math.round(marchSpeed),
+      })
+      for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
+        const offset = (k - (count - 1) / 2) * spacing
+        const x = bounds.width / 2 + perpX * offset
+        const y = bounds.height / 2 + perpY * offset
+        const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
+        spawnBall(x, y, {
+          canExplode: false,
+          mode: 'invader',
+          r: invaderR,
+          scoreMult: INVADER_SCORE_MULT,
+          invaderPhase: 'march',
+          marchVx: marchDir.x * marchSpeed,
+          marchVy: marchDir.y * marchSpeed,
+          marchWraps: 0,
+          marchTotalWraps: totalWraps,
+          breakoutVel: {
+            vx: edgeDir.vx * breakoutSpeed * energy,
+            vy: edgeDir.vy * breakoutSpeed * energy,
+          },
+        })
+      }
+      // Sound-cue når formasjonen forlater march. Estimat: én wrap tar
+      // ca. minDim / marchSpeed sekunder, så totalWraps wraps ≈ orbit-
+      // varigheten. Bruker INVADER_ORBIT_DURATION_S som proxy.
+      setTimeout(() => playInvaderBreakout(), INVADER_ORBIT_DURATION_S * 1000)
+      return
+    }
 
     // v8.0.2: invaders går rundt en HØYDEKURVE i stedet for en fast sirkel.
     // Velg target-elevasjon under peak (typisk 30-60m under topp, eller

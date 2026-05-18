@@ -247,10 +247,29 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.5 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.5</span>
+                <span class="text-emerald-200/90">&mdash; Invaders-fix: march-formasjon p&aring; kart uten sentriske h&oslash;ydekurver</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">19. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Antiklimaks-bug i Invaders-modus.</strong> Tidligere brukte alle invader-baller h&oslash;ydekurve-orbit rundt et sentralt peak. P&aring; kart hvor sentrum mangler h&oslash;ydekurver (flatt eller features kun i periferien) fant ballene perifere kontur-skj&aelig;ringer p&aring; ulike radier &mdash; ulik orbit-fart per ball &rarr; formasjonen falt fra hverandre f&oslash;r breakout. Game over uten en ordentlig signatur-happening</li>
+                <li><strong>Detekjsjon:</strong> ny <code>detectMarchDirection()</code>-helper sampler gradient i sentrale 40% (radius 0.20&middot;minDim). Hvis snitt-magnitude &lt; 0.03 m/m (3% slope), regnes sentrum som flatt</li>
+                <li><strong>March-fase:</strong> ny <code>invaderPhase: 'march'</code> &mdash; alle baller har identisk konstant fart i samme retning, plassert i en linje perpendikul&aelig;rt p&aring; march-retningen sentrert p&aring; kart-senter. Formasjonen passerer ut av kartet og kommer inn diametralt motsatt (klassisk wrap-around). Etter 3 wraps &rarr; breakout</li>
+                <li><strong>Retnings-strategi:</strong> Hvis perifere h&oslash;ydekurver finnes, brukes structure tensor (sum av grad&otimes;grad) p&aring; et ring av perifere sample-punkter for &aring; finne dominant gradient-akse. March-retning = perpendikul&aelig;rt = langs perifer kontur (formasjonen passerer "midt mellom" h&oslash;ydekurver). Hvis perifert signal mangler ogs&aring;, fall til en tilfeldig diagonal (&pi;/4 + n&middot;&pi;/2)</li>
+                <li><strong>Backward compat:</strong> kart med h&oslash;ydekurver i sentrum bruker fortsatt opprinnelig kontur-orbit. Ingen endring i normal-tilfellet</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.4 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-500" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.4</span>
                 <span class="text-red-200/90">&mdash; Stedsmerke-bumper tredoblet i spillet</span>
