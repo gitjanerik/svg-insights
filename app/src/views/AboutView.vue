@@ -247,10 +247,29 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.0 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.0</span>
+                <span class="text-red-200/90">&mdash; Stedsmerke: rebrand + ny bouncing-pin-animasjon</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">18. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>«Geocache» heter n&aring; «Stedsmerke».</strong> N&oslash;ytralt navn som beskriver hva symbolet faktisk gj&oslash;r &mdash; markerer et sted p&aring; kartet. Intern <code>symbolKey: 'geocache'</code> beholdes som codename (lagrings-n&oslash;kkel, Curve Invaders-mekanikken hvor treff trigger Invaders-modus)</li>
+                <li><strong>Ny visuell identitet: r&oslash;d dr&aring;pe-pin med squash &amp; stretch.</strong> Erstatter den pulserende gule glow-en + roterende stjerne-rays + blinkende r&oslash;d X. Klassisk map-marker-form i r&oslash;dt med hvit prikk, halvgjennomsiktig skygge under. Pin-tip-en peker presist p&aring; annotasjonens (x, y)</li>
+                <li><strong>&Eacute;n sprett pr 5 sekund.</strong> Animasjonen er kompakt (~1.1s anesipering &rarr; utskytning &rarr; apex &rarr; squash-landing &rarr; rebound &rarr; hvile), s&aring; nesten 4 sekunder hvile. Tidligere animasjon var en non-stop puls som tappet visuell oppmerksomhet konstant</li>
+                <li><strong>Tilfeldig pre-roll pr instans.</strong> Hver stedsmerke f&aring;r en <code>begin="-X.Xs"</code> mellom -5s og 0s s&aring; flere markers p&aring; samme kart ikke spretter i takt. Negativ begin betyr at animasjonen er i gang ved page-load, midt i en tilfeldig fase &mdash; ingen lang ventetid f&oslash;r f&oslash;rste sprett</li>
+                <li><strong>Tekniske detaljer:</strong> Ny <code>lib/stedsmerkeAnimation.js</code> har shared keyframes + matrix-helpers. Bruker SMIL <code>animateTransform type="matrix"</code> som kombinerer skala+translate i &eacute;n animasjon (mer presist enn additive p&aring; nestet <code>g</code>-er, spesielt i Safari). 8 keyframes, kalt fra tre steder: <code>AnnotationIcon.vue</code> (drawer-knappen), <code>MapView.vue</code> (p&aring; kartet), <code>CurveBallLayer.vue</code> (samme pin som bumper i spillet)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.7.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-pink-300" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.7.1</span>
                 <span class="text-pink-200/90">&mdash; rydd opp etter v8.7.0</span>

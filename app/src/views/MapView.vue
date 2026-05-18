@@ -17,6 +17,10 @@ import CurveBallLayer from '../components/CurveBallLayer.vue'
 import CurveBallHUD from '../components/CurveBallHUD.vue'
 import CurveBallFlippers from '../components/CurveBallFlippers.vue'
 import { t } from '../lib/i18n.js'
+import {
+  STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
+  buildPinMatrixValues, buildShadowMatrixValues, randomBegin, pinPath,
+} from '../lib/stedsmerkeAnimation.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -498,10 +502,10 @@ function renderAnnotations() {
     }
 
     if (sym.symbolKey === 'geocache') {
-      // Geocache er bonus-annotering med SMIL-animasjon — pulsende gul
-      // glow, roterende stjerne-rays og blinkende rød X i sentrum.
-      // Tegnes inline istedenfor <use> så vi kan legge til <animate>/
-      // <animateTransform>.
+      // Stedsmerke (intern codename: 'geocache'). Rød dråpe-pin med
+      // squash & stretch hvert 5. sekund + halvgjennomsiktig skygge.
+      // Hver instans får tilfeldig pre-roll så ikke alle på samme kart
+      // spretter i takt. Tegnes inline med SMIL-tagger.
       appendGeocacheSymbol(g, HALF)
     } else {
       const use = document.createElementNS(ns, 'use')
@@ -520,18 +524,16 @@ function renderAnnotations() {
 }
 
 /**
- * Bygg det animerte Geocache-symbolet inn i en eksisterende g-node.
+ * Bygg det animerte Stedsmerke-symbolet inn i en eksisterende g-node.
  * - s   = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
  * - parent g er allerede translate-positionert til annotasjonens (x,y)
  *
- * Tre lag med SMIL-animasjoner som kjører kontinuerlig i nettleseren:
- *   1) Gul glow-circle med pulserende r + opacity (news-flash-feel)
- *   2) 8 stjerne-rays som roterer rundt sentrum (sparkle)
- *   3) Rød X som blinker på/av («X marks the spot»)
+ * Visuell design: klassisk rød dråpe-pin med hvit prikk, halvgjennomsiktig
+ * skygge under, squash & stretch én gang pr 5s. Pin-tip-en peker presist
+ * på annotasjonens (x, y) — pin-en strekker seg oppover derfra.
  *
- * Animasjonene er rene SVG (SMIL `<animate>`) — ingen JS-timer, ingen
- * requestAnimationFrame. Browseren håndterer alt på compositor-tråden,
- * så det går ikke utover map-rendering eller pinch-zoom-ytelse.
+ * Random pre-roll-offset (`begin="-X.Xs"`) per instans gjør at flere
+ * stedsmerker på samme kart ikke spretter i takt. SMIL — ingen JS-timer.
  */
 function appendGeocacheSymbol(parent, s) {
   const ns = 'http://www.w3.org/2000/svg'
@@ -541,63 +543,56 @@ function appendGeocacheSymbol(parent, s) {
     return el
   }
 
-  // 1) Pulsende gul glow
-  const glow = mk('circle', {
-    cx: '0', cy: '0', r: String(s * 0.75),
-    fill: '#fbbf24', opacity: '0.55',
-  })
-  glow.appendChild(mk('animate', {
-    attributeName: 'r',
-    values: `${s * 0.6};${s * 0.95};${s * 0.6}`,
-    dur: '0.7s', repeatCount: 'indefinite',
-  }))
-  glow.appendChild(mk('animate', {
-    attributeName: 'opacity',
-    values: '0.35;0.8;0.35',
-    dur: '0.7s', repeatCount: 'indefinite',
-  }))
-  parent.appendChild(glow)
+  // s = half-symbol-bredde. Pin head-radius på 0.55*s gir kompakt pin
+  // som passer i symbol-boksen uten å dominere kartet.
+  const r = s * 0.55
+  const px = 0
+  const py = 0
+  // Skygge: bredde matcher pin-hode, høyde 0.18r (flat oval).
+  const shadowRx = r
+  const shadowRy = r * 0.22
+  const shadowPy = r * 0.18  // Like under pin-tip-en (annotasjonspunktet).
+  const begin = randomBegin()
 
-  // 2) Roterende stjerne-rays (8 stk, peker utover fra liten indre radius
-  // så de ikke overskriver X-en i midten)
-  const rays = mk('g', {
-    stroke: '#b45309',
-    'stroke-width': String(Math.max(1, s * 0.13)),
-    'stroke-linecap': 'round',
-  })
-  const N = 8
-  const innerR = s * 0.32
-  const outerR = s * 0.98
-  for (let i = 0; i < N; i++) {
-    const a = (i / N) * Math.PI * 2 - Math.PI / 2
-    const cos = Math.cos(a), sin = Math.sin(a)
-    rays.appendChild(mk('line', {
-      x1: String(cos * innerR), y1: String(sin * innerR),
-      x2: String(cos * outerR), y2: String(sin * outerR),
-    }))
-  }
-  rays.appendChild(mk('animateTransform', {
-    attributeName: 'transform', type: 'rotate',
-    from: '0', to: '360',
-    dur: '6s', repeatCount: 'indefinite',
+  // Skygge
+  const shadowG = mk('g', {})
+  shadowG.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'matrix',
+    values: buildShadowMatrixValues(shadowRx, shadowRy, px, shadowPy),
+    keyTimes: STEDSMERKE_KEY_TIMES,
+    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
   }))
-  parent.appendChild(rays)
-
-  // 3) Blinkende rød X
-  const xMark = mk('g', {
-    stroke: '#dc2626',
-    'stroke-width': String(Math.max(1.5, s * 0.2)),
-    'stroke-linecap': 'round',
+  const shadowEl = mk('ellipse', {
+    cx: '0', cy: '0', rx: '1', ry: '1',
+    fill: '#000', opacity: '0.55',
   })
-  const xR = s * 0.38
-  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(-xR), x2: String(xR), y2: String(xR) }))
-  xMark.appendChild(mk('line', { x1: String(-xR), y1: String(xR), x2: String(xR), y2: String(-xR) }))
-  xMark.appendChild(mk('animate', {
+  shadowEl.appendChild(mk('animate', {
     attributeName: 'opacity',
-    values: '1;0.25;1',
-    dur: '0.55s', repeatCount: 'indefinite',
+    values: STEDSMERKE_SHADOW_OPACITY,
+    keyTimes: STEDSMERKE_KEY_TIMES,
+    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
   }))
-  parent.appendChild(xMark)
+  shadowG.appendChild(shadowEl)
+  parent.appendChild(shadowG)
+
+  // Pin
+  const pinG = mk('g', {})
+  pinG.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'matrix',
+    values: buildPinMatrixValues(r, px, py),
+    keyTimes: STEDSMERKE_KEY_TIMES,
+    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
+  }))
+  pinG.appendChild(mk('path', {
+    d: pinPath(r),
+    fill: '#dc2626', stroke: '#7f1d1d',
+    'stroke-width': String(r * 0.08), 'stroke-linejoin': 'round',
+  }))
+  pinG.appendChild(mk('circle', {
+    cx: '0', cy: String(-1.85 * r), r: String(r * 0.38),
+    fill: '#fff',
+  }))
+  parent.appendChild(pinG)
 }
 
 function selectSymbol(key) {

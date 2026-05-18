@@ -16,10 +16,12 @@ export const ANNOTATION_SYMBOLS = [
   { code: '212', symbolKey: 'stein', label: 'Stein' },
   { code: '310', symbolKey: 'brønn', label: 'Brønn / kilde' },
   { code: '509', symbolKey: 'bro',   label: 'Bro / klopp' },
-  // Bonus — ikke en ISOM-kode. Animert geocache-markør med pulsende
-  // gul glow, roterende stjerne-rays og blinkende rød X («X marks the
-  // spot»). Egen kode 999 reserverer plass utenfor ISOM-rommet.
-  { code: '999', symbolKey: 'geocache', label: 'Geocache' },
+  // Bonus — ikke en ISOM-kode. Rød dråpe-pin med squash & stretch hver
+  // 5. sekund + halvgjennomsiktig skygge. Brand: «Stedsmerke». Internt
+  // codename 'geocache' beholdes (lagrings-nøkkel, Curve Invaders-mekanikk
+  // hvor treff trigger Invaders-modus). Egen kode 999 reserverer plass
+  // utenfor ISOM-rommet.
+  { code: '999', symbolKey: 'geocache', label: 'Stedsmerke' },
 ]
 
 export function useMapAnnotations(mapId) {
