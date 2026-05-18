@@ -247,10 +247,44 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.7 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-yellow-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.7</span>
+                <span class="text-yellow-200/90">&mdash; cheat-snarvei til Invaders-spawn</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">20. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>10 raske tap p&aring; bunn-flipperen</strong> (innen 5 sek mellom hvert tap) trigger Invaders-spawn ved kart-senter. Brukt for &aring; rakst teste/utl&oslash;se Invaders-spawn-modi (orbit, march, snake) uten &aring; m&aring;tte bygge opp 4 treff p&aring; en bumper. Counter resettes hvis ingen tap innen vindu, eller etter at cheaten har fyrt</li>
+                <li><strong>Aktiv kun under aktivt spill</strong> &mdash; ikke under TAP TO START og ikke hvis Invaders allerede kj&oslash;rer (forhindrer kaos-cascade)</li>
+              </ul>
+            </details>
+          </div>
+
+          <!-- 8.8.6 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-teal-300" />
+            <details class="group">
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.6</span>
+                <span class="text-teal-200/90">&mdash; Invaders march = snake-formasjon (Gjessekortesje)</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">20. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Fra rigid linje til snake.</strong> v8.8.5 plasserte ballene perpendikul&aelig;rt p&aring; march-retningen &mdash; visuelt en strek som beveget seg sideveis. N&aring; legges de p&aring; rekke ALONG march-retningen: leder f&oslash;rst, resten f&oslash;lger etter. F&oslash;lger-leder-leken «Gjessekortesje»</li>
+                <li><strong>Tid-basert breakout, ikke wrap-counter.</strong> Per-ball wrap-counting ga ulike breakout-tidspunkter (leder f&oslash;rst, tail sist) &mdash; rotete avslutning. N&aring; bruker alle baller felles <code>orbitT</code>-tikk og breakouter synkron etter <code>marchTotalDuration</code> (typisk ~7s, kalibrert til 3 wraps for leder)</li>
+                <li><strong>2× march-fart.</strong> &Oslash;kte fra <code>orbitR &middot; orbitSpeed</code> til <code>&times;2</code> s&aring; snake-en rekker 3+ traverseringer innen breakout-tiden</li>
+                <li><strong>Spacing-clamp.</strong> Snake-l&aring;ngde = <code>(count-1) &middot; 4&middot;invaderR</code>. Krymper automatisk hvis det ikke ville passet i map-bounds ved spawn s&aring; ingen ball spawnes utenfor kartet</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.5 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-emerald-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.5</span>
                 <span class="text-emerald-200/90">&mdash; Invaders-fix: march-formasjon p&aring; kart uten sentriske h&oslash;ydekurver</span>
