@@ -1,9 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import {
-  STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
-  PIN_SCALE_VALUES, SHADOW_SCALE_VALUES,
-  pinTranslateValues, randomBegin, pinPath,
+  STEDSMERKE_HIT_KEY_TIMES, STEDSMERKE_HIT_DUR, STEDSMERKE_SHADOW_OPACITY_HIT,
+  PIN_SCALE_VALUES_HIT, SHADOW_SCALE_VALUES_HIT,
+  pinTranslateValuesHit, pinPath,
 } from '../lib/stedsmerkeAnimation.js'
 
 const props = defineProps({
@@ -41,28 +41,29 @@ const ballGradient = computed(() => {
 
 const emit = defineEmits(['drop'])
 
-// Stedsmerke (codename 'geocache') bumper-rendering. Pin-tip i nedre halvdel
-// av bumper-circle, hode fyller midten. Random pre-roll pr instans så ikke
-// alle stedsmerke-bumpers på brettet spretter i takt.
-const sm_r = computed(() => ballRadius.value * 0.35)
-const sm_py = computed(() => ballRadius.value * 0.5)
+// Stedsmerke (codename 'geocache') bumper-rendering. Pin-tip ved bumper-
+// senter (0,0) — det er der ballen kolliderer, så markøren peker presist
+// på treff-punktet. Pin-en strekker seg oppover derfra.
+//
+// Pin head-radius = 0.30 * ballRadius → pin-bredde = 0.60R, pin-høyde =
+// 0.86R. Passer komfortabelt i bumper-hitbox (radius R) uten å være
+// større enn andre bumpers' indikatorer (brønn-kryss = 0.6R radius osv).
+//
+// Animasjon kjører IKKE kontinuerlig — kun ved treff (bp.hits endres).
+// :key på `${i}-${bp.hits}` tvinger Vue til å re-mounte hele stedsmerke-
+// undertreet ved hvert treff, så SMIL-animasjonen restarter fra t=0.
+// Initial mount (bp.hits=0) inkluderer ikke animateTransform-tagger →
+// statisk pin. Etter første treff vises animasjonen, og fill="freeze"
+// holder pin-en på siste keyframe (= hvile) til neste treff.
+const sm_r = computed(() => ballRadius.value * 0.30)
 const sm_shadowRx = computed(() => sm_r.value)
 const sm_shadowRy = computed(() => sm_r.value * 0.22)
-const sm_shadowPy = computed(() => sm_py.value + sm_r.value * 0.18)
-const sm_pinTranslate = computed(() => pinTranslateValues(sm_r.value))
+const sm_shadowPy = computed(() => sm_r.value * 0.18)  // like under pin-tip
+const sm_pinTranslate = computed(() => pinTranslateValuesHit(sm_r.value))
 const sm_pinD = computed(() => pinPath(sm_r.value))
 const sm_strokeW = computed(() => sm_r.value * 0.08)
 const sm_dotR = computed(() => sm_r.value * 0.38)
 const sm_dotCy = computed(() => -1.85 * sm_r.value)
-// Stabil random pr bumper-objekt. WeakMap unngår at offset re-rolles på
-// hver Vue render-tick.
-const sm_beginCache = new WeakMap()
-function sm_begin(bp) {
-  if (!bp) return '0s'
-  let v = sm_beginCache.get(bp)
-  if (!v) { v = randomBegin(); sm_beginCache.set(bp, v) }
-  return v
-}
 
 // Trail-sluttgammel: TRAIL_LEN fra useCurveBall. Holder seg syncet via
 // at hver slot har age 0..TRAIL_LEN.
@@ -205,42 +206,48 @@ function onBallTap(b) {
                 stroke="#000" :stroke-width="ballRadius * 0.12"/>
         </g>
 
-        <!-- Stedsmerke (codename 'geocache') — rød dråpe-pin med squash &
-             stretch pr 5s + halvgjennomsiktig skygge. Treff trigger
-             fortsatt Invaders-modus direkte (v8.7.0-mekanikk). Nestede
-             g-er fordi SMIL animateTransform støtter kun translate/scale
-             (ikke matrix) — ytre plasserer, midtre animerer translate Y,
-             innerste animerer scale. Random pre-roll desynker bouncen. -->
-        <g v-else-if="bp.kind === 'geocache'">
+        <!-- Stedsmerke (codename 'geocache') — rød dråpe-pin som spretter
+             én gang pr treff (squash & stretch over 1.1s), ikke kontinuerlig.
+             Treff trigger fortsatt Invaders-modus direkte (v8.7.0-mekanikk).
+             :key på bp.hits tvinger remount så SMIL restarter ved hvert
+             treff. v-if på animasjons-tagene hindrer animasjon på initial
+             mount (hits=0) og etter Invaders-reset (hits → 0 igjen). -->
+        <g v-else-if="bp.kind === 'geocache'" :key="`sm-${i}-${bp.hits}`">
           <g :transform="`translate(0 ${sm_shadowPy}) scale(${sm_shadowRx} ${sm_shadowRy})`">
             <g>
-              <animateTransform attributeName="transform" type="scale"
-                                :values="SHADOW_SCALE_VALUES" :keyTimes="STEDSMERKE_KEY_TIMES"
-                                :dur="STEDSMERKE_DUR" repeatCount="indefinite"
-                                :begin="sm_begin(bp)"/>
+              <animateTransform v-if="bp.hits > 0"
+                                attributeName="transform" type="scale"
+                                :values="SHADOW_SCALE_VALUES_HIT"
+                                :keyTimes="STEDSMERKE_HIT_KEY_TIMES"
+                                :dur="STEDSMERKE_HIT_DUR" repeatCount="1"
+                                begin="0s" fill="freeze"/>
               <ellipse cx="0" cy="0" rx="1" ry="1" fill="#000" opacity="0.55">
-                <animate attributeName="opacity" :values="STEDSMERKE_SHADOW_OPACITY"
-                         :keyTimes="STEDSMERKE_KEY_TIMES"
-                         :dur="STEDSMERKE_DUR" repeatCount="indefinite"
-                         :begin="sm_begin(bp)"/>
+                <animate v-if="bp.hits > 0"
+                         attributeName="opacity"
+                         :values="STEDSMERKE_SHADOW_OPACITY_HIT"
+                         :keyTimes="STEDSMERKE_HIT_KEY_TIMES"
+                         :dur="STEDSMERKE_HIT_DUR" repeatCount="1"
+                         begin="0s" fill="freeze"/>
               </ellipse>
             </g>
           </g>
-          <g :transform="`translate(0 ${sm_py})`">
+          <g>
+            <animateTransform v-if="bp.hits > 0"
+                              attributeName="transform" type="translate"
+                              :values="sm_pinTranslate"
+                              :keyTimes="STEDSMERKE_HIT_KEY_TIMES"
+                              :dur="STEDSMERKE_HIT_DUR" repeatCount="1"
+                              begin="0s" fill="freeze"/>
             <g>
-              <animateTransform attributeName="transform" type="translate"
-                                :values="sm_pinTranslate" :keyTimes="STEDSMERKE_KEY_TIMES"
-                                :dur="STEDSMERKE_DUR" repeatCount="indefinite"
-                                :begin="sm_begin(bp)"/>
-              <g>
-                <animateTransform attributeName="transform" type="scale"
-                                  :values="PIN_SCALE_VALUES" :keyTimes="STEDSMERKE_KEY_TIMES"
-                                  :dur="STEDSMERKE_DUR" repeatCount="indefinite"
-                                  :begin="sm_begin(bp)"/>
-                <path :d="sm_pinD" fill="#dc2626" stroke="#7f1d1d"
-                      :stroke-width="sm_strokeW" stroke-linejoin="round"/>
-                <circle cx="0" :cy="sm_dotCy" :r="sm_dotR" fill="#fff"/>
-              </g>
+              <animateTransform v-if="bp.hits > 0"
+                                attributeName="transform" type="scale"
+                                :values="PIN_SCALE_VALUES_HIT"
+                                :keyTimes="STEDSMERKE_HIT_KEY_TIMES"
+                                :dur="STEDSMERKE_HIT_DUR" repeatCount="1"
+                                begin="0s" fill="freeze"/>
+              <path :d="sm_pinD" fill="#dc2626" stroke="#7f1d1d"
+                    :stroke-width="sm_strokeW" stroke-linejoin="round"/>
+              <circle cx="0" :cy="sm_dotCy" :r="sm_dotR" fill="#fff"/>
             </g>
           </g>
         </g>

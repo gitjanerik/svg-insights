@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.2 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-orange-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.2</span>
+                <span class="text-orange-200/90">&mdash; Stedsmerke i spillet: mindre pin + treff-trigget animasjon</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">18. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Mindre pin som bumper.</strong> Pin head-radius redusert fra 0.35&middot;ballRadius til 0.30&middot;ballRadius, og pin-tip flyttet fra nedre halvdel til bumper-senter. Pin-en peker n&aring; presist p&aring; treff-punktet, og st&oslash;rrelsen matcher andre bumper-indikatorer (br&oslash;nn-kryss osv har radius 0.6R, samme som n&aring; pin-bredden)</li>
+                <li><strong>Animasjonen trigges ved treff, ikke kontinuerlig.</strong> v8.8.1 satte pin-en til &aring; sprette hvert 5. sekund i spillet ogs&aring; &mdash; men i CurveInvaders gir det mer mening &aring; reagere PR TREFF. Ny implementasjon: <code>:key="`sm-${i}-${bp.hits}`"</code> p&aring; Vue-templaten tvinger remount n&aring;r treff-telleren endrer seg. SMIL animasjons-tagene rendres kun n&aring;r <code>bp.hits &gt; 0</code> og bruker <code>begin="0s" repeatCount="1" fill="freeze"</code> &mdash; spretter &eacute;n gang p&aring; 1.1s, st&aring;r s&aring; stille til neste treff</li>
+                <li><strong>Initial mount er statisk.</strong> Ved spillstart har ingen treff registrert (hits=0), s&aring; pin-en st&aring;r i ro. F&oslash;rste ball-treff trigger f&oslash;rste sprett. Etter Invaders-reset (hits g&aring;r 4&rarr;0) returnerer pin-en til hvile</li>
+                <li><strong>Ny hit-modus i <code>stedsmerkeAnimation.js</code>:</strong> 7 keyframes mappet over hele 1.1s (i stedet for map-modusens 22% av 5s). Begge moduser deler samme underliggende 7 squash-posisjoner; map appender bare en duplisert hvile-frame ved keyTime=1 for &aring; holde stille gjennom idle-fasen</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.1 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.1</span>
                 <span class="text-rose-200/90">&mdash; Stedsmerke-fix: ikon synlig + animasjon kun n&aring;r passende</span>
