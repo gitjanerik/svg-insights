@@ -4,10 +4,10 @@
 // fordi ISOM-symbolene har 0.07-0.10 mm strek (print-spec) som blir
 // usynlig på 16-px-knapper. Disse er drawer-ikoner med synlig strek.
 //
-// 'geocache' (brand: «Stedsmerke») rendres STATISK her — rød dråpe-pin
-// med skygge i hvile. Squash & stretch-animasjonen skal kun kjøre på
-// selve kartet (etter at brukeren har lagret/gjenåpnet) og i spillet,
-// ikke i settings-drawerens forhåndsvisninger.
+// 'stedsmerke' rendres STATISK her — rød dråpe-pin med skygge i hvile.
+// Squash & stretch-animasjonen skal kun kjøre på selve kartet (etter at
+// brukeren har lagret/gjenåpnet) og i spillet ved treff, ikke i settings-
+// drawerens forhåndsvisninger.
 import { pinPath } from '../lib/stedsmerkeAnimation.js'
 
 defineProps({
@@ -39,7 +39,7 @@ const SM_DOT_CY = -1.85 * PIN_S
       <line x1="3" y1="5.5" x2="13" y2="5.5" stroke="currentColor" stroke-width="1.8"/>
       <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.8"/>
     </template>
-    <template v-else-if="symbolKey === 'geocache'">
+    <template v-else-if="symbolKey === 'stedsmerke'">
       <ellipse cx="8" cy="13.5" rx="2.5" ry="0.7" fill="#000" opacity="0.55"/>
       <g transform="translate(8 12.5)">
         <path :d="SM_PATH" fill="#dc2626" stroke="#7f1d1d"

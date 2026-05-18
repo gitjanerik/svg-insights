@@ -41,24 +41,20 @@ const ballGradient = computed(() => {
 
 const emit = defineEmits(['drop'])
 
-// Stedsmerke (codename 'geocache') bumper-rendering. Pin-tip ved bumper-
-// senter (0,0) — det er der ballen kolliderer, så markøren peker presist
-// på treff-punktet. Pin-en strekker seg oppover derfra.
+// Stedsmerke bumper. Pin-tip ved bumper-senter (0,0) — der ballen
+// kolliderer. Halo (cream-ring) tegnes UNDER pin-en for konsistens med
+// andre bumpers; pin-en er liten nok (head-radius 0.22R, bredde 0.44R,
+// høyde 0.63R) til at den ligger inne i halo-en.
 //
-// Pin head-radius = 0.30 * ballRadius → pin-bredde = 0.60R, pin-høyde =
-// 0.86R. Passer komfortabelt i bumper-hitbox (radius R) uten å være
-// større enn andre bumpers' indikatorer (brønn-kryss = 0.6R radius osv).
-//
-// Animasjon kjører IKKE kontinuerlig — kun ved treff (bp.hits endres).
-// :key på `${i}-${bp.hits}` tvinger Vue til å re-mounte hele stedsmerke-
+// Animasjon trigges KUN ved treff (bp.hits endres), ikke kontinuerlig.
+// :key="`sm-${i}-${bp.hits}`" tvinger Vue til å re-mounte stedsmerke-
 // undertreet ved hvert treff, så SMIL-animasjonen restarter fra t=0.
 // Initial mount (bp.hits=0) inkluderer ikke animateTransform-tagger →
-// statisk pin. Etter første treff vises animasjonen, og fill="freeze"
-// holder pin-en på siste keyframe (= hvile) til neste treff.
-const sm_r = computed(() => ballRadius.value * 0.30)
+// statisk pin. fill="freeze" holder siste keyframe (= hvile) etter slutt.
+const sm_r = computed(() => ballRadius.value * 0.22)
 const sm_shadowRx = computed(() => sm_r.value)
 const sm_shadowRy = computed(() => sm_r.value * 0.22)
-const sm_shadowPy = computed(() => sm_r.value * 0.18)  // like under pin-tip
+const sm_shadowPy = computed(() => sm_r.value * 0.18)
 const sm_pinTranslate = computed(() => pinTranslateValuesHit(sm_r.value))
 const sm_pinD = computed(() => pinPath(sm_r.value))
 const sm_strokeW = computed(() => sm_r.value * 0.08)
@@ -158,13 +154,13 @@ function onBallTap(b) {
          Hits-counter som LED-rad over symbolet (4 firkanter, lyser grønn). -->
     <g v-for="(bp, i) in flipp.bumpers" :key="`bumper-${i}`" pointer-events="none">
       <g :transform="`translate(${bp.x} ${bp.y})`">
-        <!-- Halo: kremgul fyll + lilla ring (matcher annoterings-stil i editor-
-             modus). v8.7.1: skjules for annoterings-bumpers (bp.fromAnnotation)
-             — haloen + den animerte geocache-en sammen ble visuelt for stor.
-             Random-spawnede bumpers beholder haloen for synlighet på Curves-
-             temaet hvor de ellers ville druknet i konturene. -->
-        <circle v-if="!bp.fromAnnotation"
-                cx="0" cy="0"
+        <!-- Halo: kremgul fyll + lilla ring (matcher annoterings-stil i
+             editor-modus). v8.8.3: vises for ALLE bumpers (også fra
+             annotering) etter at stedsmerke-pin-en ble krympet — halo +
+             liten pin er ikke lenger visuelt for stor, og bumpers ser
+             nå konsistente ut uansett om de er random-spawn eller
+             user-placed. -->
+        <circle cx="0" cy="0"
                 :r="ballRadius * 0.95"
                 fill="#fffef0"
                 fill-opacity="0.92"
@@ -206,13 +202,13 @@ function onBallTap(b) {
                 stroke="#000" :stroke-width="ballRadius * 0.12"/>
         </g>
 
-        <!-- Stedsmerke (codename 'geocache') — rød dråpe-pin som spretter
-             én gang pr treff (squash & stretch over 1.1s), ikke kontinuerlig.
-             Treff trigger fortsatt Invaders-modus direkte (v8.7.0-mekanikk).
-             :key på bp.hits tvinger remount så SMIL restarter ved hvert
-             treff. v-if på animasjons-tagene hindrer animasjon på initial
-             mount (hits=0) og etter Invaders-reset (hits → 0 igjen). -->
-        <g v-else-if="bp.kind === 'geocache'" :key="`sm-${i}-${bp.hits}`">
+        <!-- Stedsmerke — liten rød dråpe-pin inne i halo-en. Spretter én
+             gang pr treff (squash & stretch over 1.1s), ikke kontinuerlig.
+             Treff trigger fortsatt Invaders-modus direkte. :key på
+             bp.hits tvinger remount så SMIL restarter ved hvert treff.
+             v-if på animasjons-tagene hindrer animasjon på initial mount
+             (hits=0) og etter Invaders-reset (hits → 0 igjen). -->
+        <g v-else-if="bp.kind === 'stedsmerke'" :key="`sm-${i}-${bp.hits}`">
           <g :transform="`translate(0 ${sm_shadowPy}) scale(${sm_shadowRx} ${sm_shadowRy})`">
             <g>
               <animateTransform v-if="bp.hits > 0"
