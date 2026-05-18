@@ -1,61 +1,78 @@
 // Squash & stretch-animasjon for Stedsmerke-annotering (codename: geocache).
-// Én syklus pr 5s. Tilfeldig pre-roll-offset (negativ begin) per instans så
-// flere stedsmerker på samme kart ikke spretter i takt.
 //
-// Keyframes (timing-fraksjon av 5s-syklusen, transform relativt til hvile):
-//   0.00 — hvile
-//   0.02 — antesipering (squat ned)
-//   0.06 — utskytning (strekk opp)
-//   0.12 — apex (toppunkt, lett strekk)
-//   0.18 — landing (squash)
-//   0.21 — rebound (lite tilbakesprett)
-//   0.22 — hvile
-//   1.00 — holder hvile resten av syklusen
+// To moduser:
+//   - Map (kontinuerlig loop, 5s syklus): kart åpnet/gjenåpnet, pin-ene
+//     spretter én gang pr 5s med tilfeldig pre-roll så de ikke synker takt.
+//   - Hit (one-shot, 1.1s): i CurveInvaders trigges animasjonen NÅR ballen
+//     treffer bumperen, ikke kontinuerlig. Caller bruker :key på bp.hits
+//     for å tvinge Vue til å re-mounte SMIL-tagene ved hvert treff.
 //
-// Tegnes som nestede <g>-er: ytterste plasserer pin-tip-en i rest-posisjon,
-// midtre animerer translate Y (sprett), innerste animerer scale (squash &
-// stretch). SMIL `animateTransform` støtter KUN translate/scale/rotate/
-// skewX/skewY — IKKE matrix (en tidlig versjon av denne fila prøvde matrix
-// og endte med pin-er som forsvant ut av viewBox).
+// Begge bruker de samme 7 nøkkelposisjonene (rest → anticipate → launch →
+// apex → impact → rebound → rest). Map-modus appender en 8. duplikert
+// hvile-frame ved keyTime=1 for å holde stille gjennom 3.9s idle-fase.
+//
+// Tegnes som nestede <g>-er: ytterste plasserer pin-tip-en i hvile-
+// posisjon, midtre animerer translate Y (sprett), innerste animerer scale
+// (squash & stretch). SMIL `animateTransform` støtter KUN translate/scale/
+// rotate/skewX/skewY — IKKE matrix.
+
+const ACTION_FRAMES = [
+  { sx: 1.00, sy: 1.00, ty:  0.00 },  // rest
+  { sx: 1.10, sy: 0.90, ty:  0.10 },  // anticipate (squat)
+  { sx: 0.92, sy: 1.10, ty: -0.40 },  // launch (stretch)
+  { sx: 0.96, sy: 1.06, ty: -1.20 },  // apex (peak)
+  { sx: 1.20, sy: 0.80, ty:  0.00 },  // impact (squash)
+  { sx: 0.98, sy: 1.03, ty: -0.15 },  // rebound
+  { sx: 1.00, sy: 1.00, ty:  0.00 },  // settle = rest
+]
+
+const SHADOW_X = [1.00, 1.12, 0.78, 0.42, 1.28, 0.92, 1.00]
+const SHADOW_OP = [0.55, 0.58, 0.40, 0.18, 0.62, 0.50, 0.55]
+
+const fmt = (n) => Number(n.toFixed(4)).toString()
+
+// ─── Map mode: continuous 5s loop ────────────────────────────────────────
+// Action takes first 22% (= 1.1s), så hold-rest fra 22%–100% (= 3.9s idle).
+const MAP_FRAMES   = [...ACTION_FRAMES, { sx: 1, sy: 1, ty: 0 }]
+const MAP_SHADOW_X = [...SHADOW_X, 1.00]
+const MAP_SHADOW_OP = [...SHADOW_OP, 0.55]
 
 export const STEDSMERKE_KEY_TIMES = '0; 0.02; 0.06; 0.12; 0.18; 0.21; 0.22; 1'
 export const STEDSMERKE_DUR = '5s'
 
-// ty er som fraksjon av s (pin head-radius), sx/sy er rene faktorer.
-const PIN_FRAMES = [
-  { sx: 1.00, sy: 1.00, ty:  0.00 },
-  { sx: 1.10, sy: 0.90, ty:  0.10 },
-  { sx: 0.92, sy: 1.10, ty: -0.40 },
-  { sx: 0.96, sy: 1.06, ty: -1.20 },
-  { sx: 1.20, sy: 0.80, ty:  0.00 },
-  { sx: 0.98, sy: 1.03, ty: -0.15 },
-  { sx: 1.00, sy: 1.00, ty:  0.00 },
-  { sx: 1.00, sy: 1.00, ty:  0.00 },
-]
+export const PIN_SCALE_VALUES =
+  MAP_FRAMES.map(f => `${fmt(f.sx)} ${fmt(f.sy)}`).join('; ')
 
-const SHADOW_X_FACTORS = [1.00, 1.12, 0.78, 0.42, 1.28, 0.92, 1.00, 1.00]
-const SHADOW_OPACITY_VALUES = [0.55, 0.58, 0.40, 0.18, 0.62, 0.50, 0.55, 0.55]
-
-const fmt = (n) => Number(n.toFixed(4)).toString()
-
-// Translate-values for pin-ens mid-g (ty-koordinatet skalert med s).
 export function pinTranslateValues(s) {
-  return PIN_FRAMES.map(f => `0 ${fmt(f.ty * s)}`).join('; ')
+  return MAP_FRAMES.map(f => `0 ${fmt(f.ty * s)}`).join('; ')
 }
 
-// Scale-values for pin-ens inner-g (uavhengig av s — kun rene faktorer).
-export const PIN_SCALE_VALUES =
-  PIN_FRAMES.map(f => `${fmt(f.sx)} ${fmt(f.sy)}`).join('; ')
-
-// Skygge-scale: kun horisontal faktor animerer, vertikal holdes på 1.
-// Selve skygge-størrelsen styres av outer-g sin statiske scale-transform.
 export const SHADOW_SCALE_VALUES =
-  SHADOW_X_FACTORS.map(f => `${fmt(f)} 1`).join('; ')
+  MAP_SHADOW_X.map(f => `${fmt(f)} 1`).join('; ')
 
-export const STEDSMERKE_SHADOW_OPACITY = SHADOW_OPACITY_VALUES.join('; ')
+export const STEDSMERKE_SHADOW_OPACITY = MAP_SHADOW_OP.join('; ')
 
-// Random pre-roll så flere markører ikke spretter i takt. Negativ begin =
-// animasjonen er allerede i gang ved page-load, i en tilfeldig fase.
+// ─── Hit mode: 1.1s one-shot ─────────────────────────────────────────────
+// Action mapped over hele dur (0..1). Brukes med repeatCount="1" og
+// fill="freeze" — pin holder seg på siste keyframe (= rest) etter slutt.
+export const STEDSMERKE_HIT_KEY_TIMES =
+  '0; 0.0909; 0.2727; 0.5455; 0.8182; 0.9545; 1'
+export const STEDSMERKE_HIT_DUR = '1.1s'
+
+export const PIN_SCALE_VALUES_HIT =
+  ACTION_FRAMES.map(f => `${fmt(f.sx)} ${fmt(f.sy)}`).join('; ')
+
+export function pinTranslateValuesHit(s) {
+  return ACTION_FRAMES.map(f => `0 ${fmt(f.ty * s)}`).join('; ')
+}
+
+export const SHADOW_SCALE_VALUES_HIT =
+  SHADOW_X.map(f => `${fmt(f)} 1`).join('; ')
+
+export const STEDSMERKE_SHADOW_OPACITY_HIT = SHADOW_OP.join('; ')
+
+// Random pre-roll så flere kart-markører ikke spretter i takt. Brukes kun
+// av map-modus (hit-modus er allerede asynkron via treff).
 export function randomBegin() {
   return `-${(Math.random() * 5).toFixed(2)}s`
 }
