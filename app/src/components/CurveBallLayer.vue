@@ -1,5 +1,9 @@
 <script setup>
 import { computed } from 'vue'
+import {
+  STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
+  buildPinMatrixValues, buildShadowMatrixValues, randomBegin, pinPath,
+} from '../lib/stedsmerkeAnimation.js'
 
 const props = defineProps({
   flipp: { type: Object, required: true },
@@ -35,6 +39,32 @@ const ballGradient = computed(() => {
 })
 
 const emit = defineEmits(['drop'])
+
+// Stedsmerke (codename 'geocache') bumper-rendering. Pin-tip i nedre halvdel
+// av bumper-circle, hode fyller midten. Random pre-roll pr instans så ikke
+// alle stedsmerke-bumpers på brettet spretter i takt.
+const sm_r = computed(() => ballRadius.value * 0.35)
+const sm_py = computed(() => ballRadius.value * 0.5)
+const sm_shadowRx = computed(() => sm_r.value)
+const sm_shadowRy = computed(() => sm_r.value * 0.22)
+const sm_shadowPy = computed(() => sm_py.value + sm_r.value * 0.18)
+const sm_pinValues = computed(() => buildPinMatrixValues(sm_r.value, 0, sm_py.value))
+const sm_shadowValues = computed(() =>
+  buildShadowMatrixValues(sm_shadowRx.value, sm_shadowRy.value, 0, sm_shadowPy.value))
+const sm_pinD = computed(() => pinPath(sm_r.value))
+const sm_strokeW = computed(() => sm_r.value * 0.08)
+const sm_dotR = computed(() => sm_r.value * 0.38)
+const sm_dotCy = computed(() => -1.85 * sm_r.value)
+// Stabil random pr bumper-objekt. WeakMap unngår at offset re-rolles på
+// hver Vue render-tick (computed-cache er sårbart for at dependencies
+// touches under uberørt tilstand).
+const sm_beginCache = new WeakMap()
+function sm_begin(bp) {
+  if (!bp) return '0s'
+  let v = sm_beginCache.get(bp)
+  if (!v) { v = randomBegin(); sm_beginCache.set(bp, v) }
+  return v
+}
 
 // Trail-sluttgammel: TRAIL_LEN fra useCurveBall. Holder seg syncet via
 // at hver slot har age 0..TRAIL_LEN.
@@ -177,37 +207,31 @@ function onBallTap(b) {
                 stroke="#000" :stroke-width="ballRadius * 0.12"/>
         </g>
 
-        <!-- v8.7.0: Geocache (kun fra kart-annotering, ikke random spawn).
-             Treff trigger Invaders-modus direkte. Pulsende gul glow,
-             roterende stjerne-rays og blinkende rød X — samme tre-lags-
-             SMIL-animasjon som annotering-renderingen i MapView. -->
+        <!-- Stedsmerke (codename 'geocache') — rød dråpe-pin med squash &
+             stretch pr 5s + halvgjennomsiktig skygge. Treff trigger
+             fortsatt Invaders-modus direkte (v8.7.0-mekanikk). Random
+             pre-roll pr instans desynker bouncen mellom bumpere. -->
         <g v-else-if="bp.kind === 'geocache'">
-          <circle cx="0" cy="0" :r="ballRadius * 0.62" fill="#fbbf24" opacity="0.55">
-            <animate attributeName="r"
-                     :values="`${ballRadius * 0.5};${ballRadius * 0.72};${ballRadius * 0.5}`"
-                     dur="0.7s" repeatCount="indefinite"/>
-            <animate attributeName="opacity" values="0.35;0.8;0.35"
-                     dur="0.7s" repeatCount="indefinite"/>
-          </circle>
-          <g stroke="#b45309" :stroke-width="ballRadius * 0.08" stroke-linecap="round">
-            <line x1="0" :y1="-ballRadius*0.78" x2="0" :y2="-ballRadius*0.32"/>
-            <line x1="0" :y1="ballRadius*0.32"  x2="0" :y2="ballRadius*0.78"/>
-            <line :x1="-ballRadius*0.78" y1="0" :x2="-ballRadius*0.32" y2="0"/>
-            <line :x1="ballRadius*0.32"  y1="0" :x2="ballRadius*0.78"  y2="0"/>
-            <line :x1="-ballRadius*0.55" :y1="-ballRadius*0.55" :x2="-ballRadius*0.23" :y2="-ballRadius*0.23"/>
-            <line :x1="ballRadius*0.23"  :y1="ballRadius*0.23"  :x2="ballRadius*0.55"  :y2="ballRadius*0.55"/>
-            <line :x1="-ballRadius*0.55" :y1="ballRadius*0.55"  :x2="-ballRadius*0.23" :y2="ballRadius*0.23"/>
-            <line :x1="ballRadius*0.23"  :y1="-ballRadius*0.23" :x2="ballRadius*0.55"  :y2="-ballRadius*0.55"/>
-            <animateTransform attributeName="transform" type="rotate"
-                              from="0 0 0" to="360 0 0" dur="6s" repeatCount="indefinite"/>
+          <g>
+            <animateTransform attributeName="transform" type="matrix"
+                              :values="sm_shadowValues" :keyTimes="STEDSMERKE_KEY_TIMES"
+                              :dur="STEDSMERKE_DUR" repeatCount="indefinite"
+                              :begin="sm_begin(bp)"/>
+            <ellipse cx="0" cy="0" rx="1" ry="1" fill="#000" opacity="0.55">
+              <animate attributeName="opacity" :values="STEDSMERKE_SHADOW_OPACITY"
+                       :keyTimes="STEDSMERKE_KEY_TIMES"
+                       :dur="STEDSMERKE_DUR" repeatCount="indefinite"
+                       :begin="sm_begin(bp)"/>
+            </ellipse>
           </g>
-          <g stroke="#dc2626" :stroke-width="ballRadius * 0.14" stroke-linecap="round">
-            <line :x1="-ballRadius*0.28" :y1="-ballRadius*0.28"
-                  :x2="ballRadius*0.28"  :y2="ballRadius*0.28"/>
-            <line :x1="-ballRadius*0.28" :y1="ballRadius*0.28"
-                  :x2="ballRadius*0.28"  :y2="-ballRadius*0.28"/>
-            <animate attributeName="opacity" values="1;0.25;1"
-                     dur="0.55s" repeatCount="indefinite"/>
+          <g>
+            <animateTransform attributeName="transform" type="matrix"
+                              :values="sm_pinValues" :keyTimes="STEDSMERKE_KEY_TIMES"
+                              :dur="STEDSMERKE_DUR" repeatCount="indefinite"
+                              :begin="sm_begin(bp)"/>
+            <path :d="sm_pinD" fill="#dc2626" stroke="#7f1d1d"
+                  :stroke-width="sm_strokeW" stroke-linejoin="round"/>
+            <circle cx="0" :cy="sm_dotCy" :r="sm_dotR" fill="#fff"/>
           </g>
         </g>
 
