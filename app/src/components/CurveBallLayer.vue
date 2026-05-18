@@ -42,16 +42,19 @@ const ballGradient = computed(() => {
 const emit = defineEmits(['drop'])
 
 // Stedsmerke bumper. Pin-tip ved bumper-senter (0,0) — der ballen
-// kolliderer. Halo (cream-ring) tegnes UNDER pin-en for konsistens med
-// andre bumpers; pin-en er liten nok (head-radius 0.22R, bredde 0.44R,
-// høyde 0.63R) til at den ligger inne i halo-en.
+// kolliderer. Halo (cream-ring) tegnes UNDER pin-en; v8.8.4 tredoblet
+// pin-størrelsen (head-radius 0.66R i stedet for 0.22R) så stedsmerket
+// skiller seg visuelt fra de andre bumpers — pin-en stikker delvis ut
+// over halo-en, omtrent som ved annoterings-registrering på kartet.
+// LED hits-counter rendres senere i template og legger seg ON TOP av
+// pin-en så treff-tallet er synlig over pin-hodet.
 //
 // Animasjon trigges KUN ved treff (bp.hits endres), ikke kontinuerlig.
 // :key="`sm-${i}-${bp.hits}`" tvinger Vue til å re-mounte stedsmerke-
 // undertreet ved hvert treff, så SMIL-animasjonen restarter fra t=0.
 // Initial mount (bp.hits=0) inkluderer ikke animateTransform-tagger →
 // statisk pin. fill="freeze" holder siste keyframe (= hvile) etter slutt.
-const sm_r = computed(() => ballRadius.value * 0.22)
+const sm_r = computed(() => ballRadius.value * 0.66)
 const sm_shadowRx = computed(() => sm_r.value)
 const sm_shadowRy = computed(() => sm_r.value * 0.22)
 const sm_shadowPy = computed(() => sm_r.value * 0.18)
