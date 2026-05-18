@@ -211,7 +211,7 @@ export function useCurveBall() {
   // fortsatte å trigge nye multiballs på bumpers, eksponentielt).
   // v7.4.3: økt til 16 fordi miniball-modus spawner 12 små baller +
   // eksisterende. Cascade-prevention er fortsatt på via canExplode-gate.
-  const MAX_BALLS_IN_PLAY = 16
+  const MAX_BALLS_IN_PLAY = 48
 
   // v7.4.3 spawn-modi. Pool vokser med level — variasjon kommer etter hvert
   // som vanskelighetsgrad øker. Legg merke til at modusene KUN trigges av
@@ -230,25 +230,33 @@ export function useCurveBall() {
   // score-rate fortsatt ~8× normal — fortsatt morsomt, men ikke vill cascade.
   const MINI_SCORE_MULT = 0.7
 
-  const INVADER_MIN_COUNT = 3
-  const INVADER_MAX_COUNT = 12
+  // v8.8.9: Cluster-spawn i stedet for én monolittisk formasjon. Hver
+  // cluster får varierende fart, retning (CW/CCW for orbit), og antall
+  // baller. Antall clusters skalerer med level — Invaders unlockes på
+  // level 6 med base-count, og hvert 2. level bumpes count med +1 opp til
+  // hard cap. Slik blir spawn-modusen progressivt mer kaotisk.
+  //   Level 6–7:  5 clusters → 15–25 baller
+  //   Level 8–9:  6 clusters → 18–30 baller
+  //   Level 10–11: 7 clusters → 21–35 baller
+  //   Level 12+:  8 clusters → 24–40 baller (capped)
+  const INVADER_CLUSTER_COUNT_BASE = 5
+  const INVADER_CLUSTER_COUNT_MAX = 8
+  const INVADER_BALLS_PER_CLUSTER_MIN = 3
+  const INVADER_BALLS_PER_CLUSTER_MAX = 5
+
+  function invaderClusterCount() {
+    const lvl = level.value
+    const extra = Math.max(0, Math.floor((lvl - 6) / 2))
+    return Math.min(INVADER_CLUSTER_COUNT_MAX, INVADER_CLUSTER_COUNT_BASE + extra)
+  }
   const INVADER_RADIUS_FRAC = 0.6     // av BALL_RADIUS_M
-  // v8.0.4: senket invader-bonus 1.5 → 1.0 (ingen per-ball bonus). 3–12 baller
-  // gir naturlig høy score-rate uten å trenge ekstra multiplier.
   const INVADER_SCORE_MULT = 1.0
-  // v8.0.4: orbit-fasen forlenget 3.0 → 7.0 sek etter brukerønske —
-  // formasjonen får mer tid til å rulle langs konturen i Space-Invaders-stil
-  // før den breaks out.
-  // v8.4.0: roligere surfing langs konturen og uniform release-fart slik at
-  // hele formasjonen forlater i samme retning samtidig (klassisk arcade-
-  // feel). Tidligere hadde hver ball ±20 % energi-variasjon som ga en
-  // ujevn breakout-spray.
-  const INVADER_ORBIT_DURATION_S = 7.0
+  // v8.8.9: økt fra 7.0 til 11.0 sek (med 0–2s random jitter pr trigger) så
+  // de 5 clusters får 10–13 sek på "dansen" før breakout. Brukeren bad om
+  // 10–12 sek (vi gir noe luft i begge ender).
+  const INVADER_ORBIT_DURATION_S = 11.0
   const INVADER_BREAKOUT_SPEED_MULT = 1.0
   const INVADER_ENERGY_VARIATION = 0   // alle baller har identisk breakout-fart
-  // v8.0.4: invaders ruller nå rundt en STØRRE høydekurve. Tidligere 15 %
-  // under peak-elevasjon, nå 30 % for større omkrets og lengre marsj-distanse.
-  const INVADER_CONTOUR_DEPTH_FRAC = 0.30
 
   // v8.0.4: maks antall cascade-level-ups under multiball. Tidligere kun
   // capped via chainMult (×16), men selve cascaden var uendelig — 12
@@ -445,11 +453,18 @@ export function useCurveBall() {
       orbitDir:    opts.orbitDir ?? 1,      // +1 CCW, -1 CW (rotasjon rundt peak)
       orbitTarget: opts.orbitTarget,        // target-elevasjon (m) for kontur-vandring
       orbitT:      opts.orbitT ?? 0,
-      breakoutVel: opts.breakoutVel,        // {vx, vy}
+      // v8.8.9: breakoutVel beregnes ved transisjon (peker inn mot kart-
+      // senter) basert på current ball-position + lagret breakoutSpeed.
+      // Erstatter tidligere `breakoutVel: {vx, vy}` som ble satt ved spawn
+      // (peket utover langs en av fire kant-retninger → baller forsvant ut
+      // av spill før spilleren rakk å reagere).
+      breakoutSpeed: opts.breakoutSpeed,
+      // Felles fase-varighet for orbit OG march (tidligere split via
+      // INVADER_ORBIT_DURATION_S-konstant + marchTotalDuration-field).
+      invaderDuration: opts.invaderDuration ?? INVADER_ORBIT_DURATION_S,
       // v8.8.5: march-phase felter (kun satt hvis invaderPhase==='march')
       marchVx: opts.marchVx,
       marchVy: opts.marchVy,
-      marchTotalDuration: opts.marchTotalDuration ?? 0,
     }
     balls.push(b)
     return b
@@ -531,6 +546,33 @@ export function useCurveBall() {
       lastR = r
     }
     return null
+  }
+
+  /**
+   * v8.8.9: Beregn breakout-hastighet for en invader-ball ved transisjon
+   * fra orbit/march → breakout. Peker INN MOT KART-SENTER så ballene ikke
+   * forsvinner ut av spill før spilleren rekker å reagere (5-cluster-spawn
+   * gir 15–25 baller — uten center-konvergens ville en kant-rettet release
+   * drenert dem alle på 1–2 sek).
+   *
+   * Edge case: hvis ballen ER nær senter (< 50 user-units), brukes en
+   * tilfeldig retning for å unngå NaN-divisjon på near-zero magnitude.
+   */
+  function setInvaderBreakoutVelocity(b) {
+    const cx = bounds.width / 2
+    const cy = bounds.height / 2
+    const dx = cx - b.x
+    const dy = cy - b.y
+    const mag = Math.hypot(dx, dy)
+    const speed = b.breakoutSpeed ?? (KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT)
+    if (mag > 50) {
+      b.vx = (dx / mag) * speed
+      b.vy = (dy / mag) * speed
+    } else {
+      const a = Math.random() * Math.PI * 2
+      b.vx = Math.cos(a) * speed
+      b.vy = Math.sin(a) * speed
+    }
   }
 
   /**
@@ -773,10 +815,9 @@ export function useCurveBall() {
       // sirkulær orbit hvis gradient er for liten (flatt punkt / DEM-hull).
       if (b.mode === 'invader' && b.invaderPhase === 'orbit') {
         b.orbitT += dt
-        if (b.orbitT >= INVADER_ORBIT_DURATION_S) {
+        if (b.orbitT >= b.invaderDuration) {
           b.invaderPhase = 'breakout'
-          b.vx = b.breakoutVel.vx
-          b.vy = b.breakoutVel.vy
+          setInvaderBreakoutVelocity(b)
         } else {
           stepInvaderContour(b, dt)
           // Skip bumper, edge, stillness — orbit-fasen er invulnerabel
@@ -787,14 +828,13 @@ export function useCurveBall() {
       // v8.8.5/6: march-fase = snake-formasjon (Gjessekortesje). Kinematisk
       // konstant fart langs marchVx/marchVy. Wrap rundt kart-edges (passere
       // ut → kom inn diametralt motsatt). Tid-basert breakout: alle baller
-      // får samme orbitT-tikk, så de breakouter synkron etter
-      // marchTotalDuration.
+      // får samme orbitT-tikk, så hele cluster-flokken breakouter synkron
+      // etter invaderDuration.
       if (b.mode === 'invader' && b.invaderPhase === 'march') {
         b.orbitT += dt
-        if (b.orbitT >= b.marchTotalDuration) {
+        if (b.orbitT >= b.invaderDuration) {
           b.invaderPhase = 'breakout'
-          b.vx = b.breakoutVel.vx
-          b.vy = b.breakoutVel.vy
+          setInvaderBreakoutVelocity(b)
           continue
         }
         b.x += b.marchVx * dt
@@ -1348,95 +1388,85 @@ export function useCurveBall() {
     flippers.bottom.position = flippers.top.position
     flippers.right.position  = flippers.left.position
 
-    const peak = findCentralPeak()
-    const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
-    const count = INVADER_MIN_COUNT +
-                  Math.floor(Math.random() * (INVADER_MAX_COUNT - INVADER_MIN_COUNT + 1))
-    // v8.4.0: roligere orbit (1.5–2.1 → 0.6–0.9 rad/s) så formasjonen
-    // tydeligere "surfer" langs konturen. Lineær fart ≈ orbitRadius · orbitSpeed
-    // i stepInvaderContour, så omtrent halvering av visuell hastighet.
-    const orbitSpeed = 0.6 + Math.random() * 0.3   // rad/s
-    const edges = [
-      { vx:  0, vy: -1 },   // toppkant
-      { vx:  0, vy:  1 },   // bunnkant
-      { vx: -1, vy:  0 },   // venstre kant
-      { vx:  1, vy:  0 },   // høyre kant
-    ]
-    const edgeDir = edges[Math.floor(Math.random() * 4)]
+    // v8.8.9: 10–13 sek total dans før breakout (random per trigger).
+    const duration = INVADER_ORBIT_DURATION_S + Math.random() * 2
     const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
     const invaderR = BALL_RADIUS_M * INVADER_RADIUS_FRAC
 
-    // v8.8.5: Hvis sentrum mangler høydekurver, bruk MARCH-formasjon i stedet
-    // for å unngå at formasjonen henger i periferien. detectMarchDirection()
-    // returnerer null hvis sentrisk kontur finnes (= bruk orbit som før),
-    // ellers en unit-vector for march-retning.
+    // Branch på sentrale høydekurver:
+    //   marchDir = null  → orbit-modus (5 konsentriske kontur-orbits)
+    //   marchDir = {x,y} → march-modus (5 snake-clusters i ulike retninger)
     const marchDir = detectMarchDirection()
     if (marchDir) {
-      // v8.8.6: Snake-formasjon (Gjessekortesje): balls i linje ALONG march-
-      // retning, leder først og resten følger etter. Tidligere brukte vi
-      // perpendikulær linje som beveget seg sideveis — visuelt ble det en
-      // rigid strek og ingen "leder + følgere"-dynamikk.
-      //
-      // Fart 2× orbit-fart så snake-en rekker å passere ut og inn flere
-      // ganger innen INVADER_ORBIT_DURATION_S. Tid-basert breakout (i steden
-      // for wrap-counter) sikrer at hele formasjonen breakouter samtidig.
-      const orbitR = 0.30 * Math.min(bounds.width, bounds.height)
-      const marchSpeed = orbitR * orbitSpeed * 2
-      const minDim = Math.min(bounds.width, bounds.height)
-      // ~3 wraps før breakout (siden snake-en kan strekke seg over halve
-      // diagonalen, gir det 3–4 traverseringer for leder-ballen).
-      const totalMarchDuration = Math.max(
-        INVADER_ORBIT_DURATION_S,
-        (minDim / marchSpeed) * 3,
-      )
-      // Spacing: ~4× invader-radius mellom sentrum-til-sentrum. Krymper hvis
-      // snake-en ikke ville passet innenfor map-bounds ved spawn.
-      const naturalSpacing = invaderR * 4
-      const maxHalfLength = minDim / 2 - invaderR * 2
+      spawnInvaderClustersMarch(duration, breakoutSpeed, invaderR)
+    } else {
+      spawnInvaderClustersOrbit(duration, breakoutSpeed, invaderR)
+    }
+    setTimeout(() => playInvaderBreakout(), duration * 1000)
+  }
+
+  /**
+   * v8.8.9: 5 snake-clusters i 5 vidt forskjellige retninger. Hver cluster
+   * passerer gjennom kart-senter på t=0 og marsjerer utover — siden
+   * collision-immunity gjelder i march-fasen passerer clusters gjennom
+   * hverandre uten å kollidere. Etter `duration` sek breakouter alle
+   * baller samtidig INN MOT senter.
+   */
+  function spawnInvaderClustersMarch(duration, breakoutSpeed, invaderR) {
+    const center = { x: bounds.width / 2, y: bounds.height / 2 }
+    const minDim = Math.min(bounds.width, bounds.height)
+    const baseRadius = 0.30 * minDim
+    const naturalSpacing = invaderR * 4
+    const maxHalfLength = minDim / 2 - invaderR * 2
+    const clusterCount = invaderClusterCount()
+    dlog('invader-spawn:march:clusters', { n: clusterCount, duration: duration.toFixed(1) })
+    for (let c = 0; c < clusterCount; c++) {
+      if (balls.length >= MAX_BALLS_IN_PLAY) break
+      // Evenly-distribuerte retninger + jitter (innenfor 30 % av sektoren)
+      const baseAngle = (c / clusterCount) * Math.PI * 2
+      const sectorWidth = (Math.PI * 2) / clusterCount
+      const jitter = (Math.random() - 0.5) * sectorWidth * 0.3
+      const angle = baseAngle + jitter
+      const dir = { x: Math.cos(angle), y: Math.sin(angle) }
+      // Varierende cluster-størrelse + fart pr cluster
+      const count = INVADER_BALLS_PER_CLUSTER_MIN +
+        Math.floor(Math.random() * (INVADER_BALLS_PER_CLUSTER_MAX - INVADER_BALLS_PER_CLUSTER_MIN + 1))
+      const speed = baseRadius * (0.7 + Math.random() * 1.0)  // 0.7×–1.7× baseRadius/s
+      // Snake-spacing langs march-retning, krymper hvis ikke passer
       const halfLength = ((count - 1) / 2) * naturalSpacing
       const spacing = halfLength > maxHalfLength && count > 1
         ? (maxHalfLength * 2) / (count - 1)
         : naturalSpacing
-      dlog('invader-spawn:march', {
-        count,
-        dir: { x: marchDir.x.toFixed(2), y: marchDir.y.toFixed(2) },
-        speed: Math.round(marchSpeed),
-        dur: totalMarchDuration.toFixed(1),
-        spacing: Math.round(spacing),
-      })
       for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
-        // k=0 er bakerst, k=count-1 er leder. Offset langs march-retning.
         const offset = (k - (count - 1) / 2) * spacing
-        const x = bounds.width / 2 + marchDir.x * offset
-        const y = bounds.height / 2 + marchDir.y * offset
-        const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
+        const x = center.x + dir.x * offset
+        const y = center.y + dir.y * offset
         spawnBall(x, y, {
           canExplode: false,
           mode: 'invader',
           r: invaderR,
           scoreMult: INVADER_SCORE_MULT,
           invaderPhase: 'march',
-          marchVx: marchDir.x * marchSpeed,
-          marchVy: marchDir.y * marchSpeed,
-          marchTotalDuration: totalMarchDuration,
+          marchVx: dir.x * speed,
+          marchVy: dir.y * speed,
           orbitT: 0,
-          breakoutVel: {
-            vx: edgeDir.vx * breakoutSpeed * energy,
-            vy: edgeDir.vy * breakoutSpeed * energy,
-          },
+          invaderDuration: duration,
+          breakoutSpeed,
         })
       }
-      setTimeout(() => playInvaderBreakout(), totalMarchDuration * 1000)
-      return
     }
+  }
 
-    // v8.0.2: invaders går rundt en HØYDEKURVE i stedet for en fast sirkel.
-    // Velg target-elevasjon under peak (typisk 30-60m under topp, eller
-    // proporsjonalt med terreng-range hvis DEM er kjent). Ray-cast utover
-    // fra peak i N retninger og finn punkter der elevasjonen krysser targetZ;
-    // disse blir startposisjoner. Alle invaders deler samme target-elevasjon
-    // og roterer i samme retning så formasjonen holder seg samlet.
-    let targetZ = peak.elev - 50
+  /**
+   * v8.8.9: 5 konsentriske kontur-orbits ved 10–70 % under peak.elev
+   * (proporsjonalt med terrain-range). Hver cluster får eget orbitSpeed,
+   * orbitDir (CW/CCW), og ball-antall.
+   */
+  function spawnInvaderClustersOrbit(duration, breakoutSpeed, invaderR) {
+    const peak = findCentralPeak()
+    const baseRadius = 0.30 * Math.min(bounds.width, bounds.height)
+    // Beregn terrain-range for spredning av kontur-targetZ
+    let range = 100
     if (dem?.data && dem.noData != null) {
       let mn = Infinity, mx = -Infinity
       const nd = dem.noData
@@ -1446,56 +1476,56 @@ export function useCurveBall() {
         if (z < mn) mn = z
         if (z > mx) mx = z
       }
-      const range = (mx - mn) > 0 ? (mx - mn) : 100
-      // v8.0.4: 30 % under peak (var 15 %) gir større omkrets-kontur og
-      // lengre marsj-distanse for formasjonen. Minst 30 m for å unngå
-      // micro-konturer på flate kart.
-      targetZ = peak.elev - Math.max(30, range * INVADER_CONTOUR_DEPTH_FRAC)
+      range = (mx - mn) > 0 ? (mx - mn) : 100
     }
-    const orbitDir = Math.random() < 0.5 ? 1 : -1   // CCW eller CW
-
-    dlog('invader-spawn', {
-      count,
+    const clusterCount = invaderClusterCount()
+    dlog('invader-spawn:orbit:clusters', {
+      n: clusterCount,
+      duration: duration.toFixed(1),
       peak: { x: Math.round(peak.x), y: Math.round(peak.y), z: Math.round(peak.elev) },
-      targetZ: Math.round(targetZ),
-      dir: orbitDir,
+      range: Math.round(range),
     })
-
-    let placed = 0
-    for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
-      const angle = (k / count) * Math.PI * 2
-      // Prøv å finne kontur-skjæring i denne retningen; fall til sirkel hvis intet treff
-      const pos = findContourPosition(peak.x, peak.y, peak.elev, targetZ, angle)
-      const x = pos ? pos.x : peak.x + orbitR * Math.cos(angle)
-      const y = pos ? pos.y : peak.y + orbitR * Math.sin(angle)
-      // Faktisk avstand fra peak — brukt som orbitRadius for fart-magnitude og
-      // sirkulær fallback i stepInvaderContour.
-      const rActual = Math.hypot(x - peak.x, y - peak.y) || orbitR
-      // Energi-variasjon: ±20 % fart per ball så formasjonen sprer seg gradvis
-      const energy = 1 + (Math.random() - 0.5) * INVADER_ENERGY_VARIATION
-      spawnBall(x, y, {
-        canExplode: false,
-        mode: 'invader',
-        r: invaderR,
-        scoreMult: INVADER_SCORE_MULT,
-        invaderPhase: 'orbit',
-        orbitCenter: { x: peak.x, y: peak.y },
-        orbitRadius: rActual,
-        orbitAngle: angle,
-        orbitSpeed,
-        orbitDir,
-        orbitTarget: pos ? targetZ : (Number.isFinite(peak.elev) ? peak.elev - 30 : 0),
-        orbitT: 0,
-        breakoutVel: {
-          vx: edgeDir.vx * breakoutSpeed * energy,
-          vy: edgeDir.vy * breakoutSpeed * energy,
-        },
-      })
-      placed += 1
+    for (let c = 0; c < clusterCount; c++) {
+      if (balls.length >= MAX_BALLS_IN_PLAY) break
+      // Cluster-spesifikke parametre. Kontur-dybde fordeles jevnt på
+      // clusterCount intervaller (i tilfelle level > 6+, vi har > 5 clusters
+      // og må generere dybder programmatisk).
+      const depthFrac = clusterCount === 1
+        ? 0.40
+        : 0.10 + (c / (clusterCount - 1)) * 0.60   // 10 %–70 %
+      const targetZ = peak.elev - Math.max(15, range * depthFrac)
+      const count = INVADER_BALLS_PER_CLUSTER_MIN +
+        Math.floor(Math.random() * (INVADER_BALLS_PER_CLUSTER_MAX - INVADER_BALLS_PER_CLUSTER_MIN + 1))
+      const orbitSpeed = 0.5 + Math.random() * 0.6  // 0.5–1.1 rad/s
+      const orbitDir = Math.random() < 0.5 ? 1 : -1
+      // Fallback-radius: ytre clusters får større sirkel, jevnt fordelt
+      // fra 0.40R til 1.00R uavhengig av clusterCount.
+      const radiusFracStep = clusterCount === 1 ? 0 : (0.60 / (clusterCount - 1))
+      const radiusFallback = baseRadius * (0.40 + c * radiusFracStep)
+      for (let k = 0; k < count && balls.length < MAX_BALLS_IN_PLAY; k++) {
+        const angle = (k / count) * Math.PI * 2 + Math.random() * 0.2
+        const pos = findContourPosition(peak.x, peak.y, peak.elev, targetZ, angle)
+        const x = pos ? pos.x : peak.x + radiusFallback * Math.cos(angle)
+        const y = pos ? pos.y : peak.y + radiusFallback * Math.sin(angle)
+        const rActual = Math.hypot(x - peak.x, y - peak.y) || radiusFallback
+        spawnBall(x, y, {
+          canExplode: false,
+          mode: 'invader',
+          r: invaderR,
+          scoreMult: INVADER_SCORE_MULT,
+          invaderPhase: 'orbit',
+          orbitCenter: { x: peak.x, y: peak.y },
+          orbitRadius: rActual,
+          orbitAngle: angle,
+          orbitSpeed,
+          orbitDir,
+          orbitTarget: pos ? targetZ : (Number.isFinite(peak.elev) ? peak.elev - 30 : 0),
+          orbitT: 0,
+          invaderDuration: duration,
+          breakoutSpeed,
+        })
+      }
     }
-    dlog('invader-spawn:placed', { placed })
-    // Lyd-cue når formasjonen forlater orbit
-    setTimeout(() => playInvaderBreakout(), INVADER_ORBIT_DURATION_S * 1000)
   }
 
   function explodeBall(b) {
