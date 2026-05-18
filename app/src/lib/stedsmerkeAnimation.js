@@ -1,4 +1,4 @@
-// Squash & stretch-animasjon for Stedsmerke-annotering (codename: geocache).
+// Squash & stretch-animasjon for Stedsmerke-annotering.
 //
 // To moduser:
 //   - Map (kontinuerlig loop, 5s syklus): kart åpnet/gjenåpnet, pin-ene

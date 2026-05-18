@@ -190,9 +190,9 @@ export function useCurveBall() {
   // av. Etter BUMPER_HITS_TO_MULTIBALL treff på samme bumper → multi-ball
   // trigges. Genereres bare på partalls-levels (level % 2 === 0).
   const bumpers = reactive([])
-  // v8.7.0: kart-annoteringer (knaus/stein/brønn/bro/geocache) blir custom
+  // v8.7.0: kart-annoteringer (knaus/stein/brønn/bro/stedsmerke) blir custom
   // bumpers i tillegg til de random pr level. User-plasserte → faste
-  // posisjoner, beholdes på tvers av levels. Geocache trigger Invaders-
+  // posisjoner, beholdes på tvers av levels. Stedsmerke trigger Invaders-
   // modus direkte (override av pickSpawnMode).
   let annotationBumperSeeds = []
   // v7.3.1: spatial konstanter skaleres med map-size i init(). Default-verdier
@@ -1067,10 +1067,10 @@ export function useCurveBall() {
       // mot uventet cascade.
       if (b.canExplode && bp.hits >= BUMPER_HITS_TO_MULTIBALL && balls.length < MAX_BALLS_IN_PLAY) {
         bp.hits = 0
-        // v8.7.0: geocache-bumper (kart-annotering) triggrer ALLTID Invaders-
+        // v8.7.0: stedsmerke-bumper (kart-annotering) triggrer ALLTID Invaders-
         // modus — bypassing pickSpawnMode-randomen. Belønner spilleren for å
-        // plassere geocaches strategisk på kartet før spillet starter.
-        const forceMode = bp.kind === 'geocache' ? 'invaders' : null
+        // plassere stedsmerker strategisk på kartet før spillet starter.
+        const forceMode = bp.kind === 'stedsmerke' ? 'invaders' : null
         triggerMultiballFromBumper(bp.x, bp.y, forceMode)
       } else if (bp.hits >= BUMPER_HITS_TO_MULTIBALL) {
         // Hold counter på maks så vi ikke "lurer" til en gigant-spawn senere
@@ -1119,7 +1119,7 @@ export function useCurveBall() {
    * navn `triggerMultiballFromBumper` beholdt så HUD-events ikke knekker.
    */
   function triggerMultiballFromBumper(sx, sy, forceMode = null) {
-    // v8.7.0: forceMode bypasser pickSpawnMode (brukes av geocache-bumper).
+    // v8.7.0: forceMode bypasser pickSpawnMode (brukes av stedsmerke-bumper).
     const mode = forceMode ?? pickSpawnMode()
     dlog('bumper → spawn', { mode, forced: !!forceMode, ballsBefore: balls.length })
     spawnByMode(mode, sx, sy)

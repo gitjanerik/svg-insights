@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.3 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-amber-300" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.3</span>
+                <span class="text-amber-200/90">&mdash; rename 'geocache' &rarr; 'stedsmerke', skjul map-annoteringer i spillet, halo p&aring; alle bumpers</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">19. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Codename ryddet.</strong> Intern <code>symbolKey: 'geocache'</code> heter n&aring; <code>'stedsmerke'</code> &mdash; matcher brand-en og funksjonen. Lagrings-kompatibilitet bevares fordi annoteringer persisterer via <code>isomCode='999'</code>, ikke symbolKey. <code>bp.kind === 'geocache'</code>-sjekker i Curve Invaders oppdatert tilsvarende</li>
+                <li><strong>Map-annoteringer skjules i spillmodus.</strong> Tidligere rendret kartets <code>&lt;g id="annotation-layer"&gt;</code> samtidig som CurveBallLayer la sine bumpers oppi &mdash; resultatet var dobbel pin p&aring; samme posisjon der map-versjonen kj&oslash;rte 5s-loop og bumper-versjonen var statisk. N&aring;: <code>renderAnnotations()</code> bailer ut tidlig n&aring;r <code>curveball.active</code> er true. Bumpers representerer de samme posisjonene med konsistent styling</li>
+                <li><strong>Halo p&aring; ALLE bumpers.</strong> v8.7.1 fjernet kremgul halo p&aring; annoterings-bumpers fordi den + gammelt geocache-glow var visuelt for stor. N&aring; n&aring;r stedsmerke-pin er krympet til 0.22&middot;ballRadius head-radius (fra 0.30), passer halo+pin sammen og random/user-placed bumpers ser konsistente ut</li>
+                <li><strong>Mindre stedsmerke-pin i spillet.</strong> Head-radius 0.22&middot;R, pin-bredde 0.44R, pin-h&oslash;yde 0.63R &mdash; ligger inne i halo-en (radius 0.95R) sammen med hits-counter LED-rad over. Pin-tip ved bumper-senter (treff-punktet)</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.2 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-orange-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.2</span>
                 <span class="text-orange-200/90">&mdash; Stedsmerke i spillet: mindre pin + treff-trigget animasjon</span>

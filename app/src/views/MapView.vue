@@ -289,7 +289,7 @@ async function startCurveBall() {
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
     // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
-    // Geocache-bumper trigger Invaders-modus direkte ved multiball-trigger.
+    // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
     annotations: annot.annotations.value,
   })
   curveball.restart()
@@ -410,6 +410,12 @@ watch(() => annot.visibleTypes.value, () => renderAnnotations())
 // seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
 watch(scale, () => { renderAnnotations(); updateUserDot() })
 
+// Skjul annoteringer i spillmodus — bumpers representerer de samme
+// posisjonene med konsistent halo+icon-styling, og uten dobbel-render
+// unngår vi at map-annotering-animasjonen (5s loop) overlapper bumper-
+// animasjonen (hit-triggered).
+watch(() => curveball.active.value, () => renderAnnotations())
+
 /**
  * Konverter CSS-piksler til SVG user-units, basert på SVG-elementets
  * faktiske on-screen rect (inkludert eventuelle parent CSS-transforms).
@@ -464,6 +470,12 @@ function renderAnnotations() {
   }
   layer.replaceChildren()
 
+  // Spillmodus: ikke render annoteringer. Bumpers i CurveBallLayer viser
+  // samme posisjoner med konsistent halo+icon-stil. Annoteringer kommer
+  // tilbake automatisk når spillet avsluttes (curveball.active → false
+  // trigger ny renderAnnotations via watch).
+  if (curveball.active.value) return
+
   // Symbol-størrelse: ~32 CSS px på skjerm uansett zoom-nivå. ISOM-print-
   // størrelse (1.5–2 mm = 6–7.5 px) er usynlig på telefon ved standard
   // kart-zoom (5 km bbox i ~380 px container → 1 m ≈ 0.076 CSS px).
@@ -502,13 +514,13 @@ function renderAnnotations() {
       g.appendChild(halo)
     }
 
-    if (sym.symbolKey === 'geocache') {
-      // Stedsmerke (intern codename: 'geocache'). I annoteringsmodus tegnes
-      // pin-en statisk (brukeren plasserer/justerer — animasjon ville vært
-      // forstyrrende). Når kartet er lukket-og-gjenåpnet eller spillmodus
-      // aktiveres rendres med squash & stretch + halvgjennomsiktig skygge,
-      // hver instans med tilfeldig pre-roll så ikke alle spretter i takt.
-      appendGeocacheSymbol(g, HALF, !annot.isAnnotateMode.value)
+    if (sym.symbolKey === 'stedsmerke') {
+      // I annoteringsmodus tegnes pin-en statisk (brukeren plasserer/
+      // justerer — animasjon ville vært forstyrrende). Når kartet
+      // gjenåpnes fra lagring rendres med squash & stretch hver 5s, med
+      // tilfeldig pre-roll pr instans så ikke alle spretter i takt.
+      // (Spillmodus skjules tidligere via early return ovenfor.)
+      appendStedsmerkeSymbol(g, HALF, !annot.isAnnotateMode.value)
     } else {
       const use = document.createElementNS(ns, 'use')
       const href = `#iso-sym-${sym.symbolKey}`
@@ -541,7 +553,7 @@ function renderAnnotations() {
  * stretch). `animateTransform type` må være translate eller scale —
  * `type="matrix"` finnes IKKE i SVG SMIL.
  */
-function appendGeocacheSymbol(parent, s, animated) {
+function appendStedsmerkeSymbol(parent, s, animated) {
   const ns = 'http://www.w3.org/2000/svg'
   const mk = (tag, attrs) => {
     const el = document.createElementNS(ns, tag)
@@ -1071,7 +1083,7 @@ async function activateRestoredCurveBall(state) {
     bounds: { width: meta.value.widthM, height: meta.value.heightM },
     equidistanceM: meta.value.equidistance ?? 20,
     // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
-    // Geocache-bumper trigger Invaders-modus direkte ved multiball-trigger.
+    // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
     annotations: annot.annotations.value,
   })
   curveball.restoreFromTournament(state)
