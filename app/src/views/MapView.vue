@@ -19,7 +19,8 @@ import CurveBallFlippers from '../components/CurveBallFlippers.vue'
 import { t } from '../lib/i18n.js'
 import {
   STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
-  buildPinMatrixValues, buildShadowMatrixValues, randomBegin, pinPath,
+  PIN_SCALE_VALUES, SHADOW_SCALE_VALUES,
+  pinTranslateValues, randomBegin, pinPath,
 } from '../lib/stedsmerkeAnimation.js'
 
 const router = useRouter()
@@ -502,11 +503,12 @@ function renderAnnotations() {
     }
 
     if (sym.symbolKey === 'geocache') {
-      // Stedsmerke (intern codename: 'geocache'). Rød dråpe-pin med
-      // squash & stretch hvert 5. sekund + halvgjennomsiktig skygge.
-      // Hver instans får tilfeldig pre-roll så ikke alle på samme kart
-      // spretter i takt. Tegnes inline med SMIL-tagger.
-      appendGeocacheSymbol(g, HALF)
+      // Stedsmerke (intern codename: 'geocache'). I annoteringsmodus tegnes
+      // pin-en statisk (brukeren plasserer/justerer — animasjon ville vært
+      // forstyrrende). Når kartet er lukket-og-gjenåpnet eller spillmodus
+      // aktiveres rendres med squash & stretch + halvgjennomsiktig skygge,
+      // hver instans med tilfeldig pre-roll så ikke alle spretter i takt.
+      appendGeocacheSymbol(g, HALF, !annot.isAnnotateMode.value)
     } else {
       const use = document.createElementNS(ns, 'use')
       const href = `#iso-sym-${sym.symbolKey}`
@@ -524,18 +526,22 @@ function renderAnnotations() {
 }
 
 /**
- * Bygg det animerte Stedsmerke-symbolet inn i en eksisterende g-node.
- * - s   = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
+ * Bygg Stedsmerke-symbolet inn i en eksisterende g-node.
+ * - s        = halv symbol-bredde (user-units, ~16 CSS-px på skjerm)
+ * - animated = true → squash & stretch + random pre-roll. false → ren hvile-
+ *              positur (brukes i annoteringsmodus mens brukeren plasserer)
  * - parent g er allerede translate-positionert til annotasjonens (x,y)
  *
- * Visuell design: klassisk rød dråpe-pin med hvit prikk, halvgjennomsiktig
- * skygge under, squash & stretch én gang pr 5s. Pin-tip-en peker presist
- * på annotasjonens (x, y) — pin-en strekker seg oppover derfra.
+ * Visuell design: klassisk rød dråpe-pin med hvit prikk og halvgjennom-
+ * siktig skygge under. Pin-tip-en peker presist på annotasjonens (x, y) —
+ * pin-en strekker seg oppover derfra. SMIL — ingen JS-timer.
  *
- * Random pre-roll-offset (`begin="-X.Xs"`) per instans gjør at flere
- * stedsmerker på samme kart ikke spretter i takt. SMIL — ingen JS-timer.
+ * Animasjonen er nestet g-er: ytterste plasserer pin-tip-en, midtre
+ * animerer translate Y (sprett), innerste animerer scale (squash &
+ * stretch). `animateTransform type` må være translate eller scale —
+ * `type="matrix"` finnes IKKE i SVG SMIL.
  */
-function appendGeocacheSymbol(parent, s) {
+function appendGeocacheSymbol(parent, s, animated) {
   const ns = 'http://www.w3.org/2000/svg'
   const mk = (tag, attrs) => {
     const el = document.createElementNS(ns, tag)
@@ -546,53 +552,78 @@ function appendGeocacheSymbol(parent, s) {
   // s = half-symbol-bredde. Pin head-radius på 0.55*s gir kompakt pin
   // som passer i symbol-boksen uten å dominere kartet.
   const r = s * 0.55
-  const px = 0
-  const py = 0
-  // Skygge: bredde matcher pin-hode, høyde 0.18r (flat oval).
   const shadowRx = r
   const shadowRy = r * 0.22
   const shadowPy = r * 0.18  // Like under pin-tip-en (annotasjonspunktet).
-  const begin = randomBegin()
 
-  // Skygge
-  const shadowG = mk('g', {})
-  shadowG.appendChild(mk('animateTransform', {
-    attributeName: 'transform', type: 'matrix',
-    values: buildShadowMatrixValues(shadowRx, shadowRy, px, shadowPy),
-    keyTimes: STEDSMERKE_KEY_TIMES,
-    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
-  }))
+  // Skygge: outer g plasserer + skalerer til ønsket størrelse.
+  const shadowOuter = mk('g', {
+    transform: `translate(0 ${shadowPy}) scale(${shadowRx} ${shadowRy})`,
+  })
   const shadowEl = mk('ellipse', {
     cx: '0', cy: '0', rx: '1', ry: '1',
     fill: '#000', opacity: '0.55',
   })
+
+  // Pin: outer g (rest-pos er allerede annotasjonspunkt, så ingen translate).
+  const pinPosG = mk('g', {})
+  const pinPathEl = mk('path', {
+    d: pinPath(r),
+    fill: '#dc2626', stroke: '#7f1d1d',
+    'stroke-width': String(r * 0.08), 'stroke-linejoin': 'round',
+  })
+  const pinDotEl = mk('circle', {
+    cx: '0', cy: String(-1.85 * r), r: String(r * 0.38),
+    fill: '#fff',
+  })
+
+  if (!animated) {
+    // Statisk: ingen sprett, ingen scale, ingen random offset.
+    shadowOuter.appendChild(shadowEl)
+    pinPosG.appendChild(pinPathEl)
+    pinPosG.appendChild(pinDotEl)
+    parent.appendChild(shadowOuter)
+    parent.appendChild(pinPosG)
+    return
+  }
+
+  // Animert: shadow får inner-g for scale, pin får mid-g for translate
+  // og inner-g for scale. Felles random begin på alle 4 animatorer.
+  const begin = randomBegin()
+
+  const shadowAnim = mk('g', {})
+  shadowAnim.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'scale',
+    values: SHADOW_SCALE_VALUES, keyTimes: STEDSMERKE_KEY_TIMES,
+    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
+  }))
   shadowEl.appendChild(mk('animate', {
     attributeName: 'opacity',
     values: STEDSMERKE_SHADOW_OPACITY,
     keyTimes: STEDSMERKE_KEY_TIMES,
     dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
   }))
-  shadowG.appendChild(shadowEl)
-  parent.appendChild(shadowG)
+  shadowAnim.appendChild(shadowEl)
+  shadowOuter.appendChild(shadowAnim)
+  parent.appendChild(shadowOuter)
 
-  // Pin
-  const pinG = mk('g', {})
-  pinG.appendChild(mk('animateTransform', {
-    attributeName: 'transform', type: 'matrix',
-    values: buildPinMatrixValues(r, px, py),
-    keyTimes: STEDSMERKE_KEY_TIMES,
+  const pinTranslateG = mk('g', {})
+  pinTranslateG.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'translate',
+    values: pinTranslateValues(r), keyTimes: STEDSMERKE_KEY_TIMES,
     dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
   }))
-  pinG.appendChild(mk('path', {
-    d: pinPath(r),
-    fill: '#dc2626', stroke: '#7f1d1d',
-    'stroke-width': String(r * 0.08), 'stroke-linejoin': 'round',
+  const pinScaleG = mk('g', {})
+  pinScaleG.appendChild(mk('animateTransform', {
+    attributeName: 'transform', type: 'scale',
+    values: PIN_SCALE_VALUES, keyTimes: STEDSMERKE_KEY_TIMES,
+    dur: STEDSMERKE_DUR, repeatCount: 'indefinite', begin,
   }))
-  pinG.appendChild(mk('circle', {
-    cx: '0', cy: String(-1.85 * r), r: String(r * 0.38),
-    fill: '#fff',
-  }))
-  parent.appendChild(pinG)
+  pinScaleG.appendChild(pinPathEl)
+  pinScaleG.appendChild(pinDotEl)
+  pinTranslateG.appendChild(pinScaleG)
+  pinPosG.appendChild(pinTranslateG)
+  parent.appendChild(pinPosG)
 }
 
 function selectSymbol(key) {
