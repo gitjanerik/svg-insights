@@ -4,31 +4,21 @@
 // fordi ISOM-symbolene har 0.07-0.10 mm strek (print-spec) som blir
 // usynlig på 16-px-knapper. Disse er drawer-ikoner med synlig strek.
 //
-// 'geocache' (brand: «Stedsmerke») har SMIL-animasjon — rød dråpe-pin
-// med squash & stretch én gang pr 5s + halvgjennomsiktig skygge under.
-// Hver instans får tilfeldig pre-roll så de ikke spretter i takt.
-import {
-  STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
-  buildPinMatrixValues, buildShadowMatrixValues, randomBegin, pinPath,
-} from '../lib/stedsmerkeAnimation.js'
+// 'geocache' (brand: «Stedsmerke») rendres STATISK her — rød dråpe-pin
+// med skygge i hvile. Squash & stretch-animasjonen skal kun kjøre på
+// selve kartet (etter at brukeren har lagret/gjenåpnet) og i spillet,
+// ikke i settings-drawerens forhåndsvisninger.
+import { pinPath } from '../lib/stedsmerkeAnimation.js'
 
 defineProps({
   symbolKey: { type: String, required: true },
 })
 
-// Pin head-radius s=2.5, tip ved (8, 12.5), skygge ved (8, 13.5).
-// Apex-løft = 1.2s = 3 user-units i 16x16-viewBox — passer akkurat.
+// Pin head-radius s=2.5, tip ved (8, 12.5). Pin-høyde = 7.125,
+// hode-topp ved y=5.375 — passer komfortabelt i 16x16 viewBox.
 const PIN_S = 2.5
-const PIN_PX = 8
-const PIN_PY = 12.5
-const SHADOW_RX = 2.5
-const SHADOW_RY = 0.7
-const SHADOW_PY = 13.5
-
-const smPinValues = buildPinMatrixValues(PIN_S, PIN_PX, PIN_PY)
-const smShadowValues = buildShadowMatrixValues(SHADOW_RX, SHADOW_RY, PIN_PX, SHADOW_PY)
-const smPath = pinPath(PIN_S)
-const smBegin = randomBegin()
+const SM_PATH = pinPath(PIN_S)
+const SM_DOT_CY = -1.85 * PIN_S
 </script>
 
 <template>
@@ -50,25 +40,11 @@ const smBegin = randomBegin()
       <line x1="3" y1="10.5" x2="13" y2="10.5" stroke="currentColor" stroke-width="1.8"/>
     </template>
     <template v-else-if="symbolKey === 'geocache'">
-      <!-- Skygge: halvgjennomsiktig svart ellipse, squashes horisontalt -->
-      <g>
-        <animateTransform attributeName="transform" type="matrix"
-                          :values="smShadowValues" :keyTimes="STEDSMERKE_KEY_TIMES"
-                          :dur="STEDSMERKE_DUR" repeatCount="indefinite" :begin="smBegin"/>
-        <ellipse cx="0" cy="0" rx="1" ry="1" fill="#000" opacity="0.55">
-          <animate attributeName="opacity" :values="STEDSMERKE_SHADOW_OPACITY"
-                   :keyTimes="STEDSMERKE_KEY_TIMES"
-                   :dur="STEDSMERKE_DUR" repeatCount="indefinite" :begin="smBegin"/>
-        </ellipse>
-      </g>
-      <!-- Pin: rød dråpe med hvit prikk i midten -->
-      <g>
-        <animateTransform attributeName="transform" type="matrix"
-                          :values="smPinValues" :keyTimes="STEDSMERKE_KEY_TIMES"
-                          :dur="STEDSMERKE_DUR" repeatCount="indefinite" :begin="smBegin"/>
-        <path :d="smPath" fill="#dc2626" stroke="#7f1d1d"
+      <ellipse cx="8" cy="13.5" rx="2.5" ry="0.7" fill="#000" opacity="0.55"/>
+      <g transform="translate(8 12.5)">
+        <path :d="SM_PATH" fill="#dc2626" stroke="#7f1d1d"
               stroke-width="0.4" stroke-linejoin="round"/>
-        <circle cx="0" :cy="-1.85 * PIN_S" r="0.9" fill="#fff"/>
+        <circle cx="0" :cy="SM_DOT_CY" r="0.9" fill="#fff"/>
       </g>
     </template>
   </svg>

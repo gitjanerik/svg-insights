@@ -12,13 +12,16 @@
 //   0.22 — hvile
 //   1.00 — holder hvile resten av syklusen
 //
-// SMIL `animateTransform type="matrix"` brukes for å kombinere skala+translate
-// i én animasjon — additive på to nestet g-er er upresist i Safari.
+// Tegnes som nestede <g>-er: ytterste plasserer pin-tip-en i rest-posisjon,
+// midtre animerer translate Y (sprett), innerste animerer scale (squash &
+// stretch). SMIL `animateTransform` støtter KUN translate/scale/rotate/
+// skewX/skewY — IKKE matrix (en tidlig versjon av denne fila prøvde matrix
+// og endte med pin-er som forsvant ut av viewBox).
 
 export const STEDSMERKE_KEY_TIMES = '0; 0.02; 0.06; 0.12; 0.18; 0.21; 0.22; 1'
 export const STEDSMERKE_DUR = '5s'
 
-// (sx, sy, ty) der ty er translate-Y som fraksjon av s (pin head-radius).
+// ty er som fraksjon av s (pin head-radius), sx/sy er rene faktorer.
 const PIN_FRAMES = [
   { sx: 1.00, sy: 1.00, ty:  0.00 },
   { sx: 1.10, sy: 0.90, ty:  0.10 },
@@ -30,32 +33,35 @@ const PIN_FRAMES = [
   { sx: 1.00, sy: 1.00, ty:  0.00 },
 ]
 
-// Skygge: kun horisontal skala animerer, vertikal holdes fast (flat skygge).
 const SHADOW_X_FACTORS = [1.00, 1.12, 0.78, 0.42, 1.28, 0.92, 1.00, 1.00]
 const SHADOW_OPACITY_VALUES = [0.55, 0.58, 0.40, 0.18, 0.62, 0.50, 0.55, 0.55]
 
 const fmt = (n) => Number(n.toFixed(4)).toString()
 
-export function buildPinMatrixValues(s, px, py) {
-  return PIN_FRAMES
-    .map(f => `${fmt(f.sx)} 0 0 ${fmt(f.sy)} ${fmt(px)} ${fmt(py + f.ty * s)}`)
-    .join('; ')
+// Translate-values for pin-ens mid-g (ty-koordinatet skalert med s).
+export function pinTranslateValues(s) {
+  return PIN_FRAMES.map(f => `0 ${fmt(f.ty * s)}`).join('; ')
 }
 
-export function buildShadowMatrixValues(rx, ry, px, py) {
-  return SHADOW_X_FACTORS
-    .map(f => `${fmt(rx * f)} 0 0 ${fmt(ry)} ${fmt(px)} ${fmt(py)}`)
-    .join('; ')
-}
+// Scale-values for pin-ens inner-g (uavhengig av s — kun rene faktorer).
+export const PIN_SCALE_VALUES =
+  PIN_FRAMES.map(f => `${fmt(f.sx)} ${fmt(f.sy)}`).join('; ')
+
+// Skygge-scale: kun horisontal faktor animerer, vertikal holdes på 1.
+// Selve skygge-størrelsen styres av outer-g sin statiske scale-transform.
+export const SHADOW_SCALE_VALUES =
+  SHADOW_X_FACTORS.map(f => `${fmt(f)} 1`).join('; ')
 
 export const STEDSMERKE_SHADOW_OPACITY = SHADOW_OPACITY_VALUES.join('; ')
 
+// Random pre-roll så flere markører ikke spretter i takt. Negativ begin =
+// animasjonen er allerede i gang ved page-load, i en tilfeldig fase.
 export function randomBegin() {
   return `-${(Math.random() * 5).toFixed(2)}s`
 }
 
 // Pin-path med tip i (0,0), hode-radius = s, hode-senter (0, -1.85s).
-// Total høyde = 2.85s, bredde = 2s. Matcher klassisk map-marker-proporsjon.
+// Total høyde = 2.85s, bredde = 2s.
 export function pinPath(s) {
   const r = s
   const hy = -1.85 * s

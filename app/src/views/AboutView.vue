@@ -247,10 +247,28 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-4">Endringslogg</h3>
         <div class="relative pl-5 border-l border-white/10 space-y-4">
 
+          <!-- 8.8.1 -->
+          <div class="relative">
+            <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-rose-400" />
+            <details class="group" open>
+              <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
+                <span class="font-semibold text-white">8.8.1</span>
+                <span class="text-rose-200/90">&mdash; Stedsmerke-fix: ikon synlig + animasjon kun n&aring;r passende</span>
+                <span class="ml-auto text-[10px] text-white/40 shrink-0">18. mai 2026</span>
+              </summary>
+              <ul class="mt-2 ml-4 text-xs text-white/55 space-y-1 list-disc">
+                <li><strong>Fikset usynlig stedsmerke-ikon.</strong> v8.8.0 brukte <code>animateTransform type="matrix"</code> som IKKE finnes i SVG SMIL-spec'en (kun translate/scale/rotate/skewX/skewY). Resultat: transformen ble aldri satt, pin-en falt til (0,0) og forsvant ut av viewBox b&aring;de i drawer-knappene, kart-renderingen og spillet. Skrevet om til nestede <code>&lt;g&gt;</code>-er &mdash; ytre plasserer pin-tip-en, midtre animerer translate Y (sprett), innerste animerer scale (squash &amp; stretch)</li>
+                <li><strong>Statisk pin i drawer-knappene.</strong> &laquo;Annoteringer&raquo;, &laquo;Annoteringer (lag)&raquo; og &laquo;Annoteringer (liste)&raquo; viser n&aring; pin-en i hvile uten animasjon &mdash; squash &amp; stretch ville v&aelig;rt forstyrrende i forh&aring;ndsvisninger</li>
+                <li><strong>Statisk pin i annoteringsmodus.</strong> Mens brukeren plasserer/justerer (lilla halo-ring synlig) er pin-en stille. Animasjonen starter f&oslash;rst etter at brukeren forlater annoteringsmodus &mdash; eller n&aring;r kartet gjen&aring;pnes fra lagring eller spillmodus aktiveres</li>
+                <li><strong>Random pre-roll bevart.</strong> Hver instans f&aring;r fortsatt <code>begin="-X.Xs"</code> med tilfeldig offset 0&ndash;5s, s&aring; ingen stedsmerker p&aring; samme kart spretter i takt</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- 8.8.0 -->
           <div class="relative">
             <div class="absolute -left-[1.3rem] top-1 w-2.5 h-2.5 rounded-full bg-red-400" />
-            <details class="group" open>
+            <details class="group">
               <summary class="text-sm text-white/65 cursor-pointer list-none flex items-start gap-2 flex-wrap">
                 <span class="font-semibold text-white">8.8.0</span>
                 <span class="text-red-200/90">&mdash; Stedsmerke: rebrand + ny bouncing-pin-animasjon</span>
