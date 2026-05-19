@@ -173,10 +173,7 @@ const superPerkBadge = computed(() => {
   if (!tier) return null
   const meta = SUPER_PERK_META[tier]
   if (!meta) return null
-  const secs = Math.max(0, Math.ceil(props.flipp.superPerkTimeLeft?.value ?? 0))
-  const mm = Math.floor(secs / 60)
-  const ss = String(secs % 60).padStart(2, '0')
-  return { ...meta, label: t(meta.key), timer: `${mm}:${ss}` }
+  return { ...meta, label: t(meta.key) }
 })
 
 watch(() => props.flipp.lastEvent.value, (e) => {
@@ -451,7 +448,6 @@ async function copyShareUrl() {
     <div v-if="superPerkActive" class="cb-super-perk-badge" :class="superPerkBadge.cls">
       <div class="cb-sp-star">★</div>
       <div class="cb-sp-label">{{ superPerkBadge.label }}</div>
-      <div class="cb-sp-timer">{{ superPerkBadge.timer }}</div>
     </div>
 
     <!-- v8.10.0 / v8.10.1 Red Curves tier-flash — tier 1/2/3 (60/80/100 %)
@@ -1486,10 +1482,6 @@ async function copyShareUrl() {
   animation: cb-sp-twinkle 1.5s ease-in-out infinite;
   font-size: calc(14px * var(--cb-hud-scale, 1));
   line-height: 1;
-}
-.cb-sp-timer {
-  font-weight: bold;
-  color: #fff;
 }
 /* Tier 1 — kjølig grønn (BASIC) */
 .cb-sp-tier1 { border: 1px solid #22c55e; color: #86efac; }

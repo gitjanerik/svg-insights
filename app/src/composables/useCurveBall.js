@@ -62,7 +62,10 @@ export function useCurveBall() {
     while (debugLog.length > 12) debugLog.shift()
   }
 
-  const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0]
+  // v8.8.11: 5. nivå (lilla) = rød × 1.25. Kun tilgjengelig når super-perk
+  // tier 2+ er aktiv; ellers cycler taps gjennom de 4 første kun.
+  const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0, 7.5]
+  const NORMAL_KICK_LEVELS = 4  // antall nivåer uten tier 2+ super-perk
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
   const PERK_INTERVAL = 3              // perk-velg hvert 3. level (3, 6, 9...)
@@ -138,25 +141,20 @@ export function useCurveBall() {
   const redContoursRemaining = computed(() => redContourIndices.value.size)
   const redContoursCleared = computed(() => Math.max(0, redContoursTotal.value - redContourIndices.value.size))
 
-  // v8.8.10 Phase 2: aktiv super-perk-state. Når mini-spillet bumper tier
-  // (60/80/100 %), aktiveres en tidsbegrenset perk med tier-spesifikk
-  // varighet og oppførsel:
+  // v8.8.11 Phase 3: aktiv super-perk-state. Når mini-spillet bumper tier
+  // (60/80/100 %), aktiveres en perk som varer til alle baller dør:
   //
-  //   Tier 1 (45 s):  aksial-link flippers (top↔bottom, left↔right
-  //                   lader samme kickLevel ved tap)
-  //   Tier 2 (60 s):  alle 4 flippers synkes til samme kickLevel ved tap
-  //                   (én tap → hele perimeteren reagerer)
-  //   Tier 3 (90 s):  som tier 2, men lengre varighet
+  //   Tier 1 (60 %):  sync flippers — alle 4 lader til SAMME kickLevel
+  //                   ved tap (én tap → hele perimeteren reagerer)
+  //   Tier 2 (80 %):  sync + ekstra-brede flippers (+25 % lengde) +
+  //                   nytt 5. kick-level (LILLA = 125 % elektromagnetisk)
+  //   Tier 3 (100 %): som tier 2 + Bumper Chain Reaction: ball-treff
+  //                   på en bumper trigger shockwave som lyser opp
+  //                   nabo-bumpers og gir bonus-poeng
   //
-  // Loss-conditions (Phase 2): timer = 0  ELLER  alle baller døde.
-  // Phase 3 vil legge til ammo-cap som tredje loss-condition og knytte
-  // tier til bullet-firing.
-  //
-  // Chain: ny invader-spawn med fersk mini-game-completion overstyrer
-  // tier-state og resetter timer (i activateSuperPerk).
-  const SUPER_PERK_DURATIONS_S = { 1: 45, 2: 60, 3: 90 }
+  // Loss-condition: alle baller døde (timer fjernet etter v8.8.10-test).
+  // Chain: ny tier-bump overstyrer aktiv perk umiddelbart.
   const superPerkTier = ref(0)         // 0 = ingen aktiv, 1/2/3 = tier
-  const superPerkTimeLeft = ref(0)     // sekunder igjen
 
   // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
   const perkChoices = ref([])
@@ -382,7 +380,8 @@ export function useCurveBall() {
   let dem = null
   let bounds = { width: 0, height: 0 }
   let equidistanceM = 20
-  let lastElev = NaN
+  // v8.8.11: global lastElev fjernet — flyttet til per-ball b.lastElev så
+  // alle baller kan delta i kontur-kryssings-deteksjon.
   let lastHitEdge = null
   // Terreng-energi-multiplikator (v7.2.7): scaler friction inverst etter
   // kart-utsnittets høydeforskjell. Flate kart (lite range) → mye lavere
@@ -495,6 +494,11 @@ export function useCurveBall() {
       climbBoost: 0,
       lastClimbContour: null,
       lastClimbAt: 0,
+      // v8.8.11: per-ball forrige-elev for kontur-kryssings-deteksjon.
+      // Tidligere var det én global lastElev (kun primary kunne krysse).
+      // Per-ball lar mini-baller og invader-baller bidra til Red-Curves-
+      // konvertering tilbake til gul (samt få vanlige kontur-poeng).
+      lastElev: NaN,
       // Invaders-felter (kun satt hvis mode==='invader')
       invaderPhase: opts.invaderPhase,      // 'orbit' | 'march' | 'breakout' | undefined
       orbitCenter: opts.orbitCenter,        // {x, y}
@@ -929,8 +933,12 @@ export function useCurveBall() {
       b.x += b.vx * dt
       b.y += b.vy * dt
 
-      // Trail bare for primary (først i listen) — multi-ball balls får ikke trail
-      if (i === 0) detectContourCrossings(prevX, prevY, b.x, b.y)
+      // v8.8.11: kontur-kryssings-deteksjon for ALLE baller. Primary,
+      // mini, invader — alle kan konvertere røde kurver tilbake til gule
+      // og høste vanlige kontur-poeng (med ball-mode-multiplikator).
+      // Climb-boost-akkumuleringen internt i funksjonen forblir primary-
+      // bound (balls[0]).
+      detectContourCrossings(b, b.x, b.y)
 
       // Bumper-collisions
       handleBumperCollisions(b)
@@ -1182,6 +1190,39 @@ export function useCurveBall() {
       b.stillTime = 0
       b.chargeT = 0
       b.warnIndex = 0
+
+      // v8.8.11 Phase 3 — Bumper Chain Reaction (tier 3 super-perk):
+      // Når en ball treffer en bumper og spilleren har tier 3 aktiv,
+      // sender vi en shockwave til nærmeste 3 nabo-bumpers innenfor 25 %
+      // av kart-mindre-dim. Hver kjede-treff lyser opp visuelt (via
+      // bp.chainFlashUntil-timestamp) og gir bonus-poeng. Vi tikker IKKE
+      // bp.hits på kjede-treff — det ville trigget utilsiktet multiball
+      // -cascade. Cooldown pr bumper hindrer at samme bumper kjede-flasher
+      // flere ganger i samme frame.
+      if (superPerkTier.value >= 3) {
+        const chainRadius = Math.min(bounds.width, bounds.height) * 0.25
+        const rSq = chainRadius * chainRadius
+        const nowMs = performance.now()
+        const candidates = []
+        for (const other of bumpers) {
+          if (other === bp) continue
+          if ((other.chainFlashUntil ?? 0) > nowMs) continue
+          const dx = other.x - bp.x
+          const dy = other.y - bp.y
+          const dSq = dx * dx + dy * dy
+          if (dSq < rSq) candidates.push({ other, dSq })
+        }
+        candidates.sort((a, b2) => a.dSq - b2.dSq)
+        const chainCount = Math.min(3, candidates.length)
+        if (chainCount > 0) {
+          const chainBonus = Math.round(BUMPER_HIT_SCORE * 0.5 * level.value * chainCount)
+          score.value += chainBonus
+          for (let k = 0; k < chainCount; k++) {
+            candidates[k].other.chainFlashUntil = nowMs + 350
+          }
+          lastEvent.value = { kind: 'bumper-chain', at: Date.now(), count: chainCount, bonus: chainBonus }
+        }
+      }
 
       checkLevelComplete()
 
@@ -1683,51 +1724,67 @@ export function useCurveBall() {
     }
   }
 
-  // v8.8.10 Phase 2: aktiver / forny super-perk. Når en høyere tier
+  // v8.8.11 Phase 3: aktiver / oppgrader super-perk. Når en høyere tier
   // overstyrer en lavere (eller når invader-modusen kjører på nytt etter
-  // perk allerede har vært aktiv), nullstilles timeren til den nye
-  // tierens fulle varighet. Den tidligere tieren forsvinner — vi kjører
-  // alltid den nyeste tildelingen.
+  // perk allerede har vært aktiv), erstattes tieren umiddelbart.
+  // Tidligere hadde vi 90 s nedtelling — droppet etter brukertest, perk
+  // varer nå til alle baller dør eller restart.
+  //
+  // Tier 2-aktivering trigger to engangs-effekter:
+  //   - Flippers vokser 25 % i lengde (capped på 0.40 = max 40% av kant)
+  //   - Lader alle flippers til siste kick-level umiddelbart (purple-flash)
   function activateSuperPerk(tier) {
-    if (!SUPER_PERK_DURATIONS_S[tier]) return
+    if (![1, 2, 3].includes(tier)) return
+    const oldTier = superPerkTier.value
     superPerkTier.value = tier
-    superPerkTimeLeft.value = SUPER_PERK_DURATIONS_S[tier]
+    if (tier >= 2 && oldTier < 2) {
+      // Engangs-boost ved tier 2-aktivering (også når tier 3 nås direkte
+      // eller via tier 1 → tier 3). Brede flippers + start på max kick.
+      for (const edge of ['top', 'bottom', 'left', 'right']) {
+        const f = flippers[edge]
+        f.length = Math.min(0.40, f.length * 1.25)
+        f.kickLevel = KICK_MULTIPLIERS.length - 1  // siste indeks = purple
+      }
+    }
     lastEvent.value = { kind: 'super-perk-activated', at: Date.now(), tier }
-    dlog('superPerk:activate', { tier, duration: SUPER_PERK_DURATIONS_S[tier] })
+    dlog('superPerk:activate', { tier })
   }
 
   function deactivateSuperPerk(reason) {
     if (superPerkTier.value === 0) return
     const fromTier = superPerkTier.value
     superPerkTier.value = 0
-    superPerkTimeLeft.value = 0
+    // Når lilla-nivået ikke lenger er tilgjengelig, clamp ned til rød (3)
+    // så ingen flipper sitter fast på et nivå brukeren ikke kan rotere ut av.
+    // Lengde-boosten beholdes for sesjonen (samme prinsipp som flipper-perks).
+    for (const edge of ['top', 'bottom', 'left', 'right']) {
+      if (flippers[edge].kickLevel >= NORMAL_KICK_LEVELS) {
+        flippers[edge].kickLevel = NORMAL_KICK_LEVELS - 1
+      }
+    }
     lastEvent.value = { kind: 'super-perk-expired', at: Date.now(), fromTier, reason }
     dlog('superPerk:expire', { fromTier, reason })
   }
 
-  // Kalles fra frame()-loopen. Decrementerer timer og deaktiverer ved 0.
-  function tickSuperPerk(dt) {
-    if (superPerkTier.value === 0) return
-    superPerkTimeLeft.value = Math.max(0, superPerkTimeLeft.value - dt)
-    if (superPerkTimeLeft.value <= 0) {
-      deactivateSuperPerk('timeout')
-    }
-  }
-
-  function detectContourCrossings(_px, _py, cx, cy) {
-    if (!dem) return
+  // v8.8.11: Tar nå ballen som argument og bruker b.lastElev (per-ball state)
+  // så ALLE baller — primary, mini, invader — kan konvertere røde kurver
+  // tilbake til gule og høste vanlige kontur-poeng. Climb-boost forblir
+  // primary-bound (balls[0]) siden det er en mekanisme for å hjelpe
+  // hovedballen over bratte topper.
+  function detectContourCrossings(b, cx, cy) {
+    if (!dem || !b) return
     const cur = sampleElevation(dem, cx, cy)
     if (!Number.isFinite(cur)) {
-      lastElev = NaN
+      b.lastElev = NaN
       return
     }
-    if (!Number.isFinite(lastElev)) {
-      lastElev = cur
+    if (!Number.isFinite(b.lastElev)) {
+      b.lastElev = cur
       return
     }
     const eq = equidistanceM
     if (!eq) return
-    const prevContour = Math.floor(lastElev / eq)
+    const prevContour = Math.floor(b.lastElev / eq)
     const curContour = Math.floor(cur / eq)
     if (prevContour !== curContour) {
       const lo = Math.min(prevContour, curContour)
@@ -1740,7 +1797,10 @@ export function useCurveBall() {
         const base = isIndex ? 5 : 1
         const isRed = redSet.has(i)
         const mult = isRed ? 5 : 1
-        score.value += Math.round(base * mult * perks.contourMult)
+        // scoreMult fra ball-mode (mini=2, invader=1.5) ganges på kontur-
+        // poeng også, så mini-baller får dobbel uttelling på rød-konvertering.
+        const ballScoreMult = b.scoreMult ?? 1
+        score.value += Math.round(base * mult * perks.contourMult * ballScoreMult)
         if (isIndex) thick = true
         if (isRed) {
           if (!redChanged) { redSet = new Set(redSet); redChanged = true }
@@ -1752,23 +1812,20 @@ export function useCurveBall() {
         checkRedCurveTier()
       }
       playContourTick(thick)
-      // v8.1.0: climb-boost-akkumulering på primary ball. Oppoverbakke-
-      // kryssinger bygger boosten (+0.4 pr kontur, capped på 1). Nedover-
-      // kryssing resetter — ballen er over toppen og ruller ned andre
-      // siden, da skal boosten dø ut umiddelbart.
-      const primary = balls[0]
-      if (primary) {
+      // v8.1.0: climb-boost kun for primary ball (balls[0]) — andre baller
+      // klatrer ikke i samme forstand, og dette holder cascade-risiko nede.
+      if (b === balls[0]) {
         const numCrossings = hi - lo
         if (curContour > prevContour) {
-          primary.climbBoost = Math.min(1, primary.climbBoost + 0.4 * numCrossings)
-          primary.lastClimbAt = performance.now()
+          b.climbBoost = Math.min(1, b.climbBoost + 0.4 * numCrossings)
+          b.lastClimbAt = performance.now()
         } else {
-          primary.climbBoost = 0
+          b.climbBoost = 0
         }
       }
       checkLevelComplete()
     }
-    lastElev = cur
+    b.lastElev = cur
   }
 
   /** Kant-handling pr ball. Returner false hvis ball drukner. */
@@ -1912,36 +1969,35 @@ export function useCurveBall() {
   function energize(edge) {
     const f = flippers[edge]
     if (!f) return
-    const newLevel = (f.kickLevel + 1) % KICK_MULTIPLIERS.length
+    // v8.8.11: cycle-lengden avhenger av super-perk. Tier 2+ åpner det
+    // 5. nivået (lilla = 7.5×). Ellers cycler taps gjennom de 4 første.
+    const cycleLen = superPerkTier.value >= 2 ? KICK_MULTIPLIERS.length : NORMAL_KICK_LEVELS
+    const newLevel = (f.kickLevel + 1) % cycleLen
     f.kickLevel = newLevel
     playEnergize(newLevel)
 
-    // v8.8.10 Phase 2 — super-perk syncing:
-    //   Tier 2+: alle 4 flippers settes til SAMME kickLevel (én tap →
-    //            hele perimeteren reagerer som én enhet)
-    //   Tier 1:  aksial-link (top↔bottom + left↔right) — øker partneren
-    //            med 1, samme som invaders/linkedFlippers
-    // Tier 2-sync har prioritet over alt annet (linkedFlippers,
-    // invaderModeActive). Tier 1 supplerer eksisterende linker uten å
-    // dobbel-bumpe.
-    if (superPerkTier.value >= 2) {
+    // v8.8.11 — super-perk syncing:
+    //   Tier 1+:  alle 4 flippers settes til SAMME kickLevel (én tap →
+    //             hele perimeteren reagerer som én enhet)
+    //   Ingen perk: aksial-link via eksisterende linkedFlippers eller
+    //              invaderModeActive (uendret)
+    if (superPerkTier.value >= 1) {
       for (const e of ['top', 'bottom', 'left', 'right']) {
         if (e !== edge) flippers[e].kickLevel = newLevel
       }
     } else {
       // v7.3.7 koblede paddles-perk: lad også linket flipper i samme diagonal-par
-      // v8.8.10: tier 1 super-perk speiler samme oppførsel
-      if (perks.linkedFlippers || superPerkTier.value === 1) {
+      if (perks.linkedFlippers) {
         const link = LINKED_PAIRS[edge]
         const lf = link && flippers[link]
-        if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
+        if (lf) lf.kickLevel = (lf.kickLevel + 1) % cycleLen
       }
       // v8.0.4 invader-modus: lad aksial partner (topp↔bunn, venstre↔høyre)
       // automatisk. Dette gjelder uavhengig av linkedFlippers-perken.
       if (invaderModeActive.value) {
         const link = INVADER_LINKED_PAIRS[edge]
         const lf = link && flippers[link]
-        if (lf) lf.kickLevel = (lf.kickLevel + 1) % KICK_MULTIPLIERS.length
+        if (lf) lf.kickLevel = (lf.kickLevel + 1) % cycleLen
       }
     }
     // v8.8.7: bunn-flipper-tap teller mot Invaders-cheat. Aktiv kun mens
@@ -1983,11 +2039,6 @@ export function useCurveBall() {
       physicsStep(subDt, now)
     }
     updateTrail()
-    // v8.8.10 Phase 2: super-perk-timer telles ned med wall-clock dt
-    // uavhengig av antall fysikk-substeps. Pause aktivt kun under
-    // 'rolling' så den ikke renner tom mens spilleren venter på drop
-    // eller perk-select.
-    if (status.value === 'rolling') tickSuperPerk(dt)
 
     if (splash.active) {
       splash.t += dt / 0.6
@@ -2013,7 +2064,6 @@ export function useCurveBall() {
   function drownAll() {
     lives.value = Math.max(0, lives.value - 1)
     lastHitEdge = null
-    lastElev = NaN
     levelChain = 0
     // v8.4.0: Hvis spilleren døde under invader-formasjonen — spawnen er
     // tapt, så Map Master-prestasjonen utløper. Nullstill invader-state
@@ -2098,7 +2148,6 @@ export function useCurveBall() {
       score.value = 0
       balls.length = 0
       lastHitEdge = null
-      lastElev = NaN
       lastStillnessExplodeAt = 0
       invaderModeActive.value = false
       // v8.1.0: nullstill flipper-kraft mellom levels. Innenfor samme level
@@ -2194,7 +2243,6 @@ export function useCurveBall() {
       }
     }
     status.value = 'rolling'
-    lastElev = NaN
     lastHitEdge = null
     for (const slot of trail) {
       slot.x = x
@@ -2217,7 +2265,6 @@ export function useCurveBall() {
     balls.length = 0
     splash.active = false
     lastHitEdge = null
-    lastElev = NaN
     perkChoices.value = []
     perks.contourMult = 1
     perks.kickMult = 1
@@ -2290,7 +2337,6 @@ export function useCurveBall() {
     balls.length = 0
     splash.active = false
     lastHitEdge = null
-    lastElev = NaN
     levelChain = 0
     pendingInvaderWin = false
     lastStillnessExplodeAt = 0
@@ -2421,8 +2467,8 @@ export function useCurveBall() {
     // v8.10.0 Red Curves mini-game (under invaders-modus) — v8.10.1 graderte tiers
     redContourPaths, redContourIndices, redContoursTotal, redContoursRemaining,
     redContoursCleared, redCurvesPerkTier,
-    // v8.8.10 Phase 2: aktiv super-perk-state (tier + sekunder igjen)
-    superPerkTier, superPerkTimeLeft,
+    // v8.8.11 Phase 3: aktiv super-perk-state (tier — timer fjernet)
+    superPerkTier,
     mapMasters,
     // actions
     init, activate, deactivate,
