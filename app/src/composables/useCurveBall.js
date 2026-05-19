@@ -1801,17 +1801,39 @@ export function useCurveBall() {
   // Tier 2-aktivering trigger to engangs-effekter:
   //   - Flippers vokser 25 % i lengde (capped på 0.40 = max 40% av kant)
   //   - Lader alle flippers til siste kick-level umiddelbart (purple-flash)
+  // v8.8.17: Tier 2 omsnudd — flippers HALVERES istedenfor å utvide,
+  // og lilla-kicken gir kraften. Tradeoff-perk: hardere å sikte, men
+  // sterkere treff. Tier 3 løfter handikappet og gir en permanent
+  // lengde-boost (+8 %) som vedvarer på tvers av spawns til restart.
+  //
+  // Bumper Chain Reaction (tier 3-effekt under spill) er separat og
+  // håndteres ved bumper-hit i physicsStep.
   function activateSuperPerk(tier) {
     if (![1, 2, 3].includes(tier)) return
     const oldTier = superPerkTier.value
     superPerkTier.value = tier
     if (tier >= 2 && oldTier < 2) {
-      // Engangs-boost ved tier 2-aktivering (også når tier 3 nås direkte
-      // eller via tier 1 → tier 3). Brede flippers + start på max kick.
+      // Tier 2-aktivering — handicap + power-boost trade-off.
+      //   - Lagre nåværende lengde så vi kan reversere ved tier 3 / death
+      //   - Halver lengden (× 0.5)
+      //   - Lader alle flippers til lilla-nivå umiddelbart
       for (const edge of ['top', 'bottom', 'left', 'right']) {
         const f = flippers[edge]
-        f.length = Math.min(0.40, f.length * 1.25)
-        f.kickLevel = KICK_MULTIPLIERS.length - 1  // siste indeks = purple
+        f.lengthPreSuperPerk = f.length
+        f.length = f.length * 0.5
+        f.kickLevel = KICK_MULTIPLIERS.length - 1   // siste indeks = lilla
+      }
+    }
+    if (tier >= 3 && oldTier < 3) {
+      // Tier 3-aktivering — løft handicap + permanent +8 % lengde-buff.
+      // Hvis spilleren gikk direkte fra 0 til tier 3 (uten å innom 2),
+      // har vi ingen pre-superPerk-lengde å gjenopprette fra — bruk
+      // current length som base.
+      for (const edge of ['top', 'bottom', 'left', 'right']) {
+        const f = flippers[edge]
+        const base = f.lengthPreSuperPerk ?? f.length
+        f.length = Math.min(0.40, base * 1.08)
+        f.lengthPreSuperPerk = null   // markeren ryddet — boost er permanent
       }
     }
     lastEvent.value = { kind: 'super-perk-activated', at: Date.now(), tier }
@@ -1822,12 +1844,21 @@ export function useCurveBall() {
     if (superPerkTier.value === 0) return
     const fromTier = superPerkTier.value
     superPerkTier.value = 0
-    // Når lilla-nivået ikke lenger er tilgjengelig, clamp ned til rød (3)
-    // så ingen flipper sitter fast på et nivå brukeren ikke kan rotere ut av.
-    // Lengde-boosten beholdes for sesjonen (samme prinsipp som flipper-perks).
+    // Når perken avsluttes (death/restart):
+    //   - Hvis vi fortsatt har lengdePreSuperPerk satt (= aldri nådde tier 3),
+    //     gjenopprett pre-tier-2-lengden. Handikappet skal ikke vedvare.
+    //   - Hvis lengdePreSuperPerk er null (= tier 3 ble nådd), beholdes
+    //     den permanente +8 %-bufferingen.
+    //   - Lilla kick-level clampes ned til rød (3) så ingen flipper sitter
+    //     fast på et nivå brukeren ikke kan rotere ut av.
     for (const edge of ['top', 'bottom', 'left', 'right']) {
-      if (flippers[edge].kickLevel >= NORMAL_KICK_LEVELS) {
-        flippers[edge].kickLevel = NORMAL_KICK_LEVELS - 1
+      const f = flippers[edge]
+      if (f.lengthPreSuperPerk != null) {
+        f.length = f.lengthPreSuperPerk
+        f.lengthPreSuperPerk = null
+      }
+      if (f.kickLevel >= NORMAL_KICK_LEVELS) {
+        f.kickLevel = NORMAL_KICK_LEVELS - 1
       }
     }
     lastEvent.value = { kind: 'super-perk-expired', at: Date.now(), fromTier, reason }
@@ -2372,6 +2403,7 @@ export function useCurveBall() {
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
       flippers[e].kickLevel = 0
       flippers[e].repelUntil = 0
+      flippers[e].lengthPreSuperPerk = null   // v8.8.17: rydd evt. handicap-marker
     }
     bumpers.length = 0
     generateBumpersForLevel()
