@@ -71,6 +71,8 @@ const no = {
 
   // ── HUD bar ─────────────────────────────────────────────────────────
   'hud.level': 'LEVEL {n}',
+  // v8.10.0 Red Curves: progress-badge mens mini-spillet pågår
+  'hud.redCurves': 'RØDE KURVER',
 
   // ── Flash-meldinger ─────────────────────────────────────────────────
   'flash.smash': 'SMASH!',
@@ -84,6 +86,9 @@ const no = {
   'flash.invaderSub': 'FORMATION INCOMING',
   'flash.chain.label': 'LEVEL UP!',
   'flash.chain.text': 'CHAIN ×{mult}',
+  // v8.10.0 Red Curves: når alle høydekurver er ryddet → super-perk
+  'flash.redCurvesCleared': 'KURVER RYDDET!',
+  'flash.redCurvesClearedSub': 'SUPER-PERK INNKOMMENDE',
 
   // ── Perks ───────────────────────────────────────────────────────────
   'perk.title': 'CHOOSE PERK',
@@ -150,6 +155,7 @@ const en = {
   'overlay.tapToContinue': 'TAP TO CONTINUE',
 
   'hud.level': 'LEVEL {n}',
+  'hud.redCurves': 'RED CURVES',
 
   'flash.smash': 'SMASH!',
   'flash.multiball': 'MULTIBALL!',
@@ -159,6 +165,8 @@ const en = {
   'flash.invaderSub': 'FORMATION INCOMING',
   'flash.chain.label': 'LEVEL UP!',
   'flash.chain.text': 'CHAIN ×{mult}',
+  'flash.redCurvesCleared': 'CURVES CLEARED!',
+  'flash.redCurvesClearedSub': 'SUPER-PERK INCOMING',
 
   'perk.title': 'CHOOSE PERK',
   'perk.level': 'LEVEL {n}',
