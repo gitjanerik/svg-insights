@@ -222,6 +222,27 @@ function onBallTap(b) {
                 stroke="#7a3aa3"
                 :stroke-width="ballRadius * 0.04"/>
 
+        <!-- v8.8.11 Phase 3 — Bumper Chain Reaction flash. Tegnes når
+             en nabo-bumper får chainFlashUntil oppdatert (tier 3 super-
+             perk). :key på timestamp tvinger Vue til å re-mounte elementet
+             ved hvert nytt kjede-treff, så SMIL-animasjonen restarter
+             fra t=0. fill="freeze" holder sluttilstand (opacity 0). -->
+        <circle v-if="bp.chainFlashUntil"
+                :key="`chain-${bp.chainFlashUntil}`"
+                cx="0" cy="0"
+                :r="ballRadius * 1.0"
+                fill="none"
+                stroke="#ff1744"
+                :stroke-width="ballRadius * 0.12"
+                opacity="0">
+          <animate attributeName="opacity"
+                   values="0;1;0" dur="0.4s"
+                   repeatCount="1" fill="freeze"/>
+          <animate attributeName="r"
+                   :values="`${ballRadius * 1.0};${ballRadius * 2.2}`"
+                   dur="0.4s" repeatCount="1" fill="freeze"/>
+        </circle>
+
         <!-- Knaus: brun halvmåne -->
         <path v-if="bp.kind === 'knaus'"
               :d="`M${-ballRadius*0.6} ${ballRadius*0.4} A${ballRadius*0.6} ${ballRadius*0.4} 0 0 0 ${ballRadius*0.6} ${ballRadius*0.4}`"
