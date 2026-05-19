@@ -118,9 +118,10 @@ let invaderTimer = null
 const mapMasterFlash = ref(null)
 let mapMasterTimer = null
 
-// v8.10.0 Red Curves: progress-badge (når mini-game er aktiv) + flash
-// når alle røde kurver er ryddet (super-perk earned).
-const redCurvesFlash = ref(false)
+// v8.10.0 / v8.10.1 Red Curves: progress-badge (når mini-game er aktiv)
+// + tier-aware flash. Tre milestones: 60 % (BASIC), 80 % (ENHANCED),
+// 100 % (SUPER) — hver tier viser sin egen flash-tekst og farger.
+const redCurvesFlash = ref(null)  // { tier, cleared, total } eller null
 let redCurvesFlashTimer = null
 const redCurvesActive = computed(() => {
   const total = props.flipp.redContoursTotal?.value ?? 0
@@ -129,7 +130,32 @@ const redCurvesActive = computed(() => {
 const redCurvesBadge = computed(() => {
   const remaining = props.flipp.redContoursRemaining?.value ?? 0
   const total = props.flipp.redContoursTotal?.value ?? 0
-  return { remaining, total, cleared: total - remaining }
+  const cleared = total - remaining
+  const fraction = total > 0 ? cleared / total : 0
+  return {
+    remaining,
+    total,
+    cleared,
+    fraction,
+    // Milestones lyser når terskelen er nådd. Brukes til progress-dots.
+    tier1: fraction >= 0.60,
+    tier2: fraction >= 0.80,
+    tier3: fraction >= 1.00,
+  }
+})
+// Tier-spesifikk tekst, farge og varighet på flash. Tier 3 (super) holdes
+// lengst på skjermen siden det er den «store» premien.
+const RED_CURVES_TIER_META = {
+  1: { key: 'flash.redCurvesBasic',     subKey: 'flash.redCurvesBasicSub',    cls: 'cb-rcf-tier1', dur: 2200 },
+  2: { key: 'flash.redCurvesEnhanced',  subKey: 'flash.redCurvesEnhancedSub', cls: 'cb-rcf-tier2', dur: 2400 },
+  3: { key: 'flash.redCurvesSuper',     subKey: 'flash.redCurvesSuperSub',    cls: 'cb-rcf-tier3', dur: 3000 },
+}
+const redCurvesFlashText = computed(() => {
+  const f = redCurvesFlash.value
+  if (!f) return null
+  const meta = RED_CURVES_TIER_META[f.tier]
+  if (!meta) return null
+  return { ...meta, text: t(meta.key), sub: t(meta.subKey) }
 })
 
 watch(() => props.flipp.lastEvent.value, (e) => {
@@ -168,13 +194,14 @@ watch(() => props.flipp.lastEvent.value, (e) => {
       mapMasterFlash.value = null
       mapMasterTimer = null
     }, 3200)
-  } else if (e?.kind === 'red-curves-cleared') {
-    redCurvesFlash.value = true
+  } else if (e?.kind === 'red-curves-tier') {
+    redCurvesFlash.value = { tier: e.tier, cleared: e.cleared, total: e.total }
     if (redCurvesFlashTimer) clearTimeout(redCurvesFlashTimer)
+    const dur = RED_CURVES_TIER_META[e.tier]?.dur ?? 2200
     redCurvesFlashTimer = setTimeout(() => {
-      redCurvesFlash.value = false
+      redCurvesFlash.value = null
       redCurvesFlashTimer = null
-    }, 2600)
+    }, dur)
   }
 })
 
@@ -378,9 +405,10 @@ async function copyShareUrl() {
       <div class="cb-chain-sub">+{{ chainFlash.bonus }}</div>
     </div>
 
-    <!-- v8.10.0 Red Curves progress-badge — vises mens mini-spillet pågår.
-         Bumpes opp i venstre kolonne under hjerter, så spilleren ser
-         både gjenstående antall og totalt mål. -->
+    <!-- v8.10.0 / v8.10.1 Red Curves progress-badge — vises mens mini-
+         spillet pågår. Tre milestone-prikker (60 / 80 / 100 %) viser
+         hvor mye til hver tier-perk; de fyller seg etterhvert som
+         spilleren rydder kurver. -->
     <div v-if="redCurvesActive" class="cb-red-curves-badge">
       <div class="cb-rc-dot"></div>
       <div class="cb-rc-text">
@@ -389,14 +417,22 @@ async function copyShareUrl() {
           {{ redCurvesBadge.cleared }}/{{ redCurvesBadge.total }}
         </span>
       </div>
+      <div class="cb-rc-tiers">
+        <span class="cb-rc-tier" :class="{ 'cb-rc-tier-on': redCurvesBadge.tier1 }" title="60%"></span>
+        <span class="cb-rc-tier" :class="{ 'cb-rc-tier-on': redCurvesBadge.tier2 }" title="80%"></span>
+        <span class="cb-rc-tier" :class="{ 'cb-rc-tier-on': redCurvesBadge.tier3 }" title="100%"></span>
+      </div>
     </div>
 
-    <!-- v8.10.0 Red Curves cleared-flash — super-perk earned. Phase 1:
-         kun visuell markering. Phase 2/3 vil koble på timer, sync flippers
-         og bullets. -->
-    <div v-if="redCurvesFlash" class="cb-red-curves-flash">
-      <div class="cb-rcf-text">{{ t('flash.redCurvesCleared') }}</div>
-      <div class="cb-rcf-sub">{{ t('flash.redCurvesClearedSub') }}</div>
+    <!-- v8.10.0 / v8.10.1 Red Curves tier-flash — tier 1/2/3 (60/80/100 %)
+         viser ulik tekst, farge og varighet. Phase 1 kun visuell markering;
+         Phase 2/3 vil koble tier-verdien til faktiske perk-effekter
+         (sync flippers + bullets). -->
+    <div v-if="redCurvesFlashText"
+         class="cb-red-curves-flash"
+         :class="redCurvesFlashText.cls">
+      <div class="cb-rcf-text">{{ redCurvesFlashText.text }}</div>
+      <div class="cb-rcf-sub">{{ redCurvesFlashText.sub }}</div>
     </div>
 
     <!-- Bottom-right: exit-knapp -->
@@ -1313,15 +1349,43 @@ async function copyShareUrl() {
   margin-left: calc(4px * var(--cb-hud-scale, 1));
   font-weight: bold;
 }
+/* v8.10.1: tier-prikker (60 / 80 / 100 %) til høyre for telleren.
+   Tomme = grå, fylte = grønn → gul → rød i milestone-rekkefølge så
+   spilleren ser hvor langt han er kommet uten å regne i hodet. */
+.cb-rc-tiers {
+  display: flex;
+  gap: calc(3px * var(--cb-hud-scale, 1));
+  margin-left: calc(6px * var(--cb-hud-scale, 1));
+}
+.cb-rc-tier {
+  width: calc(7px * var(--cb-hud-scale, 1));
+  height: calc(7px * var(--cb-hud-scale, 1));
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+}
+.cb-rc-tier-on {
+  background: #22c55e;
+  border-color: #22c55e;
+  box-shadow: 0 0 4px #22c55e;
+}
+.cb-rc-tier-on + .cb-rc-tier-on {
+  background: #fde047;
+  border-color: #fde047;
+  box-shadow: 0 0 4px #fde047;
+}
+.cb-rc-tier-on + .cb-rc-tier-on + .cb-rc-tier-on {
+  background: #ff1744;
+  border-color: #ff1744;
+  box-shadow: 0 0 6px #ff1744;
+}
 @keyframes cb-rc-pulse {
   0%, 100% { opacity: 1.0; transform: scale(1); }
   50%      { opacity: 0.5; transform: scale(1.25); }
 }
 
-/* v8.10.0 Red Curves cleared-flash — knall rød + gull-glow når alle
-   høydekurver er ryddet og super-perk er earned. Phase 1: ren visuell
-   markering. Phase 2/3 vil koble på timer, synkroniserte flippere
-   (én tap → alle fire lader) og bullet-firing fra paddle. */
+/* v8.10.0 / v8.10.1 Red Curves tier-flash — varierende tekst, farge og
+   varighet pr tier. Phase 2/3 vil koble på reelle perk-effekter. */
 .cb-red-curves-flash {
   position: absolute;
   top: 42%; left: 50%;
@@ -1331,22 +1395,35 @@ async function copyShareUrl() {
   animation: cb-rcf-pop 2.6s ease-out forwards;
 }
 .cb-rcf-text {
-  font-size: 38px;
+  font-size: 32px;
+  text-shadow:
+    3px 3px 0 #000,
+    6px 6px 0 rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.1em;
+  font-weight: bold;
+}
+.cb-rcf-sub {
+  font-size: 11px;
+  margin-top: 0.6em;
+  letter-spacing: 0.22em;
+  text-shadow: 2px 2px 0 #000;
+}
+/* Tier 1: BASIC perk @ 60 % — kjølig grønn (matcher progress-prikkene). */
+.cb-rcf-tier1 .cb-rcf-text { color: #22c55e; }
+.cb-rcf-tier1 .cb-rcf-sub  { color: #86efac; }
+/* Tier 2: ENHANCED @ 80 % — varm gul. */
+.cb-rcf-tier2 .cb-rcf-text { color: #fde047; }
+.cb-rcf-tier2 .cb-rcf-sub  { color: #fef08a; }
+/* Tier 3: SUPER @ 100 % — knall rød med gull-glow, størst tekst. */
+.cb-rcf-tier3 .cb-rcf-text {
+  font-size: 42px;
   color: #ff1744;
   text-shadow:
     3px 3px 0 #7f1d1d,
     6px 6px 0 #fde047,
     9px 9px 0 #000;
-  letter-spacing: 0.1em;
-  font-weight: bold;
 }
-.cb-rcf-sub {
-  font-size: 12px;
-  color: #fde047;
-  margin-top: 0.6em;
-  letter-spacing: 0.22em;
-  text-shadow: 2px 2px 0 #000;
-}
+.cb-rcf-tier3 .cb-rcf-sub { color: #fde047; }
 @keyframes cb-rcf-pop {
   0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
   20%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }

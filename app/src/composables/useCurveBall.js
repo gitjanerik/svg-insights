@@ -112,15 +112,31 @@ export function useCurveBall() {
   // katalog over alle høydekurver i kartet (idx = Math.round(elev/eq) —
   // matcher floor-bucket-en som detectContourCrossings bruker). Når
   // spawnInvaders fyrer av aktiveres alle indekser som «røde». Kryssing
-  // av en rød kontur gir 5× poeng og fjerner den fra settet. Når settet
-  // er tomt → super-perk markeres pending (Phase 1 = bare flagg + flash;
-  // Phase 2/3 introduserer timer + bullets). Settet nullstilles ved
-  // drown-all (mini-game avbrytes) og ved restart.
+  // av en rød kontur gir 5× poeng og fjerner den fra settet.
+  //
+  // v8.10.1: Graderte terskler — 100 % var frustrerende fordi noen
+  // kurver havner i utilgjengelige nisjer (krater, hjørner med ekstrem
+  // helning). Tre tiers gir spilleren en oppnåelig perk-mile selv om
+  // 100 %-clear ikke er praktisk på alle kart:
+  //
+  //   60 %  → tier 1 (BASIC perk)
+  //   80 %  → tier 2 (ENHANCED perk)
+  //   100 % → tier 3 (SUPER perk + mini-game done)
+  //
+  // Phase 2/3 vil koble tier-verdien til faktiske perk-effekter
+  // (sync flippers, bullets, timer). Phase 1.6 = tracking + flash.
+  // Settet nullstilles ved drown-all (mini-game avbrytes) og restart.
+  const RED_CURVES_TIERS = [
+    { fraction: 0.60, tier: 1 },
+    { fraction: 0.80, tier: 2 },
+    { fraction: 1.00, tier: 3 },
+  ]
   const redContourPaths = ref([])      // [{ idx, isIndex, d }] pre-computed once
   const redContourIndices = ref(new Set())
   const redContoursTotal = ref(0)
-  const redCurvesPerkPending = ref(false)
+  const redCurvesPerkTier = ref(0)     // høyeste tier nådd så langt (0–3)
   const redContoursRemaining = computed(() => redContourIndices.value.size)
+  const redContoursCleared = computed(() => Math.max(0, redContoursTotal.value - redContourIndices.value.size))
 
   // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
   const perkChoices = ref([])
@@ -1591,6 +1607,8 @@ export function useCurveBall() {
   // Aktiver røde kurver: alle høydekurve-indekser i kartet markeres som
   // røde. Kun hvis ingen rød mini-game allerede er aktiv (ny invaders-
   // spawn under pågående rød-game skal IKKE resette progresjonen).
+  // Tier nullstilles til 0 ved hver fersk aktivering — mini-spillet kjører
+  // pr invader-spawn med egen tier-progresjon.
   function activateRedContours() {
     if (redContourIndices.value.size > 0) return
     if (!redContourPaths.value.length) return
@@ -1598,22 +1616,47 @@ export function useCurveBall() {
     for (const p of redContourPaths.value) set.add(p.idx)
     redContoursTotal.value = set.size
     redContourIndices.value = set
+    redCurvesPerkTier.value = 0
     lastEvent.value = { kind: 'red-curves-activated', at: Date.now(), total: set.size }
     dlog('redContours:activate', { n: set.size })
   }
 
   function clearRedContours() {
-    if (redContourIndices.value.size === 0) return
+    if (redContourIndices.value.size === 0 && redContoursTotal.value === 0) return
     redContourIndices.value = new Set()
     redContoursTotal.value = 0
+    redCurvesPerkTier.value = 0
     dlog('redContours:clear')
   }
 
-  function awardRedCurvePerk() {
-    redCurvesPerkPending.value = true
-    redContoursTotal.value = 0
-    lastEvent.value = { kind: 'red-curves-cleared', at: Date.now() }
-    dlog('redContours:cleared!')
+  // v8.10.1: Etter hver kryssing, sjekk om en ny terskel (60/80/100 %) er
+  // passert. Bumper kun OPP — én tier kan ikke vinnes flere ganger pr
+  // invader-spawn. Ved tier 3 (= alle ryddet) nullstilles total slik at
+  // badge-en forsvinner; mini-spillet er over.
+  function checkRedCurveTier() {
+    const total = redContoursTotal.value
+    if (!total) return
+    const cleared = total - redContourIndices.value.size
+    const fraction = cleared / total
+    let earned = 0
+    for (const t of RED_CURVES_TIERS) {
+      if (fraction >= t.fraction) earned = t.tier
+    }
+    if (earned > redCurvesPerkTier.value) {
+      redCurvesPerkTier.value = earned
+      lastEvent.value = {
+        kind: 'red-curves-tier',
+        at: Date.now(),
+        tier: earned,
+        cleared,
+        total,
+      }
+      dlog('redContours:tier', { tier: earned, cleared, total })
+      if (earned >= 3) {
+        // Mini-spillet er gjennomført — skjul progress-badge.
+        redContoursTotal.value = 0
+      }
+    }
   }
 
   function detectContourCrossings(_px, _py, cx, cy) {
@@ -1651,7 +1694,7 @@ export function useCurveBall() {
       }
       if (redChanged) {
         redContourIndices.value = redSet
-        if (redSet.size === 0) awardRedCurvePerk()
+        checkRedCurveTier()
       }
       playContourTick(thick)
       // v8.1.0: climb-boost-akkumulering på primary ball. Oppoverbakke-
@@ -2108,9 +2151,9 @@ export function useCurveBall() {
     pendingInvaderWin = false
     lastStillnessExplodeAt = 0
     invaderModeActive.value = false
-    // v8.10.0: nullstill røde kurver mini-game og pending perk ved hard restart
+    // v8.10.0: nullstill røde kurver mini-game og tier-state ved hard restart
     clearRedContours()
-    redCurvesPerkPending.value = false
+    redCurvesPerkTier.value = 0
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
@@ -2293,9 +2336,9 @@ export function useCurveBall() {
     perks, perkChoices,
     tournamentMode,
     invaderModeActive,
-    // v8.10.0 Red Curves mini-game (under invaders-modus)
+    // v8.10.0 Red Curves mini-game (under invaders-modus) — v8.10.1 graderte tiers
     redContourPaths, redContourIndices, redContoursTotal, redContoursRemaining,
-    redCurvesPerkPending,
+    redContoursCleared, redCurvesPerkTier,
     mapMasters,
     // actions
     init, activate, deactivate,

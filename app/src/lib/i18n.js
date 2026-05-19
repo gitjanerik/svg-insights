@@ -86,9 +86,15 @@ const no = {
   'flash.invaderSub': 'FORMATION INCOMING',
   'flash.chain.label': 'LEVEL UP!',
   'flash.chain.text': 'CHAIN ×{mult}',
-  // v8.10.0 Red Curves: når alle høydekurver er ryddet → super-perk
-  'flash.redCurvesCleared': 'KURVER RYDDET!',
-  'flash.redCurvesClearedSub': 'SUPER-PERK INNKOMMENDE',
+  // v8.10.0 / v8.10.1 Red Curves tier-tekster — 60 / 80 / 100 % gir
+  // tre ulike perk-tiers. Phase 2/3 vil koble disse til faktiske
+  // perk-effekter (sync flippers, bullets, timer).
+  'flash.redCurvesBasic':       'PERK!',
+  'flash.redCurvesBasicSub':    '60 % RYDDET',
+  'flash.redCurvesEnhanced':    'ENHANCED PERK!',
+  'flash.redCurvesEnhancedSub': '80 % RYDDET',
+  'flash.redCurvesSuper':       'SUPER PERK!',
+  'flash.redCurvesSuperSub':    'ALLE KURVER RYDDET',
 
   // ── Perks ───────────────────────────────────────────────────────────
   'perk.title': 'CHOOSE PERK',
@@ -165,8 +171,12 @@ const en = {
   'flash.invaderSub': 'FORMATION INCOMING',
   'flash.chain.label': 'LEVEL UP!',
   'flash.chain.text': 'CHAIN ×{mult}',
-  'flash.redCurvesCleared': 'CURVES CLEARED!',
-  'flash.redCurvesClearedSub': 'SUPER-PERK INCOMING',
+  'flash.redCurvesBasic':       'PERK!',
+  'flash.redCurvesBasicSub':    '60 % CLEARED',
+  'flash.redCurvesEnhanced':    'ENHANCED PERK!',
+  'flash.redCurvesEnhancedSub': '80 % CLEARED',
+  'flash.redCurvesSuper':       'SUPER PERK!',
+  'flash.redCurvesSuperSub':    'ALL CURVES CLEARED',
 
   'perk.title': 'CHOOSE PERK',
   'perk.level': 'LEVEL {n}',
