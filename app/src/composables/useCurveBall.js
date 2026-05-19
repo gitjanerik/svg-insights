@@ -8,6 +8,7 @@ import {
   playGameOver, playCountdownBeep, playDrop, playContourTick, playSmash,
   playStillWarning, playExplosion, playMultiSpawn, playBumperHit,
   playMiniSpawn, playMiniHit, playInvaderSpawn, playInvaderBreakout,
+  playInvaderSuspense, stopInvaderSuspense,
 } from './useCurveBallSound.js'
 
 /**
@@ -1491,6 +1492,12 @@ export function useCurveBall() {
     const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
     const invaderR = BALL_RADIUS_M * INVADER_RADIUS_FRAC
 
+    // v8.8.14: «Stille før stormen» — start dramatisk suspense-musikk
+    // når formasjonen begynner. Stoppes ved breakout, ved død (drownAll)
+    // eller restart. Egen funksjon tar varigheten direkte så musikken
+    // svelger opp mot riktig kutt-tidspunkt.
+    playInvaderSuspense(duration)
+
     // Branch på sentrale høydekurver:
     //   marchDir = null  → orbit-modus (5 konsentriske kontur-orbits)
     //   marchDir = {x,y} → march-modus (5 snake-clusters i ulike retninger)
@@ -1500,7 +1507,10 @@ export function useCurveBall() {
     } else {
       spawnInvaderClustersOrbit(duration, breakoutSpeed, invaderR)
     }
-    setTimeout(() => playInvaderBreakout(), duration * 1000)
+    setTimeout(() => {
+      stopInvaderSuspense()    // sikre kutt selv om gain-rampen ennå spiller
+      playInvaderBreakout()
+    }, duration * 1000)
   }
 
   /**
@@ -2077,6 +2087,8 @@ export function useCurveBall() {
     // v8.8.10 Phase 2: «all balls lost» er den ene av to terminal-conditions
     // for aktiv super-perk (den andre er timer = 0). Deaktiver her.
     deactivateSuperPerk('balls-lost')
+    // v8.8.14: kutt suspense-musikk hvis spilleren dør midt i formasjons-fasen
+    stopInvaderSuspense()
 
     if (lives.value === 0) {
       const finalTotal = totalScore.value + score.value
@@ -2278,6 +2290,8 @@ export function useCurveBall() {
     pendingInvaderWin = false
     lastStillnessExplodeAt = 0
     invaderModeActive.value = false
+    // v8.8.14: kutt suspense-musikk hvis brukeren restarter midt i formasjon
+    stopInvaderSuspense()
     // v8.10.0: nullstill røde kurver mini-game og tier-state ved hard restart
     clearRedContours()
     redCurvesPerkTier.value = 0

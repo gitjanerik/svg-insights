@@ -253,5 +253,105 @@ export function playInvaderBreakout() {
   playTone(N.D4, 0.14, 'square', 0.18, 0.18)
 }
 
+/**
+ * v8.8.14 — «Stille før stormen» — dramatisk suspense-musikk under
+ * Invaders-formasjonen (10–13 sek mellom spawn og breakout). Bygd som
+ * lag av sammenhengende Web-Audio-oscillators som alle ruter gjennom
+ * en delt `suspenseGain`. Ved breakout (eller død / restart) kalles
+ * stopInvaderSuspense() som rampes gain ned til stillhet og kutter
+ * oscillatorene.
+ *
+ * Komposisjon (Cm-toneart, klassisk drama):
+ *  - Drone-bass på C2 (65.4 Hz) hele varigheten med slow tremolo
+ *  - Mid-arpeggio C3-Eb3-G3-C4-G3-Eb3 som akselererer mot slutten
+ *  - Final dissonant Bb3-stab rett før breakout (siste ~0.6 sek)
+ */
+let suspenseGain = null
+let suspenseOscillators = []
+
+function spawnSuspenseOsc(t0, durationS, freq, type, vol) {
+  if (!audioCtx || !suspenseGain) return
+  try {
+    const osc = audioCtx.createOscillator()
+    const g = audioCtx.createGain()
+    osc.type = type
+    osc.frequency.setValueAtTime(freq, t0)
+    // Per-note envelope: rask attack, exp decay til slutten av tonen
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.exponentialRampToValueAtTime(vol, t0 + 0.05)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + durationS)
+    osc.connect(g)
+    g.connect(suspenseGain)
+    osc.start(t0)
+    osc.stop(t0 + durationS + 0.05)
+    suspenseOscillators.push(osc)
+  } catch {}
+}
+
+export function playInvaderSuspense(durationS) {
+  stopInvaderSuspense()
+  if (muted) return
+  const ctx = ensureCtx()
+  if (!ctx) return
+  try {
+    const t0 = ctx.currentTime
+    suspenseGain = ctx.createGain()
+    suspenseGain.gain.setValueAtTime(0.0001, t0)
+    // Master-envelope for hele suspensen — fade inn over 1.5 sek, hold,
+    // svell mot slutten, kutt ved breakout.
+    suspenseGain.gain.exponentialRampToValueAtTime(0.25, t0 + 1.5)
+    suspenseGain.gain.linearRampToValueAtTime(0.35, t0 + durationS - 0.4)
+    suspenseGain.gain.exponentialRampToValueAtTime(0.0001, t0 + durationS)
+    suspenseGain.connect(masterGain)
+
+    // Drone-bass: C2 sustained hele varigheten med svak tremolo via
+    // andre oscillator litt off-tune (beat-frekvens ≈ 0.5 Hz gir
+    // pust-effekt). Triangle gir varm bunn uten å være hard.
+    spawnSuspenseOsc(t0, durationS, 65.41, 'triangle', 0.45)        // C2
+    spawnSuspenseOsc(t0, durationS, 65.91, 'triangle', 0.30)        // C2 + ~0.5Hz beat
+
+    // Mid-arpeggio: Cm-akkord (C3, Eb3, G3, C4) som akselererer.
+    // Starter med 0.9 sek mellom noter, krymper med 7 % pr step ned
+    // til 0.30 sek (≈ 16-deler) ved slutten — bygger tempo-tensjon.
+    const arp = [130.81, 155.56, 196.00, 261.63, 196.00, 155.56]    // C3, Eb3, G3, C4, G3, Eb3
+    let t = 0
+    let interval = 0.9
+    let step = 0
+    while (t < durationS - 0.6) {
+      const note = arp[step % arp.length]
+      spawnSuspenseOsc(t0 + t, 0.35, note, 'square', 0.13)
+      t += interval
+      interval = Math.max(0.30, interval * 0.93)
+      step++
+    }
+
+    // Final dissonant stab: Bb3 (tritone-ish mot Eb i Cm-akkord) i
+    // siste 0.6 sek — sawtooth gir aggressivt karakter rett før
+    // breakout-glissandoen tar over.
+    spawnSuspenseOsc(t0 + durationS - 0.6, 0.55, 233.08, 'sawtooth', 0.18)
+  } catch {}
+}
+
+export function stopInvaderSuspense() {
+  if (!suspenseGain || !audioCtx) {
+    suspenseOscillators = []
+    suspenseGain = null
+    return
+  }
+  try {
+    const t = audioCtx.currentTime
+    suspenseGain.gain.cancelScheduledValues(t)
+    suspenseGain.gain.setValueAtTime(suspenseGain.gain.value, t)
+    suspenseGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18)
+    // La oscillatorene tone seg ut via gain-rampen; stopp dem hardt
+    // litt senere for å frigjøre AudioContext-ressurser.
+    for (const osc of suspenseOscillators) {
+      try { osc.stop(t + 0.25) } catch {}
+    }
+  } catch {}
+  suspenseOscillators = []
+  suspenseGain = null
+}
+
 export function setMuted(m) { muted = !!m }
 export function isMuted() { return muted }
