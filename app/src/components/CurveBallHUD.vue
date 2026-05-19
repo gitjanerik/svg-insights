@@ -158,6 +158,27 @@ const redCurvesFlashText = computed(() => {
   return { ...meta, text: t(meta.key), sub: t(meta.subKey) }
 })
 
+// v8.8.10 Phase 2: aktiv super-perk-badge med nedtellings-timer.
+// Vises kontinuerlig så lenge superPerkTier > 0. Farger speiler tier-
+// fargene fra flash-en (grønn / gul / rød) så spilleren ser hvilken
+// tier som er aktiv uten å huske flashen.
+const SUPER_PERK_META = {
+  1: { key: 'hud.perkBasic',    cls: 'cb-sp-tier1' },
+  2: { key: 'hud.perkEnhanced', cls: 'cb-sp-tier2' },
+  3: { key: 'hud.perkSuper',    cls: 'cb-sp-tier3' },
+}
+const superPerkActive = computed(() => (props.flipp.superPerkTier?.value ?? 0) > 0)
+const superPerkBadge = computed(() => {
+  const tier = props.flipp.superPerkTier?.value ?? 0
+  if (!tier) return null
+  const meta = SUPER_PERK_META[tier]
+  if (!meta) return null
+  const secs = Math.max(0, Math.ceil(props.flipp.superPerkTimeLeft?.value ?? 0))
+  const mm = Math.floor(secs / 60)
+  const ss = String(secs % 60).padStart(2, '0')
+  return { ...meta, label: t(meta.key), timer: `${mm}:${ss}` }
+})
+
 watch(() => props.flipp.lastEvent.value, (e) => {
   if (e?.kind === 'multiball') {
     multiballFlash.value = e
@@ -422,6 +443,15 @@ async function copyShareUrl() {
         <span class="cb-rc-tier" :class="{ 'cb-rc-tier-on': redCurvesBadge.tier2 }" title="80%"></span>
         <span class="cb-rc-tier" :class="{ 'cb-rc-tier-on': redCurvesBadge.tier3 }" title="100%"></span>
       </div>
+    </div>
+
+    <!-- v8.8.10 Phase 2: aktiv super-perk-badge — vises kontinuerlig
+         med nedtellings-timer. Plasseres rett under røde-kurver-badge-en
+         (stack på venstre side). Farge speiler tier. -->
+    <div v-if="superPerkActive" class="cb-super-perk-badge" :class="superPerkBadge.cls">
+      <div class="cb-sp-star">★</div>
+      <div class="cb-sp-label">{{ superPerkBadge.label }}</div>
+      <div class="cb-sp-timer">{{ superPerkBadge.timer }}</div>
     </div>
 
     <!-- v8.10.0 / v8.10.1 Red Curves tier-flash — tier 1/2/3 (60/80/100 %)
@@ -1430,5 +1460,48 @@ async function copyShareUrl() {
   35%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   80%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
   100% { transform: translate(-50%, -50%) scale(1.0); opacity: 0; }
+}
+
+/* v8.8.10 Phase 2 — aktiv super-perk-badge. Plasseres rett under
+   røde-kurver-badge-en (top = 38 + ~20 px for første rad). Tier-farge
+   matcher flash-en så spilleren ser hvilken tier som er aktiv. Stjernen
+   pulser for å signalisere at perk-en er live; timeren teller ned i
+   sekunder. */
+.cb-super-perk-badge {
+  position: absolute;
+  top: calc(64px * var(--cb-hud-scale, 1));
+  left: calc(8px * var(--cb-hud-scale, 1));
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--cb-hud-scale, 1));
+  background: rgba(15, 23, 42, 0.85);
+  padding: calc(3px * var(--cb-hud-scale, 1)) calc(8px * var(--cb-hud-scale, 1));
+  font-family: monospace;
+  font-size: calc(11px * var(--cb-hud-scale, 1));
+  letter-spacing: 0.1em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.cb-sp-star {
+  animation: cb-sp-twinkle 1.5s ease-in-out infinite;
+  font-size: calc(14px * var(--cb-hud-scale, 1));
+  line-height: 1;
+}
+.cb-sp-timer {
+  font-weight: bold;
+  color: #fff;
+}
+/* Tier 1 — kjølig grønn (BASIC) */
+.cb-sp-tier1 { border: 1px solid #22c55e; color: #86efac; }
+.cb-sp-tier1 .cb-sp-star { color: #22c55e; text-shadow: 0 0 6px #22c55e; }
+/* Tier 2 — varm gul (ENHANCED) */
+.cb-sp-tier2 { border: 1px solid #fde047; color: #fef08a; }
+.cb-sp-tier2 .cb-sp-star { color: #fde047; text-shadow: 0 0 6px #fde047; }
+/* Tier 3 — knall rød (SUPER) */
+.cb-sp-tier3 { border: 1px solid #ff1744; color: #fecaca; }
+.cb-sp-tier3 .cb-sp-star { color: #ff1744; text-shadow: 0 0 6px #ff1744; }
+@keyframes cb-sp-twinkle {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.2); opacity: 0.7; }
 }
 </style>
