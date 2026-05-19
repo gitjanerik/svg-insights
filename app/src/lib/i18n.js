@@ -73,6 +73,10 @@ const no = {
   'hud.level': 'LEVEL {n}',
   // v8.10.0 Red Curves: progress-badge mens mini-spillet pågår
   'hud.redCurves': 'RØDE KURVER',
+  // v8.8.10 Phase 2 — aktiv super-perk-badge med tier-navn
+  'hud.perkBasic':    'PERK',
+  'hud.perkEnhanced': 'ENHANCED',
+  'hud.perkSuper':    'SUPER',
 
   // ── Flash-meldinger ─────────────────────────────────────────────────
   'flash.smash': 'SMASH!',
@@ -162,6 +166,9 @@ const en = {
 
   'hud.level': 'LEVEL {n}',
   'hud.redCurves': 'RED CURVES',
+  'hud.perkBasic':    'PERK',
+  'hud.perkEnhanced': 'ENHANCED',
+  'hud.perkSuper':    'SUPER',
 
   'flash.smash': 'SMASH!',
   'flash.multiball': 'MULTIBALL!',
