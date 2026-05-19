@@ -17,16 +17,18 @@ const props = defineProps({
 const ballRadius = computed(() => props.flipp.BALL_RADIUS_M ?? 12)
 function ballR(b) { return b?.r ?? ballRadius.value }
 
-// v8.10.0 Red Curves: aktive røde høydekurver under invaders-mini-spillet.
-// Filtreres fra den pre-computede katalogen til kun indekser som fortsatt
-// står som «røde» — kryssing fjerner indeks fra settet og denne computed
-// re-evaluerer.
-const activeRedContours = computed(() => {
-  const idx = props.flipp.redContourIndices?.value
-  if (!idx || idx.size === 0) return []
-  const paths = props.flipp.redContourPaths?.value ?? []
-  return paths.filter(p => idx.has(p.idx))
-})
+// v8.10.0 Red Curves: hele den pre-computede katalogen rendres som
+// statiske SVG-paths én gang. Per-path-aktiv-tilstand (er denne idx-en
+// fortsatt rød?) skifter kun en CSS-klasse, så Vue ungår DOM-diff på
+// kryssing. Felles puls + glow flyttes til <g>-nivå (CSS-keyframes +
+// gruppe-filter) i stedet for 48 simultane SMIL-animasjoner + 48 blur-
+// passes. Bytt utløser mini-spillet av/på.
+const redCurvesActive = computed(() => (props.flipp.redContoursTotal?.value ?? 0) > 0)
+const redContourPaths = computed(() => props.flipp.redContourPaths?.value ?? [])
+function isRedActive(idx) {
+  const set = props.flipp.redContourIndices?.value
+  return !!set && set.has(idx)
+}
 
 // Stroke-skala basert på ball-radius — gir konsistent visuell tykkelse
 // uansett kart-størrelse (samme som bumper-symbolene). Indekskurver
@@ -183,26 +185,23 @@ function onBallTap(b) {
     <!-- v8.10.0 Red Curves: høydekurver som glør rødt mens mini-spillet
          under invaders-modus pågår. Kryssing av en rød kurve gir 5× poeng
          og fjerner den fra settet. Når alle er borte → super-perk innkommende.
-         Pulsende glød + tykkere strek skiller dem klart fra de vanlige
-         (brun-røde) konturene under. -->
-    <g v-if="activeRedContours.length > 0"
+
+         Ytelse: paths rendres én gang fra statisk katalog, og .cb-red-on
+         klassen styrer synlighet/strek. Per-kryssing oppdaterer Vue kun
+         class-attributtet, ikke DOM-treet. CSS-puls + gruppe-glow gir
+         én animasjon og én blur-pass i stedet for 48 av hver. -->
+    <g v-if="redCurvesActive"
        class="cb-red-contours"
-       pointer-events="none">
-      <path v-for="(c, i) in activeRedContours"
-            :key="`red-${c.idx}-${i}`"
+       pointer-events="none"
+       filter="url(#cb-red-glow)"
+       :style="{
+         '--cb-red-w-minor': String(redContourMinorWidth),
+         '--cb-red-w-index': String(redContourIndexWidth),
+       }">
+      <path v-for="c in redContourPaths"
+            :key="c.idx"
             :d="c.d"
-            fill="none"
-            stroke="#ff1744"
-            stroke-opacity="0.95"
-            :stroke-width="c.isIndex ? redContourIndexWidth : redContourMinorWidth"
-            stroke-linejoin="round"
-            stroke-linecap="round"
-            filter="url(#cb-red-glow)">
-        <animate attributeName="stroke-opacity"
-                 values="0.95;0.55;0.95"
-                 dur="1.2s"
-                 repeatCount="indefinite"/>
-      </path>
+            :class="['cb-red-path', { 'cb-red-on': isRedActive(c.idx), 'cb-red-thick': c.isIndex }]"/>
     </g>
 
     <!-- Bumpers: kart-annoterings-symboler (knaus / stein / brønn / bro)
@@ -384,4 +383,32 @@ function onBallTap(b) {
     </g>
   </svg>
 </template>
+
+<style>
+/* v8.10.0 Red Curves — CSS-baserte erstattere for de tidligere SMIL-
+   animasjonene og per-path-filteret. Én puls på gruppen i stedet for
+   48 simultane stroke-opacity-SMIL-er, og blur kun rendret én gang
+   via gruppe-filteret. Lookup på .cb-red-on (klasse-toggle pr path)
+   er gratis i Vue diff. */
+.cb-red-contours {
+  animation: cb-red-pulse 1.2s ease-in-out infinite;
+}
+.cb-red-path {
+  fill: none;
+  stroke: none;
+}
+.cb-red-path.cb-red-on {
+  stroke: #ff1744;
+  stroke-width: var(--cb-red-w-minor, 5);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.cb-red-path.cb-red-on.cb-red-thick {
+  stroke-width: var(--cb-red-w-index, 9);
+}
+@keyframes cb-red-pulse {
+  0%, 100% { opacity: 0.95; }
+  50%      { opacity: 0.55; }
+}
+</style>
 
