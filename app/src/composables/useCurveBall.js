@@ -1662,14 +1662,35 @@ export function useCurveBall() {
     try {
       const { features } = buildContours(dem, equidistanceM, 5)
       const out = []
+      // v8.8.12: filter ut kant-konturer. På flate / syntetiske DEM-er kan
+      // d3-contour generere én lukket polygon som essensielt følger kart-
+      // grensen — det er ingen ekte høydekurve men en artefakt av DEM-
+      // randen / noData-grensen. Å la den telle som rød kurve var
+      // forvirrende (RØDE KURVER 0/1 på et kart uten synlige konturer).
+      // Heuristikk: hvis konturens bbox dekker > 95 % av både kartets
+      // bredde og høyde, behandle den som en outline-artefakt og dropp.
+      const wT = bounds.width  * 0.95
+      const hT = bounds.height * 0.95
       for (const f of features) {
         const idx = Math.round(f.elevation / equidistanceM)
         const d = polylineToPath(f.coordinates, true)
         if (!d) continue
+        let minX = Infinity, maxX = -Infinity
+        let minY = Infinity, maxY = -Infinity
+        for (const [x, y] of f.coordinates) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+        if ((maxX - minX) >= wT && (maxY - minY) >= hT) {
+          dlog('redContours:skip-outline', { idx, elev: f.elevation })
+          continue
+        }
         out.push({ idx, isIndex: !!f.isIndex, d })
       }
       redContourPaths.value = out
-      dlog('redContours:precompute', { features: out.length })
+      dlog('redContours:precompute', { features: out.length, skipped: features.length - out.length })
     } catch (err) {
       dlog('!redContours.precompute', { e: String(err).slice(0, 80) })
     }
