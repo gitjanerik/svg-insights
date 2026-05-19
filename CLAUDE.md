@@ -55,7 +55,7 @@ Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versj
 
 ## Sesjons-overlevering — hva som er status nå
 
-**Sjekk `app/src/views/AboutView.vue` for full release-historikk** — det er hovedkanalen for endringslogg, alltid mest oppdatert. Korte sammendrag av siste releases:
+**Endringslogg er git-historikk.** AboutView.vue har ikke lenger en synlig endringslogg-tidslinje — commit-meldinger og PR-titler er den autoritative kilden. Korte sammendrag av siste releases:
 
 - **v6.10.0** — Kystkart: ny `lib/sjokartFetcher.js` med Kartverket Sjøkart-Dybdedata WFS som autoritativ kyst-kilde. Tre-trinns vann-fallback (N50 → Sjøkart → OSM). Land-overlay (ISOM 001) fra OSM `place=island/islet` rendres ETTER vann og fikser «Landøya-typetilfellet» der OSM-vann smitter inn på land. Nye ISOM-koder: 306 dybdekontur, 307 dybdeareal, 211 skjær/grunne, 533 lanterne. Dybdetall-soundings som blå tekst-labels.
 - **v6.9.0** — ISOM-polish: sykkel-sti egen styling (ISOM 508), navn-toggle skjuler all tekst, dedikert Tegnforklaring-side (`/tegnforklaring`), zoom-polish (pinch rundt finger, dobbel-tap-zoom)
@@ -202,7 +202,7 @@ LAYER_ORDER i `mapBuilder.js` følger ISOM 2017-2-stack (bunn → topp): vegetas
   - `usePinchZoom.js` — pinch-to-zoom i vieweren
   - `useDeviceMotion.js` — gyroskop (per nå ubrukt etter v2.1)
   - `useHalftoneGame.js` — interaktivt rasterlag + solsystem-modus (se under)
-- Visninger: `HomeView.vue` (portal med to kort), `AboutView.vue` (felles med endringslogg)
+- Visninger: `HomeView.vue` (portal med to kort), `AboutView.vue` (felles info-side — IKKE endringslogg lenger)
 
 ### Test-harness for font-kvalitet
 
@@ -263,13 +263,22 @@ LAYER_ORDER i `mapBuilder.js` følger ISOM 2017-2-stack (bunn → topp): vegetas
 - 143 tester totalt (pathFilters, imageToSvg, colorization)
 - `polygon-clipping` (^0.15.7) brukt for boolean-union ved brush-commit — eneste 3.-parts geometri-bibliotek i prosjektet
 
-## Versjonshåndtering
+## Versjonshåndtering — PR-per-endring, alltid bump
 
-Versjonen bumpes for hver release (`app/package.json` + `app/src/version.js` + tilsvarende oppføring i `AboutView.vue`s endringslogg). Brukeren informerer eksplisitt når nye hovedversjoner skal ut — ellers bumpes det vanligvis som minor eller patch.
+**Iterasjons-loopen i dette mini-prosjektet:**
 
-Release notes i AboutView.vue er **hovedkanalen** for brukernes oversikt over endringer. Bruk `<details>` med farget prikk i tidslinja. Ikke nevn påskeegg eller andre skjulte funksjoner i release notes.
+1. Hver endring brukeren skal teste → **ny PR fra fresh `origin/master`**, aldri direkte commit til `master`.
+2. Hver PR → **bump versjon** i tre filer som må matche:
+   - `app/package.json` (`"version"`)
+   - `app/src/version.js` (`APP_VERSION`)
+   - `app/public/sw.js` (`CACHE_VERSION`) — kritisk for at mobil-klienten henter ferske assets etter deploy
+3. Vi bumper som patch (8.8.x) som default. Brukeren sier eksplisitt fra ved minor/major.
+4. **Ingen AboutView-oppføring** — git-historikk / PR-titler er endringsloggen.
+5. **Ikke nevn påskeegg** i commit-meldinger eller PR-tekst.
 
-## Påskeegg (ikke del av release notes)
+`origin/master` er sannheten — etter merge venter alltid brukeren på en frisk PR fra ny branch basert på `origin/master`. Aldri gjenbruk en branch som allerede er merget.
+
+## Påskeegg (ikke nevn i commits/PR)
 
 Når Sort hull-modus har absorbert alle sirkler til én eneste stor sirkel som har vokst, aktiveres solsystem-modus som beskrevet i arkitektur-seksjonen. Dette er en bonus for brukere som leker nok med effekten. **Dokumenter ikke dette i release notes** — det er meningen å være en oppdagelse.
 
@@ -284,7 +293,7 @@ Når Sort hull-modus har absorbert alle sirkler til én eneste stor sirkel som h
 - **Konturer skal IKKE krysse vann** — bruk SVG `<mask>` med vann-polygoner svart over hvit bakgrunn for å maskere bort konturer over innsjøer
 - **CHM = DOM − DTM** er en legitim erstatning for å parse LAZ-punkter direkte. Mye lettere enn `laz-perf` WASM, og gir god nok klassifisering for ISOM 405–408
 - **Stupkanter krever skikkelig vectorisering** — Zhang-Suen skeletonization gir mye bedre resultater enn naiv horisontal-traversal. Verifisert: 1 → 19 stupkanter på Vardåsen
-- **Versjonslogg-konvensjon** — versjonsnummer i `package.json`, `version.js`, `sw.js` og en oppføring i `AboutView.vue` (skjult `v-if="false"` men beholdt i kildekode). Hver hovedversjon får farget prikk i tidslinja
+- **Versjonslogg-konvensjon (eldre)** — tidligere ble hver versjon også loggført i `AboutView.vue` med farget prikk i tidslinja. Dette er ikke lenger praksis: git-historikk + PR-titler er endringsloggen. Versjonsnummer skal fortsatt bumpes i `package.json`, `version.js`, og `sw.js` ved hver PR.
 
 ## Todos for neste kart-sesjon (UI-fixer)
 
