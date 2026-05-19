@@ -17,6 +17,23 @@ const props = defineProps({
 const ballRadius = computed(() => props.flipp.BALL_RADIUS_M ?? 12)
 function ballR(b) { return b?.r ?? ballRadius.value }
 
+// v8.10.0 Red Curves: aktive røde høydekurver under invaders-mini-spillet.
+// Filtreres fra den pre-computede katalogen til kun indekser som fortsatt
+// står som «røde» — kryssing fjerner indeks fra settet og denne computed
+// re-evaluerer.
+const activeRedContours = computed(() => {
+  const idx = props.flipp.redContourIndices?.value
+  if (!idx || idx.size === 0) return []
+  const paths = props.flipp.redContourPaths?.value ?? []
+  return paths.filter(p => idx.has(p.idx))
+})
+
+// Stroke-skala basert på ball-radius — gir konsistent visuell tykkelse
+// uansett kart-størrelse (samme som bumper-symbolene). Indekskurver
+// (hver 5.) tegnes ca dobbelt så tjukke som vanlige.
+const redContourMinorWidth = computed(() => ballRadius.value * 0.10)
+const redContourIndexWidth = computed(() => ballRadius.value * 0.18)
+
 // v7.4.3: ulike spawn-modi får ulik fyll. Mini = lyserød med høy luminans
 // (signaliserer "energi"), invader = grønn-glød (Space Invaders-feel).
 function ballFill(b) {
@@ -150,7 +167,43 @@ function onBallTap(b) {
         <feComposite in2="shadow" operator="in"/>
         <feComposite in="SourceGraphic"/>
       </filter>
+      <!-- v8.10.0 Red Curves: bløtt rødt glød rundt aktive kurver så de
+           skiller seg klart fra de vanlige brunrøde konturene under.
+           stdDeviation i user-units (= meter på kartet). 6 gir ~6m halo
+           på et 4km-kart, godt synlig men ikke overveldende. -->
+      <filter id="cb-red-glow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="6" result="blur"/>
+        <feMerge>
+          <feMergeNode in="blur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
     </defs>
+
+    <!-- v8.10.0 Red Curves: høydekurver som glør rødt mens mini-spillet
+         under invaders-modus pågår. Kryssing av en rød kurve gir 5× poeng
+         og fjerner den fra settet. Når alle er borte → super-perk innkommende.
+         Pulsende glød + tykkere strek skiller dem klart fra de vanlige
+         (brun-røde) konturene under. -->
+    <g v-if="activeRedContours.length > 0"
+       class="cb-red-contours"
+       pointer-events="none">
+      <path v-for="(c, i) in activeRedContours"
+            :key="`red-${c.idx}-${i}`"
+            :d="c.d"
+            fill="none"
+            stroke="#ff1744"
+            stroke-opacity="0.95"
+            :stroke-width="c.isIndex ? redContourIndexWidth : redContourMinorWidth"
+            stroke-linejoin="round"
+            stroke-linecap="round"
+            filter="url(#cb-red-glow)">
+        <animate attributeName="stroke-opacity"
+                 values="0.95;0.55;0.95"
+                 dur="1.2s"
+                 repeatCount="indefinite"/>
+      </path>
+    </g>
 
     <!-- Bumpers: kart-annoterings-symboler (knaus / stein / brønn / bro)
          med kremgul halo + lilla ring (matcher annotation-styling i appen).

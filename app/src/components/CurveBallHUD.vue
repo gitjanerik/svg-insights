@@ -118,6 +118,20 @@ let invaderTimer = null
 const mapMasterFlash = ref(null)
 let mapMasterTimer = null
 
+// v8.10.0 Red Curves: progress-badge (når mini-game er aktiv) + flash
+// når alle røde kurver er ryddet (super-perk earned).
+const redCurvesFlash = ref(false)
+let redCurvesFlashTimer = null
+const redCurvesActive = computed(() => {
+  const total = props.flipp.redContoursTotal?.value ?? 0
+  return total > 0
+})
+const redCurvesBadge = computed(() => {
+  const remaining = props.flipp.redContoursRemaining?.value ?? 0
+  const total = props.flipp.redContoursTotal?.value ?? 0
+  return { remaining, total, cleared: total - remaining }
+})
+
 watch(() => props.flipp.lastEvent.value, (e) => {
   if (e?.kind === 'multiball') {
     multiballFlash.value = e
@@ -154,6 +168,13 @@ watch(() => props.flipp.lastEvent.value, (e) => {
       mapMasterFlash.value = null
       mapMasterTimer = null
     }, 3200)
+  } else if (e?.kind === 'red-curves-cleared') {
+    redCurvesFlash.value = true
+    if (redCurvesFlashTimer) clearTimeout(redCurvesFlashTimer)
+    redCurvesFlashTimer = setTimeout(() => {
+      redCurvesFlash.value = false
+      redCurvesFlashTimer = null
+    }, 2600)
   }
 })
 
@@ -163,6 +184,7 @@ onUnmounted(() => {
   if (miniTimer) clearTimeout(miniTimer)
   if (invaderTimer) clearTimeout(invaderTimer)
   if (mapMasterTimer) clearTimeout(mapMasterTimer)
+  if (redCurvesFlashTimer) clearTimeout(redCurvesFlashTimer)
 })
 
 // v7.3.5: debug-panel — togglebar, persisterer i localStorage. Vises kun
@@ -354,6 +376,27 @@ async function copyShareUrl() {
       <div class="cb-chain-mini">{{ t('flash.chain.label') }}</div>
       <div class="cb-chain-text">{{ t('flash.chain.text', { mult: chainFlash.mult }) }}</div>
       <div class="cb-chain-sub">+{{ chainFlash.bonus }}</div>
+    </div>
+
+    <!-- v8.10.0 Red Curves progress-badge — vises mens mini-spillet pågår.
+         Bumpes opp i venstre kolonne under hjerter, så spilleren ser
+         både gjenstående antall og totalt mål. -->
+    <div v-if="redCurvesActive" class="cb-red-curves-badge">
+      <div class="cb-rc-dot"></div>
+      <div class="cb-rc-text">
+        {{ t('hud.redCurves') }}
+        <span class="cb-rc-count">
+          {{ redCurvesBadge.cleared }}/{{ redCurvesBadge.total }}
+        </span>
+      </div>
+    </div>
+
+    <!-- v8.10.0 Red Curves cleared-flash — super-perk earned. Phase 1:
+         kun visuell markering. Phase 2/3 vil koble på timer, sync flippers
+         og bullets. -->
+    <div v-if="redCurvesFlash" class="cb-red-curves-flash">
+      <div class="cb-rcf-text">{{ t('flash.redCurvesCleared') }}</div>
+      <div class="cb-rcf-sub">{{ t('flash.redCurvesClearedSub') }}</div>
     </div>
 
     <!-- Bottom-right: exit-knapp -->
@@ -1236,4 +1279,79 @@ async function copyShareUrl() {
   margin-top: 4px;
 }
 .cb-share-close:active { color: #fff; border-color: #94a3b8; }
+
+/* v8.10.0 Red Curves progress-badge — sub-bar under top-bar i venstre
+   kolonne. Liten pulsende rød prikk + tekst slik at spilleren vet at
+   mini-spillet pågår uten å rote til hovedscoren. */
+.cb-red-curves-badge {
+  position: absolute;
+  top: calc(38px * var(--cb-hud-scale, 1));
+  left: calc(8px * var(--cb-hud-scale, 1));
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--cb-hud-scale, 1));
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid #ff1744;
+  padding: calc(3px * var(--cb-hud-scale, 1)) calc(8px * var(--cb-hud-scale, 1));
+  font-family: monospace;
+  font-size: calc(11px * var(--cb-hud-scale, 1));
+  letter-spacing: 0.1em;
+  color: #fecaca;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.cb-rc-dot {
+  width: calc(8px * var(--cb-hud-scale, 1));
+  height: calc(8px * var(--cb-hud-scale, 1));
+  background: #ff1744;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #ff1744;
+  animation: cb-rc-pulse 1.2s ease-in-out infinite;
+}
+.cb-rc-count {
+  color: #fff;
+  margin-left: calc(4px * var(--cb-hud-scale, 1));
+  font-weight: bold;
+}
+@keyframes cb-rc-pulse {
+  0%, 100% { opacity: 1.0; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(1.25); }
+}
+
+/* v8.10.0 Red Curves cleared-flash — knall rød + gull-glow når alle
+   høydekurver er ryddet og super-perk er earned. Phase 1: ren visuell
+   markering. Phase 2/3 vil koble på timer, synkroniserte flippere
+   (én tap → alle fire lader) og bullet-firing fra paddle. */
+.cb-red-curves-flash {
+  position: absolute;
+  top: 42%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: cb-rcf-pop 2.6s ease-out forwards;
+}
+.cb-rcf-text {
+  font-size: 38px;
+  color: #ff1744;
+  text-shadow:
+    3px 3px 0 #7f1d1d,
+    6px 6px 0 #fde047,
+    9px 9px 0 #000;
+  letter-spacing: 0.1em;
+  font-weight: bold;
+}
+.cb-rcf-sub {
+  font-size: 12px;
+  color: #fde047;
+  margin-top: 0.6em;
+  letter-spacing: 0.22em;
+  text-shadow: 2px 2px 0 #000;
+}
+@keyframes cb-rcf-pop {
+  0%   { transform: translate(-50%, -50%) scale(0.4); opacity: 0; }
+  20%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+  35%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  80%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.0); opacity: 0; }
+}
 </style>

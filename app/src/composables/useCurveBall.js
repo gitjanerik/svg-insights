@@ -1,5 +1,7 @@
 import { ref, reactive, computed, onUnmounted } from 'vue'
 import { sampleGradient, sampleElevation } from '../lib/demSampling.js'
+import { buildContours } from '../lib/dem.js'
+import { polylineToPath } from '../lib/pathUtils.js'
 import { ANNOTATION_SYMBOLS } from './useMapAnnotations.js'
 import {
   playIntro, playKick, playEnergize, playSplash, playWin,
@@ -105,6 +107,20 @@ export function useCurveBall() {
   //  - energize() til å lade aksiale par
   //  - CurveBallFlippers til å speile drag-posisjoner mellom topp/bunn og venstre/høyre
   const invaderModeActive = ref(false)
+
+  // v8.10.0 Red Curves mini-game (under invader-modus): én pre-computed
+  // katalog over alle høydekurver i kartet (idx = Math.round(elev/eq) —
+  // matcher floor-bucket-en som detectContourCrossings bruker). Når
+  // spawnInvaders fyrer av aktiveres alle indekser som «røde». Kryssing
+  // av en rød kontur gir 5× poeng og fjerner den fra settet. Når settet
+  // er tomt → super-perk markeres pending (Phase 1 = bare flagg + flash;
+  // Phase 2/3 introduserer timer + bullets). Settet nullstilles ved
+  // drown-all (mini-game avbrytes) og ved restart.
+  const redContourPaths = ref([])      // [{ idx, isIndex, d }] pre-computed once
+  const redContourIndices = ref(new Set())
+  const redContoursTotal = ref(0)
+  const redCurvesPerkPending = ref(false)
+  const redContoursRemaining = computed(() => redContourIndices.value.size)
 
   // 3 perk-valg som vises ved hver level-clear hvor (level % 3 === 0)
   const perkChoices = ref([])
@@ -1388,6 +1404,11 @@ export function useCurveBall() {
     flippers.bottom.position = flippers.top.position
     flippers.right.position  = flippers.left.position
 
+    // v8.10.0: aktiver røde kurver mini-game. No-op hvis allerede aktiv
+    // (forhindrer at en re-spawnet invaders under pågående rød-game
+    // resetter spillerens progresjon).
+    activateRedContours()
+
     // v8.8.9: 10–13 sek total dans før breakout (random per trigger).
     const duration = INVADER_ORBIT_DURATION_S + Math.random() * 2
     const breakoutSpeed = KICK_SPEED * INVADER_BREAKOUT_SPEED_MULT
@@ -1543,6 +1564,58 @@ export function useCurveBall() {
     }
   }
 
+  // v8.10.0: Pre-computer røde kontur-paths én gang fra DEM ved init.
+  // Coords kommer ut i SVG/game-space siden curveball-DEM-en har
+  // originX=originY=0 (se demSampling.js). Idx = round(elev/eq) matcher
+  // bucket-en detectContourCrossings bruker (floor av exakte threshold-
+  // multipler av eq gir samme integer).
+  function precomputeRedContours() {
+    redContourPaths.value = []
+    if (!dem?.data || !equidistanceM) return
+    try {
+      const { features } = buildContours(dem, equidistanceM, 5)
+      const out = []
+      for (const f of features) {
+        const idx = Math.round(f.elevation / equidistanceM)
+        const d = polylineToPath(f.coordinates, true)
+        if (!d) continue
+        out.push({ idx, isIndex: !!f.isIndex, d })
+      }
+      redContourPaths.value = out
+      dlog('redContours:precompute', { features: out.length })
+    } catch (err) {
+      dlog('!redContours.precompute', { e: String(err).slice(0, 80) })
+    }
+  }
+
+  // Aktiver røde kurver: alle høydekurve-indekser i kartet markeres som
+  // røde. Kun hvis ingen rød mini-game allerede er aktiv (ny invaders-
+  // spawn under pågående rød-game skal IKKE resette progresjonen).
+  function activateRedContours() {
+    if (redContourIndices.value.size > 0) return
+    if (!redContourPaths.value.length) return
+    const set = new Set()
+    for (const p of redContourPaths.value) set.add(p.idx)
+    redContoursTotal.value = set.size
+    redContourIndices.value = set
+    lastEvent.value = { kind: 'red-curves-activated', at: Date.now(), total: set.size }
+    dlog('redContours:activate', { n: set.size })
+  }
+
+  function clearRedContours() {
+    if (redContourIndices.value.size === 0) return
+    redContourIndices.value = new Set()
+    redContoursTotal.value = 0
+    dlog('redContours:clear')
+  }
+
+  function awardRedCurvePerk() {
+    redCurvesPerkPending.value = true
+    redContoursTotal.value = 0
+    lastEvent.value = { kind: 'red-curves-cleared', at: Date.now() }
+    dlog('redContours:cleared!')
+  }
+
   function detectContourCrossings(_px, _py, cx, cy) {
     if (!dem) return
     const cur = sampleElevation(dem, cx, cy)
@@ -1562,13 +1635,23 @@ export function useCurveBall() {
       const lo = Math.min(prevContour, curContour)
       const hi = Math.max(prevContour, curContour)
       let thick = false
+      let redSet = redContourIndices.value
+      let redChanged = false
       for (let i = lo + 1; i <= hi; i++) {
-        if (i % 5 === 0) {
-          score.value += Math.round(5 * perks.contourMult)
-          thick = true
-        } else {
-          score.value += Math.round(1 * perks.contourMult)
+        const isIndex = (i % 5 === 0)
+        const base = isIndex ? 5 : 1
+        const isRed = redSet.has(i)
+        const mult = isRed ? 5 : 1
+        score.value += Math.round(base * mult * perks.contourMult)
+        if (isIndex) thick = true
+        if (isRed) {
+          if (!redChanged) { redSet = new Set(redSet); redChanged = true }
+          redSet.delete(i)
         }
+      }
+      if (redChanged) {
+        redContourIndices.value = redSet
+        if (redSet.size === 0) awardRedCurvePerk()
       }
       playContourTick(thick)
       // v8.1.0: climb-boost-akkumulering på primary ball. Oppoverbakke-
@@ -1817,6 +1900,10 @@ export function useCurveBall() {
     // så neste drop starter rent.
     pendingInvaderWin = false
     invaderModeActive.value = false
+    // v8.10.0: rød-game avbrytes hvis alle baller drukner midt i mini-spillet.
+    // Spilleren får ingen super-perk, og neste invaders-spawn aktiverer
+    // friske røde kurver fra start.
+    clearRedContours()
 
     if (lives.value === 0) {
       const finalTotal = totalScore.value + score.value
@@ -2021,6 +2108,9 @@ export function useCurveBall() {
     pendingInvaderWin = false
     lastStillnessExplodeAt = 0
     invaderModeActive.value = false
+    // v8.10.0: nullstill røde kurver mini-game og pending perk ved hard restart
+    clearRedContours()
+    redCurvesPerkPending.value = false
     for (const e of ['top', 'bottom', 'left', 'right']) {
       flippers[e].position = 0.5
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
@@ -2169,6 +2259,11 @@ export function useCurveBall() {
     // v8.2.0: magnetisk base-kraft skaleres med mapScale så attract/repel
     // har samme skjerm-effekt uansett kart-størrelse.
     MAGNETIC_BASE_M_S2  = 220 * mapScale
+
+    // v8.10.0: Bygg kontur-katalog for Red Curves mini-game én gang per
+    // init. Ingen no-op hvis DEM mangler (graceful fallback i clientmode
+    // uten WCS — rød-game blir bare inert).
+    precomputeRedContours()
   }
 
   function activate() {
@@ -2198,6 +2293,9 @@ export function useCurveBall() {
     perks, perkChoices,
     tournamentMode,
     invaderModeActive,
+    // v8.10.0 Red Curves mini-game (under invaders-modus)
+    redContourPaths, redContourIndices, redContoursTotal, redContoursRemaining,
+    redCurvesPerkPending,
     mapMasters,
     // actions
     init, activate, deactivate,
