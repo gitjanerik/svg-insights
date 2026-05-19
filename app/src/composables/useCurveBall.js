@@ -63,9 +63,10 @@ export function useCurveBall() {
     while (debugLog.length > 12) debugLog.shift()
   }
 
-  // v8.8.11: 5. nivå (lilla) = rød × 1.25. Kun tilgjengelig når super-perk
-  // tier 2+ er aktiv; ellers cycler taps gjennom de 4 første kun.
-  const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0, 7.5]
+  // v8.8.13: 5. nivå (lilla) = rød × 1.5 (var 1.25 i v8.8.11, økt etter
+  // brukertest av v8.8.12). Kun tilgjengelig når super-perk tier 2+ er
+  // aktiv; ellers cycler taps gjennom de 4 første kun.
+  const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0, 9.0]
   const NORMAL_KICK_LEVELS = 4  // antall nivåer uten tier 2+ super-perk
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
@@ -347,6 +348,42 @@ export function useCurveBall() {
   // v8.0.5: BOUNCE_AMPLIFY 1.10 → 1.13. Ballen beholder litt mer fart pr
   // paddle-bounce — mild energi-økning i den vanlige ballen etter brukerønske.
   const BOUNCE_AMPLIFY = 1.13
+
+  // v8.8.13: Konvekse flippers — vanskelighets-progresjon pr level.
+  // Flipper-innsiden buer seg gradvis mer utover så ball-treff nær
+  // enden av paddlen deflektrer skarpere utover, ikke rett tilbake.
+  // Sentrum-treff = forutsigbar retur (belønner presisjon), kant-treff
+  // = wild (straffer slurv). Implementert som tiltet normal-vektor:
+  //   offset = (hit - center) / halfLength  ∈ [-1, +1]
+  //   tilt   = offset * convexityRad
+  // L1 = 0° (flat), L2 = 3°, L3 = 6°, ... L9+ = 24° (cap).
+  const FLIPPER_CONVEXITY_DEG_PER_LEVEL = 3
+  const FLIPPER_CONVEXITY_MAX_DEG = 24
+  function flipperConvexityRad() {
+    const deg = Math.min(
+      FLIPPER_CONVEXITY_MAX_DEG,
+      Math.max(0, (level.value - 1) * FLIPPER_CONVEXITY_DEG_PER_LEVEL),
+    )
+    return deg * Math.PI / 180
+  }
+
+  // Reflekter ball-velocity over normalen (nx, ny), så boost normal-
+  // komponenten til minst targetSpeed (eller boost incoming med
+  // BOUNCE_AMPLIFY hvis det er større). Tangential-komponent bevares.
+  // Brukes av alle fire paddle-bounces — den eneste forskjellen mellom
+  // edges er normalvektoren (som tilter med treffposisjonen ved konvekse
+  // paddles). Når convexity = 0 og normalen er aksial, oppfører denne
+  // seg identisk med den gamle aksial-flip-koden.
+  function reflectAndBoost(b, nx, ny, targetSpeed) {
+    const vDotN_in = b.vx * nx + b.vy * ny
+    const vOut_x = b.vx - 2 * vDotN_in * nx
+    const vOut_y = b.vy - 2 * vDotN_in * ny
+    const vDotN_out = -vDotN_in
+    const finalN = Math.max(targetSpeed, vDotN_out * BOUNCE_AMPLIFY)
+    const boost = finalN - vDotN_out
+    b.vx = vOut_x + boost * nx
+    b.vy = vOut_y + boost * ny
+  }
   // v8.0.3: KICK_SPEED og BUMPER_BOUNCE_SPEED er fart i m/s. Tidligere fast,
   // men det gir radikalt ulik skjerm-traverseringstid mellom 1km- og 10km-
   // kart (på 1km-kart blastet ballen tvers over på <1s). Nå skaleres alle
@@ -1866,6 +1903,10 @@ export function useCurveBall() {
     // av normal). Faller tilbake til BALL_RADIUS_M for eldre baller uten r.
     const r = b.r ?? BALL_RADIUS_M
     const inset = FLIPPER_INSET_M
+    // v8.8.13: konveksitet pr level — kun aktiv fra og med level 2.
+    // Anvendes som tiltet normal-vektor ved treffpunkt. Halv-lengden
+    // brukes for å normalisere offset til [-1, +1].
+    const convex = flipperConvexityRad()
 
     if (b.y - r < inset && b.vy < 0) {
       const f = flippers.top
@@ -1874,7 +1915,9 @@ export function useCurveBall() {
       if (b.x >= c - half && b.x <= c + half) {
         b.y = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vy = Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
+        const tilt = ((b.x - c) / half) * convex
+        // Top-paddle: normal peker NED inn i spilleflaten = (sin tilt, cos tilt)
+        reflectAndBoost(b, Math.sin(tilt), Math.cos(tilt), KICK_SPEED * mult * perks.kickMult)
         registerHit(b, f, 'top')
       } else {
         ballDrown(b, b.x, 0)
@@ -1888,7 +1931,9 @@ export function useCurveBall() {
       if (b.x >= c - half && b.x <= c + half) {
         b.y = h - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vy = -Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vy) * BOUNCE_AMPLIFY)
+        const tilt = ((b.x - c) / half) * convex
+        // Bottom-paddle: normal peker OPP inn i spilleflaten = (sin tilt, -cos tilt)
+        reflectAndBoost(b, Math.sin(tilt), -Math.cos(tilt), KICK_SPEED * mult * perks.kickMult)
         registerHit(b, f, 'bottom')
       } else {
         ballDrown(b, b.x, h)
@@ -1902,7 +1947,9 @@ export function useCurveBall() {
       if (b.y >= c - half && b.y <= c + half) {
         b.x = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vx = Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
+        const tilt = ((b.y - c) / half) * convex
+        // Left-paddle: normal peker HØYRE inn i spilleflaten = (cos tilt, sin tilt)
+        reflectAndBoost(b, Math.cos(tilt), Math.sin(tilt), KICK_SPEED * mult * perks.kickMult)
         registerHit(b, f, 'left')
       } else {
         ballDrown(b, 0, b.y)
@@ -1916,7 +1963,9 @@ export function useCurveBall() {
       if (b.y >= c - half && b.y <= c + half) {
         b.x = w - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
-        b.vx = -Math.max(KICK_SPEED * mult * perks.kickMult, Math.abs(b.vx) * BOUNCE_AMPLIFY)
+        const tilt = ((b.y - c) / half) * convex
+        // Right-paddle: normal peker VENSTRE inn i spilleflaten = (-cos tilt, sin tilt)
+        reflectAndBoost(b, -Math.cos(tilt), Math.sin(tilt), KICK_SPEED * mult * perks.kickMult)
         registerHit(b, f, 'right')
       } else {
         ballDrown(b, w, b.y)
