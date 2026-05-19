@@ -208,7 +208,8 @@ function onPointerUp(e) {
 }
 
 /* Charge stages — kald → varm via kickLevel.
-   0 = blå (normal), 1 = gul, 2 = oransj, 3 = rød (max). */
+   0 = blå (normal), 1 = gul, 2 = oransj, 3 = rød, 4 = LILLA (super-perk
+   tier 2+, kun tilgjengelig når Red Curves har gitt 80 %-belønning). */
 .cb-charge-0 {
   background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
   box-shadow: 0 0 8px rgba(59, 130, 246, 0.55), inset 0 0 4px rgba(0,0,0,0.3);
@@ -226,10 +227,22 @@ function onPointerUp(e) {
   box-shadow: 0 0 18px rgba(239, 68, 68, 0.95), inset 0 0 6px rgba(0,0,0,0.4);
   animation: cb-pulse-red 0.5s steps(2, end) infinite;
 }
+/* v8.8.13: Lilla = 5. nivå, 9.0 × base-kick (1.5 × rød). Sterkere puls
+   og kraftigere glow så spilleren ser at flipperen er på max-state. */
+.cb-charge-4 {
+  background: linear-gradient(135deg, #c026d3 0%, #6b21a8 100%);
+  box-shadow: 0 0 22px rgba(192, 38, 211, 1.0), inset 0 0 8px rgba(0,0,0,0.45);
+  animation: cb-pulse-purple 0.35s steps(2, end) infinite;
+}
 @keyframes cb-pulse-red {
   0%   { filter: brightness(1.0); }
   50%  { filter: brightness(1.3); }
   100% { filter: brightness(1.0); }
+}
+@keyframes cb-pulse-purple {
+  0%   { filter: brightness(1.0) saturate(1.0); }
+  50%  { filter: brightness(1.45) saturate(1.3); }
+  100% { filter: brightness(1.0) saturate(1.0); }
 }
 
 /* Diagonal grip-stripe i 8-bit-stil for visuell feedback */
