@@ -18,9 +18,22 @@ function padThickness() {
 
 // Hvor mye drag-bevegelse før vi tolker det som drag (ikke tap).
 // Under terskel = tap → energize.
-const TAP_MOVE_THRESHOLD = 0.005   // fraksjon av kant-lengde
+const TAP_MOVE_THRESHOLD = 0.005
 
 const dragState = ref(null)
+
+// v8.9.0: Effektiv lengde driver både hitbox (i useCurveBall.js
+// handleEdgesForBall) og rendering. Faller tilbake til stored length
+// hvis composable ikke eksponerer helperen (defensive — happens hvis
+// dette komponentet brukes mot eldre useCurveBall-versjon).
+function effLen(edge) {
+  return props.flipp.effectiveFlipperLength?.(edge)
+    ?? props.flipp.flippers[edge].length
+}
+
+function convexRad() {
+  return props.flipp.flipperConvexityRad?.() ?? 0
+}
 
 function paddleStyle(edge) {
   if (!props.mapRect) return { display: 'none' }
@@ -28,7 +41,7 @@ function paddleStyle(edge) {
   const f = props.flipp.flippers[edge]
   const isHoriz = edge === 'top' || edge === 'bottom'
   const totalLen = isHoriz ? r.width : r.height
-  const padLen = totalLen * f.length
+  const padLen = totalLen * effLen(edge)
   const padCenter = totalLen * f.position
 
   const insetM = props.flipp.FLIPPER_INSET_M ?? 280
@@ -67,6 +80,72 @@ function paddleStyle(edge) {
   }
 }
 
+// Sagitta i piksler — dybden på paddle-bulgen som ekstenderer ut mot
+// banen. Matcher kollisjons-formelen i handleEdgesForBall: ved offset
+// (hit−center)/half=±1 tilter normalen med ±convexityRad → arc-sagitta
+// = halv-lengde × tan(θ/2).
+function sagittaPx(edge) {
+  if (!props.mapRect) return 0
+  const r = props.mapRect
+  const isHoriz = edge === 'top' || edge === 'bottom'
+  const totalLen = isHoriz ? r.width : r.height
+  const halfPx = totalLen * effLen(edge) * 0.5
+  return halfPx * Math.tan(convexRad() / 2)
+}
+
+// SVG-path i unit-coords (0..100 x 0..100). preserveAspectRatio="none"
+// gjør at vi kan bruke samme viewBox for alle paddler, x og y skaleres
+// uavhengig. Sagitta uttrykkes som % av thickness (T) — kontroll-
+// punktet skytes ut over 100 (= utenfor SVG-viewBox) for å trekke
+// kurven mot banen. SVG-overflow=visible lar bulgen rendres utenfor.
+function sagittaPctT(edge) {
+  const r = props.mapRect
+  if (!r) return 0
+  const isHoriz = edge === 'top' || edge === 'bottom'
+  const totalLen = isHoriz ? r.width : r.height
+  const L = totalLen * effLen(edge)
+  const T = padThickness()
+  if (T <= 0) return 0
+  const sPx = (L / 2) * Math.tan(convexRad() / 2)
+  return (sPx / T) * 100
+}
+
+// For SVG-path: outer = siden lengst fra banen, inner = treff-flaten
+// som bulker mot banen. Quadratic Bezier styrer dybden via Y/X-koord
+// utenfor (0..100) som tilsvarer sagitta.
+function paddlePath(edge) {
+  const s = sagittaPctT(edge)
+  if (edge === 'top') {
+    // Outer = topp (y=0), inner = bunn (y=100) bulker NED (y=100+s)
+    return `M0 0 L100 0 L100 100 Q50 ${100 + s} 0 100 Z`
+  }
+  if (edge === 'bottom') {
+    // Outer = bunn (y=100), inner = topp (y=0) bulker OPP (y=-s)
+    return `M0 100 L100 100 L100 0 Q50 ${-s} 0 0 Z`
+  }
+  if (edge === 'left') {
+    // Outer = venstre (x=0), inner = høyre (x=100) bulker HØYRE (x=100+s)
+    return `M0 0 L100 0 Q${100 + s} 50 100 100 L0 100 Z`
+  }
+  // right: outer = høyre (x=100), inner = venstre (x=0) bulker VENSTRE (x=-s)
+  return `M100 0 L0 0 Q${-s} 50 0 100 L100 100 Z`
+}
+
+// Farge-stops pr kickLevel (matcher de tidligere CSS-gradientene).
+// Brukt for SVG <linearGradient>-defs så paddle-pathen kan males med
+// samme blå→gul→oransj→rød→lilla-skala.
+const GRAD_STOPS = [
+  ['#1e3a8a', '#3b82f6'],  // 0 — blå
+  ['#fde047', '#facc15'],  // 1 — gul
+  ['#fb923c', '#ea580c'],  // 2 — oransj
+  ['#ef4444', '#b91c1c'],  // 3 — rød
+  ['#c026d3', '#6b21a8'],  // 4 — lilla
+]
+
+function gradId(edge, kickLvl) {
+  return `cb-grad-${edge}-${kickLvl}`
+}
+
 function chargeClass(edge) {
   return `cb-charge-${props.flipp.flippers[edge].kickLevel}`
 }
@@ -101,8 +180,11 @@ function onPointerDown(edge, e) {
 //   top = T, right = 1-T, bottom = 1-T, left = T
 // Brukeren drar topp/venstre høyre/ned for å samle ved NØ+SV; bunn/høyre i
 // motsatt retning gir samme konsentrasjon.
-function clampToHalf(f, pos) {
-  const half = f.length / 2
+// v8.9.0: clampToHalf bruker effektiv lengde så drag-grensene følger den
+// faktiske visuelle bredden — paddle kan dras nærmere kant når den er
+// smal (høy energi / høyt level).
+function clampToHalf(edge, pos) {
+  const half = effLen(edge) / 2
   return Math.max(half, Math.min(1 - half, pos))
 }
 
@@ -124,14 +206,14 @@ function onPointerMove(e) {
   const delta = (cur - ds.startCoord) / total
   if (Math.abs(delta) > TAP_MOVE_THRESHOLD) ds.movedAsDrag = true
   const f = props.flipp.flippers[ds.edge]
-  const next = clampToHalf(f, ds.startPos + delta)
+  const next = clampToHalf(ds.edge, ds.startPos + delta)
   f.position = next
 
   const targets = diagonalTargets(ds.edge, next)
   const flips = props.flipp.flippers
   for (const e2 of ['top', 'bottom', 'left', 'right']) {
     if (e2 === ds.edge) continue
-    flips[e2].position = clampToHalf(flips[e2], targets[e2])
+    flips[e2].position = clampToHalf(e2, targets[e2])
   }
 }
 
@@ -163,7 +245,19 @@ function onPointerUp(e) {
          @pointermove="onPointerMove"
          @pointerup="onPointerUp"
          @pointercancel="onPointerUp">
-      <div class="cb-paddle-grip"/>
+      <svg class="cb-paddle-svg"
+           viewBox="0 0 100 100"
+           preserveAspectRatio="none">
+        <defs>
+          <linearGradient :id="gradId(edge, flipp.flippers[edge].kickLevel)" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%"   :stop-color="GRAD_STOPS[flipp.flippers[edge].kickLevel]?.[0] ?? GRAD_STOPS[0][0]"/>
+            <stop offset="100%" :stop-color="GRAD_STOPS[flipp.flippers[edge].kickLevel]?.[1] ?? GRAD_STOPS[0][1]"/>
+          </linearGradient>
+        </defs>
+        <path class="cb-paddle-face"
+              :d="paddlePath(edge)"
+              :fill="`url(#${gradId(edge, flipp.flippers[edge].kickLevel)})`"/>
+      </svg>
     </div>
   </div>
 </template>
@@ -181,12 +275,11 @@ function onPointerUp(e) {
   pointer-events: auto;
   touch-action: none;
   user-select: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid #fff;
   cursor: grab;
-  transition: background 120ms, box-shadow 120ms;
+  /* v8.9.0: SVG-pathen ekstenderer utenfor div-rekt (bulgen) — overflow
+     må være visible så pathen ikke klippes. */
+  overflow: visible;
+  transition: filter 120ms;
 }
 
 /* v7.3.0: Utvidet touch-sone via ::before pseudo-element. Paddle visuelt
@@ -207,62 +300,56 @@ function onPointerUp(e) {
   filter: brightness(1.15);
 }
 
-/* Charge stages — kald → varm via kickLevel.
-   0 = blå (normal), 1 = gul, 2 = oransj, 3 = rød, 4 = LILLA (super-perk
-   tier 2+, kun tilgjengelig når Red Curves har gitt 80 %-belønning). */
-.cb-charge-0 {
-  background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-  box-shadow: 0 0 8px rgba(59, 130, 246, 0.55), inset 0 0 4px rgba(0,0,0,0.3);
-}
-.cb-charge-1 {
-  background: linear-gradient(135deg, #fde047 0%, #facc15 100%);
-  box-shadow: 0 0 12px rgba(250, 204, 21, 0.75), inset 0 0 4px rgba(0,0,0,0.3);
-}
-.cb-charge-2 {
-  background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
-  box-shadow: 0 0 14px rgba(251, 146, 60, 0.85), inset 0 0 4px rgba(0,0,0,0.3);
-}
-.cb-charge-3 {
-  background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
-  box-shadow: 0 0 18px rgba(239, 68, 68, 0.95), inset 0 0 6px rgba(0,0,0,0.4);
-  animation: cb-pulse-red 0.5s steps(2, end) infinite;
-}
-/* v8.8.13: Lilla = 5. nivå, 9.0 × base-kick (1.5 × rød). Sterkere puls
-   og kraftigere glow så spilleren ser at flipperen er på max-state. */
-.cb-charge-4 {
-  background: linear-gradient(135deg, #c026d3 0%, #6b21a8 100%);
-  box-shadow: 0 0 22px rgba(192, 38, 211, 1.0), inset 0 0 8px rgba(0,0,0,0.45);
-  animation: cb-pulse-purple 0.35s steps(2, end) infinite;
-}
-@keyframes cb-pulse-red {
-  0%   { filter: brightness(1.0); }
-  50%  { filter: brightness(1.3); }
-  100% { filter: brightness(1.0); }
-}
-@keyframes cb-pulse-purple {
-  0%   { filter: brightness(1.0) saturate(1.0); }
-  50%  { filter: brightness(1.45) saturate(1.3); }
-  100% { filter: brightness(1.0) saturate(1.0); }
+/* SVG fyller hele paddle-div-en. Pathen bruker preserveAspectRatio="none"
+   så viewBox 0..100 strekkes til faktisk W × T. Bulgen ekstenderer
+   utenfor takket være overflow: visible. */
+.cb-paddle-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
 }
 
-/* Diagonal grip-stripe i 8-bit-stil for visuell feedback */
-.cb-paddle-grip {
-  background: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.25),
-    rgba(0, 0, 0, 0.25) 4px,
-    transparent 4px,
-    transparent 8px
-  );
+/* Hvit border og glow flyttes til path via stroke + drop-shadow så de
+   følger bulgen. Animasjons-keyframes per charge-state lever på path-
+   en via class fra forelderen. */
+.cb-paddle-face {
+  stroke: #fff;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  /* drop-shadow appliseres pr kickLevel under */
 }
-.cb-paddle-top .cb-paddle-grip,
-.cb-paddle-bottom .cb-paddle-grip {
-  width: 60%;
-  height: 6px;
+
+/* Glow pr charge-stage. Tilsvarer de gamle box-shadow-glowene, men
+   som SVG drop-shadow så de følger paddle-formen (inkl. bulgen). */
+.cb-charge-0 .cb-paddle-face {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.55));
 }
-.cb-paddle-left .cb-paddle-grip,
-.cb-paddle-right .cb-paddle-grip {
-  width: 6px;
-  height: 60%;
+.cb-charge-1 .cb-paddle-face {
+  filter: drop-shadow(0 0 12px rgba(250, 204, 21, 0.75));
+}
+.cb-charge-2 .cb-paddle-face {
+  filter: drop-shadow(0 0 14px rgba(251, 146, 60, 0.85));
+}
+.cb-charge-3 .cb-paddle-face {
+  filter: drop-shadow(0 0 18px rgba(239, 68, 68, 0.95));
+  animation: cb-pulse-red 0.5s steps(2, end) infinite;
+}
+.cb-charge-4 .cb-paddle-face {
+  filter: drop-shadow(0 0 22px rgba(192, 38, 211, 1.0));
+  animation: cb-pulse-purple 0.35s steps(2, end) infinite;
+}
+
+@keyframes cb-pulse-red {
+  0%   { filter: drop-shadow(0 0 18px rgba(239, 68, 68, 0.95)) brightness(1.0); }
+  50%  { filter: drop-shadow(0 0 22px rgba(239, 68, 68, 1.0))  brightness(1.3); }
+  100% { filter: drop-shadow(0 0 18px rgba(239, 68, 68, 0.95)) brightness(1.0); }
+}
+@keyframes cb-pulse-purple {
+  0%   { filter: drop-shadow(0 0 22px rgba(192, 38, 211, 1.0)) brightness(1.0) saturate(1.0); }
+  50%  { filter: drop-shadow(0 0 28px rgba(192, 38, 211, 1.0)) brightness(1.45) saturate(1.3); }
+  100% { filter: drop-shadow(0 0 22px rgba(192, 38, 211, 1.0)) brightness(1.0) saturate(1.0); }
 }
 </style>
