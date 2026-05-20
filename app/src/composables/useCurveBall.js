@@ -68,6 +68,17 @@ export function useCurveBall() {
   // aktiv; ellers cycler taps gjennom de 4 første kun.
   const KICK_MULTIPLIERS = [1.0, 2.0, 4.0, 6.0, 9.0]
   const NORMAL_KICK_LEVELS = 4  // antall nivåer uten tier 2+ super-perk
+
+  // v8.9.0: Energi-basert breddereduksjon. Jo høyere kickLevel (blå → gul
+  // → oransj → rød → lilla) jo smalere effektiv treffbredde. Belønner
+  // presisjon: hardeste kick krever finest sikte. + ekstra reduksjon pr
+  // game-level. Floor sikrer at flipperen aldri blir uspillbart liten.
+  //   blå=100%, gul=92%, oransj=84%, rød=76%, lilla=68%
+  //   + 2 % reduksjon pr level over 1
+  //   min = 36 % av base (paddlens egen lengde)
+  const KICK_WIDTH_MULT = [1.00, 0.92, 0.84, 0.76, 0.68]
+  const LEVEL_WIDTH_REDUCTION = 0.02
+  const MIN_WIDTH_FRAC_OF_BASE = 0.36
   const SMASH_BONUS_BASE = 100
   const RANDOM_DROP_R_FRAC = 0.325
   const PERK_INTERVAL = 3              // perk-velg hvert 3. level (3, 6, 9...)
@@ -310,13 +321,14 @@ export function useCurveBall() {
   const INVADER_BREAKOUT_SPEED_MULT = 1.0
   const INVADER_ENERGY_VARIATION = 0   // alle baller har identisk breakout-fart
 
-  // v8.0.4: maks antall cascade-level-ups under multiball. Tidligere kun
-  // capped via chainMult (×16), men selve cascaden var uendelig — 12
-  // mini-baller på flatmark kunne trigge level-cascade dusinvis ganger og
-  // sende score ut i millioner. Etter MAX_CHAIN level-ups faller vi tilbake
-  // til normal-win-flowen (clear balls, perk-select) selv om multiball er
-  // aktiv.
-  const MAX_CHAIN = 2
+  // v8.0.4: cap for cascade-level-ups under multiball.
+  // v8.9.0: hevet kraftig + win() looper hele cascaden i ett kall så
+  // ekstrem score-overshoot (Curve Invaders med 12+ baller) drenes til
+  // score < target umiddelbart. Self-balancing fordi level-target vokser
+  // kvadratisk med level — overshoot på 16M nås av target rundt level ~530.
+  // Safety-cap forhindrer en degenerert uendelig loop ved bug. chainMult
+  // er allerede capped på 8 (= depth 4) så per-chain-bonus er beskjeden.
+  const MAX_CHAIN = 9999
 
   const splash = reactive({
     x: 0, y: 0,
@@ -365,6 +377,22 @@ export function useCurveBall() {
       Math.max(0, (level.value - 1) * FLIPPER_CONVEXITY_DEG_PER_LEVEL),
     )
     return deg * Math.PI / 180
+  }
+
+  // v8.9.0: Effektiv treffbredde — derivert fra stored f.length, kickLevel
+  // og game-level. Brukes både i kollisjon (handleEdgesForBall,
+  // applyFlipperMagnetism) og i rendering (CurveBallFlippers.vue) så det
+  // visuelle alltid matcher hitbox. Stored f.length holdes uendret av
+  // energi/level — kun perks (FLIPPER_LENGTH_BOOST) og tier-3 super-perk
+  // muterer den.
+  function effectiveFlipperLength(edge) {
+    const f = flippers[edge]
+    if (!f) return 0
+    const base = f.length
+    const kickIdx = Math.max(0, Math.min(KICK_WIDTH_MULT.length - 1, f.kickLevel))
+    const energyMult = KICK_WIDTH_MULT[kickIdx]
+    const levelMult = Math.max(0, 1 - LEVEL_WIDTH_REDUCTION * Math.max(0, level.value - 1))
+    return Math.max(base * MIN_WIDTH_FRAC_OF_BASE, base * energyMult * levelMult)
   }
 
   // Reflekter ball-velocity over normalen (nx, ny), så boost normal-
@@ -850,24 +878,25 @@ export function useCurveBall() {
       const f = flippers[edge]
       if (f.kickLevel === 0) continue
       let tx, ty
+      const effLen = effectiveFlipperLength(edge)
       if (edge === 'top') {
         const c = f.position * w
-        const half = f.length * w * 0.5
+        const half = effLen * w * 0.5
         tx = Math.max(c - half, Math.min(c + half, b.x))
         ty = inset
       } else if (edge === 'bottom') {
         const c = f.position * w
-        const half = f.length * w * 0.5
+        const half = effLen * w * 0.5
         tx = Math.max(c - half, Math.min(c + half, b.x))
         ty = h - inset
       } else if (edge === 'left') {
         const c = f.position * h
-        const half = f.length * h * 0.5
+        const half = effLen * h * 0.5
         tx = inset
         ty = Math.max(c - half, Math.min(c + half, b.y))
       } else {
         const c = f.position * h
-        const half = f.length * h * 0.5
+        const half = effLen * h * 0.5
         tx = w - inset
         ty = Math.max(c - half, Math.min(c + half, b.y))
       }
@@ -1793,47 +1822,34 @@ export function useCurveBall() {
   }
 
   // v8.8.11 Phase 3: aktiver / oppgrader super-perk. Når en høyere tier
-  // overstyrer en lavere (eller når invader-modusen kjører på nytt etter
-  // perk allerede har vært aktiv), erstattes tieren umiddelbart.
-  // Tidligere hadde vi 90 s nedtelling — droppet etter brukertest, perk
-  // varer nå til alle baller dør eller restart.
+  // overstyrer en lavere, erstattes tieren umiddelbart. Perken varer til
+  // alle baller dør eller restart.
   //
-  // Tier 2-aktivering trigger to engangs-effekter:
-  //   - Flippers vokser 25 % i lengde (capped på 0.40 = max 40% av kant)
-  //   - Lader alle flippers til siste kick-level umiddelbart (purple-flash)
-  // v8.8.17: Tier 2 omsnudd — flippers HALVERES istedenfor å utvide,
-  // og lilla-kicken gir kraften. Tradeoff-perk: hardere å sikte, men
-  // sterkere treff. Tier 3 løfter handikappet og gir en permanent
-  // lengde-boost (+8 %) som vedvarer på tvers av spawns til restart.
+  // v8.9.0: Tier 2-aktivering halverer ikke lenger lengden eksplisitt —
+  // den driver bare alle flippers til lilla, og kickLevel-driven
+  // effectiveFlipperLength sørger for at lilla = 68 % breddereduksjon
+  // (× ytterligere level-reduksjon). Slik unngår vi dobbeltreduksjon
+  // og lengdePreSuperPerk-bokføring.
   //
-  // Bumper Chain Reaction (tier 3-effekt under spill) er separat og
-  // håndteres ved bumper-hit i physicsStep.
+  // Tier 3-aktivering gir fortsatt permanent +8 % lengdeboost (capped
+  // på 0.40 av kant) som vedvarer til restart. Bumper Chain Reaction
+  // (tier 3-effekt under spill) håndteres separat ved bumper-hit.
   function activateSuperPerk(tier) {
     if (![1, 2, 3].includes(tier)) return
     const oldTier = superPerkTier.value
     superPerkTier.value = tier
     if (tier >= 2 && oldTier < 2) {
-      // Tier 2-aktivering — handicap + power-boost trade-off.
-      //   - Lagre nåværende lengde så vi kan reversere ved tier 3 / death
-      //   - Halver lengden (× 0.5)
-      //   - Lader alle flippers til lilla-nivå umiddelbart
+      // Lader alle flippers til lilla — kickLevel-driven width-reduksjon
+      // tar handicappet automatisk.
       for (const edge of ['top', 'bottom', 'left', 'right']) {
-        const f = flippers[edge]
-        f.lengthPreSuperPerk = f.length
-        f.length = f.length * 0.5
-        f.kickLevel = KICK_MULTIPLIERS.length - 1   // siste indeks = lilla
+        flippers[edge].kickLevel = KICK_MULTIPLIERS.length - 1
       }
     }
     if (tier >= 3 && oldTier < 3) {
-      // Tier 3-aktivering — løft handicap + permanent +8 % lengde-buff.
-      // Hvis spilleren gikk direkte fra 0 til tier 3 (uten å innom 2),
-      // har vi ingen pre-superPerk-lengde å gjenopprette fra — bruk
-      // current length som base.
+      // Permanent +8 % lengde-buff (capped på 0.40).
       for (const edge of ['top', 'bottom', 'left', 'right']) {
         const f = flippers[edge]
-        const base = f.lengthPreSuperPerk ?? f.length
-        f.length = Math.min(0.40, base * 1.08)
-        f.lengthPreSuperPerk = null   // markeren ryddet — boost er permanent
+        f.length = Math.min(0.40, f.length * 1.08)
       }
     }
     lastEvent.value = { kind: 'super-perk-activated', at: Date.now(), tier }
@@ -1844,19 +1860,10 @@ export function useCurveBall() {
     if (superPerkTier.value === 0) return
     const fromTier = superPerkTier.value
     superPerkTier.value = 0
-    // Når perken avsluttes (death/restart):
-    //   - Hvis vi fortsatt har lengdePreSuperPerk satt (= aldri nådde tier 3),
-    //     gjenopprett pre-tier-2-lengden. Handikappet skal ikke vedvare.
-    //   - Hvis lengdePreSuperPerk er null (= tier 3 ble nådd), beholdes
-    //     den permanente +8 %-bufferingen.
-    //   - Lilla kick-level clampes ned til rød (3) så ingen flipper sitter
-    //     fast på et nivå brukeren ikke kan rotere ut av.
+    // Lilla kick-level clampes ned til rød så ingen flipper sitter
+    // fast på et nivå brukeren ikke kan rotere ut av.
     for (const edge of ['top', 'bottom', 'left', 'right']) {
       const f = flippers[edge]
-      if (f.lengthPreSuperPerk != null) {
-        f.length = f.lengthPreSuperPerk
-        f.lengthPreSuperPerk = null
-      }
       if (f.kickLevel >= NORMAL_KICK_LEVELS) {
         f.kickLevel = NORMAL_KICK_LEVELS - 1
       }
@@ -1942,7 +1949,7 @@ export function useCurveBall() {
     if (b.y - r < inset && b.vy < 0) {
       const f = flippers.top
       const c = f.position * w
-      const half = f.length * w * 0.5
+      const half = effectiveFlipperLength('top') * w * 0.5
       if (b.x >= c - half && b.x <= c + half) {
         b.y = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
@@ -1958,7 +1965,7 @@ export function useCurveBall() {
     if (b.y + r > h - inset && b.vy > 0) {
       const f = flippers.bottom
       const c = f.position * w
-      const half = f.length * w * 0.5
+      const half = effectiveFlipperLength('bottom') * w * 0.5
       if (b.x >= c - half && b.x <= c + half) {
         b.y = h - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
@@ -1974,7 +1981,7 @@ export function useCurveBall() {
     if (b.x - r < inset && b.vx < 0) {
       const f = flippers.left
       const c = f.position * h
-      const half = f.length * h * 0.5
+      const half = effectiveFlipperLength('left') * h * 0.5
       if (b.y >= c - half && b.y <= c + half) {
         b.x = inset + r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
@@ -1990,7 +1997,7 @@ export function useCurveBall() {
     if (b.x + r > w - inset && b.vx > 0) {
       const f = flippers.right
       const c = f.position * h
-      const half = f.length * h * 0.5
+      const half = effectiveFlipperLength('right') * h * 0.5
       if (b.y >= c - half && b.y <= c + half) {
         b.x = w - inset - r
         const mult = KICK_MULTIPLIERS[f.kickLevel]
@@ -2216,40 +2223,61 @@ export function useCurveBall() {
     // physics. Score som overstiger målet bæres over, og hver kjede gir
     // eksponentielt høyere bonus. Belønner spillere som klarer å holde
     // multiball oppe gjennom flere levels på én gang.
-    // v8.0.4: cap'er nå antallet cascade-iterasjoner via MAX_CHAIN så
-    // mini-/invader-spawnede baller ikke kan trigge endeløse level-ups.
-    // Etter MAX_CHAIN kjeder faller vi til normal-win uansett.
-    if (balls.length > 1 && levelChain < MAX_CHAIN && status.value === 'rolling') {
-      levelChain += 1
-      const target = levelTarget.value
-      const carryOver = Math.max(0, score.value - target)
+    // v8.9.0: cascade looper nå hele veien til score < target i ett kall.
+    // Tidligere fikk vi maks 2 chain-hopp før normal-win clearet baller —
+    // resultatet var at score-overshoot på 16M+ (Curve Invaders spawn-
+    // amok) ble sittende fast og level ikke fulgte med. Nå auto-leveler
+    // spillet videre så lenge multiball er aktivt og score > target,
+    // skjer mange ganger pr "liv".
+    if (balls.length > 1 && status.value === 'rolling') {
+      let chained = false
+      let totalChainBonus = 0
+      while (
+        balls.length > 1 &&
+        status.value === 'rolling' &&
+        score.value >= levelTarget.value &&
+        levelChain < MAX_CHAIN
+      ) {
+        levelChain += 1
+        const target = levelTarget.value
+        const carryOver = Math.max(0, score.value - target)
 
-      // Bonus skalerer eksponentielt med chain-dybde, men capped både på
-      // chainMult (8 = depth 4) og på MAX_CHAIN (depth 2 → mult 2).
-      // chain 1 = 1×, 2 = 2×, 3 = 4×, 4 = 8×
-      const chainMult = Math.min(8, Math.pow(2, levelChain - 1))
-      const chainBonus = Math.round(500 * level.value * chainMult)
+        // chain 1 = 1×, 2 = 2×, 3 = 4×, 4+ = 8× (cap).
+        // v8.9.0: kun de 4 første kjedene gir chain-bonus til totalScore.
+        // Etter det auto-leveler vi fortsatt, men ingen ekstra-bonus —
+        // ellers ville en 200-chain cascade pumpet inn milliarder via
+        // bonus alene. Spilleren beholder full carryOver-score uansett.
+        let chainBonus = 0
+        if (levelChain <= 4) {
+          const chainMult = Math.min(8, Math.pow(2, levelChain - 1))
+          chainBonus = Math.round(500 * level.value * chainMult)
+        }
 
-      totalScore.value += target + chainBonus
-      level.value += 1
-      score.value = carryOver
-      lastHitEdge = null
+        totalScore.value += target + chainBonus
+        level.value += 1
+        score.value = carryOver
+        totalChainBonus += chainBonus
+        chained = true
 
-      // Defer perk-select hvis vi krysser et perk-trigger-level mens
-      // multiball er aktiv — perk-meny kan ikke åpnes mid-cascade.
-      if ((level.value - 1) % PERK_INTERVAL === 0) {
-        pendingPerkSelect = true
+        // Defer perk-select hvis vi krysser et perk-trigger-level mens
+        // multiball er aktiv — perk-meny kan ikke åpnes mid-cascade.
+        if ((level.value - 1) % PERK_INTERVAL === 0) {
+          pendingPerkSelect = true
+        }
       }
-
-      lastEvent.value = {
-        kind: 'chain',
-        chain: levelChain,
-        bonus: chainBonus,
-        mult: chainMult,
-        at: Date.now(),
+      if (chained) {
+        lastHitEdge = null
+        const finalMult = Math.min(8, Math.pow(2, levelChain - 1))
+        lastEvent.value = {
+          kind: 'chain',
+          chain: levelChain,
+          bonus: totalChainBonus,
+          mult: finalMult,
+          at: Date.now(),
+        }
+        playWin()
+        return
       }
-      playWin()
-      return
     }
 
     levelChain = 0
@@ -2403,7 +2431,6 @@ export function useCurveBall() {
       flippers[e].length = 0.25     // reset til base-lengde (perk-økning gjelder kun innenfor session)
       flippers[e].kickLevel = 0
       flippers[e].repelUntil = 0
-      flippers[e].lengthPreSuperPerk = null   // v8.8.17: rydd evt. handicap-marker
     }
     bumpers.length = 0
     generateBumpersForLevel()
@@ -2603,5 +2630,10 @@ export function useCurveBall() {
     get BUMPER_RADIUS_M() { return BUMPER_RADIUS_M },
     KICK_MULTIPLIERS,
     BUMPER_HITS_TO_MULTIBALL,
+    // v8.9.0: render-helpers for paddle-geometri. effectiveFlipperLength
+    // matcher hitboxen i handleEdgesForBall så det visuelle aldri lyver.
+    // flipperConvexityRad gir vinkel i radianer for SVG-bulge-sagitta.
+    effectiveFlipperLength,
+    flipperConvexityRad,
   }
 }
