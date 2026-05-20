@@ -276,6 +276,30 @@ export function useCurveBall() {
   // eksisterende. Cascade-prevention er fortsatt på via canExplode-gate.
   const MAX_BALLS_IN_PLAY = 48
 
+  // v8.9.1: cap på elektromagnetisk akselerasjon. Brukerrapport 20. mai —
+  // balls cluster nær bumpers og kommer ikke til kant; score løp til
+  // MAX_SAFE_INTEGER og flere spawn-modi i parallell. Tre ting var i
+  // spill: (1) flipper-magnetisme uten øvre tak, så nær flippere kunne
+  // mag-akselerasjon overstige slope-gravitasjon → ball lå låst i mid-
+  // brett, (2) bumper-bounce amplifiserte hver gang så ball akselererte
+  // til speedCap fra ren bouncing, (3) bumper-trigger kunne spawne ny
+  // invaders mens en formasjon var aktiv → parallelle modi. Fix:
+  //
+  //   MAGNETIC_ACCEL_CAP_M_S2 — absolutt tak per ball, alle 4 flippere
+  //     summert. Topografi-gravitasjon har alltid autoritet.
+  //   MAGNETIC_SLOPE_RATIO    — relativ-cap mot slope: når terrenget
+  //     er bratt får mag-feltet spille; flatmark gjelder absolutt-cap.
+  //   BUMPER_OUT_SPEED_CAP_MULT — outMag ≤ BUMPER_BOUNCE_SPEED × dette
+  //     uansett incoming-fart. Hindrer at gjentatte bounces pumper
+  //     ballen til speedCap gjennom amplifikasjon.
+  //   BUMPER_SCORE_COOLDOWN_MS — per-bumper score-cooldown. Bouncen
+  //     skjer fortsatt, men score/hits tikker kun hvis det er gått
+  //     mer enn dette siden forrige treff på samme bumper.
+  const MAGNETIC_ACCEL_CAP_M_S2   = 600
+  const MAGNETIC_SLOPE_RATIO      = 0.75
+  const BUMPER_OUT_SPEED_CAP_MULT = 1.5
+  const BUMPER_SCORE_COOLDOWN_MS  = 180
+
   // v7.4.3 spawn-modi. Pool vokser med level — variasjon kommer etter hvert
   // som vanskelighetsgrad øker. Legg merke til at modusene KUN trigges av
   // canExplode=true-baller (se handleBumperCollisions), så cascade er ikke
@@ -874,6 +898,10 @@ export function useCurveBall() {
     const w = bounds.width, h = bounds.height
     const range = 0.4 * Math.min(w, h)
     const inset = FLIPPER_INSET_M
+    // v8.9.1: akkumuler akselerasjon i lokale ax/ay og cap mot slope-
+    // gravitasjon ETTER summering — slik at all-flippers-på-rødt ikke
+    // kan låse ballen i sentrum og topografi alltid har siste ord.
+    let ax = 0, ay = 0
     for (const edge of ['top', 'bottom', 'left', 'right']) {
       const f = flippers[edge]
       if (f.kickLevel === 0) continue
@@ -910,9 +938,29 @@ export function useCurveBall() {
       const sign = isRepel ? -MAGNETIC_REPEL_MULT : 1
       const mag = sign * strength * falloff
       const inv = 1 / r
-      b.vx += mag * dx * inv * dt
-      b.vy += mag * dy * inv * dt
+      ax += mag * dx * inv
+      ay += mag * dy * inv
     }
+    const magAccel = Math.hypot(ax, ay)
+    if (magAccel > 0) {
+      // Relativ-cap: slope-akselerasjon = kGravity × |grad|. På bratt
+      // terreng får magnetfeltet større andel; på flatmark slår abs-cap
+      // inn. Floor = 25 % av abs-cap så feltet ikke degenererer helt på
+      // helt flat grunn (LP-spill skal fortsatt ha pinball-følelse).
+      const { kGravity } = levelParams(level.value)
+      const grad = sampleGradient(dem, b.x, b.y)
+      const slopeAccel = kGravity * Math.hypot(grad.dzdx, grad.dzdy)
+      const floor = MAGNETIC_ACCEL_CAP_M_S2 * 0.25
+      const slopeBased = slopeAccel * MAGNETIC_SLOPE_RATIO
+      const cap = Math.min(MAGNETIC_ACCEL_CAP_M_S2, Math.max(floor, slopeBased))
+      if (magAccel > cap) {
+        const k = cap / magAccel
+        ax *= k
+        ay *= k
+      }
+    }
+    b.vx += ax * dt
+    b.vy += ay * dt
   }
 
   function physicsStep(dt, now) {
@@ -1198,6 +1246,9 @@ export function useCurveBall() {
   function handleBumperCollisions(b) {
     // v7.4.3: ball-spesifikk radius for små miniballs / invaders
     const r = (b.r ?? BALL_RADIUS_M) + BUMPER_RADIUS_M
+    // v8.9.1: cap på outgoing bounce-magnitude, beregnet én gang
+    const bumperOutCap = BUMPER_BOUNCE_SPEED * BUMPER_OUT_SPEED_CAP_MULT
+    const nowMs = performance.now()
     for (const bp of bumpers) {
       const dx = b.x - bp.x
       const dy = b.y - bp.y
@@ -1227,11 +1278,33 @@ export function useCurveBall() {
         if (vDotN < 0) {
           const incomingMag = Math.hypot(b.vx, b.vy)
           // v8.0.5: bumper-bonus 1.15 → 1.18 — litt mer trøkk i bumper-bounces
-          const outMag = Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.18)
+          // v8.9.1: hard cap på outMag så bumpers ikke kan amplifisere ballen
+          // til speedCap gjennom ren bouncing. Pinball-følelsen beholdes
+          // (1.18× incoming), men taket gjør at gjentatte bounces ikke
+          // pumper energi-akkumulasjonen forbi BUMPER_OUT_SPEED_CAP_MULT.
+          const outMag = Math.min(
+            bumperOutCap,
+            Math.max(BUMPER_BOUNCE_SPEED, incomingMag * 1.18),
+          )
           b.vx = nx * outMag
           b.vy = ny * outMag
         }
       }
+      // v8.9.1: per-bumper score-cooldown. Ball som vibrerer mot samme
+      // bumper (f.eks. fastlås mellom to bumpers) bouncer fortsatt, men
+      // får ikke pumpet score med 60+ hits/sek. Cooldown gjelder kun
+      // score/hit-counter, ikke selve fysikken — så ballen frigjøres
+      // naturlig fra fastlåsen, men kan ikke utløse runaway-score.
+      if ((bp.lastScoreAt ?? 0) + BUMPER_SCORE_COOLDOWN_MS > nowMs) {
+        // Reset stillness uansett (kollisjon = bevegelse), men hopp over
+        // resten av score/hit/spawn-pipelinen.
+        b.stillTime = 0
+        b.chargeT = 0
+        b.warnIndex = 0
+        break
+      }
+      bp.lastScoreAt = nowMs
+
       // Score + sound + state. Score gis for ALLE treff (multiball-baller
       // også), men bare normale baller (canExplode=true) tikker hit-counter
       // mot multiball-trigger. v7.4.1: tidligere tikket alle baller, så 4
@@ -1351,6 +1424,15 @@ export function useCurveBall() {
    */
   function triggerMultiballFromBumper(sx, sy, forceMode = null) {
     // v8.7.0: forceMode bypasser pickSpawnMode (brukes av stedsmerke-bumper).
+    // v8.9.1: blokker ny spawn-mode mens invaders-formasjonen er aktiv.
+    // Tidligere kunne en stedsmerke-bumper triggere en ny invaders mens
+    // den forrige fremdeles var i orbit/march → flere parallelle formasjoner
+    // → balls.length-cap nås raskt + score-cascade. Invaders skal være et
+    // isolert event som spilleren konsentrerer seg om.
+    if (invaderModeActive.value) {
+      dlog('bumper → spawn skipped (invaders active)')
+      return
+    }
     const mode = forceMode ?? pickSpawnMode()
     dlog('bumper → spawn', { mode, forced: !!forceMode, ballsBefore: balls.length })
     spawnByMode(mode, sx, sy)
@@ -1708,6 +1790,12 @@ export function useCurveBall() {
       // v7.4.3: stillness-explode bruker også spawn-mode-dispatcheren
       // så ulike modi kan trigges fra både bumper og stillness.
       b.exploded = true
+      // v8.9.1: parallell-spawn-guard (samme som triggerMultiballFromBumper)
+      // — stillness-rescue under aktiv invaders ville stable formasjoner.
+      if (invaderModeActive.value) {
+        dlog('explode → spawn skipped (invaders active)')
+        return
+      }
       const mode = pickSpawnMode()
       dlog('explode → spawn', { mode })
       spawnByMode(mode, b.x, b.y)
