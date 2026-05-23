@@ -964,9 +964,20 @@ function selectSymbol(key) {
 }
 
 /**
- * Hold stedsnavn-tekst og stedsmerke-piner stående «opp» på skjermen mens
- * resten av kartet roterer. Counter-rotation appliseres rundt hver
- * etikets eget ankerpunkt slik at de blir lesbare uansett kart-vinkel.
+ * Hold ALL tekst i kart-SVG-en samt stedsmerke-piner stående «opp» på
+ * skjermen mens resten av kartet roterer. Counter-rotation appliseres
+ * rundt hver etikets eget ankerpunkt slik at de blir lesbare uansett
+ * kart-vinkel.
+ *
+ * v8.9.3: kun stedsnavn + stedsmerke. v8.9.7: utvidet til alle <text>
+ * (vann-navn, kontur-tall, dybde-tall, peak, peak-ele, lanterne-tall,
+ * skjaer-navn, dybde-kontur-tall, slipp-navn …). Symboler (use/path)
+ * roterer fortsatt med terrenget — kun tekst og pin holdes opp.
+ *
+ * Bruker text.x.baseVal[0].value som gir resolved numeric verdi i
+ * user-units uansett om attributtet er "2mm" eller et tall — browseren
+ * konverterer mm → user-units for oss. Faller tilbake til 0 hvis x/y
+ * mangler (multi-coordinate texts og defaults).
  *
  * Kjøres som lett attributt-oppdatering ved hver rotasjons-endring —
  * ingen DOM-creation, så det er trygt å kalle hver touchmove-frame.
@@ -975,13 +986,12 @@ function applyUprightLabels() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
   const rot = -rotation.value
-  // Stedsnavn-tekster fra mapBuilder. Hver text har x, y, dy — counter-rotate
-  // rundt (x, y) så ankeret holder seg og glyfen vippes opp.
-  const texts = svg.querySelectorAll('[data-label="stedsnavn"]')
+  // Alle tekst-labels i kart-innholdet
+  const texts = svg.querySelectorAll('text')
   for (const el of texts) {
-    const x = el.getAttribute('x') ?? '0'
-    const y = el.getAttribute('y') ?? '0'
-    el.setAttribute('transform', `rotate(${rot} ${x} ${y})`)
+    const xVal = el.x?.baseVal?.[0]?.value ?? 0
+    const yVal = el.y?.baseVal?.[0]?.value ?? 0
+    el.setAttribute('transform', `rotate(${rot} ${xVal} ${yVal})`)
   }
   // Stedsmerke-annoteringer (rød dråpe-pin). G-en har allerede
   // translate(x,y) — counter-rotate rundt (0,0) i lokalt rom holder
