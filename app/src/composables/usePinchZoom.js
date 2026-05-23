@@ -1,17 +1,27 @@
 import { ref, unref, onMounted, onUnmounted } from 'vue'
 
 /**
- * Multi-touch pinch-to-zoom + pan + double-tap-to-zoom-on-point.
+ * Multi-touch pinch-to-zoom + pan + rotate + double-tap-to-zoom-on-point.
  *
- * v6.9.0-polish: pinch zoomer rundt finger-senter (tidligere zoomet rundt
- * elementets midt = uvant for brukeren), wheel zoomer rundt mus-pos, og
- * dobbeltklikk/dobbel-tap zoomer 2x på treffpunkt med kort transition.
+ * State {translateX, translateY, scale, rotation} representerer den unified
+ * transformen M = T(tx,ty) ∘ R(rotation) ∘ S(scale) med transform-origin (0,0).
+ * Konsumenten skal applisere transformen på ÉN element:
+ *   transform: translate(tx,ty) rotate(rot deg) scale(s)
+ *   transform-origin: 0 0
  *
- * v7.2.2: options.enabled (ref|computed|bool) — handlere skipper input når
- * false. Brukes f.eks. av CurveBall-spillet for å fryse pan/zoom/rotasjon.
+ * Det er kritisk å bruke en enkelt unified transform — to nested transformer
+ * (én for translate+scale, én for rotate rundt center) gjør at rotasjon
+ * alltid sentrerer på elementets midt. Med unified matrix kan vi rotere
+ * rundt vilkårlig finger-pivot ved å oppdatere translate, scale OG rotation
+ * samtidig (v8.9.2).
+ *
+ * options.enabled (ref|computed|bool) — handlere skipper input når false.
+ * options.rotateEnabled (default true) — sett false for å fryse rotasjon
+ *   (brukes i ViewerView som ikke har rotasjons-UI).
  */
 export function usePinchZoom(elementRef, options = {}) {
   const enabledOpt = options.enabled
+  const rotateEnabled = options.rotateEnabled !== false
   function isEnabled() {
     return enabledOpt == null ? true : !!unref(enabledOpt)
   }
@@ -19,8 +29,6 @@ export function usePinchZoom(elementRef, options = {}) {
   const scale = ref(1)
   const translateX = ref(0)
   const translateY = ref(0)
-  // Rotasjon kun via to-finger-pinch (mobil). Desktop får ikke rotasjon
-  // siden det krever multi-touch-input som ikke finnes på mus.
   const rotation = ref(0)  // grader, 0 = ikke rotert
   const animating = ref(false)
 
@@ -57,24 +65,43 @@ export function usePinchZoom(elementRef, options = {}) {
     return Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX) * 180 / Math.PI
   }
 
-  // Zoom rundt et fokuspunkt (fx, fy) i client-koord, så punktet
-  // forblir under fingeren mens skalaen endres.
-  function zoomAtPoint(newScale, fx, fy) {
-    const el = elementRef.value
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    // Posisjon i element-rom (uten transform): client - rect.origin - translate
-    const localX = fx - rect.left - translateX.value
-    const localY = fy - rect.top - translateY.value
-    const ratio = newScale / scale.value
-    // Etter zoom skal local punkt fortsatt være under (fx, fy)
-    translateX.value = fx - rect.left - localX * ratio
-    translateY.value = fy - rect.top - localY * ratio
-    scale.value = newScale
-  }
-
   function clampScale(s) {
     return Math.max(MIN_SCALE, Math.min(MAX_SCALE, s))
+  }
+
+  /**
+   * Påfør combined delta-transform M_delta = T(c1) ∘ R(dr) ∘ S(ds) ∘ T(-c0)
+   * på state-en. M_old: T(tx,ty) R(rot) S(scale). Resultat:
+   *   new_tx = c1.x + ds*((tx-c0.x)*cos(dr) - (ty-c0.y)*sin(dr))
+   *   new_ty = c1.y + ds*((tx-c0.x)*sin(dr) + (ty-c0.y)*cos(dr))
+   *   new_scale = scale * ds   (clampet)
+   *   new_rotation = rotation + dr
+   * c0/c1 i samme client-koord-rom som translateX/Y.
+   */
+  function applyDelta(c0, c1, ds, dr) {
+    const oldScale = scale.value
+    const newScale = clampScale(oldScale * ds)
+    const effDs = oldScale === 0 ? 1 : newScale / oldScale
+    const drRad = dr * Math.PI / 180
+    const cosDr = Math.cos(drRad)
+    const sinDr = Math.sin(drRad)
+    const ox = translateX.value - c0.x
+    const oy = translateY.value - c0.y
+    const rotOx = ox * cosDr - oy * sinDr
+    const rotOy = ox * sinDr + oy * cosDr
+    translateX.value = c1.x + effDs * rotOx
+    translateY.value = c1.y + effDs * rotOy
+    scale.value = newScale
+    if (rotateEnabled) rotation.value += dr
+  }
+
+  // Zoom rundt et fokuspunkt (fx, fy) i client-koord — single-point variant
+  // (dr=0). Brukes av wheel / double-tap / programmatiske FAB-er.
+  function zoomAtPoint(newScale, fx, fy) {
+    const target = clampScale(newScale)
+    const ds = scale.value === 0 ? 1 : target / scale.value
+    const c = { x: fx, y: fy }
+    applyDelta(c, c, ds, 0)
   }
 
   function animate() {
@@ -94,23 +121,23 @@ export function usePinchZoom(elementRef, options = {}) {
       lastCenterX = c.x
       lastCenterY = c.y
     } else if (e.touches.length === 1) {
-      // Double-tap detection
       const now = Date.now()
       const t = e.touches[0]
       const dx = t.clientX - lastTapX
       const dy = t.clientY - lastTapY
       const within = Math.hypot(dx, dy) < 40
       if (now - lastTapAt < 300 && within) {
-        // Doubble-tap: zoom 2x mot tap-punkt, eller reset hvis allerede zoomet
         if (scale.value >= 15.9) {
-          // Allerede zoomet inn → reset
+          // Allerede zoomet inn → full reset (også rotasjon, så bruker
+          // får et rent uvridd kart som referansepunkt)
           animate()
           scale.value = 1
           translateX.value = 0
           translateY.value = 0
+          rotation.value = 0
         } else {
           animate()
-          zoomAtPoint(clampScale(scale.value * 2), t.clientX, t.clientY)
+          zoomAtPoint(scale.value * 2, t.clientX, t.clientY)
         }
         lastTapAt = 0
         return
@@ -118,7 +145,8 @@ export function usePinchZoom(elementRef, options = {}) {
       lastTapAt = now
       lastTapX = t.clientX
       lastTapY = t.clientY
-      if (scale.value > 1) {
+      if (scale.value > 1 || rotation.value !== 0) {
+        // Pan fungerer som rent translate (rotasjon og skala uendret)
         isPanning = true
         startX = t.clientX - translateX.value
         startY = t.clientY - translateY.value
@@ -131,23 +159,19 @@ export function usePinchZoom(elementRef, options = {}) {
     if (isPinching && e.touches.length === 2) {
       e.preventDefault()
       const d = dist(e.touches[0], e.touches[1])
-      const ratio = d / lastDist
-      const c = center(e.touches[0], e.touches[1])
-      // Zoom rundt finger-senter
-      const newScale = clampScale(scale.value * ratio)
-      zoomAtPoint(newScale, c.x, c.y)
-      // Pan med center-bevegelse mellom frames
-      translateX.value += c.x - lastCenterX
-      translateY.value += c.y - lastCenterY
-      // Rotasjon: differanse i finger-vinkel akkumuleres. Bruker en liten
-      // dødsone (1.5°) for å unngå skjelving fra to-finger-zoom uten rotasjon.
       const a = angle(e.touches[0], e.touches[1])
+      const c = center(e.touches[0], e.touches[1])
+      const ds = lastDist === 0 ? 1 : d / lastDist
+      // Rotasjons-delta med wraparound + dødsone (1.5°) mot skjelving
       let dAngle = a - lastAngle
       if (dAngle > 180) dAngle -= 360
       else if (dAngle < -180) dAngle += 360
-      if (Math.abs(dAngle) > 1.5) {
-        rotation.value += dAngle
-      }
+      const dr = rotateEnabled && Math.abs(dAngle) > 1.5 ? dAngle : 0
+      applyDelta(
+        { x: lastCenterX, y: lastCenterY },
+        { x: c.x, y: c.y },
+        ds, dr,
+      )
       lastDist = d
       lastAngle = a
       lastCenterX = c.x
@@ -164,15 +188,13 @@ export function usePinchZoom(elementRef, options = {}) {
     if (e.touches.length < 1) isPanning = false
   }
 
-  // Desktop: scroll to zoom rundt mus-pos
   function onWheel(e) {
     if (!isEnabled()) return
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
-    zoomAtPoint(clampScale(scale.value * delta), e.clientX, e.clientY)
+    zoomAtPoint(scale.value * delta, e.clientX, e.clientY)
   }
 
-  // Desktop: dobbeltklikk = double-tap-ekvivalent
   function onDblClick(e) {
     if (!isEnabled()) return
     e.preventDefault()
@@ -181,9 +203,10 @@ export function usePinchZoom(elementRef, options = {}) {
       scale.value = 1
       translateX.value = 0
       translateY.value = 0
+      rotation.value = 0
     } else {
       animate()
-      zoomAtPoint(clampScale(scale.value * 2), e.clientX, e.clientY)
+      zoomAtPoint(scale.value * 2, e.clientX, e.clientY)
     }
   }
 
@@ -216,13 +239,12 @@ export function usePinchZoom(elementRef, options = {}) {
     if (animTimer) clearTimeout(animTimer)
   })
 
-  // Programmatisk zoom rundt sentrum av elementet (brukes av FAB-knapper).
   function zoomBy(factor) {
     const el = elementRef.value
     if (!el) return
     const rect = el.getBoundingClientRect()
     animate()
-    zoomAtPoint(clampScale(scale.value * factor), rect.left + rect.width / 2, rect.top + rect.height / 2)
+    zoomAtPoint(scale.value * factor, rect.left + rect.width / 2, rect.top + rect.height / 2)
   }
   function zoomIn() { zoomBy(1.5) }
   function zoomOut() { zoomBy(1 / 1.5) }

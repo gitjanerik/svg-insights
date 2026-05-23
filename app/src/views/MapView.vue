@@ -6,6 +6,8 @@ import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
+import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
+import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/mapStorage.js'
 import { isomCatalog } from '../lib/symbolizer.js'
@@ -220,6 +222,7 @@ const LAYERS = [
   { key: 'dybde',      label: 'Dybdetall' },
   { key: 'navn',       label: 'Navn' },
   { key: 'stedsnavn',  label: 'Stedsnavn' },
+  { key: 'spor',       label: 'GPS-spor' },
 ]
 
 // v8.1.0: Stedsnavn-overlay er AV som default — det er et stort tekst-
@@ -304,8 +307,8 @@ function stopCurveBall() {
 }
 
 // v8.5.2: «Sentrer»-FAB resetter pinch/zoom OG tvinger en fersk GPS-fix
-// hvis GPS er aktivert. P&aring; toget kan watchPosition henge p&aring; en cached
-// koordinat — getCurrentPosition med maximumAge=0 gir alltid ny m&aring;ling.
+// hvis GPS er aktivert. På toget kan watchPosition henge på en cached
+// koordinat — getCurrentPosition med maximumAge=0 gir alltid ny måling.
 function onResetAndRefreshGps() {
   reset()
   if (userPos.isWatching) userPos.refresh()
@@ -374,18 +377,14 @@ watch(() => curveball.active.value, (active) => {
   }
 })
 
-// Translate + scale i ytre lag (origin 0 0 så pinch-zoom rundt finger
-// fungerer som før). Rotasjon i indre lag (origin center center) så
-// brukeren kan rotere kartet med to fingre uten at scale-matematikken
-// komplisseres.
-const transformStyle = computed(() => ({
-  transform: `translate(${translateX.value}px, ${translateY.value}px) scale(${scale.value})`,
+// Unified transform: translate ∘ rotate ∘ scale med transform-origin 0 0.
+// Én enkelt transform-matrise lar oss rotere rundt vilkårlig pivot (finger-
+// senter) ved å oppdatere translate samtidig — to nested transformer ville
+// låst rotasjonen til element-senter (v8.9.2).
+const mapTransformStyle = computed(() => ({
+  transform: `translate(${translateX.value}px, ${translateY.value}px) `
+           + `rotate(${rotation.value}deg) scale(${scale.value})`,
   transformOrigin: '0 0',
-  transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
-}))
-const rotateStyle = computed(() => ({
-  transform: `rotate(${rotation.value}deg)`,
-  transformOrigin: 'center center',
   transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
 }))
 
@@ -398,6 +397,45 @@ const annot = useMapAnnotations(mapId.value)
 const showSymbolPalette = ref(false)
 let lastSvgString = ''      // huskes til print-eksport
 
+// GPS-spor — opptak + rendering av rutene brukeren går (v8.9.2)
+const tracker = useTrackRecorder(mapId.value, userPos)
+// Tikker hvert sekund mens opptak pågår, så live-stats (distanse/varighet)
+// i drawer-en oppdateres uten å bero på nye GPS-fix.
+const tracksNow = ref(Date.now())
+let tracksTickTimer = null
+watch(() => tracker.isRecording.value, (on) => {
+  if (on) {
+    if (!tracksTickTimer) tracksTickTimer = setInterval(() => { tracksNow.value = Date.now() }, 1000)
+  } else if (tracksTickTimer) {
+    clearInterval(tracksTickTimer); tracksTickTimer = null
+  }
+})
+
+const liveTrackStats = computed(() => {
+  const t = tracker.activeTrack.value
+  if (!t) return null
+  void tracksNow.value      // forcer re-eval på hver tikk
+  const meters = trackLengthM(t)
+  const ms = t.points.length > 0 ? Date.now() - t.points[0].t : 0
+  return { meters, ms, points: t.points.length }
+})
+
+function formatDistance(m) {
+  if (!m) return '0 m'
+  if (m < 1000) return `${Math.round(m)} m`
+  return `${(m / 1000).toFixed(2)} km`
+}
+function formatDuration(ms) {
+  if (!ms || ms < 1000) return '0 s'
+  const sec = Math.floor(ms / 1000)
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = sec % 60
+  if (h > 0) return `${h}t ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
 watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
 
 // Lilla ring rundt symbolene er en hint for at man er i annoteringsmodus
@@ -406,36 +444,48 @@ watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
 watch(() => annot.isAnnotateMode.value, () => renderAnnotations())
 watch(() => annot.visibleTypes.value, () => renderAnnotations())
 
-// Re-render symboler (annoteringer + bruker-pos dot) når pinch-zoom endrer
-// seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
-watch(scale, () => { renderAnnotations(); updateUserDot() })
+// Re-render symboler (annoteringer + bruker-pos dot + spor) når pinch-zoom
+// endrer seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
+watch(scale, () => { renderAnnotations(); updateUserDot(); renderTracks() })
 
 // Skjul annoteringer i spillmodus — bumpers representerer de samme
 // posisjonene med konsistent halo+icon-styling, og uten dobbel-render
 // unngår vi at map-annotering-animasjonen (5s loop) overlapper bumper-
 // animasjonen (hit-triggered).
-watch(() => curveball.active.value, () => renderAnnotations())
+watch(() => curveball.active.value, () => { renderAnnotations(); renderTracks() })
+
+// Tracks: re-render når spor endres, stil endres, eller synlighet toggles.
+// Deep watch på tracks fordi vi pusher nye punkter inn i samme array under
+// opptak (~hvert 5. m).
+watch(() => tracker.tracks.value, () => renderTracks(), { deep: true })
+watch(() => tracker.trackStyle.value, () => renderTracks())
+watch(() => tracker.visibleTrackIds.value, () => renderTracks())
 
 /**
- * Konverter CSS-piksler til SVG user-units, basert på SVG-elementets
- * faktiske on-screen rect (inkludert eventuelle parent CSS-transforms).
+ * Konverter CSS-piksler til SVG user-units. Brukes til å holde symboler
+ * (annoterings-ikoner, GPS-prikk) på konstant skjerm-størrelse uansett zoom.
  *
- * Kart-SVG har viewBox i meter (1 user-unit = 1 m). På et 5×5 km kart
- * vist i 380 CSS px container blir 1 m ≈ 0.076 CSS px → en r=6 m sirkel
- * blir ~0.5 CSS px = usynlig. Ved å konvertere ønsket skjerm-størrelse
- * dynamisk får vi symboler som alltid er lesbare uansett zoom.
+ * v8.9.2: tidligere brukte vi svg.getBoundingClientRect() som inkluderer CSS-
+ * transformer. Det ga en subtil bug: når man tappet «Nullstill zoom» midt
+ * under en pinch-transition, returnerte rect-en mid-animasjons-verdier — vi
+ * malte stedsmerker basert på rect ved scale=20 selv om scale-ref var 1,
+ * og så ble pin-ene ekstremt små etter at animasjonen var ferdig.
  *
- * Bruker getBoundingClientRect() som inkluderer pinch-zoom CSS-transform
- * fra ancestor wrapper-divv, så samme verdi gir samme skjerm-størrelse
- * uansett om brukeren har zoomet inn eller ut.
+ * Nå bruker vi wrapperSize (fast container målt på mount/resize) + scale.value
+ * (mål-skala fra pinch-state) som er garantert konsistent uansett om CSS-
+ * transitionen er ferdig eller ikke.
  */
 function pxToUserUnits(cssPx) {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return cssPx
-  const rect = svg.getBoundingClientRect()
   const vb = svg.viewBox.baseVal
-  if (!rect.width || !vb.width) return cssPx
-  return cssPx * (vb.width / rect.width)
+  const { w, h } = wrapperSize.value
+  if (!w || !h || !vb.width || !vb.height) return cssPx
+  // SVG fits-with-meet til wrapperen: minste dim bestemmer pxPerUnit
+  const fitPxPerUnit = Math.min(w / vb.width, h / vb.height)
+  const pxPerUnit = fitPxPerUnit * (scale.value || 1)
+  if (!pxPerUnit) return cssPx
+  return cssPx / pxPerUnit
 }
 
 // Klikk på kart i annoteringsmodus → plasser symbol
@@ -643,6 +693,195 @@ function selectSymbol(key) {
   annot.isAnnotateMode.value = annot.selectedSymbol.value !== null
 }
 
+/**
+ * Render alle synlige GPS-spor i et eget SVG-lag som ligger mellom kart-
+ * innholdet og annotation/user-laget. Stilen styres av tracker.trackStyle
+ * — 'line' (polyline med marsjerende prikker), 'footprints' eller
+ * 'breadcrumbs'. Live-tracket (det som spilles inn nå) har ekstra
+ * pulserende hode-markør så brukeren ser at opptaket lever.
+ */
+function renderTracks() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let layer = svg.querySelector('#track-layer')
+  if (!layer) {
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'track-layer')
+    layer.setAttribute('data-layer', 'spor')
+    layer.setAttribute('pointer-events', 'none')
+    // Plasser før user-layer + annotation-layer hvis de finnes,
+    // ellers append. Spor skal ligge UNDER GPS-dot/annoteringer.
+    const userLayer = svg.querySelector('#user-layer')
+    const annotLayer = svg.querySelector('#annotation-layer')
+    const ref = userLayer ?? annotLayer
+    if (ref) svg.insertBefore(layer, ref)
+    else svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  if (curveball.active.value) return
+
+  // Strek-bredder i user-units så de holder konstant skjerm-tykkelse
+  const haloW = pxToUserUnits(7)        // ~7 px hvit halo
+  const lineW = pxToUserUnits(3.5)      // ~3.5 px farget kjerne
+  const dotR  = pxToUserUnits(2.5)      // breadcrumbs-prikker
+  const footW = pxToUserUnits(5)        // fotspor-bredde
+
+  const TRACK_COLOR = '#ec4899'         // magenta — kontrasterer mot ISOM
+  const HALO_COLOR  = 'rgba(255,255,255,0.85)'
+
+  const style = tracker.trackStyle.value
+  for (const tr of tracker.tracks.value) {
+    if (!tracker.visibleTrackIds.value.has(tr.id)) continue
+    if (!tr.points || tr.points.length === 0) continue
+    const isActive = tracker.isRecording.value && (tracker.activeTrack.value?.id === tr.id)
+    const g = document.createElementNS(ns, 'g')
+    g.setAttribute('data-track-id', tr.id)
+
+    if (style === 'breadcrumbs') {
+      // Diskrete prikker hver ~10 m. Bruk avstands-basert sampling så
+      // tett-pakkede punkter ikke gir cluster.
+      const pts = sampleByDistance(tr.points, 10)
+      for (const p of pts) {
+        const c = document.createElementNS(ns, 'circle')
+        c.setAttribute('cx', p.x); c.setAttribute('cy', p.y)
+        c.setAttribute('r', dotR)
+        c.setAttribute('fill', TRACK_COLOR)
+        c.setAttribute('stroke', HALO_COLOR)
+        c.setAttribute('stroke-width', pxToUserUnits(1.5))
+        g.appendChild(c)
+      }
+    } else if (style === 'footprints') {
+      // Fotavtrykk: små elliptiske prikker alternerende venstre/høyre av
+      // bevegelses-retningen, ~5 m mellomrom. Rotasjon følger lokal vinkel.
+      const pts = sampleByDistance(tr.points, 5)
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i]
+        const next = pts[i + 1] ?? pts[i - 1] ?? p
+        const dx = next.x - p.x
+        const dy = next.y - p.y
+        const angDeg = Math.atan2(dy, dx) * 180 / Math.PI
+        const side = (i % 2 === 0) ? 1 : -1
+        const off = footW * 0.6
+        const perpAng = (angDeg + 90) * Math.PI / 180
+        const fx = p.x + Math.cos(perpAng) * off * side
+        const fy = p.y + Math.sin(perpAng) * off * side
+        const fp = document.createElementNS(ns, 'ellipse')
+        fp.setAttribute('cx', fx); fp.setAttribute('cy', fy)
+        fp.setAttribute('rx', footW * 0.45)
+        fp.setAttribute('ry', footW * 0.85)
+        fp.setAttribute('transform', `rotate(${angDeg},${fx},${fy})`)
+        fp.setAttribute('fill', TRACK_COLOR)
+        fp.setAttribute('stroke', HALO_COLOR)
+        fp.setAttribute('stroke-width', pxToUserUnits(1))
+        fp.setAttribute('opacity', '0.9')
+        g.appendChild(fp)
+      }
+    } else {
+      // Default: to-lags polyline med marsjerende prikker. Halo bak gir
+      // lesbarhet på både lyse og mørke kart-temaer.
+      const d = pointsToPathD(tr.points)
+      const halo = document.createElementNS(ns, 'path')
+      halo.setAttribute('d', d)
+      halo.setAttribute('fill', 'none')
+      halo.setAttribute('stroke', HALO_COLOR)
+      halo.setAttribute('stroke-width', haloW)
+      halo.setAttribute('stroke-linecap', 'round')
+      halo.setAttribute('stroke-linejoin', 'round')
+      g.appendChild(halo)
+
+      const line = document.createElementNS(ns, 'path')
+      line.setAttribute('d', d)
+      line.setAttribute('fill', 'none')
+      line.setAttribute('stroke', TRACK_COLOR)
+      line.setAttribute('stroke-width', lineW)
+      line.setAttribute('stroke-linecap', 'round')
+      line.setAttribute('stroke-linejoin', 'round')
+      // Marsjerende prikker: stiplet + animasjon på offset
+      const dash = pxToUserUnits(6)
+      const gap = pxToUserUnits(8)
+      line.setAttribute('stroke-dasharray', `${dash} ${gap}`)
+      const anim = document.createElementNS(ns, 'animate')
+      anim.setAttribute('attributeName', 'stroke-dashoffset')
+      anim.setAttribute('from', String(dash + gap))
+      anim.setAttribute('to', '0')
+      anim.setAttribute('dur', '1.4s')
+      anim.setAttribute('repeatCount', 'indefinite')
+      line.appendChild(anim)
+      g.appendChild(line)
+    }
+
+    // Live-puls på siste punkt mens opptaket pågår. Gjør det visuelt
+    // tydelig at hovedet av sporet er "her og nå" og at appen henter
+    // friske GPS-fix-er.
+    if (isActive && tr.points.length > 0) {
+      const last = tr.points[tr.points.length - 1]
+      const headR = pxToUserUnits(8)
+      const pulse = document.createElementNS(ns, 'circle')
+      pulse.setAttribute('cx', last.x); pulse.setAttribute('cy', last.y)
+      pulse.setAttribute('r', headR)
+      pulse.setAttribute('fill', 'none')
+      pulse.setAttribute('stroke', TRACK_COLOR)
+      pulse.setAttribute('stroke-width', pxToUserUnits(2))
+      const aR = document.createElementNS(ns, 'animate')
+      aR.setAttribute('attributeName', 'r')
+      aR.setAttribute('values', `${headR};${headR * 2.4};${headR}`)
+      aR.setAttribute('dur', '1.6s'); aR.setAttribute('repeatCount', 'indefinite')
+      pulse.appendChild(aR)
+      const aO = document.createElementNS(ns, 'animate')
+      aO.setAttribute('attributeName', 'opacity')
+      aO.setAttribute('values', '0.9;0;0.9'); aO.setAttribute('dur', '1.6s')
+      aO.setAttribute('repeatCount', 'indefinite')
+      pulse.appendChild(aO)
+      g.appendChild(pulse)
+    }
+
+    layer.appendChild(g)
+  }
+}
+
+/** Forenkle path til "M x,y L x,y L ..." fra point-array. */
+function pointsToPathD(points) {
+  if (!points.length) return ''
+  let d = `M${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`
+  for (let i = 1; i < points.length; i++) {
+    d += ` L${points[i].x.toFixed(1)},${points[i].y.toFixed(1)}`
+  }
+  return d
+}
+
+/** Sample punkter med min-avstand i SVG-meter. Beholder første og siste. */
+function sampleByDistance(points, minDistM) {
+  if (points.length <= 1) return points.slice()
+  const out = [points[0]]
+  for (let i = 1; i < points.length; i++) {
+    const last = out[out.length - 1]
+    const dx = points[i].x - last.x
+    const dy = points[i].y - last.y
+    if (Math.hypot(dx, dy) >= minDistM) out.push(points[i])
+  }
+  // Sørg for at siste punkt alltid er med (viktig for live-puls)
+  if (out[out.length - 1] !== points[points.length - 1]) {
+    out.push(points[points.length - 1])
+  }
+  return out
+}
+
+// Track-action-handlers for drawer
+function onToggleRecording() {
+  if (!userPos.isWatching) { userPos.start(); return }
+  if (tracker.isRecording.value) tracker.stopRecording()
+  else tracker.startRecording()
+}
+async function onDeleteTrack(id) {
+  if (!confirm('Slett dette sporet?')) return
+  await tracker.deleteTrack(id)
+}
+function onExportTrackGpx(tr) {
+  if (!meta.value) return
+  downloadGpx(tr, meta.value, mapTitle.value)
+}
+
 // Slå opp symbolKey + label for en lagret annotering. Faller tilbake til
 // råverdien fra entry hvis isomCode ikke matcher noen kjent type (skulle
 // ikke skje, men beskytter mot kart-data som er lagret med en eldre
@@ -743,6 +982,8 @@ async function loadMap() {
     userPos.recompute()
     await annot.load()
     renderAnnotations()
+    await tracker.load()
+    renderTracks()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
@@ -765,8 +1006,8 @@ function setupHostSvg(sourceRoot) {
   }
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
-  // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester n&aring;r brukerens
-  // finger lander p&aring; prikken/ringen.
+  // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester når brukerens
+  // finger lander på prikken/ringen.
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
@@ -791,12 +1032,12 @@ function updateUserDot() {
 
   // Dynamiske skjerm-størrelser. Dot er fast 14 CSS-px, kjegle 60 CSS-px
   // ut fra dot. Accuracy-ringen reflekterer ekte fysisk usikkerhet (i meter)
-  // men cappes p&aring; ~28 CSS-px radius slik at d&aring;rlig GPS (urban / tog / tunnel)
-  // ikke spr&aring;ker ringen utover halve skjermen og d&oslash;mmer kart-innholdet.
+  // men cappes på ~28 CSS-px radius slik at dårlig GPS (urban / tog / tunnel)
+  // ikke språker ringen utover halve skjermen og dømmer kart-innholdet.
   // v8.5.3: stroke-bredder via pxToUserUnits — non-scaling-stroke virker
-  // ikke n&aring;r SVG-en CSS-transformeres av pinch-zoom-wrapperen, s&aring; stroke
-  // ble fete p&aring; h&oslash;y zoom og det bl&aring; fyllet forsvant under den hvite kant-
-  // linjen. N&aring; skaleres bredden eksplisitt p&aring; samme m&aring;te som radius.
+  // ikke når SVG-en CSS-transformeres av pinch-zoom-wrapperen, så stroke
+  // ble fete på høy zoom og det blå fyllet forsvant under den hvite kant-
+  // linjen. Nå skaleres bredden eksplisitt på samme måte som radius.
   const dotR = pxToUserUnits(7)         // ~14 CSS-px diameter
   const dotStroke = pxToUserUnits(1.6)  // tynn hvit halo
   const coneR = pxToUserUnits(30)       // ~60 CSS-px ut fra dot
@@ -1279,26 +1520,24 @@ onUnmounted(stopGpsTick)
           <line x1="2" y1="12" x2="5" y2="12"/>
           <line x1="19" y1="12" x2="22" y2="12"/>
         </svg>
-        <!-- v8.5.2: liten GPS-indikator-prikk i hjørnet n&aring;r GPS er aktiv,
-             s&aring; brukeren ser at knappen ogs&aring; refresher posisjonen. -->
+        <!-- v8.5.2: liten GPS-indikator-prikk i hjørnet når GPS er aktiv,
+             så brukeren ser at knappen også refresher posisjonen. -->
         <span v-if="userPos.isWatching"
               class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-sky-400 shadow-[0_0_4px_rgba(56,189,248,0.8)]" />
       </button>
     </div>
 
-    <!-- Kart-flate. Ytre lag = translate+scale, indre lag = rotate.
-         Indre lag separert så pinch-zoom og rotasjon kan brukes uavhengig
-         uten å komplisere transform-matematikken. -->
+    <!-- Kart-flate. Unified transform (translate ∘ rotate ∘ scale) på ett
+         enkelt indre div. Lar finger-pivot styre rotasjons-/zoom-senter
+         (v8.9.2). -->
     <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
          :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''">
-      <div class="w-full h-full" :style="transformStyle">
-        <div class="w-full h-full relative" :style="rotateStyle">
-          <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
-          <CurveBallLayer
-            :flipp="curveball"
-            :view-box="cbViewBox"
-            @drop="onCurveBallContinue"/>
-        </div>
+      <div class="w-full h-full relative" :style="mapTransformStyle">
+        <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
+        <CurveBallLayer
+          :flipp="curveball"
+          :view-box="cbViewBox"
+          @drop="onCurveBallContinue"/>
       </div>
     </div>
 
@@ -1481,8 +1720,13 @@ onUnmounted(stopGpsTick)
             </button>
           </div>
 
-          <!-- Curve Invaders-knapp alltid synlig (uavhengig av tema-valg) -->
-          <button @click="startCurveBall"
+          <!-- Curve Invaders-knapp er en easter egg som dukker opp først
+               når brukeren har valgt Curves-temaet. Inviterer ingen til spillet
+               andre steder (ingen ikoner i kart-listen, ingen knapp ved
+               default-tema). Share-link-flow auto-starter spillet selv —
+               temaet settes til 'curves' av startCurveBall(). -->
+          <button v-if="currentTheme === 'curves'"
+                  @click="startCurveBall"
                   :disabled="cbDemFetching"
                   class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
                          border border-fuchsia-400/40 text-white text-[12px]
@@ -1589,6 +1833,112 @@ onUnmounted(stopGpsTick)
                   <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
                 </svg>
               </button>
+            </div>
+          </div>
+
+          <!-- GPS-sporing (v8.9.2). Synlig kun på brukerens egne kart (ikke
+               innebygd Vardåsen). Start-knappen aktiverer også GPS hvis det
+               er av — så brukeren slipper en ekstra interaksjon. -->
+          <div v-if="!mapId.startsWith('vardasen')"
+               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Sporing</div>
+          <div v-if="!mapId.startsWith('vardasen')" class="space-y-2 mb-4">
+            <button @click="onToggleRecording"
+                    class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98] flex items-center justify-between gap-2"
+                    :class="tracker.isRecording.value
+                            ? 'bg-pink-500/25 border-pink-300/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              <span class="flex items-center gap-2">
+                <span v-if="tracker.isRecording.value"
+                      class="w-2 h-2 rounded-full bg-pink-400 animate-pulse"></span>
+                <svg v-else viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                </svg>
+                {{ tracker.isRecording.value ? 'Stopp opptak' : (userPos.isWatching ? 'Start opptak' : 'Start GPS + opptak') }}
+              </span>
+              <span v-if="liveTrackStats" class="text-[11px] text-pink-100/85 tabular-nums">
+                {{ formatDistance(liveTrackStats.meters) }} · {{ formatDuration(liveTrackStats.ms) }}
+              </span>
+            </button>
+
+            <!-- Stil-velger: linje / fotspor / brødsmuler. Påvirker
+                 alle synlige spor med en gang. -->
+            <div class="grid grid-cols-3 gap-1.5">
+              <button v-for="s in TRACK_STYLES" :key="s.key"
+                      @click="tracker.setStyle(s.key)"
+                      :title="s.desc"
+                      class="px-2 py-1.5 rounded-md border text-[11px] active:scale-[0.98] transition"
+                      :class="tracker.trackStyle.value === s.key
+                              ? 'bg-pink-400/20 border-pink-300/50 text-white'
+                              : 'bg-white/5 border-white/10 text-white/65'">
+                {{ s.label }}
+              </button>
+            </div>
+            <div class="text-[10px] text-white/40 leading-snug">
+              Punkter samples ned til hver 5. m. Lave-nøyaktighets-fixer (over
+              50 m) ignoreres så støy ikke blir sti. Spor lagres med kartet.
+            </div>
+          </div>
+
+          <!-- Liste over lagrede spor + det aktive sporet. -->
+          <div v-if="!mapId.startsWith('vardasen') && tracker.tracks.value.length"
+               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Mine spor</div>
+          <div v-if="!mapId.startsWith('vardasen') && tracker.tracks.value.length"
+               class="space-y-1.5 mb-4 max-h-56 overflow-y-auto pr-1">
+            <div v-for="tr in tracker.tracks.value" :key="tr.id"
+                 class="px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10">
+              <div class="flex items-center gap-2">
+                <button @click="tracker.toggleVisibility(tr.id)"
+                        :aria-label="tracker.visibleTrackIds.value.has(tr.id) ? 'Skjul spor' : 'Vis spor'"
+                        class="w-5 h-5 flex items-center justify-center rounded-sm shrink-0"
+                        :class="tracker.visibleTrackIds.value.has(tr.id)
+                                ? 'text-pink-300'
+                                : 'text-white/30'">
+                  <svg v-if="tracker.visibleTrackIds.value.has(tr.id)" viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12 s4 -7 10 -7 s10 7 10 7 s-4 7 -10 7 s-10 -7 -10 -7"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3 L21 21"/>
+                    <path d="M10.5 6.2 Q12 6 13.5 6.2 Q19 7 22 12 Q21 13.5 19 15.2"/>
+                    <path d="M2 12 Q5 7 9 6"/>
+                  </svg>
+                </button>
+                <div class="flex-1 min-w-0">
+                  <div class="text-[12px] text-white/85 truncate">
+                    {{ tr.navn || ('Tur ' + new Date(tr.opprettet).toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })) }}
+                    <span v-if="tracker.isRecording.value && tracker.activeTrack.value?.id === tr.id"
+                          class="ml-1 text-pink-300 text-[10px] uppercase">● opptak</span>
+                  </div>
+                  <div class="text-[10px] text-white/45 tabular-nums">
+                    {{ formatDistance(trackLengthM(tr)) }} ·
+                    {{ formatDuration(trackDurationMs(tr)) }} ·
+                    {{ tr.points.length }} punkter
+                  </div>
+                </div>
+                <button @click="onExportTrackGpx(tr)"
+                        aria-label="Eksporter som GPX"
+                        :disabled="!tr.points.length"
+                        class="w-7 h-7 flex items-center justify-center rounded-md text-white/55
+                               active:scale-90 active:bg-white/10 disabled:opacity-30">
+                  <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 5 V19"/><polyline points="6 13 12 19 18 13"/>
+                    <line x1="5" y1="21" x2="19" y2="21"/>
+                  </svg>
+                </button>
+                <button @click="onDeleteTrack(tr.id)"
+                        aria-label="Slett spor"
+                        class="w-7 h-7 flex items-center justify-center rounded-md text-white/55
+                               active:scale-90 active:bg-rose-500/20 active:text-rose-200">
+                  <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
