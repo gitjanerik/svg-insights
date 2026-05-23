@@ -13,6 +13,8 @@ import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/map
 import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
+import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
+import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
 import CurveBallLayer from '../components/CurveBallLayer.vue'
@@ -194,8 +196,10 @@ const BUILTIN = {
   vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
 }
 
-// Lag-kategorier som matcher mapBuilder.js sin categoryFor()
+// Lag-kategorier som matcher mapBuilder.js sin categoryFor().
+// 'hillshade' og 'spor' er klient-side syntetiske lag (ikke fra mapBuilder).
 const LAYERS = [
+  { key: 'hillshade',  label: 'Reliefskygge' },
   { key: 'skog',       label: 'Skog' },
   { key: 'aapen',      label: 'Åpen mark' },
   { key: 'aker',       label: 'Åker' },
@@ -254,9 +258,10 @@ function onThemeTap(key) {
 const cbDemFetching = ref(false)
 const cbDemError = ref(null)
 
-async function ensureDemForCurveBall() {
+// v8.9.4: ensureDem brukes nå av flere features (CurveBall, hill-shading,
+// høydeprofil) — derav den generelle navngivningen.
+async function ensureDem() {
   if (storedDem.value || !meta.value) return !!storedDem.value
-  // Lazy-fetch DEM for built-in maps (Vardåsen) som mangler IndexedDB-DEM
   cbDemFetching.value = true
   cbDemError.value = null
   try {
@@ -273,6 +278,8 @@ async function ensureDemForCurveBall() {
   cbDemFetching.value = false
   return !!storedDem.value
 }
+// Alias for å bevare eksisterende kall-sites (CurveBall + Tournament).
+const ensureDemForCurveBall = ensureDem
 
 async function startCurveBall() {
   if (!meta.value || cbDemFetching.value) return
@@ -436,6 +443,143 @@ function formatDuration(ms) {
   return `${s}s`
 }
 
+// Reliefskygge (hill-shading, v8.9.4) — DEM regnes til grayscale-PNG og
+// embeddes som SVG <image> i bunnen av lag-stacken. Cached så bytte AV/PÅ
+// er øyeblikkelig, og en watch på visibleLayers + storedDem trigger
+// re-apply når brukeren toggler eller når DEM er lazy-lastet inn.
+let cachedHillshadeUrl = null   // memoize-key: storedDem-referansen
+let cachedHillshadeDem = null
+
+async function applyHillshade() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || !meta.value) return
+  const wantOn = visibleLayers.value.has('hillshade')
+  let img = svg.querySelector('#hillshade-layer')
+  if (!wantOn) {
+    if (img) img.remove()
+    return
+  }
+  // Lazy-last DEM hvis nødvendig — built-in Vardåsen fetcher fra Kartverket WCS
+  await ensureDem()
+  if (!storedDem.value) {
+    if (img) img.remove()
+    return
+  }
+  if (cachedHillshadeDem !== storedDem.value) {
+    const shade = computeHillshade(storedDem.value)
+    cachedHillshadeUrl = hillshadeToDataURL(shade)
+    cachedHillshadeDem = storedDem.value
+  }
+  // Plasser-strategi: hillshade skal blende NED over kart-innholdet
+  // (vegetasjon, vann, veier), men ligge UNDER user-/annotation-/track-/
+  // measure-lagene som er klient-genererte overlays. Insert-before
+  // første overlay-lag som finnes; ellers append.
+  const insertBefore = svg.querySelector('#user-layer')
+                    ?? svg.querySelector('#annotation-layer')
+                    ?? svg.querySelector('#track-layer')
+                    ?? svg.querySelector('#measure-layer')
+  if (!img) {
+    const ns = 'http://www.w3.org/2000/svg'
+    img = document.createElementNS(ns, 'image')
+    img.setAttribute('id', 'hillshade-layer')
+    img.setAttribute('data-layer', 'hillshade')
+    img.setAttribute('preserveAspectRatio', 'none')
+    // Opacity 0.42 + multiply gir nok kontrast til at terrenget «vrir» seg
+    // synlig uten at vegetasjons-mønstre og tekst dempes nevneverdig.
+    img.setAttribute('opacity', '0.42')
+    img.setAttribute('pointer-events', 'none')
+    img.setAttribute('image-rendering', 'auto')
+    img.style.mixBlendMode = 'multiply'
+  }
+  if (insertBefore) svg.insertBefore(img, insertBefore)
+  else svg.appendChild(img)
+  img.setAttribute('x', '0'); img.setAttribute('y', '0')
+  img.setAttribute('width', String(meta.value.widthM))
+  img.setAttribute('height', String(meta.value.heightM))
+  img.setAttribute('href', cachedHillshadeUrl)
+  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedHillshadeUrl)
+}
+
+watch([() => visibleLayers.value, storedDem], () => { applyHillshade() })
+
+// Måleverktøy — distanse + areal (v8.9.4). Aktiveres via knapp i drawer.
+// Tap-på-kart i denne modusen plasserer vertices. Lukket polygon viser
+// både omkrets og areal (hektar / km²).
+const measureMode = ref(false)
+const measureVertices = ref([])
+const measureClosed = ref(false)
+function startMeasure() {
+  measureMode.value = true
+  measureVertices.value = []
+  measureClosed.value = false
+  // Sørg for at annoteringsmodus ikke konkurrerer om tap-eventet
+  annot.selectedSymbol.value = null
+  annot.isAnnotateMode.value = false
+}
+function stopMeasure() {
+  measureMode.value = false
+  measureVertices.value = []
+  measureClosed.value = false
+}
+function clearMeasure() {
+  measureVertices.value = []
+  measureClosed.value = false
+}
+function closeMeasure() {
+  if (measureVertices.value.length >= 3) measureClosed.value = true
+}
+function undoMeasureVertex() {
+  if (measureClosed.value) { measureClosed.value = false; return }
+  if (measureVertices.value.length === 0) return
+  measureVertices.value = measureVertices.value.slice(0, -1)
+}
+
+// Distance og areal-stats utledes via computed slik at de re-evaluerer
+// automatisk når vertices endres
+const measureStats = computed(() => {
+  const v = measureVertices.value
+  if (v.length < 2) return { distM: 0, areaM2: 0 }
+  let distM = 0
+  for (let i = 1; i < v.length; i++) {
+    distM += Math.hypot(v[i].x - v[i - 1].x, v[i].y - v[i - 1].y)
+  }
+  // Lukket polygon: shoelace + closing-edge i distance
+  let areaM2 = 0
+  if (measureClosed.value && v.length >= 3) {
+    distM += Math.hypot(v[0].x - v[v.length - 1].x, v[0].y - v[v.length - 1].y)
+    let sum = 0
+    for (let i = 0; i < v.length; i++) {
+      const a = v[i], b = v[(i + 1) % v.length]
+      sum += a.x * b.y - b.x * a.y
+    }
+    areaM2 = Math.abs(sum) / 2
+  }
+  return { distM, areaM2 }
+})
+
+function formatArea(m2) {
+  if (m2 < 10_000) return `${Math.round(m2)} m²`
+  if (m2 < 1_000_000) return `${(m2 / 10_000).toFixed(2)} ha`
+  return `${(m2 / 1_000_000).toFixed(2)} km²`
+}
+
+// Høydeprofil — sample stripe + gradient-fyll under (v8.9.4).
+// expandedTrackId holder hvilket spor som er "zoomet" i drawer-en (=
+// vises som stor profil under en modal-overlay).
+const expandedTrackId = ref(null)
+
+const profileCache = new Map()  // trackId+pointCount → profileObj
+function profileFor(track) {
+  if (!track?.points?.length || !storedDem.value) return null
+  const key = `${track.id}-${track.points.length}`
+  if (profileCache.has(key)) return profileCache.get(key)
+  const prof = sampleProfile(track, storedDem.value)
+  if (prof) profileCache.set(key, prof)
+  return prof
+}
+// Når DEM endres (lazy-load), invalider caches
+watch(storedDem, () => { profileCache.clear() })
+
 watch(() => annot.annotations.value, () => renderAnnotations(), { deep: true })
 
 // Lilla ring rundt symbolene er en hint for at man er i annoteringsmodus
@@ -490,7 +634,8 @@ function pxToUserUnits(cssPx) {
 
 // Klikk på kart i annoteringsmodus → plasser symbol
 function onMapClick(e) {
-  if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
+  // Måleverktøy har prioritet over annotering siden brukeren eksplisitt
+  // har slått det på (annoteringsmodus blir tvunget av i startMeasure).
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
   const pt = svg.createSVGPoint()
@@ -499,11 +644,83 @@ function onMapClick(e) {
   const ctm = svg.getScreenCTM()
   if (!ctm) return
   const local = pt.matrixTransform(ctm.inverse())
+  if (measureMode.value) {
+    if (measureClosed.value) return  // ingen flere vertices etter lukking
+    measureVertices.value = [...measureVertices.value, { x: local.x, y: local.y }]
+    return
+  }
+  if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
   const sym = ANNOTATION_SYMBOLS.find(s => s.symbolKey === annot.selectedSymbol.value)
   if (!sym) return
   annot.addPoint(sym.code, local.x, local.y)
   annot.persist()
 }
+
+function renderMeasure() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let layer = svg.querySelector('#measure-layer')
+  if (!layer) {
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'measure-layer')
+    layer.setAttribute('data-layer', 'maaling')
+    layer.setAttribute('pointer-events', 'none')
+    svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  const v = measureVertices.value
+  if (!v.length || curveball.active.value) return
+
+  const haloW = pxToUserUnits(6)
+  const lineW = pxToUserUnits(2.5)
+  const vertR = pxToUserUnits(4)
+
+  // Areal-polygon (fill) hvis lukket
+  if (measureClosed.value && v.length >= 3) {
+    const ptsAttr = v.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+    const poly = document.createElementNS(ns, 'polygon')
+    poly.setAttribute('points', ptsAttr)
+    poly.setAttribute('fill', 'rgba(34, 197, 94, 0.22)')
+    poly.setAttribute('stroke', 'none')
+    layer.appendChild(poly)
+  }
+
+  // To-lags polyline: hvit halo + grønn linje
+  if (v.length >= 2) {
+    let d = `M${v[0].x.toFixed(1)},${v[0].y.toFixed(1)}`
+    for (let i = 1; i < v.length; i++) d += ` L${v[i].x.toFixed(1)},${v[i].y.toFixed(1)}`
+    if (measureClosed.value) d += ' Z'
+    const halo = document.createElementNS(ns, 'path')
+    halo.setAttribute('d', d); halo.setAttribute('fill', 'none')
+    halo.setAttribute('stroke', 'rgba(255,255,255,0.9)')
+    halo.setAttribute('stroke-width', String(haloW))
+    halo.setAttribute('stroke-linecap', 'round')
+    halo.setAttribute('stroke-linejoin', 'round')
+    layer.appendChild(halo)
+    const line = document.createElementNS(ns, 'path')
+    line.setAttribute('d', d); line.setAttribute('fill', 'none')
+    line.setAttribute('stroke', '#16a34a')
+    line.setAttribute('stroke-width', String(lineW))
+    line.setAttribute('stroke-linecap', 'round')
+    line.setAttribute('stroke-linejoin', 'round')
+    layer.appendChild(line)
+  }
+
+  // Vertices
+  for (let i = 0; i < v.length; i++) {
+    const c = document.createElementNS(ns, 'circle')
+    c.setAttribute('cx', v[i].x); c.setAttribute('cy', v[i].y)
+    c.setAttribute('r', vertR)
+    c.setAttribute('fill', '#16a34a')
+    c.setAttribute('stroke', '#fff')
+    c.setAttribute('stroke-width', pxToUserUnits(1.5))
+    layer.appendChild(c)
+  }
+}
+
+watch([measureVertices, measureClosed, scale], () => renderMeasure(), { deep: true })
+watch(() => curveball.active.value, () => renderMeasure())
 
 function renderAnnotations() {
   const svg = svgHostRef.value?.querySelector('svg')
@@ -1030,6 +1247,10 @@ async function loadMap() {
     await tracker.load()
     renderTracks()
     applyUprightLabels()
+    renderMeasure()
+    // Hill-shading er default ON — fire-and-forget. Lazy DEM-load skjer
+    // internt hvis nødvendig (Vardåsen).
+    applyHillshade()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
@@ -1599,6 +1820,19 @@ onUnmounted(stopGpsTick)
       </div>
     </div>
 
+    <!-- Måleverktøy-indikator (v8.9.4). Live-readout direkte på kartet
+         så brukeren ser distanse og areal uten å åpne drawer-en. -->
+    <div v-if="measureMode && !curveball.active.value"
+         class="absolute top-[16rem] right-3 z-20 px-3 py-2 rounded-md bg-emerald-600
+                text-white text-[11px] font-medium shadow-lg pointer-events-none
+                tabular-nums max-w-[55%]">
+      <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">Mål</div>
+      <div class="text-[13px] font-semibold">{{ formatDistance(measureStats.distM) }}</div>
+      <div v-if="measureClosed" class="text-[11px] text-emerald-100/95">
+        {{ formatArea(measureStats.areaM2) }}
+      </div>
+    </div>
+
     <!-- Lasting / feil -->
     <div v-if="loading"
          class="absolute inset-0 flex flex-col items-center justify-center text-white/60 z-10">
@@ -1882,6 +2116,68 @@ onUnmounted(stopGpsTick)
             </div>
           </div>
 
+          <!-- Måleverktøy (v8.9.4). Distanse for åpen kjede, areal når
+               polygonen lukkes. Vises på alle kart (også Vardåsen) siden
+               det er en passiv map-overlay. -->
+          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Måleverktøy</div>
+          <div class="space-y-2 mb-4">
+            <button v-if="!measureMode"
+                    @click="startMeasure"
+                    class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           bg-white/5 border-white/10 text-white/75 flex items-center justify-center gap-2">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 21 9 15 13 19 21 11"/>
+                <path d="M5 19 V21 H7 M19 11 V13 H21"/>
+              </svg>
+              Mål distanse og areal
+            </button>
+            <div v-else class="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 space-y-2">
+              <div class="flex items-baseline justify-between">
+                <div class="text-[11px] text-emerald-100/85 uppercase tracking-wide">
+                  Tap på kartet for å plassere punkter
+                </div>
+                <button @click="stopMeasure"
+                        aria-label="Avslutt måling"
+                        class="text-white/70 active:scale-90 text-[10px] px-1.5 py-0.5 rounded
+                               bg-white/10 hover:bg-white/15">
+                  Lukk
+                </button>
+              </div>
+              <div class="text-white text-[14px] tabular-nums font-medium">
+                {{ formatDistance(measureStats.distM) }}
+                <span v-if="measureClosed" class="text-emerald-200/85">
+                  · {{ formatArea(measureStats.areaM2) }}
+                </span>
+                <span v-if="measureVertices.length === 0"
+                      class="text-white/45 text-[11px] font-normal">
+                  (ingen punkter ennå)
+                </span>
+              </div>
+              <div class="flex gap-1.5">
+                <button @click="closeMeasure"
+                        :disabled="measureVertices.length < 3 || measureClosed"
+                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                               bg-emerald-500/20 border-emerald-300/40 text-white
+                               disabled:opacity-40 disabled:cursor-not-allowed">
+                  Lukk polygon
+                </button>
+                <button @click="undoMeasureVertex"
+                        :disabled="!measureVertices.length"
+                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                               bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
+                  Angre
+                </button>
+                <button @click="clearMeasure"
+                        :disabled="!measureVertices.length"
+                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                               bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
+                  Tøm
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- GPS-sporing (v8.9.2). Synlig kun på brukerens egne kart (ikke
                innebygd Vardåsen). Start-knappen aktiverer også GPS hvis det
                er av — så brukeren slipper en ekstra interaksjon. -->
@@ -1985,6 +2281,34 @@ onUnmounted(stopGpsTick)
                   </svg>
                 </button>
               </div>
+
+              <!-- Høydeprofil-sparkline (v8.9.4). Tap for å zoome.
+                   Krever ≥ 2 punkter og at DEM er lastet. -->
+              <button v-if="profileFor(tr)"
+                      @click="expandedTrackId = tr.id"
+                      class="mt-1.5 w-full block rounded-sm overflow-hidden active:opacity-80"
+                      aria-label="Vis høydeprofil i full størrelse">
+                <svg viewBox="0 0 200 36" preserveAspectRatio="none"
+                     class="w-full h-9 block">
+                  <defs>
+                    <linearGradient :id="'pf-grad-' + tr.id" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.55"/>
+                      <stop offset="100%" stop-color="#ec4899" stop-opacity="0.05"/>
+                    </linearGradient>
+                  </defs>
+                  <path :d="buildProfilePath(profileFor(tr), 200, 36, 2).area"
+                        :fill="'url(#pf-grad-' + tr.id + ')'"/>
+                  <path :d="buildProfilePath(profileFor(tr), 200, 36, 2).line"
+                        fill="none" stroke="#ec4899" stroke-width="1.2"
+                        stroke-linecap="round" stroke-linejoin="round"
+                        vector-effect="non-scaling-stroke"/>
+                </svg>
+                <div class="text-[10px] text-white/55 tabular-nums leading-tight px-0.5 mt-0.5 text-left">
+                  ↗ {{ Math.round(profileFor(tr).totalAscent) }} m ·
+                  ↘ {{ Math.round(profileFor(tr).totalDescent) }} m ·
+                  {{ Math.round(profileFor(tr).minElev) }}–{{ Math.round(profileFor(tr).maxElev) }} moh
+                </div>
+              </button>
             </div>
           </div>
 
@@ -2094,6 +2418,101 @@ onUnmounted(stopGpsTick)
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
     <CurveBallFlippers :flipp="curveball" :map-rect="mapRect"/>
+
+    <!-- Høydeprofil-modal (v8.9.4). Åpnes ved tap på sparkline i drawer-en.
+         Viser stor profil + stats. Bottom-sheet stil. -->
+    <div v-if="expandedTrackId"
+         class="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end justify-center"
+         @click.self="expandedTrackId = null">
+      <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl p-4 max-h-[75dvh] overflow-y-auto">
+        <template v-for="tr in tracker.tracks.value" :key="tr.id">
+          <template v-if="tr.id === expandedTrackId">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="text-white text-sm font-semibold">
+                  {{ tr.navn || ('Tur ' + new Date(tr.opprettet).toLocaleDateString('no-NO', { day: '2-digit', month: 'short', year: 'numeric' })) }}
+                </div>
+                <div class="text-[11px] text-white/55 tabular-nums">
+                  {{ formatDistance(trackLengthM(tr)) }} ·
+                  {{ formatDuration(trackDurationMs(tr)) }} ·
+                  {{ tr.points.length }} punkter
+                </div>
+              </div>
+              <button @click="expandedTrackId = null"
+                      aria-label="Lukk"
+                      class="w-8 h-8 rounded-full bg-white/5 border border-white/10
+                             text-white/65 flex items-center justify-center active:scale-90">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                </svg>
+              </button>
+            </div>
+
+            <template v-if="profileFor(tr)">
+              <svg viewBox="0 0 600 180" preserveAspectRatio="none"
+                   class="w-full h-44 block rounded-lg bg-zinc-950">
+                <defs>
+                  <linearGradient :id="'pf-big-grad-' + tr.id" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stop-color="#ec4899" stop-opacity="0.65"/>
+                    <stop offset="100%" stop-color="#ec4899" stop-opacity="0.05"/>
+                  </linearGradient>
+                </defs>
+                <!-- Horisontale grid-linjer (svake, for kontekst) -->
+                <g stroke="rgba(255,255,255,0.07)" stroke-width="1">
+                  <line v-for="i in 3" :key="i" x1="0" :y1="(i / 4) * 180" x2="600" :y2="(i / 4) * 180"/>
+                </g>
+                <path :d="buildProfilePath(profileFor(tr), 600, 180, 8).area"
+                      :fill="'url(#pf-big-grad-' + tr.id + ')'"/>
+                <path :d="buildProfilePath(profileFor(tr), 600, 180, 8).line"
+                      fill="none" stroke="#ec4899" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round"
+                      vector-effect="non-scaling-stroke"/>
+                <!-- Y-akse-labels: max + min høyde -->
+                <text x="6" y="14" fill="#ec4899" font-size="11" font-weight="600"
+                      style="font-family: ui-sans-serif, system-ui">
+                  {{ Math.round(profileFor(tr).maxElev) }} moh
+                </text>
+                <text x="6" y="174" fill="#ec4899" font-size="11" font-weight="600"
+                      style="font-family: ui-sans-serif, system-ui">
+                  {{ Math.round(profileFor(tr).minElev) }} moh
+                </text>
+                <text x="594" y="14" fill="rgba(255,255,255,0.4)" font-size="10"
+                      text-anchor="end" style="font-family: ui-sans-serif, system-ui">0 m</text>
+                <text x="594" y="174" fill="rgba(255,255,255,0.4)" font-size="10"
+                      text-anchor="end" style="font-family: ui-sans-serif, system-ui">
+                  {{ formatDistance(profileFor(tr).totalDistM) }}
+                </text>
+              </svg>
+
+              <div class="grid grid-cols-2 gap-2 mt-3 text-[12px]">
+                <div class="rounded-md bg-white/5 border border-white/10 px-3 py-2">
+                  <div class="text-white/45 text-[10px] uppercase tracking-wide">Total stigning</div>
+                  <div class="text-white font-semibold tabular-nums">↗ {{ Math.round(profileFor(tr).totalAscent) }} m</div>
+                </div>
+                <div class="rounded-md bg-white/5 border border-white/10 px-3 py-2">
+                  <div class="text-white/45 text-[10px] uppercase tracking-wide">Total fall</div>
+                  <div class="text-white font-semibold tabular-nums">↘ {{ Math.round(profileFor(tr).totalDescent) }} m</div>
+                </div>
+                <div class="rounded-md bg-white/5 border border-white/10 px-3 py-2">
+                  <div class="text-white/45 text-[10px] uppercase tracking-wide">Høyeste punkt</div>
+                  <div class="text-white font-semibold tabular-nums">{{ Math.round(profileFor(tr).maxElev) }} moh</div>
+                </div>
+                <div class="rounded-md bg-white/5 border border-white/10 px-3 py-2">
+                  <div class="text-white/45 text-[10px] uppercase tracking-wide">Laveste punkt</div>
+                  <div class="text-white font-semibold tabular-nums">{{ Math.round(profileFor(tr).minElev) }} moh</div>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="rounded-md bg-amber-500/10 border border-amber-300/30 px-3 py-3 text-amber-100/90 text-[12px]">
+                Høydeprofil ikke tilgjengelig — DEM kunne ikke leses for dette kartet.
+              </div>
+            </template>
+          </template>
+        </template>
+      </div>
+    </div>
   </div>
 </template>
 
