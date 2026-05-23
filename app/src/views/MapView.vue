@@ -672,8 +672,16 @@ function renderMeasure() {
   const v = measureVertices.value
   if (!v.length || curveball.active.value) return
 
-  const haloW = pxToUserUnits(6)
-  const lineW = pxToUserUnits(2.5)
+  // Stroke-widths: paths inne i [data-layer] arver vector-effect:
+  // non-scaling-stroke fra global SVG-CSS (symbolizer.js linje 394). Det
+  // betyr at stroke-width tolkes i CSS-px, ikke i user-units — så
+  // pxToUserUnits ville gjort linjene ~10× for tykke (v8.9.5).
+  // For å holde konstant skjerm-tykkelse under pinch-zoom: del på scale.
+  const s = scale.value || 1
+  const haloW = 6 / s
+  const lineW = 2.5 / s
+  // Vertices er circles, IKKE paths — de arver ikke non-scaling-stroke,
+  // så radius må fortsatt konverteres via pxToUserUnits.
   const vertR = pxToUserUnits(4)
 
   // Areal-polygon (fill) hvis lukket
@@ -707,14 +715,17 @@ function renderMeasure() {
     layer.appendChild(line)
   }
 
-  // Vertices
+  // Vertices (circles — får ikke non-scaling-stroke fra CSS-regelen som
+  // kun matcher `path`, så vi gir dem den eksplisitt for å unngå at
+  // strok-bredden vokser ved zoom inn).
   for (let i = 0; i < v.length; i++) {
     const c = document.createElementNS(ns, 'circle')
     c.setAttribute('cx', v[i].x); c.setAttribute('cy', v[i].y)
     c.setAttribute('r', vertR)
     c.setAttribute('fill', '#16a34a')
     c.setAttribute('stroke', '#fff')
-    c.setAttribute('stroke-width', pxToUserUnits(1.5))
+    c.setAttribute('stroke-width', String(1.5 / s))
+    c.setAttribute('vector-effect', 'non-scaling-stroke')
     layer.appendChild(c)
   }
 }
@@ -983,11 +994,16 @@ function renderTracks() {
   layer.replaceChildren()
   if (curveball.active.value) return
 
-  // Strek-bredder i user-units så de holder konstant skjerm-tykkelse
-  const haloW = pxToUserUnits(7)        // ~7 px hvit halo
-  const lineW = pxToUserUnits(3.5)      // ~3.5 px farget kjerne
-  const dotR  = pxToUserUnits(2.5)      // breadcrumbs-prikker
-  const footW = pxToUserUnits(5)        // fotspor-bredde
+  // v8.9.5: paths inne i [data-layer] arver vector-effect: non-scaling-
+  // stroke fra global SVG-CSS, så stroke-width tolkes i CSS-px. Del kun på
+  // pinch-scale for å kompensere for CSS-transform-zoom. (Tidligere brukte
+  // vi pxToUserUnits her — det ga ~10× for tykk linje på 4 km-kart.)
+  const s = scale.value || 1
+  const haloW = 7 / s
+  const lineW = 3.5 / s
+  // Circle/ellipse-radii er geometri, ikke stroke → fortsatt user-units
+  const dotR  = pxToUserUnits(2.5)
+  const footW = pxToUserUnits(5)
 
   const TRACK_COLOR = '#ec4899'         // magenta — kontrasterer mot ISOM
   const HALO_COLOR  = 'rgba(255,255,255,0.85)'
@@ -1059,9 +1075,10 @@ function renderTracks() {
       line.setAttribute('stroke-width', lineW)
       line.setAttribute('stroke-linecap', 'round')
       line.setAttribute('stroke-linejoin', 'round')
-      // Marsjerende prikker: stiplet + animasjon på offset
-      const dash = pxToUserUnits(6)
-      const gap = pxToUserUnits(8)
+      // Marsjerende prikker: stiplet + animasjon på offset. Dasharray
+      // arver også non-scaling-stroke, så CSS-px / pinch-scale.
+      const dash = 6 / s
+      const gap = 8 / s
       line.setAttribute('stroke-dasharray', `${dash} ${gap}`)
       const anim = document.createElementNS(ns, 'animate')
       anim.setAttribute('attributeName', 'stroke-dashoffset')
