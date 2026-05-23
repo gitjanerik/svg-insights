@@ -544,7 +544,16 @@ function renderAnnotations() {
     if (!annot.visibleTypes.value.has(sym.symbolKey)) continue
 
     const g = document.createElementNS(ns, 'g')
-    g.setAttribute('transform', `translate(${a.x},${a.y})`)
+    // Stedsmerke (rød dråpe-pin) og stedsnavn skal alltid vises «opp» på
+    // skjermen selv om kartet er rotert. Counter-rotate g-en med samme
+    // mengde som kartets rotasjon, rundt anker-punktet (som nå er (0,0)
+    // etter translate). applyUprightLabels() oppdaterer transformen ved
+    // hver rotasjons-endring uten å re-rendre noden (v8.9.3).
+    if (sym.symbolKey === 'stedsmerke') {
+      g.setAttribute('transform', `translate(${a.x},${a.y}) rotate(${-rotation.value})`)
+    } else {
+      g.setAttribute('transform', `translate(${a.x},${a.y})`)
+    }
     g.setAttribute('data-annot-id', a.id)
     g.setAttribute('data-annot-type', sym.symbolKey)
 
@@ -692,6 +701,42 @@ function selectSymbol(key) {
   annot.selectedSymbol.value = annot.selectedSymbol.value === key ? null : key
   annot.isAnnotateMode.value = annot.selectedSymbol.value !== null
 }
+
+/**
+ * Hold stedsnavn-tekst og stedsmerke-piner stående «opp» på skjermen mens
+ * resten av kartet roterer. Counter-rotation appliseres rundt hver
+ * etikets eget ankerpunkt slik at de blir lesbare uansett kart-vinkel.
+ *
+ * Kjøres som lett attributt-oppdatering ved hver rotasjons-endring —
+ * ingen DOM-creation, så det er trygt å kalle hver touchmove-frame.
+ */
+function applyUprightLabels() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const rot = -rotation.value
+  // Stedsnavn-tekster fra mapBuilder. Hver text har x, y, dy — counter-rotate
+  // rundt (x, y) så ankeret holder seg og glyfen vippes opp.
+  const texts = svg.querySelectorAll('[data-label="stedsnavn"]')
+  for (const el of texts) {
+    const x = el.getAttribute('x') ?? '0'
+    const y = el.getAttribute('y') ?? '0'
+    el.setAttribute('transform', `rotate(${rot} ${x} ${y})`)
+  }
+  // Stedsmerke-annoteringer (rød dråpe-pin). G-en har allerede
+  // translate(x,y) — counter-rotate rundt (0,0) i lokalt rom holder
+  // pin-tipp-en forankret mens hodet vippes opp.
+  const pins = svg.querySelectorAll('[data-annot-type="stedsmerke"]')
+  for (const el of pins) {
+    // Bevarer eksisterende translate, bytter ut/setter rotate-segment
+    const existing = el.getAttribute('transform') ?? ''
+    const m = existing.match(/translate\([^)]+\)/)
+    const trans = m ? m[0] : ''
+    el.setAttribute('transform', `${trans} rotate(${rot})`)
+  }
+}
+
+// Watch rotasjon — billig attributt-oppdatering, ingen full re-render.
+watch(rotation, applyUprightLabels)
 
 /**
  * Render alle synlige GPS-spor i et eget SVG-lag som ligger mellom kart-
@@ -984,6 +1029,7 @@ async function loadMap() {
     renderAnnotations()
     await tracker.load()
     renderTracks()
+    applyUprightLabels()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
