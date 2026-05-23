@@ -885,13 +885,15 @@ export function buildSvg(elements, bbox, options = {}) {
   // «implisitt sjø» mellom kystlinje-ringene: områder vi VET er sjø
   // (utenfor coastline-land), men som ikke har eksplisitt vann-polygon.
   //
-  // For kontur- og vegetasjons-masken må implicit-sjø behandles som
-  // vann. Vi bygger en ekstra svart mask-path: hele bbox MINUS
-  // coastlineLandRings (evenodd-fyll), så bare innsiden av land-ringene
-  // forblir hvit. Deretter legger vi place=island/islet-ringene som
-  // hvitt for å re-eksponere små holmer som ikke ligger i coastline-data.
+  // v8.9.9: BEGRENSET til SEA-modus. I LAND-modus var v8.9.8 risikabel
+  // fordi `closeArcsViaBbox` kan produsere mainland-ringer som inkluderer
+  // bbox-kant-bånd (top/bottom-stripes) som faktisk er sjø — det fikk
+  // LAND-kart til å se nesten heldekkende blått ut på kystnære bbox
+  // (Vardåsen-rapport, 23. mai 2026). I SEA-modus er bg uansett blå,
+  // så en for aggressiv mask-utvidelse skjuler bare konturer/vegetasjon
+  // fra det vi uansett ville maskert.
   let coastalMaskExtras = ''
-  if (coastlineLandRings.length > 0) {
+  if (mapType === 'sea' && coastlineLandRings.length > 0) {
     const bboxRectD = `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
     const landRingsD = coastlineLandRings.map(ring => {
       if (ring.length < 3) return ''
@@ -1443,56 +1445,20 @@ export function buildSvg(elements, bbox, options = {}) {
       `\n  </g>\n`
     : ''
 
-  // v8.9.8: I LAND-kart-modus over kyst-bbox må vi fylle den implisitte
-  // sjøen (bbox MINUS coastlineLandRings) med sjø-blå, ellers vises
-  // kremgul bg-rect gjennom i områder der hverken Sjøkart-307, N50
-  // Havflate eller OSM natural=water dekker. Den var akkurat denne
-  // «kremgul-flekk-mellom-øyer»-effekten brukeren rapporterte.
-  //
-  // I SEA-modus er bg allerede SEA_BLUE → ingen ekstra fyll trengs.
-  // Vi skiller bevisst dette fra v7.1.3-forsøket (som flippet HELE
-  // bg-en til blå): her maler vi BARE den implisitte sjø-formen, så
-  // Drammen-omegn med én smal fjord-arm beholder kremgul ellers.
-  const coastalSeaFillSvg = (!useSeaBg && coastlineLandRings.length > 0)
-    ? (() => {
-        const bboxRectD = `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
-        const landRingsD = coastlineLandRings.map(ring => {
-          if (ring.length < 3) return ''
-          let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-          for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-          return d + 'Z'
-        }).filter(Boolean).join('')
-        // Holmer fra OSM place=island/islet: legges INN i landRingsD så
-        // de også blir holler i sjø-fyllet (= forblir kremgul-bg).
-        const islandRingsD = (() => {
-          const parts = []
-          for (const el of buckets['001'] ?? []) {
-            if (el.type === 'way' && el.geometry) {
-              const d = pathFromGeometry(el.geometry, true)
-              if (d) parts.push(d)
-            } else if (el.type === 'relation' && el.members) {
-              const outerRings = assembleRelationRings(el.members, 'outer')
-              for (const ring of outerRings) {
-                const d = pathFromGeometry(ring, true)
-                if (d) parts.push(d)
-              }
-            }
-          }
-          return parts.join('')
-        })()
-        if (!landRingsD && !islandRingsD) return ''
-        return `  <g id="kyst-sjo" data-layer="sjo-implicit" data-iso="303">\n` +
-          `    <path d="${bboxRectD}${landRingsD}${islandRingsD}" fill="${SEA_BLUE}" fill-rule="evenodd" data-src="kystlinje-sjo"/>\n` +
-          `  </g>\n`
-      })()
-    : ''
+  // v8.9.9: coastalSeaFillSvg fra v8.9.8 fjernet. Den fylte implisitt-sjø
+  // med blå i LAND-modus, men closeArcsViaBbox kan produsere ringer som
+  // inkluderer bbox-kant-bånd der det faktisk er sjø — som gjorde at
+  // LAND-kart over kyst-bbox så ut som sjøkart med kremgul-stripe på
+  // toppen (Vardåsen-rapport). Tilbake til v7.1.x-prinsippet: i LAND-
+  // modus styrer Sjøkart-307-polygoner sjø-utseendet der WFS har data,
+  // og bg forblir kremgul ellers.
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${coastalSeaFillSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }

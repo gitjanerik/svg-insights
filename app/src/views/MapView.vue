@@ -2509,6 +2509,20 @@ onUnmounted(stopGpsTick)
                 Reliefskygge: Horn-formel hill-shading rendret som grayscale-PNG i
                 SVG-en med <code class="text-white/85">mix-blend-mode: multiply</code>.
               </p>
+              <!-- v8.9.9: Karttype-info + nullstill-knapp. Tidligere var dette
+                   bare synlig som liten tekst nede i attribusjons-boksen og
+                   ble lett oversett (rapportert 23. mai 2026). -->
+              <div v-if="meta?.mapType" class="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                <span class="text-white/80">
+                  Karttype: {{ meta.mapType === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}
+                </span>
+                <button @click="clearMapTypePreference"
+                        class="px-2 py-1 rounded-md bg-sky-500/15 border border-sky-400/40
+                               text-sky-200 text-[11px] hover:bg-sky-500/25"
+                        title="Nullstiller globalt karttype-valg. Du blir spurt på nytt neste gang du lager et kart.">
+                  Nullstill valg
+                </button>
+              </div>
               <p class="text-white/45 text-[10px]">v{{ APP_VERSION }}</p>
             </div>
           </div>
