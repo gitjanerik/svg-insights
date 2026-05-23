@@ -21,6 +21,7 @@ import CurveBallLayer from '../components/CurveBallLayer.vue'
 import CurveBallHUD from '../components/CurveBallHUD.vue'
 import CurveBallFlippers from '../components/CurveBallFlippers.vue'
 import { t } from '../lib/i18n.js'
+import { APP_VERSION } from '../version.js'
 import {
   STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
   PIN_SCALE_VALUES, SHADOW_SCALE_VALUES,
@@ -244,6 +245,38 @@ const isDark = computed(() => currentTheme.value !== 'light')
 const THEMES = computed(() => Object.entries(isomCatalog.themes ?? {}).map(([k, v]) => ({ key: k, label: v.label ?? k })))
 const diagnose = ref(false)
 const showControls = ref(false)
+
+// Drawer-faner (v8.9.6) — drawer-en hadde vokst seg ulesbar med 10+ vertikale
+// seksjoner. Splittet i 7 faner: Lag / Tema / Annotering / Måling / Sporing /
+// Eksport / Om. Annotering og Sporing skjules for built-in kart (Vardåsen).
+// Aktiv fane huskes i localStorage så drawer åpner tilbake i samme kontekst.
+const ACTIVE_TAB_KEY = 'svg-insights-mapview-active-tab'
+const ALL_TABS = [
+  { key: 'lag',         label: 'Lag' },
+  { key: 'tema',        label: 'Tema' },
+  { key: 'annotering',  label: 'Annotering', userOnly: true },
+  { key: 'maaling',     label: 'Måling' },
+  { key: 'sporing',     label: 'Sporing',    userOnly: true },
+  { key: 'eksport',     label: 'Eksport' },
+  { key: 'om',          label: 'Om' },
+]
+const activeTab = ref('lag')
+try {
+  const saved = localStorage.getItem(ACTIVE_TAB_KEY)
+  if (saved && ALL_TABS.some(t => t.key === saved)) activeTab.value = saved
+} catch { /* private mode / quota — ignore */ }
+const visibleTabs = computed(() => {
+  const isBuiltin = (route.params.id ?? 'vardasen').startsWith('vardasen')
+  return ALL_TABS.filter(t => !t.userOnly || !isBuiltin)
+})
+watch(activeTab, (v) => {
+  try { localStorage.setItem(ACTIVE_TAB_KEY, v) } catch { /* noop */ }
+})
+// Hvis fanen ble usynlig (f.eks. åpnet et Vardåsen-kart med Sporing aktiv),
+// fall tilbake til Lag som er garantert alltid synlig.
+watch(visibleTabs, (tabs) => {
+  if (!tabs.some(t => t.key === activeTab.value)) activeTab.value = 'lag'
+}, { immediate: true })
 
 const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 
@@ -1837,10 +1870,11 @@ onUnmounted(stopGpsTick)
       </div>
     </div>
 
-    <!-- Måleverktøy-indikator (v8.9.4). Live-readout direkte på kartet
-         så brukeren ser distanse og areal uten å åpne drawer-en. -->
+    <!-- Måleverktøy-indikator (v8.9.4). Live-readout direkte på kartet.
+         v8.9.6: flyttet til top-left (under back-knappen) så den ikke ligger
+         bak FAB-stacken. -->
     <div v-if="measureMode && !curveball.active.value"
-         class="absolute top-[16rem] right-3 z-20 px-3 py-2 rounded-md bg-emerald-600
+         class="absolute top-16 left-3 z-20 px-3 py-2 rounded-md bg-emerald-600
                 text-white text-[11px] font-medium shadow-lg pointer-events-none
                 tabular-nums max-w-[55%]">
       <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">Mål</div>
@@ -1992,215 +2026,251 @@ onUnmounted(stopGpsTick)
           </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto px-4 pb-6">
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Lag</div>
-          <div class="grid grid-cols-2 gap-2 mb-4">
-            <button v-for="lay in LAYERS" :key="lay.key"
-                    @click="toggleLayer(lay.key)"
-                    class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
-                    :class="visibleLayers.has(lay.key)
-                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/45'">
-              <span class="text-[12px]">{{ lay.label }}</span>
-            </button>
-          </div>
-
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Tema</div>
-          <div class="grid grid-cols-3 gap-2 mb-4">
-            <button v-for="t in THEMES" :key="t.key"
-                    @click="onThemeTap(t.key)"
-                    class="px-3 py-2 rounded-lg border text-[11px] active:scale-[0.98] transition text-center"
-                    :class="currentTheme === t.key
-                            ? 'bg-slate-400/25 border-slate-300/50 text-white font-medium'
-                            : 'bg-white/5 border-white/10 text-white/65'">
-              {{ t.label }}
-            </button>
-          </div>
-
-          <!-- Curve Invaders-knapp er en easter egg som dukker opp først
-               når brukeren har valgt Curves-temaet. Inviterer ingen til spillet
-               andre steder (ingen ikoner i kart-listen, ingen knapp ved
-               default-tema). Share-link-flow auto-starter spillet selv —
-               temaet settes til 'curves' av startCurveBall(). -->
-          <button v-if="currentTheme === 'curves'"
-                  @click="startCurveBall"
-                  :disabled="cbDemFetching"
-                  class="w-full mb-4 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
-                         border border-fuchsia-400/40 text-white text-[12px]
-                         active:scale-[0.98] flex items-center justify-center gap-2
-                         disabled:opacity-60">
-            <span v-if="cbDemFetching">⏳ {{ t('mapview.gameLoading') }}</span>
-            <span v-else>{{ t('mapview.gameButton', { emoji: t('game.emoji'), gameName: t('game.name') }) }}</span>
-          </button>
-          <div v-if="cbDemError"
-               class="w-full mb-4 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
-                      text-red-200 text-[11px] text-center">
-            {{ cbDemError }}
-          </div>
-
+        <!-- Hurtigvalg: alltid synlig over fanene (v8.9.6). Tegnforklaring +
+             GPS/kompass-toggles trengs hyppig uavhengig av aktiv fane. -->
+        <div class="shrink-0 px-4 pb-2 grid grid-cols-3 gap-1.5">
           <button @click="router.push('/tegnforklaring')"
-                  class="w-full mb-4 px-3 py-2 rounded-lg bg-white/5 border border-white/10
-                         text-white/75 text-[12px] active:scale-[0.98] flex items-center
-                         justify-between">
-            <span>Tegnforklaring</span>
-            <span class="text-white/40">→</span>
+                  class="px-2 py-2 rounded-lg bg-white/5 border border-white/10 text-white/80
+                         text-[11px] font-medium active:scale-[0.98] flex flex-col items-center gap-1">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <line x1="7" y1="9" x2="17" y2="9"/>
+              <line x1="7" y1="13" x2="17" y2="13"/>
+              <line x1="7" y1="17" x2="13" y2="17"/>
+            </svg>
+            Tegnforklaring
           </button>
+          <button @click="userPos.isWatching ? userPos.stop() : userPos.start()"
+                  class="px-2 py-2 rounded-lg border text-[11px] font-medium active:scale-[0.98]
+                         flex flex-col items-center gap-1"
+                  :class="userPos.isWatching
+                          ? 'bg-sky-500/20 border-sky-400/50 text-white'
+                          : 'bg-white/5 border-white/10 text-white/80'">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="11" r="3"/>
+              <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+            </svg>
+            {{ userPos.isWatching ? 'Følger GPS' : 'Start GPS' }}
+          </button>
+          <button @click="compass.isActive ? compass.stop() : compass.start()"
+                  class="px-2 py-2 rounded-lg border text-[11px] font-medium active:scale-[0.98]
+                         flex flex-col items-center gap-1"
+                  :class="compass.isActive
+                          ? 'bg-sky-500/20 border-sky-400/50 text-white'
+                          : 'bg-white/5 border-white/10 text-white/80'">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/>
+              <polygon points="12 5 14 12 12 13 10 12" fill="currentColor"/>
+              <polygon points="12 19 14 12 12 11 10 12"/>
+            </svg>
+            {{ compass.isActive ? 'Kompass på' : 'Kompass' }}
+          </button>
+        </div>
 
-          <div class="flex gap-2 mb-4">
-            <button @click="diagnose = !diagnose"
-                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                    :class="diagnose
-                            ? 'bg-slate-400/20 border-slate-300/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/75'">
-              {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
-            </button>
-          </div>
-          <div v-if="diagnose" class="text-[10px] text-white/55 leading-relaxed -mt-2 mb-4 px-1">
-            Polygon-fargen viser kilden:
-            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(180, 80%, 55%);"></span> N50,
-            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(220, 80%, 60%);"></span> OSM way,
-            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
-            <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
-            Ta skjermbilde og del.
-          </div>
+        <!-- Tab-bar — horisontalt scrollbar når plassen krever det. -->
+        <div class="shrink-0 px-4 pb-2 flex gap-1.5 overflow-x-auto map-tabs"
+             style="scrollbar-width: none;">
+          <button v-for="tab in visibleTabs" :key="tab.key"
+                  @click="activeTab = tab.key"
+                  class="px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap shrink-0
+                         active:scale-95 transition border"
+                  :class="activeTab === tab.key
+                          ? 'bg-slate-200 border-slate-200 text-zinc-900'
+                          : 'bg-white/5 border-white/10 text-white/70'">
+            {{ tab.label }}
+          </button>
+        </div>
 
-          <div v-if="!mapId.startsWith('vardasen')"
-               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Annotering</div>
-          <div v-if="!mapId.startsWith('vardasen')" class="space-y-2 mb-4">
-            <div class="grid grid-cols-2 gap-2">
-              <button v-for="s in ANNOTATION_SYMBOLS" :key="s.code"
-                      @click="selectSymbol(s.symbolKey)"
-                      class="px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] transition flex items-center gap-2"
-                      :class="annot.selectedSymbol.value === s.symbolKey
-                              ? 'bg-slate-400/30 border-slate-200/60 text-white'
-                              : 'bg-white/5 border-white/10 text-white/70'">
-                <AnnotationIcon :symbol-key="s.symbolKey"/>
-                {{ s.label }}
+        <div class="flex-1 overflow-y-auto px-4 pb-6">
+          <!-- ── Tab: Lag ─────────────────────────────────────────── -->
+          <div v-show="activeTab === 'lag'">
+            <div class="grid grid-cols-2 gap-2 mb-2">
+              <button v-for="lay in LAYERS" :key="lay.key"
+                      @click="toggleLayer(lay.key)"
+                      class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
+                      :class="visibleLayers.has(lay.key)
+                              ? 'bg-slate-400/25 border-slate-300/50 text-white'
+                              : 'bg-white/5 border-white/10 text-white/45'">
+                <span class="text-[12px]">{{ lay.label }}</span>
               </button>
             </div>
-            <div class="flex gap-2 text-[11px] text-white/55">
-              <span>{{ annot.annotations.value.length }} symbol(er)</span>
-              <button v-if="annot.annotations.value.length"
-                      @click="annot.clearAll(); annot.persist()"
-                      class="ml-auto text-red-300 active:text-red-100">Slett alle</button>
+            <div class="text-[10px] text-white/40 leading-snug mt-2">
+              Reliefskygge er DEM-derivert hill-shading rendret som grayscale-
+              PNG inne i SVG-en med <code>mix-blend-mode: multiply</code>.
             </div>
           </div>
 
-          <!-- Plasserte annoteringer som egne lag (toggleable, med teller).
-               Brukeren kan skjule alle «Knaus» uten å slette dem. Bare typer
-               som faktisk er plassert vises som lag-knapp. -->
-          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
-               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Annoteringer (lag)</div>
-          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
-               class="grid grid-cols-2 gap-2 mb-4">
-            <button v-for="s in ANNOTATION_SYMBOLS.filter(x => annot.countByType.value[x.symbolKey] > 0)"
-                    :key="s.code"
-                    @click="annot.toggleTypeVisibility(s.symbolKey)"
-                    class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition
-                           flex items-center gap-2"
-                    :class="annot.visibleTypes.value.has(s.symbolKey)
-                            ? 'bg-slate-400/25 border-slate-300/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/45'">
-              <AnnotationIcon :symbol-key="s.symbolKey"/>
-              <span class="text-[12px]">{{ s.label }} ({{ annot.countByType.value[s.symbolKey] }})</span>
-            </button>
-          </div>
-
-          <!-- Individuell annoterings-liste: se og slett enkeltvis. Maks-
-               høyde med scroll så lange lister ikke spiser drawer-en. -->
-          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
-               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Annoteringer (liste)</div>
-          <div v-if="!mapId.startsWith('vardasen') && annot.annotations.value.length"
-               class="space-y-1 mb-4 max-h-48 overflow-y-auto pr-1">
-            <div v-for="a in annot.annotations.value" :key="a.id"
-                 class="flex items-center gap-2 px-2.5 py-1.5 rounded-md
-                        bg-white/5 border border-white/10 text-white/75">
-              <AnnotationIcon :symbol-key="labelForAnnotation(a).symbolKey"/>
-              <span class="text-[12px] flex-1 truncate">{{ labelForAnnotation(a).label }}</span>
-              <span class="text-[10px] text-white/35 tabular-nums shrink-0">
-                {{ Math.round(a.x) }},&nbsp;{{ Math.round(a.y) }}
-              </span>
-              <button @click="annot.remove(a.id); annot.persist()"
-                      class="w-6 h-6 flex items-center justify-center rounded-md
-                             text-white/55 active:scale-90 active:bg-rose-500/20
-                             active:text-rose-200 shrink-0"
-                      aria-label="Slett annotering">
-                <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-                </svg>
+          <!-- ── Tab: Tema ────────────────────────────────────────── -->
+          <div v-show="activeTab === 'tema'">
+            <div class="grid grid-cols-3 gap-2 mb-3">
+              <button v-for="t in THEMES" :key="t.key"
+                      @click="onThemeTap(t.key)"
+                      class="px-3 py-2 rounded-lg border text-[11px] active:scale-[0.98] transition text-center"
+                      :class="currentTheme === t.key
+                              ? 'bg-slate-400/25 border-slate-300/50 text-white font-medium'
+                              : 'bg-white/5 border-white/10 text-white/65'">
+                {{ t.label }}
               </button>
             </div>
+
+            <!-- Curve Invaders-knapp er en easter egg som dukker opp først
+                 når brukeren har valgt Curves-temaet. -->
+            <button v-if="currentTheme === 'curves'"
+                    @click="startCurveBall"
+                    :disabled="cbDemFetching"
+                    class="w-full mb-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
+                           border border-fuchsia-400/40 text-white text-[12px]
+                           active:scale-[0.98] flex items-center justify-center gap-2
+                           disabled:opacity-60">
+              <span v-if="cbDemFetching">⏳ {{ t('mapview.gameLoading') }}</span>
+              <span v-else>{{ t('mapview.gameButton', { emoji: t('game.emoji'), gameName: t('game.name') }) }}</span>
+            </button>
+            <div v-if="cbDemError"
+                 class="w-full mb-2 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
+                        text-red-200 text-[11px] text-center">
+              {{ cbDemError }}
+            </div>
           </div>
 
-          <!-- Måleverktøy (v8.9.4). Distanse for åpen kjede, areal når
-               polygonen lukkes. Vises på alle kart (også Vardåsen) siden
-               det er en passiv map-overlay. -->
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Måleverktøy</div>
-          <div class="space-y-2 mb-4">
-            <button v-if="!measureMode"
-                    @click="startMeasure"
-                    class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
-                           bg-white/5 border-white/10 text-white/75 flex items-center justify-center gap-2">
-              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="3 21 9 15 13 19 21 11"/>
-                <path d="M5 19 V21 H7 M19 11 V13 H21"/>
-              </svg>
-              Mål distanse og areal
-            </button>
-            <div v-else class="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 space-y-2">
-              <div class="flex items-baseline justify-between">
-                <div class="text-[11px] text-emerald-100/85 uppercase tracking-wide">
-                  Tap på kartet for å plassere punkter
+          <!-- ── Tab: Annotering (kun bruker-kart) ───────────────── -->
+          <div v-show="activeTab === 'annotering'">
+            <div class="space-y-2 mb-3">
+              <div class="grid grid-cols-2 gap-2">
+                <button v-for="s in ANNOTATION_SYMBOLS" :key="s.code"
+                        @click="selectSymbol(s.symbolKey)"
+                        class="px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] transition flex items-center gap-2"
+                        :class="annot.selectedSymbol.value === s.symbolKey
+                                ? 'bg-slate-400/30 border-slate-200/60 text-white'
+                                : 'bg-white/5 border-white/10 text-white/70'">
+                  <AnnotationIcon :symbol-key="s.symbolKey"/>
+                  {{ s.label }}
+                </button>
+              </div>
+              <div class="flex gap-2 text-[11px] text-white/55">
+                <span>{{ annot.annotations.value.length }} symbol(er)</span>
+                <button v-if="annot.annotations.value.length"
+                        @click="annot.clearAll(); annot.persist()"
+                        class="ml-auto text-red-300 active:text-red-100">Slett alle</button>
+              </div>
+            </div>
+
+            <!-- Lay-toggles pr type — kun synlig når noe er plassert -->
+            <template v-if="annot.annotations.value.length">
+              <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Synlighet pr type</div>
+              <div class="grid grid-cols-2 gap-2 mb-3">
+                <button v-for="s in ANNOTATION_SYMBOLS.filter(x => annot.countByType.value[x.symbolKey] > 0)"
+                        :key="s.code"
+                        @click="annot.toggleTypeVisibility(s.symbolKey)"
+                        class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition
+                               flex items-center gap-2"
+                        :class="annot.visibleTypes.value.has(s.symbolKey)
+                                ? 'bg-slate-400/25 border-slate-300/50 text-white'
+                                : 'bg-white/5 border-white/10 text-white/45'">
+                  <AnnotationIcon :symbol-key="s.symbolKey"/>
+                  <span class="text-[12px]">{{ s.label }} ({{ annot.countByType.value[s.symbolKey] }})</span>
+                </button>
+              </div>
+
+              <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Alle plasserte</div>
+              <div class="space-y-1 mb-2 max-h-56 overflow-y-auto pr-1">
+                <div v-for="a in annot.annotations.value" :key="a.id"
+                     class="flex items-center gap-2 px-2.5 py-1.5 rounded-md
+                            bg-white/5 border border-white/10 text-white/75">
+                  <AnnotationIcon :symbol-key="labelForAnnotation(a).symbolKey"/>
+                  <span class="text-[12px] flex-1 truncate">{{ labelForAnnotation(a).label }}</span>
+                  <span class="text-[10px] text-white/35 tabular-nums shrink-0">
+                    {{ Math.round(a.x) }},&nbsp;{{ Math.round(a.y) }}
+                  </span>
+                  <button @click="annot.remove(a.id); annot.persist()"
+                          class="w-6 h-6 flex items-center justify-center rounded-md
+                                 text-white/55 active:scale-90 active:bg-rose-500/20
+                                 active:text-rose-200 shrink-0"
+                          aria-label="Slett annotering">
+                    <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                         stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                    </svg>
+                  </button>
                 </div>
-                <button @click="stopMeasure"
-                        aria-label="Avslutt måling"
-                        class="text-white/70 active:scale-90 text-[10px] px-1.5 py-0.5 rounded
-                               bg-white/10 hover:bg-white/15">
-                  Lukk
-                </button>
               </div>
-              <div class="text-white text-[14px] tabular-nums font-medium">
-                {{ formatDistance(measureStats.distM) }}
-                <span v-if="measureClosed" class="text-emerald-200/85">
-                  · {{ formatArea(measureStats.areaM2) }}
-                </span>
-                <span v-if="measureVertices.length === 0"
-                      class="text-white/45 text-[11px] font-normal">
-                  (ingen punkter ennå)
-                </span>
-              </div>
-              <div class="flex gap-1.5">
-                <button @click="closeMeasure"
-                        :disabled="measureVertices.length < 3 || measureClosed"
-                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
-                               bg-emerald-500/20 border-emerald-300/40 text-white
-                               disabled:opacity-40 disabled:cursor-not-allowed">
-                  Lukk polygon
-                </button>
-                <button @click="undoMeasureVertex"
-                        :disabled="!measureVertices.length"
-                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
-                               bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
-                  Angre
-                </button>
-                <button @click="clearMeasure"
-                        :disabled="!measureVertices.length"
-                        class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
-                               bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
-                  Tøm
-                </button>
-              </div>
+            </template>
+            <div v-else class="text-[10px] text-white/40 leading-snug">
+              Velg et symbol over og tap på kartet for å plassere.
             </div>
           </div>
 
-          <!-- GPS-sporing (v8.9.2). Synlig kun på brukerens egne kart (ikke
-               innebygd Vardåsen). Start-knappen aktiverer også GPS hvis det
-               er av — så brukeren slipper en ekstra interaksjon. -->
-          <div v-if="!mapId.startsWith('vardasen')"
-               class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Sporing</div>
-          <div v-if="!mapId.startsWith('vardasen')" class="space-y-2 mb-4">
+          <!-- ── Tab: Måling ─────────────────────────────────────── -->
+          <div v-show="activeTab === 'maaling'">
+            <div class="space-y-2 mb-2">
+              <button v-if="!measureMode"
+                      @click="startMeasure"
+                      class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                             bg-white/5 border-white/10 text-white/75 flex items-center justify-center gap-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="3 21 9 15 13 19 21 11"/>
+                  <path d="M5 19 V21 H7 M19 11 V13 H21"/>
+                </svg>
+                Mål distanse og areal
+              </button>
+              <div v-else class="rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 space-y-2">
+                <div class="flex items-baseline justify-between">
+                  <div class="text-[11px] text-emerald-100/85 uppercase tracking-wide">
+                    Tap på kartet for å plassere punkter
+                  </div>
+                  <button @click="stopMeasure"
+                          aria-label="Avslutt måling"
+                          class="text-white/70 active:scale-90 text-[10px] px-1.5 py-0.5 rounded
+                                 bg-white/10 hover:bg-white/15">
+                    Lukk
+                  </button>
+                </div>
+                <div class="text-white text-[14px] tabular-nums font-medium">
+                  {{ formatDistance(measureStats.distM) }}
+                  <span v-if="measureClosed" class="text-emerald-200/85">
+                    · {{ formatArea(measureStats.areaM2) }}
+                  </span>
+                  <span v-if="measureVertices.length === 0"
+                        class="text-white/45 text-[11px] font-normal">
+                    (ingen punkter ennå)
+                  </span>
+                </div>
+                <div class="flex gap-1.5">
+                  <button @click="closeMeasure"
+                          :disabled="measureVertices.length < 3 || measureClosed"
+                          class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                                 bg-emerald-500/20 border-emerald-300/40 text-white
+                                 disabled:opacity-40 disabled:cursor-not-allowed">
+                    Lukk polygon
+                  </button>
+                  <button @click="undoMeasureVertex"
+                          :disabled="!measureVertices.length"
+                          class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                                 bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
+                    Angre
+                  </button>
+                  <button @click="clearMeasure"
+                          :disabled="!measureVertices.length"
+                          class="flex-1 px-2 py-1.5 rounded-md text-[11px] border active:scale-[0.98]
+                                 bg-white/5 border-white/15 text-white/75 disabled:opacity-40">
+                    Tøm
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="text-[10px] text-white/40 leading-snug">
+              Distanse summeres som rette linjer mellom punkter. Areal beregnes
+              med shoelace-formelen når polygonen er lukket. m² · ha · km² —
+              det som passer best for areal-størrelsen.
+            </div>
+          </div>
+
+          <!-- ── Tab: Sporing (kun bruker-kart) ─────────────────── -->
+          <div v-show="activeTab === 'sporing'">
+          <div class="space-y-2 mb-3">
             <button @click="onToggleRecording"
                     class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98] flex items-center justify-between gap-2"
                     :class="tracker.isRecording.value
@@ -2240,10 +2310,10 @@ onUnmounted(stopGpsTick)
           </div>
 
           <!-- Liste over lagrede spor + det aktive sporet. -->
-          <div v-if="!mapId.startsWith('vardasen') && tracker.tracks.value.length"
+          <div v-if="tracker.tracks.value.length"
                class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Mine spor</div>
-          <div v-if="!mapId.startsWith('vardasen') && tracker.tracks.value.length"
-               class="space-y-1.5 mb-4 max-h-56 overflow-y-auto pr-1">
+          <div v-if="tracker.tracks.value.length"
+               class="space-y-1.5 mb-3 max-h-56 overflow-y-auto pr-1">
             <div v-for="tr in tracker.tracks.value" :key="tr.id"
                  class="px-2.5 py-1.5 rounded-md bg-white/5 border border-white/10">
               <div class="flex items-center gap-2">
@@ -2329,52 +2399,7 @@ onUnmounted(stopGpsTick)
             </div>
           </div>
 
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Eksport</div>
-          <div class="grid grid-cols-2 gap-2 mb-2">
-            <button @click="onExportSvg"
-                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                           text-[11px] active:scale-[0.98]">
-              Lagre .svg
-            </button>
-            <button @click="onExportPng"
-                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                           text-[11px] active:scale-[0.98]">
-              Lagre .png (300 dpi)
-            </button>
-            <button @click="onExportPdf"
-                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                           text-[11px] active:scale-[0.98]">
-              Lagre som PDF
-            </button>
-            <button @click="onPrint"
-                    class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                           text-[11px] active:scale-[0.98]">
-              Skriv ut
-            </button>
-          </div>
-
-          <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Posisjon og kompass</div>
-          <div class="flex gap-2 mb-2">
-            <button @click="userPos.isWatching ? userPos.stop() : userPos.start()"
-                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                    :class="userPos.isWatching
-                            ? 'bg-sky-500/20 border-sky-400/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/75'">
-              {{ userPos.isWatching ? 'Følger GPS' : 'Start GPS' }}
-            </button>
-            <button @click="compass.isActive ? compass.stop() : compass.start()"
-                    class="flex-1 px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]"
-                    :class="compass.isActive
-                            ? 'bg-sky-500/20 border-sky-400/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/75'">
-              {{ compass.isActive ? 'Kompass på' : 'Aktiver kompass' }}
-            </button>
-          </div>
-
-          <!-- v8.5.6: GPS-debug-readout med kopier-knapp. Lar brukeren
-               sammenligne raw lat/lng mot kartet, se accuracy + alder +
-               kilde (W=watchPosition, P=poll), og kopiere posisjonen som
-               Google Maps-URL. Vis kun når GPS er aktivt. -->
+          <!-- GPS-debug-readout (synlig kun når GPS er på) -->
           <div v-if="userPos.isWatching"
                class="flex items-stretch gap-2 mb-2">
             <div class="flex-1 text-white/60 text-[10.5px] font-mono leading-snug
@@ -2413,11 +2438,69 @@ onUnmounted(stopGpsTick)
             posisjon (~2 km nøyaktighet). På Android 12+: Innstillinger → Apper → din nettleser →
             Tillatelser → Posisjon → velg <b>Presis</b>.
           </div>
+          </div>
 
-          <div class="text-white/40 text-[10px] leading-relaxed mt-4">
-            ISOM 2017-2 inspirert symbolisering med mm-baserte streker for print-kvalitet.
-            Kartdata © OpenStreetMap-bidragsytere (ODbL). Reprojisert til UTM 32N
-            (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
+          <!-- ── Tab: Eksport ─────────────────────────────────────── -->
+          <div v-show="activeTab === 'eksport'">
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <button @click="onExportSvg"
+                      class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                             text-[11px] active:scale-[0.98]">
+                Lagre .svg
+              </button>
+              <button @click="onExportPng"
+                      class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                             text-[11px] active:scale-[0.98]">
+                Lagre .png (300 dpi)
+              </button>
+              <button @click="onExportPdf"
+                      class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                             text-[11px] active:scale-[0.98]">
+                Lagre som PDF
+              </button>
+              <button @click="onPrint"
+                      class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
+                             text-[11px] active:scale-[0.98]">
+                Skriv ut
+              </button>
+            </div>
+
+            <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Debug</div>
+            <button @click="diagnose = !diagnose"
+                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
+                    :class="diagnose
+                            ? 'bg-slate-400/20 border-slate-300/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
+            </button>
+            <div v-if="diagnose" class="text-[10px] text-white/55 leading-relaxed mb-3 px-1">
+              Polygon-fargen viser kilden:
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(180, 80%, 55%);"></span> N50,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(220, 80%, 60%);"></span> OSM way,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
+            </div>
+          </div>
+
+          <!-- ── Tab: Om ──────────────────────────────────────────── -->
+          <div v-show="activeTab === 'om'">
+            <div class="text-white/70 text-[12px] leading-relaxed space-y-2">
+              <p>
+                <strong class="text-white">SVG Insights</strong> utforsker hva man kan
+                bygge med ren SVG i nettleseren — kart, font-editor, foto-effekter.
+              </p>
+              <p>
+                Dette kartet bruker ISOM 2017-2-inspirert symbolisering med mm-baserte
+                streker for print-kvalitet. Kartdata © OpenStreetMap-bidragsytere
+                (ODbL). Høydedata fra Kartverket (NHM_DTM / DOM).
+              </p>
+              <p>
+                Reprojisert til UTM 32N (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
+                Reliefskygge: Horn-formel hill-shading rendret som grayscale-PNG i
+                SVG-en med <code class="text-white/85">mix-blend-mode: multiply</code>.
+              </p>
+              <p class="text-white/45 text-[10px]">v{{ APP_VERSION }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -2536,4 +2619,6 @@ onUnmounted(stopGpsTick)
 <style scoped>
 .drawer-enter-active, .drawer-leave-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .drawer-enter-from, .drawer-leave-to       { transform: translateY(100%); }
+/* Skjul scrollbar på tab-strip — fortsatt scrollbar med touch / wheel */
+.map-tabs::-webkit-scrollbar { display: none; }
 </style>
