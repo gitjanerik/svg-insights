@@ -1412,11 +1412,16 @@ export function buildSvg(elements, bbox, options = {}) {
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
   // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
   // forblir lesbare over bymassen i tett bebygde områder.
+  //
+  // v8.9.10: data-layer="bymasse" (skilt fra "bygning") så tett bebyggelse
+  // kan slås av uavhengig av frittstående bygg — viktig for turkart der
+  // hytter i marka skal være synlige men dominerende by-pattern bare
+  // forstyrrer.
   const urbanMassPath = urbanMassMultiPoly.length
     ? multiPolyToPath(urbanMassMultiPoly, fmt)
     : ''
   const urbanMassLayerSvg = urbanMassPath
-    ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
+    ? `  <g data-layer="bymasse" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
   // v7.1.3: kyst-bbox skal alltid ha blå sjø — også i Land-kart-modus.
@@ -1475,7 +1480,8 @@ function categoryFor(code) {
     case '308': case '309':                     return 'myr'
     case '301': case '302': case '303': case '307': return 'vann'
     case '304': case '305': case '306':         return 'bekk'
-    case '521': case '522':                     return 'bygning'
+    case '521':                                  return 'bygning'
+    case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'

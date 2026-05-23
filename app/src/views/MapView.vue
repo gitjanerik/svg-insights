@@ -209,7 +209,8 @@ const LAYERS = [
   { key: 'bekk',       label: 'Bekk / dybdekurver' },
   { key: 'land',       label: 'Land-overlay (øyer)' },
   { key: 'kontur',     label: 'Høydekurver' },
-  { key: 'bygning',    label: 'Bygninger' },
+  { key: 'bygning',    label: 'Bygninger (frittstående)' },
+  { key: 'bymasse',    label: 'Tett bebyggelse' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'tog',        label: 'Jernbane' },
@@ -236,7 +237,10 @@ const LAYERS = [
 // v8.2.0: lysloype skjules som default (lite relevant for de fleste
 // turkart-bbox), og stedsnavn vises som default (større områdenavn er
 // nyttig kontekst).
-const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
+// v8.9.10: 'bymasse' (ISOM 522 tett bebyggelse) er AV som default — på
+// turkart er hytter/frittstående bygg interessant, mens dominerende by-
+// pattern bare forstyrrer. Brukeren kan slå det på for bymiljø-kart.
+const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
 const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
