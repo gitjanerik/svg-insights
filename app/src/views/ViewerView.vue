@@ -27,7 +27,9 @@ const svgWidth = ref(600)
 const svgHeight = ref(400)
 
 const containerRef = ref(null)
-const { scale, translateX, translateY, reset: resetZoom } = usePinchZoom(containerRef)
+// rotateEnabled: false — ViewerView styrer rotasjon selv via egen UI-knapp.
+// Uten dette ville to-finger pinch også rotere bildet utilsiktet (v8.9.2).
+const { scale, translateX, translateY, reset: resetZoom } = usePinchZoom(containerRef, { rotateEnabled: false })
 
 // Panel: which tab is open in the sidebar
 const activeTab = ref('presets') // presets, stroke, layers, effects, color
@@ -801,7 +803,7 @@ onMounted(() => {
           <span>{{ strokeCount.toLocaleString('no-NO') }} streker</span>
           <template v-if="colouredRegionCount !== null">
             <span :style="{ opacity: 0.5 }">·</span>
-            <span>{{ colouredRegionCount.toLocaleString('no-NO') }} fargede omr&aring;der</span>
+            <span>{{ colouredRegionCount.toLocaleString('no-NO') }} fargede områder</span>
           </template>
         </p>
       </div>
@@ -959,7 +961,7 @@ onMounted(() => {
                          :disabled="!simplifyEnabled"
                          class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !simplifyEnabled }" />
-                  <p class="text-[10px] text-white/30 mt-0.5">F&aelig;rre ankerpunkter per strek</p>
+                  <p class="text-[10px] text-white/30 mt-0.5">Færre ankerpunkter per strek</p>
                 </div>
 
                 <!-- Spagettifisering -->
@@ -1322,7 +1324,7 @@ onMounted(() => {
                          :disabled="!fillSimplifyEnabled"
                          class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillSimplifyEnabled }" />
-                  <p class="text-[10px] text-white/30 mt-0.5">Sl&aring;r sammen n&aelig;rliggende fargede felt</p>
+                  <p class="text-[10px] text-white/30 mt-0.5">Slår sammen nærliggende fargede felt</p>
                 </div>
 
                 <!-- Avrunding -->
@@ -1345,7 +1347,7 @@ onMounted(() => {
                          :disabled="!fillRoundEnabled"
                          class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillRoundEnabled }" />
-                  <p class="text-[10px] text-white/30 mt-0.5">Runder av hj&oslash;rner i fargefelt (ekte geometri)</p>
+                  <p class="text-[10px] text-white/30 mt-0.5">Runder av hjørner i fargefelt (ekte geometri)</p>
                 </div>
 
                 <!-- Gradient -->
@@ -1368,7 +1370,7 @@ onMounted(() => {
                          :disabled="!fillGradientEnabled"
                          class="w-full h-1 accent-slate-300 bg-white/10 rounded-full appearance-none"
                          :class="{ 'opacity-30': !fillGradientEnabled }" />
-                  <p class="text-[10px] text-white/30 mt-0.5">Tofarget gradient fra lysere til m&oslash;rkere nyanse</p>
+                  <p class="text-[10px] text-white/30 mt-0.5">Tofarget gradient fra lysere til mørkere nyanse</p>
                 </div>
 
                 <!-- Fragmentering -->
