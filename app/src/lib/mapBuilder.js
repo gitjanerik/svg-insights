@@ -606,6 +606,7 @@ export function buildSvg(elements, bbox, options = {}) {
       for (const el of els) {
         let d = ''
         let src = el._source ?? (el._mergedRings ? 'merged' : el.type)
+        let isSmall = false
         const name = el.tags?.name ?? el.tags?.navn ?? ''
         if (el.type === 'merged-water' && el._mergedRings) {
           // polygon-clipping output: én <path> per topologisk polygon
@@ -634,8 +635,14 @@ export function buildSvg(elements, bbox, options = {}) {
           continue
         }
         if (el.type === 'way' && el.geometry) {
-          if (filter.minAreaM2 && polygonAreaM2(el.geometry) < filter.minAreaM2) continue
+          const areaM2 = polygonAreaM2(el.geometry)
+          if (filter.minAreaM2 && areaM2 < filter.minAreaM2) continue
           d = pathFromGeometry(el.geometry, true, filter.simplifyM)
+          // ISOM 521: små bygg (< 70 m², typisk hytter/uthus) renders med
+          // Kartverket-style hvit fyll + tynt sort omriss. Større bygg
+          // beholder default brun fyll. Skiller hytter visuelt fra bolig-
+          // og forretningsbygg.
+          if (code === '521' && areaM2 < 70) isSmall = true
         } else if (el.type === 'relation' && el.members) {
           // OSM multipolygon: outer/inner-rings er splittet over flere
           // ways. Sy sammen først (greedy join på matchende endepunkter)
@@ -670,8 +677,9 @@ export function buildSvg(elements, bbox, options = {}) {
               dybdeAttr = ` data-dybde="${fmt(avgD)}"`
             }
           }
+          const smallAttr = isSmall ? ' data-small="yes"' : ''
           pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
         }
       }
