@@ -203,6 +203,26 @@ export function classifyToIsom(el) {
     return { code: '532', cat: 'point' }
   }
 
+  // Utfartsparkering (ISOM 534-derivert): blå P-symbol. OSM tagger parkering
+  // på flere måter — `amenity=parking` på node (vanlig for små lommer langs
+  // skogsbilvei) eller way (polygon for større parkeringsplasser). Way-
+  // varianten klassifiseres her som point siden vi rendrer ett symbol på
+  // sentroid uavhengig av polygon-størrelse.
+  if (t.amenity === 'parking') {
+    return { code: '534', cat: 'point' }
+  }
+
+  // Bom / barriere (ISOM 526-derivert): sort horisontal bar. OSM tagger bom
+  // på noder med `barrier=gate/lift_gate/swing_gate/bollard/block/cycle_barrier/
+  // cattle_grid`. Vi viser dem på alle disse typene siden de alle stopper
+  // ferdsel (motorisert eller alle) langs skogsbilvei eller sti.
+  if (el.type === 'node' && t.barrier) {
+    const allowedBarriers = new Set(['gate', 'lift_gate', 'swing_gate', 'bollard', 'block', 'cycle_barrier', 'cattle_grid'])
+    if (allowedBarriers.has(t.barrier)) {
+      return { code: '526', cat: 'point' }
+    }
+  }
+
   if (t.building)                                   return { code: '521', cat: 'manmade' }
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
   // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
