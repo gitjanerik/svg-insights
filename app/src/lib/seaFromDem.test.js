@@ -29,6 +29,26 @@ describe('buildSeaFromDem', () => {
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(90)
   })
 
+  it('filtrerer ut innsjø-pseudo-sjø som ikke berører bbox-kanten', () => {
+    // Lite lav-elevasjon-område i midten av bbox = innsjø/tjern.
+    // Skal IKKE returneres som sjø-polygon med default requireBoundaryTouch.
+    const dem = makeDem({
+      cols: 30, rows: 30,
+      fill: (x, y) => (x >= 10 && x <= 20 && y >= 10 && y <= 20 ? 0 : 100),
+    })
+    const { polygons } = buildSeaFromDem(dem)
+    expect(polygons).toHaveLength(0)
+  })
+
+  it('beholder innsjø-pseudo-sjø når requireBoundaryTouch=false', () => {
+    const dem = makeDem({
+      cols: 30, rows: 30,
+      fill: (x, y) => (x >= 10 && x <= 20 && y >= 10 && y <= 20 ? 0 : 100),
+    })
+    const { polygons } = buildSeaFromDem(dem, { requireBoundaryTouch: false })
+    expect(polygons.length).toBeGreaterThan(0)
+  })
+
   it('behandler noData som land (ikke sjø)', () => {
     // Hele bbox er noData → skal ikke generere sjø
     const dem = makeDem({ cols: 20, rows: 20, fill: () => -9999 })

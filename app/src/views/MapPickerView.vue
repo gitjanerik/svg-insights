@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
+import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { findHighestPoint, packDem } from '../lib/demSampling.js'
@@ -178,13 +179,20 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    const [osmData, n50Water] = await Promise.all([
+    const [osmData, n50Water, sjokart] = await Promise.all([
       fetchOverpass(bbox.value),
       fetchN50Water(bbox.value).catch(e => {
         console.warn('N50-vann ikke tilgjengelig:', e.message)
         return []
       }),
+      // Kartverket Sjøkart-Dybdedata: dybdeareal (307) + dybdekontur (306)
+      // for kyst-bbox. CORS-fragilt og kan feile — graceful tom-respons.
+      fetchSjokart(bbox.value).catch(e => {
+        console.warn('Sjøkart-Dybdedata ikke tilgjengelig:', e.message)
+        return { dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [] }
+      }),
     ])
+    const sjokartElements = sjokartToElements(sjokart)
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
     // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
     // bare hvis tilsvarende N50-kilde finnes.
@@ -203,6 +211,12 @@ async function generateMap() {
                              t.place === 'sea' || t.place === 'ocean'
       if (isWaterPolygon) {
         if (isOsmWaterSalty(t)) return !n50HasSea
+        // Navngitte ferskvann beholdes selv om N50 har data: N50-utvalget
+        // er ofte ufullstendig (Nesøyatjern-typetilfellet — N50 returnerte
+        // andre tjern i bbox, og det globale n50HasFreshwater-flagget
+        // filtrerte ut OSM Nesøyatjern). Navnløse polygoner kan være
+        // OSM-mistags eller wedger og filtreres når N50 dekker.
+        if (t.name) return true
         return !n50HasFreshwater
       }
       if (t.waterway === 'stream' || t.waterway === 'ditch') {
@@ -211,9 +225,11 @@ async function generateMap() {
       return true
     })
     if (n50Water.length > 0) elements.push(...n50Water)
+    if (sjokartElements.length > 0) elements.push(...sjokartElements)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
+    if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'

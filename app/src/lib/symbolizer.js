@@ -176,6 +176,18 @@ export function classifyToIsom(el) {
   }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
 
+  // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
+  // Settes av sjokartFetcher.sjokartToElements() og må mappes før den
+  // generelle natural=water-regelen under (dybdeareal har også
+  // natural=water + water=sea satt for backward-kompatibilitet).
+  if (t.sjokart === 'dybdekontur') return { code: '306', cat: 'water' }
+  if (t.sjokart === 'dybdeareal')  return { code: '307', cat: 'water' }
+  if (t.sjokart === 'grunne') {
+    return el.type === 'node' ? { code: '211', cat: 'point' } : { code: '214', cat: 'rock' }
+  }
+  if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
+  if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
+
   // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
   // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har
   // riktige inner-rings for hver øy → blå smitter inn på land). Renders
