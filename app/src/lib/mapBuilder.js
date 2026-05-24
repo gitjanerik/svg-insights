@@ -16,6 +16,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
+import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
@@ -270,9 +271,10 @@ function unionByName(elements, project) {
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
-// Vann-stack: myr-pattern, saltvann/innsjø/tjern (lokale, mettete blå),
-// så bekker øverst.
-const WATER_CODES  = ['308', '309', '303', '301', '302', '304', '305']
+// Vann-stack: dybdeareal (Sjøkart 307, gradient blå pr dybdebånd) først,
+// så myr-pattern, så ISOM 303/301/302 (mer mettete blå overstyrer for navn-
+// gitte vann), så bekker. Dybdekontur (306) sist så linjene tegnes oppå.
+const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305', '306']
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
@@ -290,8 +292,8 @@ const LAYER_ORDER = [
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '308', '309', '512', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -611,8 +613,22 @@ export function buildSvg(elements, bbox, options = {}) {
           d = subpaths.join(' ')
         }
         if (d) {
+          // ISOM 307 (Sjøkart dybdeareal): per-polygon fill basert på
+          // gjennomsnitts-dybde. depthToColor gradierer fra grunn (#b6daee)
+          // til dyp (#1f5d8a) så dybde-skiftene blir synlige som distinkte
+          // blå-toner istedenfor ett flat farget areal.
+          let inlineStyle = ''
+          if (code === '307' && el.tags) {
+            const minD = Number(el.tags.minDybde)
+            const maxD = Number(el.tags.maxDybde)
+            const avgD = Number.isFinite(minD) && Number.isFinite(maxD) ? (minD + maxD) / 2
+                       : Number.isFinite(minD) ? minD
+                       : Number.isFinite(maxD) ? maxD
+                       : null
+            if (avgD != null) inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
+          }
           pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd" data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            `    <path d="${d}" fill-rule="evenodd"${inlineStyle} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
         }
       }
@@ -747,7 +763,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // kontur-laget kun rendres der det er land. Konturer som "krysser"
   // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
   const waterPaths = []
-  for (const code of ['301', '302', '303', '308', '309']) {
+  for (const code of ['301', '302', '303', '307', '308', '309']) {
     for (const el of buckets[code] ?? []) {
       if (el.type === 'merged-water' && el._mergedRings) {
         for (const polygon of el._mergedRings) {
@@ -1184,8 +1200,8 @@ function categoryFor(code) {
     case '404':                                  return 'aker'
     case '406': case '407': case '408': case '409': return 'skog'
     case '308': case '309':                     return 'myr'
-    case '301': case '302': case '303':         return 'vann'
-    case '304': case '305':                     return 'bekk'
+    case '301': case '302': case '303': case '307': return 'vann'
+    case '304': case '305': case '306':         return 'bekk'
     case '521':                                  return 'bygning'
     case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
