@@ -19,12 +19,6 @@ import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
-// coastline.js: rekonstruerer LAND-polygoner fra OSM natural=coastline-ways.
-// Brukes for automatisk kyst-deteksjon — når bbox har coastline-ways og
-// rekonstruksjonen lykkes med å bygge land-ringer, skifter bakgrunnen til
-// sjø-blå og land-ringene legges som kremgul ISOM 001-overlegg. Ingen
-// brukervalg / karttype-dialog (fjernet i v8.9.11); 100% automatisk.
-import { buildLandPolygonsFromCoastline } from './coastline.js'
 import polygonClipping from 'polygon-clipping'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
@@ -36,7 +30,6 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
   way["natural"="water"];
-  way["natural"="coastline"];
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
@@ -47,7 +40,6 @@ export function buildOverpassQuery(bbox) {
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
   way["place"~"^(island|islet)$"];
-  way["man_made"~"^(pier|breakwater)$"];
   way["aerialway"];
   way["railway"~"^(rail|tram|narrow_gauge|light_rail|subway|funicular|monorail)$"];
   way["piste:type"];
@@ -430,19 +422,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
-  // Samle natural=coastline + man_made=pier/breakwater for kyst-rekonstruksjon.
-  // Pier/breakwater er ofte boundary mellom sjø og kunstig land (Sørenga,
-  // Fornebu, dock-anlegg) og behandles som land-grense.
-  const coastlineWays = []
-
   for (const el of elements) {
-    const t = el.tags ?? {}
-    if (el.type === 'way' && (t.natural === 'coastline' ||
-                               t.man_made === 'pier' ||
-                               t.man_made === 'breakwater')) {
-      coastlineWays.push(el)
-      continue
-    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
@@ -458,22 +438,6 @@ export function buildSvg(elements, bbox, options = {}) {
       counts[cls.code]++
     }
   }
-
-  // ── Automatisk kyst-deteksjon: bygg LAND-polygoner fra coastline-ways ─
-  // Når bbox har coastline-ways og rekonstruksjonen produserer minst én
-  // land-ring, ansees bbox som kyst og bg endres til sjø-blå med kremgul
-  // LAND-overlegg på toppen. Helt automatisk — ingen brukervalg.
-  let coastlineLandRings = []
-  if (coastlineWays.length > 0) {
-    try {
-      const result = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
-      coastlineLandRings = result.rings
-      console.log(`[Kystlinje] ${coastlineWays.length} coastline-ways → ${coastlineLandRings.length} land-polygoner (${result.closedRingsCount} lukkede øyer + ${result.openArcsCount} bbox-lukkede mainland)`)
-    } catch (e) {
-      console.warn(`[Kystlinje] Land-rekonstruksjon feilet: ${e.message}`)
-    }
-  }
-  const isCoastalRender = coastlineLandRings.length > 0
 
   // ── Vann-polygoner med samme navn slås sammen ────────────────────────
   // OSM deler ofte store innsjøer i flere polygoner (f.eks. Setten med
@@ -787,43 +751,9 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // I kyst-bbox: utvid land-masken med «implisitt sjø» (alt utenfor
-  // coastline-rekonstruerte LAND-ringer). Uten dette ville vegetasjon
-  // og høydekurver fra OSM lekket utover øy-konturene og rendret over
-  // den blå sjø-bg-en.
-  let coastalMaskExtras = ''
-  if (isCoastalRender) {
-    const bboxRectD = `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
-    const landRingsD = coastlineLandRings.map(ring => {
-      if (ring.length < 3) return ''
-      let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-      for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-      return d + 'Z'
-    }).filter(Boolean).join('')
-    if (landRingsD) {
-      coastalMaskExtras += `<path d="${bboxRectD}${landRingsD}" fill="black" fill-rule="evenodd"/>`
-    }
-    // place=island/islet som ekstra hvit-fyll: re-eksponer småholmer som
-    // ikke ble fanget av coastline-rekonstruksjonen.
-    const islandPaths = []
-    for (const el of buckets['001'] ?? []) {
-      if (el.type === 'way' && el.geometry) {
-        islandPaths.push(pathFromGeometry(el.geometry, true))
-      } else if (el.type === 'relation' && el.members) {
-        const outerRings = assembleRelationRings(el.members, 'outer')
-        for (const ring of outerRings) {
-          islandPaths.push(pathFromGeometry(ring, true))
-        }
-      }
-    }
-    if (islandPaths.length > 0) {
-      coastalMaskExtras += `<path d="${islandPaths.join(' ')}" fill="white" fill-rule="evenodd"/>`
-    }
-  }
-
-  const hasMaskContent = waterPaths.length > 0 || coastalMaskExtras.length > 0
+  const hasMaskContent = waterPaths.length > 0
   const landMaskSvg = hasMaskContent
-    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/>${waterPaths.length ? `<path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/>` : ''}${coastalMaskExtras}</mask>`
+    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
     : ''
   const contourMaskAttr = hasMaskContent ? ' mask="url(#land-mask)"' : ''
   // Samme mask brukes for vegetasjon (404, 405-408 etc.) og 522 bymasse
@@ -1062,10 +992,6 @@ export function buildSvg(elements, bbox, options = {}) {
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
-    // Eksponer kyst-status så MapView.applyTheme kan holde blå bg på
-    // tvers av theme-bytter (CSS-regelen #bakgrunn rect { fill: var(--bg) }
-    // tilbakestilles ellers til kremgul ved theme-reset).
-    isCoastal: isCoastalRender,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
@@ -1164,31 +1090,14 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bymasse" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
-  const SEA_BLUE = '#9ec9de'
-  const landFill = isomCatalog.background.color
-  const bgFill = isCoastalRender ? SEA_BLUE : landFill
-
-  // Render coastline-rekonstruerte LAND-ringer som kremgule polygoner
-  // over blå bg. Sikrer at land-arealene er tydelig markert mot sjøen
-  // selv om OSM mangler vegetasjons-/bygnings-dekning på hele øya.
-  const coastlineLandSvg = isCoastalRender
-    ? `  <g id="kyst-land" data-layer="land" data-iso="001">\n` +
-      coastlineLandRings.map(ring => {
-        if (ring.length < 3) return ''
-        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-        d += 'Z'
-        return `    <path d="${d}" fill="${landFill}" data-src="kystlinje"/>`
-      }).filter(Boolean).join('\n') +
-      `\n  </g>\n`
-    : ''
+  const bgFill = isomCatalog.background.color
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
