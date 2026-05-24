@@ -424,6 +424,18 @@ watch(isGesturing, (g) => {
   else svg.classList.remove('is-zooming')
 })
 
+// v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine
+// labels (kontur-tall, bekk-navn) bare rendres når brukeren faktisk kan
+// lese dem. Ved fit-to-extent er de uleselig små men dyre å text-shape +
+// halo-rendre. CSS i symbolizer.js gjør resten.
+const ZOOMED_IN_THRESHOLD = 1.3
+watch(scale, (s) => {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  if (s >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
+  else svg.classList.remove('zoomed-in')
+}, { immediate: true })
+
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
 // faktisk er applied i DOM før vi måler.
@@ -445,12 +457,21 @@ watch(() => curveball.active.value, (active) => {
 // Én enkelt transform-matrise lar oss rotere rundt vilkårlig pivot (finger-
 // senter) ved å oppdatere translate samtidig — to nested transformer ville
 // låst rotasjonen til element-senter (v8.9.2).
-const mapTransformStyle = computed(() => ({
-  transform: `translate(${translateX.value}px, ${translateY.value}px) `
-           + `rotate(${rotation.value}deg) scale(${scale.value})`,
-  transformOrigin: '0 0',
-  transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
-}))
+const mapTransformStyle = computed(() => {
+  // v8.10.4 — Perf: will-change: transform under aktiv gest/anim hinter til
+  // browseren at en composited layer skal opprettes for kart-divet, så
+  // transform-oppdateringer skjer på GPU uten å trigge layout/paint av
+  // SVG-content. Settes tilbake til 'auto' i hvile så vi ikke holder
+  // GPU-memory unødvendig i bakgrunnen.
+  const active = (isGesturing && isGesturing.value) || animating.value
+  return {
+    transform: `translate(${translateX.value}px, ${translateY.value}px) `
+             + `rotate(${rotation.value}deg) scale(${scale.value})`,
+    transformOrigin: '0 0',
+    transition: animating.value ? 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
+    willChange: active ? 'transform' : 'auto',
+  }
+})
 
 const userPos = useUserPosition(() => meta.value)
 const compass = useCompass()
@@ -1626,6 +1647,11 @@ function setupHostSvg(sourceRoot) {
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
+  // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
+  // perf-klasser (.zoomed-in / .is-zooming) basert på nåværende state,
+  // siden watcheren bare reagerer på endringer.
+  if (scale.value >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
+  if (isGesturing && isGesturing.value) svg.classList.add('is-zooming')
 }
 
 watch(
