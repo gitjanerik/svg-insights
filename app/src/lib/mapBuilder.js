@@ -15,6 +15,7 @@ import {
   isomCatalog,
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
+import { buildSeaFromDem } from './seaFromDem.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
@@ -518,13 +519,19 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── DEM-deriverte features (konturer, knauser, stupkanter) ───────────
+  // ── DEM-deriverte features (konturer, knauser, stupkanter, sjø) ──────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
+  let demSeaPolygons = []
   if (usableDem) {
     const c = buildContours(usableDem, contourIntervalM, 5)
     const k = includeKnauser ? detectKnauser(usableDem, 5, 1.5) : []
     const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
     demFeatures = { contours: c, knauser: k, cliffs: cl, equidistanceM: contourIntervalM }
+    // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
+    // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). Pålitelig fordi
+    // det er Kartverkets eget DTM — ingen OSM-mistags eller WFS-CORS-issues.
+    const seaResult = buildSeaFromDem(usableDem, { thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2 })
+    demSeaPolygons = seaResult.polygons
   }
 
   // Bygg ISOM-defs (patterns + symbols) og CSS
@@ -748,6 +755,16 @@ export function buildSvg(elements, bbox, options = {}) {
           waterPaths.push(pathFromGeometry(ring, true))
         }
       }
+    }
+  }
+  // DEM-derivert sjø går også i land-mask så konturer/vegetasjon ikke renderes over.
+  for (const poly of demSeaPolygons) {
+    for (const ring of poly) {
+      if (ring.length < 3) continue
+      let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+      for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+      d += 'Z'
+      waterPaths.push(d)
     }
   }
 
@@ -1009,6 +1026,23 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const renderCodes = (codes) => codes.map(layerSvg).join('')
   const groundLayers = renderCodes(GROUND_CODES)
+  // DEM-derivert sjø: blå polygoner under N50/OSM-vannlag, så autoritative
+  // vann-polygoner overstyrer der de finnes.
+  const demSeaLayerSvg = demSeaPolygons.length
+    ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea">\n${demSeaPolygons.map(poly => {
+        const ringPaths = []
+        for (const ring of poly) {
+          if (ring.length < 3) continue
+          let rd = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+          for (let i = 1; i < ring.length; i++) rd += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+          rd += 'Z'
+          ringPaths.push(rd)
+        }
+        return ringPaths.length
+          ? `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd"/>`
+          : ''
+      }).filter(Boolean).join('\n')}\n  </g>\n`
+    : ''
   const waterLayers  = renderCodes(WATER_CODES)
   const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
@@ -1097,7 +1131,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${demSeaLayerSvg}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
