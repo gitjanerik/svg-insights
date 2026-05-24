@@ -6,6 +6,7 @@ import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
+import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
@@ -33,6 +34,7 @@ const router = useRouter()
 const route = useRoute()
 const wrapperRef = ref(null)
 const svgHostRef = ref(null)
+const searchInputRef = ref(null)
 
 const loading = ref(true)
 const loadError = ref(null)
@@ -405,7 +407,7 @@ function applyLayerVisibility() {
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
 const pinchEnabled = computed(() => !curveball.active.value)
-const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
+const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
@@ -443,6 +445,214 @@ const mapId = computed(() => route.params.id ?? 'vardasen')
 const annot = useMapAnnotations(mapId.value)
 const showSymbolPalette = ref(false)
 let lastSvgString = ''      // huskes til print-eksport
+
+// Søk i kart — bygger indeks etter map-load, viser dropdown med treff og
+// sentrerer på valgte stedsnavn. Highlight-ringen sitter til brukeren tømmer
+// søket eller scroller bort.
+const mapSearch = useMapSearch()
+// Destrukturér refs så template auto-unwrapper dem (Vue auto-unwrapper kun
+// top-level setup-refs, ikke properties på ett objekt).
+const searchQuery = mapSearch.query
+const searchResults = mapSearch.results
+const searchIndex = mapSearch.index
+const searchOpen = ref(false)
+const highlightedFeature = ref(null)   // { name, x, y, kind } eller null
+
+function openSearch() {
+  searchOpen.value = true
+  closeDrawer()
+  // Fokuser input etter at Transition har latt elementet bli mountet
+  nextTick(() => { searchInputRef.value?.focus() })
+}
+function closeSearch() {
+  searchOpen.value = false
+  mapSearch.clear()
+}
+function clearHighlight() {
+  highlightedFeature.value = null
+  renderHighlight()
+}
+function selectSearchResult(r) {
+  highlightedFeature.value = { name: r.name, x: r.x, y: r.y, kind: r.kind }
+  if (meta.value) {
+    panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
+  }
+  searchOpen.value = false
+  mapSearch.clear()
+  renderHighlight()
+}
+
+// Pulsering tegnes som SVG-circle i et eget overlay-lag, lik annoteringer.
+// Holder konstant skjerm-størrelse ved å konvertere CSS-px til user-units via
+// scale.value.
+function renderHighlight() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let layer = svg.querySelector('#search-highlight-layer')
+  const h = highlightedFeature.value
+  if (!h || curveball.active.value) {
+    if (layer) layer.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'search-highlight-layer')
+    layer.setAttribute('data-layer', 'search-highlight')
+    layer.setAttribute('pointer-events', 'none')
+    svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  const r1 = pxToUserUnits(18)
+  const r2 = pxToUserUnits(34)
+  const sw = pxToUserUnits(2.5)
+
+  // Indre ring — solid stroke, sterk farge
+  const inner = document.createElementNS(ns, 'circle')
+  inner.setAttribute('cx', h.x); inner.setAttribute('cy', h.y)
+  inner.setAttribute('r', r1)
+  inner.setAttribute('fill', 'rgba(244, 114, 182, 0.18)')
+  inner.setAttribute('stroke', '#f472b6')
+  inner.setAttribute('stroke-width', String(sw))
+  layer.appendChild(inner)
+
+  // Ytre puls-ring — SMIL-animasjon, ekspanderer + fader
+  const pulse = document.createElementNS(ns, 'circle')
+  pulse.setAttribute('cx', h.x); pulse.setAttribute('cy', h.y)
+  pulse.setAttribute('r', String(r1))
+  pulse.setAttribute('fill', 'none')
+  pulse.setAttribute('stroke', '#f472b6')
+  pulse.setAttribute('stroke-width', String(sw))
+  pulse.setAttribute('opacity', '0.8')
+  const anR = document.createElementNS(ns, 'animate')
+  anR.setAttribute('attributeName', 'r')
+  anR.setAttribute('values', `${r1};${r2}`)
+  anR.setAttribute('dur', '1.4s')
+  anR.setAttribute('repeatCount', 'indefinite')
+  pulse.appendChild(anR)
+  const anO = document.createElementNS(ns, 'animate')
+  anO.setAttribute('attributeName', 'opacity')
+  anO.setAttribute('values', '0.85;0')
+  anO.setAttribute('dur', '1.4s')
+  anO.setAttribute('repeatCount', 'indefinite')
+  pulse.appendChild(anO)
+  layer.appendChild(pulse)
+}
+
+// Hold ringen på konstant skjerm-størrelse ved zoom. Re-render ved tema-/
+// spillmodus-bytte.
+watch(scale, () => { if (highlightedFeature.value) renderHighlight() })
+watch(() => curveball.active.value, () => renderHighlight())
+
+// ── Share-flow ────────────────────────────────────────────────────────────
+// Bygger URL som tar mottaker til samme kart-utsnitt. Built-in kart pekes
+// direkte på /kart/:id; brukers egne kart deles som /kart/nytt?lat=&km=&eq=
+// så mottaker selv kan generere sin lokale kopi (SVG-en bor i IndexedDB
+// hos sender). Optional ?hl=<navn> sender med highlight-ønsket.
+const shareInfo = computed(() => {
+  if (!meta.value) return null
+  const m = meta.value
+  const lat = (m.bbox.south + m.bbox.north) / 2
+  const lon = (m.bbox.west + m.bbox.east) / 2
+  const sizeKm = m.widthM ? +(m.widthM / 1000).toFixed(2) : 4
+  const equidistanceM = m.equidistance ?? 20
+  return { lat, lon, sizeKm, equidistanceM }
+})
+
+function buildShareUrl() {
+  if (!shareInfo.value) return null
+  const base = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
+  const id = route.params.id ?? 'vardasen'
+  const isBuiltin = !!BUILTIN[id]
+  const hl = highlightedFeature.value?.name ?? ''
+  const params = new URLSearchParams()
+  if (isBuiltin) {
+    // Built-in: del direkte view-URL — mottaker ser nøyaktig samme kart.
+    if (hl) params.set('hl', hl)
+    const qs = params.toString()
+    return `${base}/kart/${id}${qs ? `?${qs}` : ''}`
+  }
+  // Stored map: del bbox + ekvidistanse. Mottaker lander i picker som
+  // pre-populerer feltene; etter generering navigeres til MapView med ?hl=.
+  const s = shareInfo.value
+  params.set('lat', s.lat.toFixed(5))
+  params.set('lon', s.lon.toFixed(5))
+  params.set('km', String(s.sizeKm))
+  params.set('eq', String(s.equidistanceM))
+  if (hl) params.set('hl', hl)
+  return `${base}/kart/nytt?${params.toString()}`
+}
+
+const shareState = ref('idle')  // idle | sharing | copied | error
+let shareResetTimer = null
+
+async function onShareMap() {
+  const url = buildShareUrl()
+  if (!url) return
+  const shareData = {
+    title: mapTitle.value || 'SVG Insights — turkart',
+    text: highlightedFeature.value?.name
+      ? `${mapTitle.value} — markering: ${highlightedFeature.value.name}`
+      : mapTitle.value,
+    url,
+  }
+  // navigator.share åpner native iOS/Android-dialog der brukeren velger
+  // app (Meldinger, WhatsApp, Mail, AirDrop osv). canShare() finnes på
+  // moderne browsere men ikke alltid — try/catch dekker resten.
+  if (typeof navigator.share === 'function') {
+    shareState.value = 'sharing'
+    try {
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(shareData)) {
+        throw new Error('share-data-rejected')
+      }
+      await navigator.share(shareData)
+      shareState.value = 'idle'
+      return
+    } catch (err) {
+      // AbortError = bruker lukket sheet — det er ikke en feil
+      if (err && err.name === 'AbortError') {
+        shareState.value = 'idle'
+        return
+      }
+      // Fall through til clipboard-fallback under
+    }
+  }
+  // Fallback: kopier til utklippstavle. Brukes på desktop (uten share-sheet)
+  // og når native share-API ikke aksepterer data (sjeldne tilfeller).
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch { /* ignore */ }
+      document.body.removeChild(ta)
+    }
+    shareState.value = 'copied'
+  } catch {
+    shareState.value = 'error'
+  }
+  if (shareResetTimer) clearTimeout(shareResetTimer)
+  shareResetTimer = setTimeout(() => { shareState.value = 'idle' }, 2200)
+}
+
+function maybeHighlightFromQuery() {
+  const hl = route.query.hl
+  if (!hl) return
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const match = findByName(mapSearch.index.value, String(hl))
+  if (!match) return
+  highlightedFeature.value = { name: match.name, x: match.x, y: match.y, kind: match.kind }
+  if (meta.value) {
+    panTo(match.x, match.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: 2.5 })
+  }
+  renderHighlight()
+}
 
 // GPS-spor — opptak + rendering av rutene brukeren går (v8.9.2)
 const tracker = useTrackRecorder(mapId.value, userPos)
@@ -1364,6 +1574,11 @@ async function loadMap() {
     applyHillshade()
     // Dybdeskygge for kart med Sjøkart-data — noop for kart uten 307-paths.
     applyDepthShade()
+    // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
+    // i host-en (getBBox()+getCTM() krever attached element).
+    mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
+    // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
+    maybeHighlightFromQuery()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
@@ -1766,21 +1981,87 @@ onUnmounted(stopGpsTick)
       </button>
 
       <div class="pointer-events-none px-3 py-1.5 rounded-full bg-zinc-950
-                  text-[12px] text-white font-medium shadow-lg max-w-[60%] truncate">
+                  text-[12px] text-white font-medium shadow-lg max-w-[50%] truncate">
         {{ mapTitle }}
       </div>
 
-      <button @click="openDrawer"
-              class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     bg-zinc-950 text-white shadow-lg active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
-             stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" y1="6" x2="20" y2="6"/>
-          <line x1="4" y1="12" x2="20" y2="12"/>
-          <line x1="4" y1="18" x2="20" y2="18"/>
-        </svg>
-      </button>
+      <div class="flex items-center gap-2 pointer-events-auto">
+        <button @click="openSearch" aria-label="Søk i kart"
+                class="rounded-full w-10 h-10 flex items-center justify-center
+                       bg-zinc-950 text-white shadow-lg active:scale-95 transition">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
+               stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/>
+            <line x1="20" y1="20" x2="16.65" y2="16.65"/>
+          </svg>
+        </button>
+        <button @click="openDrawer" aria-label="Innstillinger"
+                class="rounded-full w-10 h-10 flex items-center justify-center
+                       bg-zinc-950 text-white shadow-lg active:scale-95 transition">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/>
+            <line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+        </button>
+      </div>
     </div>
+
+    <!-- Søke-overlay — synlig når searchOpen=true. Lukker drawer og legger
+         seg under topbar slik at brukeren kan se kartet bak. -->
+    <Transition name="search-fade">
+      <div v-if="searchOpen && !curveball.active.value"
+           class="absolute top-16 left-3 right-3 z-40 rounded-2xl bg-zinc-950/95 backdrop-blur
+                  border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+           style="max-height: calc(100dvh - 6rem);">
+        <div class="px-3 py-2.5 flex items-center gap-2 border-b border-white/10">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/55 shrink-0" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/>
+            <line x1="20" y1="20" x2="16.65" y2="16.65"/>
+          </svg>
+          <input v-model="searchQuery" type="search" autocomplete="off"
+                 autocorrect="off" autocapitalize="off" spellcheck="false"
+                 placeholder="Søk i kart — steder, vann, øyer …"
+                 ref="searchInputRef"
+                 class="flex-1 bg-transparent text-[14px] text-white placeholder-white/35
+                        focus:outline-none"/>
+          <button @click="closeSearch" aria-label="Lukk søk"
+                  class="w-7 h-7 -mr-1 rounded-full flex items-center justify-center
+                         text-white/65 active:bg-white/10">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <div v-if="searchQuery && searchResults.length === 0"
+               class="px-4 py-6 text-center text-[12px] text-white/45">
+            Ingen treff på «{{ searchQuery }}»
+          </div>
+          <div v-else-if="!searchQuery"
+               class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
+            Søker i alle stedsnavn, vann, topper og navngitte områder som er
+            tegnet i kartet ({{ searchIndex.length }} treffbare).
+          </div>
+          <button v-for="r in searchResults" :key="r.id"
+                  @click="selectSearchResult(r)"
+                  class="w-full text-left px-3 py-2.5 active:bg-white/10 transition border-b
+                         border-white/8 last:border-0 flex items-center gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="text-[13px] font-medium text-white truncate">{{ r.name }}</div>
+              <div class="text-[10px] text-white/45 uppercase tracking-wide">{{ r.label }}</div>
+            </div>
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-white/35 shrink-0" fill="none"
+                 stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Kompass-rose (skjult i CurveBall-modus) -->
     <div v-if="!curveball.active.value"
@@ -1866,6 +2147,31 @@ onUnmounted(stopGpsTick)
           @drop="onCurveBallContinue"/>
       </div>
     </div>
+
+    <!-- Highlight-chip — vises når et søkeresultat eller ?hl= har satt en
+         markør. Tap fjerner highlight og dropper søkemodus. Skjules under
+         Curve Invaders så den ikke kolliderer med game-HUD-en. -->
+    <Transition name="chip-fade">
+      <div v-if="highlightedFeature && !curveball.active.value && !searchOpen"
+           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full
+                  bg-pink-500/95 text-white text-[12px] font-medium shadow-lg
+                  flex items-center gap-2 max-w-[80%] pointer-events-auto">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="10" r="3"/>
+          <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+        </svg>
+        <span class="truncate">{{ highlightedFeature.name }}</span>
+        <button @click="clearHighlight" aria-label="Fjern markering"
+                class="w-5 h-5 -mr-1 rounded-full flex items-center justify-center
+                       text-white/90 active:bg-white/20 shrink-0">
+          <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor"
+               stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </Transition>
 
     <!-- Annoteringsmodus indikator. v8.7.1: skjules eksplisitt mens
          Curve Invaders kjører — ellers ble den hengende inne i spill-
@@ -2428,6 +2734,41 @@ onUnmounted(stopGpsTick)
 
           <!-- ── Tab: Eksport ─────────────────────────────────────── -->
           <div v-show="activeTab === 'eksport'">
+            <!-- Del kart — bruker Web Share API på iOS/Android med fallback
+                 til clipboard. Inkluderer ?hl=<navn> hvis et søkeresultat er
+                 highlightet, slik at mottaker ser samme markering. -->
+            <button @click="onShareMap"
+                    class="w-full mb-3 px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center justify-center gap-2 transition"
+                    :class="shareState === 'copied'
+                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+                            : 'bg-sky-500/15 border-sky-400/40 text-sky-100'">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <template v-if="shareState === 'copied'">
+                  <polyline points="20 6 9 17 4 12"/>
+                </template>
+                <template v-else>
+                  <circle cx="18" cy="5" r="3"/>
+                  <circle cx="6" cy="12" r="3"/>
+                  <circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </template>
+              </svg>
+              <span class="font-medium">
+                <template v-if="shareState === 'copied'">Lenke kopiert ✓</template>
+                <template v-else-if="shareState === 'sharing'">Åpner delings-dialog …</template>
+                <template v-else-if="shareState === 'error'">Kunne ikke dele — prøv igjen</template>
+                <template v-else>Del kart</template>
+              </span>
+            </button>
+            <div v-if="highlightedFeature"
+                 class="text-[10px] text-white/55 leading-snug mb-3 px-1 -mt-1">
+              Markering: <span class="text-pink-300 font-medium">{{ highlightedFeature.name }}</span>
+              · sendes som <code class="text-white/70">?hl=</code> i lenken.
+            </div>
+
             <div class="grid grid-cols-2 gap-2 mb-3">
               <button @click="onExportSvg"
                       class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
@@ -2607,4 +2948,14 @@ onUnmounted(stopGpsTick)
 .drawer-enter-from, .drawer-leave-to       { transform: translateY(100%); }
 /* Skjul scrollbar på tab-strip — fortsatt scrollbar med touch / wheel */
 .map-tabs::-webkit-scrollbar { display: none; }
+/* Søke-overlay — kort fade + svak slide ovenfra */
+.search-fade-enter-active, .search-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.search-fade-enter-from, .search-fade-leave-to {
+  opacity: 0; transform: translateY(-6px);
+}
+/* Highlight-chip — kun fade, så Tailwinds -translate-x-1/2 bevares */
+.chip-fade-enter-active, .chip-fade-leave-active { transition: opacity 0.18s ease; }
+.chip-fade-enter-from, .chip-fade-leave-to       { opacity: 0; }
 </style>

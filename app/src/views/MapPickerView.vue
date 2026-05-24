@@ -62,10 +62,12 @@ function onCenterOnMe() {
 // så kommer brukeren fra en delings-lenke — pre-populer alle felter og vis
 // banner med info om hvem som har utfordret + spillforklaring.
 const challenge = ref(null)   // { name, score, level } eller null
+const shareInvite = ref(null) // { hl } — del-flyt uten utfordring
 
 // v7.4.2: i utfordringsmodus skal alle valg (sted, navn, størrelse, ekvi-
 // distanse, preview drag/pinch) være read-only. Brukeren skal akkurat det
 // kartet som ble delt — ikke noe annet. Bruk én computed-flag overalt.
+// shareInvite låser IKKE — mottaker kan justere bbox/eq før kartet genereres.
 const isLocked = computed(() => challenge.value !== null)
 
 function cancelChallenge() {
@@ -73,6 +75,11 @@ function cancelChallenge() {
   // utfordring igjen. Gir brukeren mulighet til å gjøre vanlig kart-bygg.
   challenge.value = null
   customName.value = ''
+  router.replace({ name: 'kart-nytt', query: {} })
+}
+
+function dismissShareInvite() {
+  shareInvite.value = null
   router.replace({ name: 'kart-nytt', query: {} })
 }
 
@@ -120,6 +127,26 @@ function parseShareQuery() {
     level: Number.isFinite(lv) ? lv : null,
     mapMasters: Number.isFinite(mm) && mm >= 0 ? mm : 0,
   }
+}
+
+// v8.10.0: Ren del-flyt (uten Curve Invaders-utfordring). URL har ?lat=&lon=
+// (+ optional km/eq/hl) men IKKE ?n=. Pre-populerer feltene som
+// parseShareQuery gjør, men returnerer en lettere "shareInvite" struct som
+// rendrer et beskjedent banner istedenfor det amber utfordrings-banneret.
+// Returner { hl } slik at generateMap kan forwarde highlight til MapView.
+function parseShareInvite() {
+  const q = route.query
+  if (!q || !q.lat || !q.lon || q.n) return null
+  const lat = parseFloat(q.lat)
+  const lon = parseFloat(q.lon)
+  const km = parseFloat(q.km)
+  const eq = parseInt(q.eq, 10)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
+  if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
+  if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
+  if (q.hl) customName.value = String(q.hl).slice(0, 60)
+  return { hl: q.hl ? String(q.hl).slice(0, 60) : null }
 }
 
 const EQUIDISTANCE_OPTIONS = [
@@ -318,7 +345,12 @@ async function generateMap() {
         sessionStorage.removeItem('flippkart-autostart-mapId')
       } catch { /* QuotaExceeded */ }
     }
-    router.push({ name: 'kart-vis', params: { id } })
+    // v8.10.0: Forwarde delings-highlight slik at mottaker ser samme markering
+    // som sender hadde valgt. Brukes når shareInvite er aktiv (ikke
+    // utfordrings-share).
+    const nav = { name: 'kart-vis', params: { id } }
+    if (shareInvite.value?.hl) nav.query = { hl: shareInvite.value.hl }
+    router.push(nav)
   } catch (e) {
     buildState.value = 'error'
     buildError.value = e.message ?? 'Bygging feilet'
@@ -452,6 +484,7 @@ function onPreviewWheel(e) {
 
 onMounted(() => {
   challenge.value = parseShareQuery()
+  if (!challenge.value) shareInvite.value = parseShareInvite()
   nextTick(() => measurePreview())
   window.addEventListener('resize', measurePreview)
 })
@@ -473,6 +506,50 @@ onMounted(() => {
       </button>
       <div class="text-[14px] font-semibold">Nytt turkart</div>
       <div class="w-10 h-10"/>
+    </div>
+
+    <!-- v8.10.0: Banner ved «Del kart»-lenke (uten utfordring). Mottaker
+         kan justere bbox/eq før kartet genereres — banneret er bare et hint
+         om hva senderen pekte på. ?hl=<navn> forwardes til MapView etter
+         generering. -->
+    <div v-if="shareInvite"
+         class="relative mx-4 mt-4 rounded-xl border border-sky-300/40 bg-sky-500/10 px-4 py-3">
+      <button @click="dismissShareInvite"
+              aria-label="Avbryt delt kart"
+              class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
+                     text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15
+                     active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <div class="flex items-center gap-3 pr-8">
+        <div class="shrink-0 w-10 h-10 rounded-full bg-sky-400/20 border border-sky-300/40
+                    flex items-center justify-center text-sky-200">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"/>
+            <circle cx="6" cy="12" r="3"/>
+            <circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-sky-100">Delt kart-utsnitt</div>
+          <div v-if="shareInvite.hl" class="text-[11px] text-sky-100/75">
+            Markering: <span class="text-white font-medium">{{ shareInvite.hl }}</span>
+          </div>
+          <div v-else class="text-[11px] text-sky-100/75">
+            Senderen pekte på dette området.
+          </div>
+        </div>
+      </div>
+      <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
+        Bbox og ekvidistanse er pre-fylt fra lenken. Du kan justere før du
+        trykker «Lag turkart» — kartet bygges lokalt i din egen nettleser.
+      </div>
     </div>
 
     <!-- v7.4.0: Banner ved share-link — pre-populer felter, vis utfordrer +
