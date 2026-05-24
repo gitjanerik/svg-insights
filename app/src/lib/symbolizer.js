@@ -396,6 +396,14 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // utenfor sin egen bounding box — trygt siden lagene allerede er klippet
   // til kartets viewBox.
   rules.push(`${root} [data-layer] { contain: paint; }`)
+  // v8.10.4 — Perf: skjul kontur-tall ved utzoomet visning. Ved fit-to-extent
+  // er tall-labels uleselig små uansett (mange hundre tall i synet samtidig);
+  // browseren bruker likevel tid på text-shaping + halo-rendering. Vis dem
+  // når MapView setter `.zoomed-in` på SVG-host (default ved scale >= 1.3).
+  // Bekk-navn skjules også siden mange OSM-bekker har samme navn repetert
+  // hver 2 km og blir visuell støy ved utzoom.
+  rules.push(`${root}:not(.zoomed-in) [data-label="kontur-tall"] { display: none; }`)
+  rules.push(`${root}:not(.zoomed-in) [data-layer="bekk"] text { display: none; }`)
   // Art-mode opacity for fyll-områder (skog/vann/aker/bygning osv).
   // Stroke-only features beholder full skarphet (fill-opacity påvirker ikke strokes).
   // CSS-var settes av MapView ved tema-bytte; default = 1 (vanlig modus).

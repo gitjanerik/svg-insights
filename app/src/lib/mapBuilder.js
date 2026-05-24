@@ -645,10 +645,20 @@ export function buildSvg(elements, bbox, options = {}) {
 
     if (POLYGON_CODES.has(code)) {
       const filter = POLYGON_FILTER[cat] ?? { simplifyM: 0, minAreaM2: 0 }
-      // Hver feature får sin egen <path> så overlappende polygoner ikke
-      // kanselleres av evenodd. Holes inni en relation/multipolygon
-      // hånderes fortsatt med evenodd internt i samme path.
-      const pathElements = []
+      // v8.10.4: Kombinér paths som deler stil (samme data-src, samme isSmall,
+      // ingen inline-style, ingen navn) til ÉN stor <path d="M... M..."> per
+      // bucket. Browseren rendrer det som ett pass og DOM-tallet i en
+      // bygnings-tung bbox synker fra ~5k til ~10 nodes. Named features
+      // (data-name) og inline-stylede features (f.eks. ISOM 307 dybdeareal)
+      // emitteres fortsatt standalone så søk og per-feature-fyll fungerer.
+      const standalonePaths = []
+      const groups = new Map()  // sig (src|isSmall) → { ds: [], src, isSmall }
+      const pushToGroup = (d, src, isSmall) => {
+        const sig = `${src}|${isSmall ? '1' : '0'}`
+        let g = groups.get(sig)
+        if (!g) { g = { ds: [], src, isSmall }; groups.set(sig, g) }
+        g.ds.push(d)
+      }
       for (const el of els) {
         let d = ''
         let src = el._source ?? (el._mergedRings ? 'merged' : el.type)
@@ -673,7 +683,8 @@ export function buildSvg(elements, bbox, options = {}) {
               ringPaths.push(rd)
             }
             if (ringPaths.length > 0) {
-              pathElements.push(
+              // Merged-water beholder data-name så søk på innsjø-navn fungerer.
+              standalonePaths.push(
                 `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd" data-src="merged" data-name="${xmlEscape(name)}"/>`
               )
             }
@@ -733,11 +744,27 @@ export function buildSvg(elements, bbox, options = {}) {
             }
           }
           const smallAttr = isSmall ? ' data-small="yes"' : ''
-          pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
-          )
+          // Standalone hvis features har inline-style (per-polygon-fyll),
+          // dybde-attr eller et navn (søkbart). Ellers slå sammen til delt
+          // path-bucket per (data-src, isSmall).
+          if (inlineStyle || dybdeAttr || name) {
+            standalonePaths.push(
+              `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            )
+          } else {
+            pushToGroup(d, src, isSmall)
+          }
         }
       }
+      // Bygg grupperte paths fra buckets
+      const groupedPaths = []
+      for (const g of groups.values()) {
+        const smallAttr = g.isSmall ? ' data-small="yes"' : ''
+        groupedPaths.push(
+          `    <path d="${g.ds.join(' ')}" fill-rule="evenodd"${smallAttr} data-src="${xmlEscape(String(g.src))}"/>`
+        )
+      }
+      const pathElements = [...groupedPaths, ...standalonePaths]
       if (pathElements.length === 0) {
         return `  <g data-layer="${cat}" data-iso="${code}"></g>\n`
       }
@@ -754,16 +781,19 @@ export function buildSvg(elements, bbox, options = {}) {
       // perpendikulære tunnel-portal-streker så det blir tydelig at
       // toget går under bakken (Lieråstunnelen mellom Asker og Drammen).
       if (code === '515') {
-        const pathParts = []
+        // v8.10.4: combine paths per (isTunnel, isOverlay) bucket så DOM-
+        // tallet er fast 4 paths i stedet for 2N. Tunnel-portal-streker er
+        // alltid separate <line>-elementer.
+        const dsNormal = []
+        const dsTunnel = []
         const entrances = []
         const TICK_HALF_M = 6  // 12 m total = ~1.2 mm @ 1:10 000
         for (const el of els) {
           const d = pathFromGeometry(el.geometry, false, tol)
           if (!d) continue
           const isTunnel = !!el.tags?.tunnel && el.tags.tunnel !== 'no'
-          const tAttr = isTunnel ? ' data-tunnel="yes"' : ''
-          pathParts.push(`    <path d="${d}"${tAttr}/>`)
-          pathParts.push(`    <path d="${d}" class="overlay"${tAttr}/>`)
+          if (isTunnel) dsTunnel.push(d)
+          else dsNormal.push(d)
           if (isTunnel && el.geometry && el.geometry.length >= 2) {
             const g = el.geometry
             const p0 = project(g[0].lat, g[0].lon)
@@ -777,6 +807,15 @@ export function buildSvg(elements, bbox, options = {}) {
             if (lenE > 0) entrances.push({ x: pE.x, y: pE.y, ux: (pE.x - pE2.x) / lenE, uy: (pE.y - pE2.y) / lenE })
           }
         }
+        const pathParts = []
+        if (dsNormal.length) {
+          pathParts.push(`    <path d="${dsNormal.join(' ')}"/>`)
+          pathParts.push(`    <path d="${dsNormal.join(' ')}" class="overlay"/>`)
+        }
+        if (dsTunnel.length) {
+          pathParts.push(`    <path d="${dsTunnel.join(' ')}" data-tunnel="yes"/>`)
+          pathParts.push(`    <path d="${dsTunnel.join(' ')}" class="overlay" data-tunnel="yes"/>`)
+        }
         for (const e of entrances) {
           const px = -e.uy, py = e.ux
           const x1 = e.x - px * TICK_HALF_M, y1 = e.y - py * TICK_HALF_M
@@ -786,6 +825,12 @@ export function buildSvg(elements, bbox, options = {}) {
         return `  <g data-layer="${cat}" data-iso="${code}">\n${pathParts.join('\n')}\n  </g>\n`
       }
       const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
+      // v8.10.4: alle linjer i samme code/phase deler stil → kombinér til
+      // én stor <path d="..."> i stedet for N enkelt-paths. Hver M starter
+      // en ny subpath i SVG, så visuelt resultat er identisk men DOM-tallet
+      // synker drastisk (stier ~3-5k → 1 node). Stroke-effekter (linecap,
+      // dasharray) er sub-path-agnostiske og forblir korrekte.
+      const combinedD = paths.join(' ')
       // v8.1.0: koder som har overlayStroke (f.eks. veier 501-503) får dual
       // path: base = casing (sort, breiere), overlay = farget fyll (smalere,
       // på toppen). CSS i symbolizer.js styler `path.overlay` separat. Gir
@@ -802,15 +847,12 @@ export function buildSvg(elements, bbox, options = {}) {
         // oppå nabosegmentets fargefyll i kryss. Default 'both' beholder
         // gammel atferd for andre koder.
         const lines = []
-        if (phase !== 'overlay') {
-          for (const d of paths) lines.push(`    <path d="${d}"/>`)
-        }
-        if (phase !== 'casing') {
-          for (const d of paths) lines.push(`    <path d="${d}" class="overlay"/>`)
-        }
+        if (phase !== 'overlay' && combinedD) lines.push(`    <path d="${combinedD}"/>`)
+        if (phase !== 'casing' && combinedD) lines.push(`    <path d="${combinedD}" class="overlay"/>`)
         return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
       }
-      return `  <g data-layer="${cat}" data-iso="${code}">\n${paths.map(d => `    <path d="${d}"/>`).join('\n')}\n  </g>\n`
+      const pathLine = combinedD ? `    <path d="${combinedD}"/>` : ''
+      return `  <g data-layer="${cat}" data-iso="${code}">\n${pathLine}\n  </g>\n`
     }
     return ''
   }
