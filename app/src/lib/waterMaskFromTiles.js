@@ -40,11 +40,13 @@ function webMercatorPxToLonLat(px, py, zoom) {
 
 function pickZoom(widthM) {
   // Norgeskart-piksel-størrelse ved 60°N: ≈ 78240 / 2^z meter.
-  // Vi vil ha 5-15 m per piksel (god detalj uten å hente unødvendig mange tiler).
-  if (widthM <= 2500) return 14   // ≈ 4.8 m/px
-  if (widthM <= 6000) return 13   // ≈ 9.5 m/px
-  if (widthM <= 12000) return 12  // ≈ 19 m/px
-  return 11                        // ≈ 38 m/px
+  // Vi vil ha 2-5 m per piksel så små øyer (Hanseberget-typetilfelle: 50×100m)
+  // er minst 10×20 piksler — Kartverkets renderer skjuler ellers små øyer som
+  // ser ut som blå sjø på vår mask. Bumpet ett trinn i v8.9.21.
+  if (widthM <= 2500) return 15   // ≈ 2.4 m/px, ~9×9 = 81 tiles
+  if (widthM <= 6000) return 14   // ≈ 4.8 m/px, ~4×4 = 16 tiles
+  if (widthM <= 12000) return 13  // ≈ 9.5 m/px
+  return 12                        // ≈ 19 m/px
 }
 
 /**
