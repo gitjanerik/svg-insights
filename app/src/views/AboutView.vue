@@ -97,7 +97,7 @@ const TABS = [
           <li>Bbox velges i picker (UTM 32N, 1×10 km bredde, 5/10/20/50/100 m ekvidistanse)</li>
           <li>OSM-features hentes via Overpass for valgt bbox; reprojiseres med håndskrevet UTM-formel</li>
           <li>Vann-data hentes parallelt fra to kilder med fallback-prioritet: N50 Havflate/Innsjø/ElvBekk → OSM <code>natural=water</code></li>
-          <li>OSM <code>place=island/islet</code> renderes som kremgul land-overlay (ISOM 001) etter vann-laget for å maskere bort feilplassert OSM-vann i kyst-arkipel</li>
+          <li>OSM <code>place=island/islet</code> renderes som kremgul land-base (ISOM 001) før vann-laget; vann tegnes over så tjern på øyer vises korrekt</li>
           <li>DTM hentes som GeoTIFF fra Kartverket WCS, parses med <code>geotiff.js</code></li>
           <li>Høydekurver: <code>d3-contour</code> marching squares → Chaikin-glatting → DP-forenkling</li>
           <li>Stupkanter: terrenghelling &gt; 45° → morfologisk lukking → Zhang-Suen skeletonization → vectorisering</li>

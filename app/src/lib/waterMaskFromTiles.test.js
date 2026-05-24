@@ -91,35 +91,33 @@ describe('finalizeMaskToPolygons', () => {
 })
 
 describe('polygonsToOsmLikeWays', () => {
-  const bbox = { south: 59.80, west: 10.40, north: 59.85, east: 10.50 }
-
-  it('konverterer sjø-polygon til OSM-way med saltvann-tags', () => {
+  it('produserer merged-water-element for sjø med saltvann-tags', () => {
     const polys = [{
       type: 'sea',
       rings: [[[0, 0], [100, 0], [100, 100], [0, 100], [0, 0]]],
     }]
-    const ways = polygonsToOsmLikeWays(polys, bbox)
-    expect(ways).toHaveLength(1)
-    expect(ways[0].type).toBe('way')
-    expect(ways[0].tags.natural).toBe('water')
-    expect(ways[0].tags.salt).toBe('yes')
-    expect(ways[0].geometry.length).toBeGreaterThanOrEqual(4)
-    expect(ways[0].geometry[0]).toHaveProperty('lat')
-    expect(ways[0].geometry[0]).toHaveProperty('lon')
+    const out = polygonsToOsmLikeWays(polys)
+    expect(out).toHaveLength(1)
+    expect(out[0].type).toBe('merged-water')
+    expect(out[0].tags.natural).toBe('water')
+    expect(out[0].tags.salt).toBe('yes')
+    expect(out[0]._mergedRings).toHaveLength(1)
+    expect(out[0]._mergedRings[0]).toHaveLength(1) // 1 outer ring, ingen holes
   })
 
-  it('konverterer innsjø-polygon til OSM-way uten salt-tag', () => {
+  it('produserer merged-water-element for innsjø uten salt-tag', () => {
     const polys = [{
       type: 'lake',
       rings: [[[10, 10], [50, 10], [50, 50], [10, 50], [10, 10]]],
     }]
-    const ways = polygonsToOsmLikeWays(polys, bbox)
-    expect(ways).toHaveLength(1)
-    expect(ways[0].tags.natural).toBe('water')
-    expect(ways[0].tags.salt).toBeUndefined()
+    const out = polygonsToOsmLikeWays(polys)
+    expect(out).toHaveLength(1)
+    expect(out[0].type).toBe('merged-water')
+    expect(out[0].tags.natural).toBe('water')
+    expect(out[0].tags.salt).toBeUndefined()
   })
 
-  it('hver inner ring blir eget way (taper hole-relasjon men holder utseendet)', () => {
+  it('bevarer hole-relasjon: outer + inner ring blir SAMME merged-polygon', () => {
     const polys = [{
       type: 'lake',
       rings: [
@@ -127,7 +125,25 @@ describe('polygonsToOsmLikeWays', () => {
         [[20, 20], [40, 20], [40, 40], [20, 40], [20, 20]], // hole (øy)
       ],
     }]
-    const ways = polygonsToOsmLikeWays(polys, bbox)
-    expect(ways).toHaveLength(2)
+    const out = polygonsToOsmLikeWays(polys)
+    expect(out).toHaveLength(1)
+    // Én merged-water-element med ÉN polygon som har 2 ringer (outer + hole).
+    // Rendring bruker fill-rule="evenodd" så hullet faktisk blir hull.
+    expect(out[0]._mergedRings).toHaveLength(1)
+    expect(out[0]._mergedRings[0]).toHaveLength(2)
+  })
+
+  it('grupperer flere sjø- og innsjø-polygoner i to elementer', () => {
+    const polys = [
+      { type: 'sea', rings: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] },
+      { type: 'sea', rings: [[[20, 20], [30, 20], [30, 30], [20, 30], [20, 20]]] },
+      { type: 'lake', rings: [[[40, 40], [50, 40], [50, 50], [40, 50], [40, 40]]] },
+    ]
+    const out = polygonsToOsmLikeWays(polys)
+    expect(out).toHaveLength(2)
+    const sea = out.find(e => e.tags.salt === 'yes')
+    const lake = out.find(e => e.tags.salt === undefined)
+    expect(sea._mergedRings).toHaveLength(2)
+    expect(lake._mergedRings).toHaveLength(1)
   })
 })
