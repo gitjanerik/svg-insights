@@ -1285,6 +1285,7 @@ async function loadMap() {
       source: m.source,
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
+      isCoastal: !!m.isCoastal,
     }
     setupHostSvg(root)
     loading.value = false
@@ -1448,6 +1449,12 @@ function applyTheme() {
   }
   svg.style.removeProperty('--bg')
   svg.style.removeProperty('--art-fill-opacity')
+  // Kyst-bbox skal beholde blå bg uansett tema (kart bygget med
+  // automatisk coastline-rekonstruksjon). Settes før theme-spesifikke
+  // overstyringer så et faktisk valgt tema fortsatt kan overskrive.
+  if (meta.value?.isCoastal) {
+    svg.style.setProperty('--bg', '#9ec9de')
+  }
   for (const code of allCodes) {
     svg.style.removeProperty(`--iso-${code}-fill`)
     svg.style.removeProperty(`--iso-${code}-stroke`)
