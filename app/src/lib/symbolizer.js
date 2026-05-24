@@ -419,8 +419,10 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
 
   // ISOM 521 — små bygg (< 70 m²) får Kartverket-style hvit fyll + tynt
   // sort omriss. Skiller hytter/uthus visuelt fra bolig- og forretnings-
-  // bygg som beholder den brune default-fargen.
-  rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: 0.08mm; }`)
+  // bygg som beholder den brune default-fargen. v8.9.32: stroke ned til
+  // 0.05 mm (var 0.08 mm) så det normaliserte kvadrat-symbolet ikke
+  // overdøves av sin egen kant ved små zoom-nivåer.
+  rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: 0.05mm; }`)
 
   // Etiketter — fill og halo er CSS-variabler så MapView kan overstyre i mørk modus.
   // Font og halo skaleres med kartstørrelse (se labelScale over) så et 10 km

@@ -637,12 +637,21 @@ export function buildSvg(elements, bbox, options = {}) {
         if (el.type === 'way' && el.geometry) {
           const areaM2 = polygonAreaM2(el.geometry)
           if (filter.minAreaM2 && areaM2 < filter.minAreaM2) continue
-          d = pathFromGeometry(el.geometry, true, filter.simplifyM)
-          // ISOM 521: små bygg (< 70 m², typisk hytter/uthus) renders med
-          // Kartverket-style hvit fyll + tynt sort omriss. Større bygg
-          // beholder default brun fyll. Skiller hytter visuelt fra bolig-
-          // og forretningsbygg.
-          if (code === '521' && areaM2 < 70) isSmall = true
+          // ISOM 521: små bygg (< 70 m², typisk hytter/uthus) erstattes
+          // med standardisert kvadrat-symbol (13 m × 13 m = 1.3 mm @ 1:10k)
+          // sentrert på OSM-bygnings-centroid. Faktiske små OSM-polygoner
+          // er ofte irregulære og masketes lett av nærliggende stier; et
+          // rent, lett over-dimensjonert kvadrat med tynt omriss leses
+          // klart på alle zoom-nivåer (Kartverket-konvensjon).
+          if (code === '521' && areaM2 < 70) {
+            const c = polygonCentroid(el.geometry)
+            if (!c) continue
+            const half = 6.5
+            d = `M${fmt(c.x - half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y + half)}L${fmt(c.x - half)},${fmt(c.y + half)}Z`
+            isSmall = true
+          } else {
+            d = pathFromGeometry(el.geometry, true, filter.simplifyM)
+          }
         } else if (el.type === 'relation' && el.members) {
           // OSM multipolygon: outer/inner-rings er splittet over flere
           // ways. Sy sammen først (greedy join på matchende endepunkter)
