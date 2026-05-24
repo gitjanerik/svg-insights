@@ -408,7 +408,12 @@ export function buildSvg(elements, bbox, options = {}) {
   // Per-kategori forenkling og filtrering. Tunet for å holde SVG <1.5 MB
   // selv i tett bebygde områder som Vardåsen-bbox.
   const POLYGON_FILTER = {
-    bygning: { simplifyM: 3.0, minAreaM2: 80 },
+    // v8.9.30: senket bygning-terskelene så hytter (typisk 20–60 m²) ikke
+    // forsvinner. 80 m² filtrerte bort hele kategorier av småhytter i
+    // marka, og simplifyM 3.0 kollapset korner på små rektangler
+    // (4×4 m polygon med DP 3.0 → degenerert). 10 m² + 1.5 m DP bevarer
+    // hytter og spikertelt, mens skur < 10 m² fortsatt filtreres bort.
+    bygning: { simplifyM: 1.5, minAreaM2: 10 },
     skog:    { simplifyM: 4.0, minAreaM2: 300 },
     eng:     { simplifyM: 4.0, minAreaM2: 300 },
     aker:    { simplifyM: 4.0, minAreaM2: 300 },
