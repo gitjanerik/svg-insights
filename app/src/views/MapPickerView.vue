@@ -5,6 +5,7 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
+import { buildWaterMaskFromTiles, polygonsToOsmLikeWays } from '../lib/waterMaskFromTiles.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { findHighestPoint, packDem } from '../lib/demSampling.js'
@@ -179,7 +180,7 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    const [osmData, n50Water, sjokart] = await Promise.all([
+    const [osmData, n50Water, sjokart, wmtsWater] = await Promise.all([
       fetchOverpass(bbox.value),
       fetchN50Water(bbox.value).catch(e => {
         console.warn('N50-vann ikke tilgjengelig:', e.message)
@@ -191,8 +192,17 @@ async function generateMap() {
         console.warn('Sjøkart-Dybdedata ikke tilgjengelig:', e.message)
         return { dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [] }
       }),
+      // Norgeskart WMTS-vannmaske: autoritativ Kartverket-rendering parset
+      // til polygoner. Dekker både sjø og innsjø/tjern uten å være avhengig
+      // av OSM-tagging eller N50-WFS-CORS. Graceful fail hvis tile-fetch
+      // svikter.
+      buildWaterMaskFromTiles(bbox.value).catch(e => {
+        console.warn('WMTS-vannmaske ikke tilgjengelig:', e.message)
+        return { polygons: [], source: 'failed', tilesFetched: 0, tilesFailed: 0 }
+      }),
     ])
     const sjokartElements = sjokartToElements(sjokart)
+    const wmtsElements = polygonsToOsmLikeWays(wmtsWater.polygons, bbox.value)
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
     // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
     // bare hvis tilsvarende N50-kilde finnes.
@@ -226,10 +236,16 @@ async function generateMap() {
     })
     if (n50Water.length > 0) elements.push(...n50Water)
     if (sjokartElements.length > 0) elements.push(...sjokartElements)
+    if (wmtsElements.length > 0) elements.push(...wmtsElements)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
     if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
+    if (wmtsElements.length > 0) {
+      const seaCount = wmtsWater.polygons.filter(p => p.type === 'sea').length
+      const lakeCount = wmtsWater.polygons.filter(p => p.type === 'lake').length
+      sourceParts.push(`WMTS-vann (${seaCount} sjø + ${lakeCount} innsjø, ${wmtsWater.tilesFetched} tiler)`)
+    }
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
