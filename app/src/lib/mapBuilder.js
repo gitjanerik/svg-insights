@@ -19,7 +19,6 @@ import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
-import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import polygonClipping from 'polygon-clipping'
 
@@ -54,6 +53,10 @@ export function buildOverpassQuery(bbox) {
   node["survey_point"];
   node["geodesic"];
   node["place"~"^(locality|hamlet|village|town|city|suburb|neighbourhood|quarter|isolated_dwelling|farm)$"];
+  node["amenity"="place_of_worship"];
+  node["building"~"^(church|chapel)$"];
+  way["amenity"="place_of_worship"];
+  way["building"~"^(church|chapel)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -264,10 +267,8 @@ function unionByName(elements, project) {
 
 // Layer-rekkefølge (z-order, bunn til topp). Inspirert av ISOM 2017.
 //
-// Merk: ISOM 522 (tett bebyggelse) er ikke listet her — den rendres
-// separat fra urbanMassMultiPoly mellom GROUND_CODES og WATER_CODES
-// slik at vann og høydekurver legger seg over bymassen og forblir
-// lesbare i tett bebygde områder (f.eks. Oslo sentrum).
+// Merk: ISOM 522 (tett bebyggelse) er fjernet i v8.9.27 — alle bygninger
+// rendres nå som individuelle ISOM 521.
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
@@ -292,10 +293,9 @@ const LAYER_ORDER = [
   ...PLACEHOLDER_CODES,
   ...ROAD_CODES,
   ...UPPER_CODES,
-  '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -425,11 +425,23 @@ export function buildSvg(elements, bbox, options = {}) {
   const huler = []         // ISOM 215 (cave entrance)
   const gruver = []        // ISOM 216 (mine / sjakt)
   const trigpunkter = []   // ISOM 113 (trigonometric point)
+  const kirker = []        // ISOM 532-derivert (kirker / chapels)
 
-  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0 }
+  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
+    // Way-kirker (building=church / amenity=place_of_worship på en
+    // bygnings-polygon) plukker vi opp UANSETT om classifyToIsom returnerer
+    // bygnings-koden — også way-er som kun har amenity=place_of_worship
+    // (uten building-tag) skal få korsmarkør.
+    if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+      const t = el.tags ?? {}
+      if (t.amenity === 'place_of_worship' || t.building === 'church' || t.building === 'chapel') {
+        kirker.push(el)
+        counts.kirke++
+      }
+    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
@@ -438,6 +450,7 @@ export function buildSvg(elements, bbox, options = {}) {
       else if (cls.code === '215') { huler.push(el); counts.hule++ }
       else if (cls.code === '216') { gruver.push(el); counts.gruve++ }
       else if (cls.code === '113') { trigpunkter.push(el); counts.trig++ }
+      else if (cls.code === '532') { kirker.push(el); counts.kirke++ }
       continue
     }
     if (buckets[cls.code]) {
@@ -497,40 +510,11 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── ISOM 522: tette bebyggelse-klynger ───────────────────────────────
-  // Slå sammen tett bebygde områder til urbanmasse-multipolygoner med
-  // pattern-fyll. Reduserer SVG-størrelsen og gir bedre kart-look.
-  let urbanMassMultiPoly = []
-  if (buckets['521'].length >= 5) {
-    const buildingsXY = buckets['521']
-      .filter(el => el.geometry && el.geometry.length >= 3)
-      .map(el => ({
-        ring: el.geometry.map(g => {
-          const p = project(g.lat, g.lon)
-          return [p.x, p.y]
-        }),
-        original: el,
-      }))
-    // v8.9.25: definisjonen på "Bebyggelse" (ISOM 522 pattern-fyll) er nå
-    // minst 5 bygninger med maks 100 m mellom naboer. Strengere terskel enn
-    // v8.9.24 (50 m / 3 bygninger) som klassifiserte for aggressivt og
-    // slukte spredte eneboliger som burde stått som frittstående bygninger.
-    // Med 100 m / 5 stk slipper vi bare gjennom ekte villastrøk og
-    // tettsteds-sentra, mens hytter i marka og enslige gårder beholder sine
-    // ekte OSM-vektorpolygoner i Bygninger-laget (ISOM 521).
-    const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
-      neighborRadiusM: 100,
-      minClusterSize: 5,
-      bufferM: 6,
-    })
-    if (urbanMass.length > 0) {
-      urbanMassMultiPoly = urbanMass
-      // Erstatt 521-bucket med kun spredte bygninger
-      buckets['521'] = scattered.map(b => b.original)
-      counts['521'] = buckets['521'].length
-      counts['522'] = urbanMass.length
-    }
-  }
+  // v8.9.27: "Bebyggelse" (ISOM 522 pattern-fyll) er fjernet — proximity-
+  // basert klyngegruppering av bygninger fungerte aldri robust (spredte
+  // hytter ble slukt, tette villastrøk slapp gjennom inkonsistent). Alle
+  // bygninger renders nå som individuelle ISOM 521-polygoner og slås
+  // av/på via det samme «Bygninger»-laget i drawer.
 
   // ── DEM-deriverte features (konturer, knauser, stupkanter, sjø) ──────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
@@ -990,6 +974,21 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${sid}" x="${fmt(p.x - 0.8)}mm" y="${fmt(p.y - 0.8)}mm" width="1.6mm" height="1.6mm"/>`
   }).filter(Boolean).join('\n')
 
+  // Kirke (ISOM 532-derivert): korsmarkør 2.4mm. Node-kirker plasseres
+  // direkte på OSM-noden; way-kirker (building=church polygon) plasseres
+  // på centroid og rendres OVER bygnings-laget så korset er synlig.
+  const kirkeSize = 2.4
+  const kirkeSvg = kirker.map(el => {
+    let p = null
+    if (el.type === 'node') p = project(el.lat, el.lon)
+    else if (el.type === 'way' && el.geometry) p = polygonCentroid(el.geometry)
+    if (!p) return ''
+    const sid = symbolIds.get('kirke')
+    if (!sid) return ''
+    const half = kirkeSize / 2
+    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/>`
+  }).filter(Boolean).join('\n')
+
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
   // ekte DEM, sampler vi høyde på begge sider av spine for å velge
   // riktig side; ellers default til høyre. Spacing ~20m (~2mm @ 1:10k),
@@ -1177,22 +1176,65 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="stein" data-iso="216">\n${gruveSvg}\n  </g>\n` : ''
   const trigLayerSvg = trigSvg
     ? `  <g data-layer="trig" data-iso="113">\n${trigSvg}\n  </g>\n` : ''
+  const kirkeLayerSvg = kirkeSvg
+    ? `  <g data-layer="kirke" data-iso="532">\n${kirkeSvg}\n  </g>\n` : ''
 
-  // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
-  // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
-  // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
-  // forblir lesbare over bymassen i tett bebygde områder.
-  //
-  // v8.9.10: data-layer="bymasse" (skilt fra "bygning") så tett bebyggelse
-  // kan slås av uavhengig av frittstående bygg — viktig for turkart der
-  // hytter i marka skal være synlige men dominerende by-pattern bare
-  // forstyrrer.
-  const urbanMassPath = urbanMassMultiPoly.length
-    ? multiPolyToPath(urbanMassMultiPoly, fmt)
+  // ── Stedsnavn for elver og bekker (304/305) ─────────────────────────
+  // Gjenta navnet ~hver 2 km langs polylinjen så det er synlig uansett
+  // hvilken del av kartet brukeren ser på. For korte bekker (< 1 km) plasseres
+  // ett label sentralt slik at tagget-navn alltid blir synlig — turkart-
+  // bbox kan være helt nede i 1 km × 1 km, og uten dette ville mange bekker
+  // mistet sitt navn på små kart.
+  const SEG_REPEAT_M = 2000
+  const waterwayLabels = []
+  for (const code of ['304', '305']) {
+    for (const el of buckets[code] ?? []) {
+      const name = (el.tags?.name ?? '').trim()
+      if (!name || !el.geometry || el.geometry.length < 2) continue
+      const pts = el.geometry.map(g => project(g.lat, g.lon))
+      const segLens = []
+      let totalLen = 0
+      for (let i = 1; i < pts.length; i++) {
+        const dx = pts[i].x - pts[i - 1].x
+        const dy = pts[i].y - pts[i - 1].y
+        const segLen = Math.hypot(dx, dy)
+        segLens.push(segLen)
+        totalLen += segLen
+      }
+      if (totalLen < 80) continue
+      const positions = totalLen < SEG_REPEAT_M
+        ? [totalLen / 2]
+        : []
+      if (positions.length === 0) {
+        for (let p = SEG_REPEAT_M / 2; p < totalLen; p += SEG_REPEAT_M) positions.push(p)
+      }
+      let acc = 0
+      let posIdx = 0
+      for (let i = 1; i < pts.length && posIdx < positions.length; i++) {
+        const segLen = segLens[i - 1]
+        const dx = pts[i].x - pts[i - 1].x
+        const dy = pts[i].y - pts[i - 1].y
+        while (posIdx < positions.length && positions[posIdx] <= acc + segLen) {
+          const t = segLen > 0.01 ? (positions[posIdx] - acc) / segLen : 0.5
+          const x = pts[i - 1].x + dx * t
+          const y = pts[i - 1].y + dy * t
+          let deg = Math.atan2(dy, dx) * 180 / Math.PI
+          if (deg > 90 || deg < -90) deg += 180
+          waterwayLabels.push({ x, y, deg, name, isStream: code === '305' })
+          posIdx++
+        }
+        acc += segLen
+      }
+    }
+  }
+  const waterwayLabelLayer = waterwayLabels.length
+    ? `  <g data-layer="bekk">\n${waterwayLabels.map(l =>
+        `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn">${xmlEscape(l.name)}</text>`
+      ).join('\n')}\n  </g>\n`
     : ''
-  const urbanMassLayerSvg = urbanMassPath
-    ? `  <g data-layer="bymasse" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
-    : ''
+
+  // v8.9.27: ISOM 522 (tett bebyggelse) er fjernet — se buckets-init over.
+  const urbanMassLayerSvg = ''
 
   const bgFill = isomCatalog.background.color
 
@@ -1201,7 +1243,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1219,7 +1261,6 @@ function categoryFor(code) {
     case '301': case '302': case '303': case '307': return 'vann'
     case '304': case '305':                     return 'bekk'
     case '521':                                  return 'bygning'
-    case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'

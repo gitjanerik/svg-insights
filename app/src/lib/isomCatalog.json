@@ -313,13 +313,13 @@
         "label": "Småvei",
         "stroke": {
           "color": "#1a1a1a",
-          "widthMm": 0.3,
+          "widthMm": 0.24,
           "linecap": "round",
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#f0a456",
-          "widthMm": 0.25,
+          "widthMm": 0.2,
           "linecap": "round",
           "linejoin": "round"
         }
@@ -337,10 +337,10 @@
         "label": "Sti — godt løp",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.16,
+          "widthMm": 0.13,
           "dasharray": [
             0.45,
-            0.4
+            0.32
           ],
           "linecap": "round",
           "linejoin": "round"
@@ -350,10 +350,10 @@
         "label": "Sti — uklar",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.13,
+          "widthMm": 0.1,
           "dasharray": [
             0.3,
-            0.27
+            0.22
           ],
           "linecap": "round",
           "linejoin": "round"
@@ -480,6 +480,14 @@
         "stroke": {
           "color": "#000",
           "widthMm": 0.09
+        }
+      },
+      "532": {
+        "label": "Kirke",
+        "$comment": "Kirke (ISOM 532-derivert): kors-symbol plassert på OSM amenity=place_of_worship-noder eller centroid av building=church-polygoner.",
+        "point": {
+          "symbol": "kirke",
+          "scaleMm": 2.4
         }
       },
       "533": {
@@ -985,6 +993,35 @@
           "width": 0.6,
           "height": 0.4,
           "fill": "#1f5d8a"
+        }
+      ]
+    },
+    "kirke": {
+      "$comment": "Kirke (ISOM 532-derivert): sort kors med liten basis-prikk. Kors plasseres slik at midten av symbolet ligger på OSM-noden / bygnings-sentroiden.",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": 0.55,
+          "r": 0.18,
+          "fill": "#000"
+        },
+        {
+          "type": "rect",
+          "x": -0.13,
+          "y": -0.85,
+          "width": 0.26,
+          "height": 1.3,
+          "fill": "#000"
+        },
+        {
+          "type": "rect",
+          "x": -0.55,
+          "y": -0.42,
+          "width": 1.1,
+          "height": 0.26,
+          "fill": "#000"
         }
       ]
     }
