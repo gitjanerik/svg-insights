@@ -15,7 +15,7 @@ import {
   isomCatalog,
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
-import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
+import { buildSeaFromDem, buildSeaShallowBands, buildLakesFromDem } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
@@ -525,6 +525,7 @@ export function buildSvg(elements, bbox, options = {}) {
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
   let demSeaPolygons = []
   let demSeaBands = []
+  let demLakePolygons = []
   if (usableDem) {
     const c = buildContours(usableDem, contourIntervalM, 5)
     const k = includeKnauser ? detectKnauser(usableDem, 5, 1.5) : []
@@ -549,6 +550,14 @@ export function buildSvg(elements, bbox, options = {}) {
       })
       demSeaBands = shallow.bands
     }
+    // Innsjø-deteksjon via DEM-plateau: fanger tjern på øyer og fastlandet
+    // der OSM/N50 mangler polygon-data (Nesøyatjern-typetilfellet). Bruker
+    // depression-sjekk så flate plateauer (parkering/jorder) ikke blir
+    // innsjøer.
+    const lakes = buildLakesFromDem(usableDem, {
+      minAreaM2: 500, varianceThresholdM2: 0.5, depressionMinM: 1.0, simplifyM: 2,
+    })
+    demLakePolygons = lakes.polygons
   }
 
   // Bygg ISOM-defs (patterns + symbols) og CSS
@@ -790,6 +799,16 @@ export function buildSvg(elements, bbox, options = {}) {
   }
   // DEM-derivert sjø går også i land-mask så konturer/vegetasjon ikke renderes over.
   for (const poly of demSeaPolygons) {
+    for (const ring of poly) {
+      if (ring.length < 3) continue
+      let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+      for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+      d += 'Z'
+      waterPaths.push(d)
+    }
+  }
+  // Også DEM-innsjøer maskerer konturer/vegetasjon (samme som vann-polygoner).
+  for (const poly of demLakePolygons) {
     for (const ring of poly) {
       if (ring.length < 3) continue
       let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
@@ -1097,6 +1116,15 @@ export function buildSvg(elements, bbox, options = {}) {
     .filter(Boolean)
     .join('')
   const demSeaLayerSvg = demSeaBaseSvg + demSeaBandsSvg
+  // DEM-deriverte innsjøer: lyseblå ISOM 301-fyll for tjern OSM/N50 mangler.
+  // Renders FØR vanlige waterLayers så autoritative OSM/N50-polygoner
+  // overstyrer eksakt geometri der de finnes.
+  const demLakeLayerSvg = demLakePolygons.length
+    ? `  <g data-layer="vann" data-iso="301" data-src="dem-lake">\n${demLakePolygons.map(poly => {
+        const d = polygonsToPathRing(poly)
+        return d ? `    <path d="${d}" fill-rule="evenodd"/>` : ''
+      }).filter(Boolean).join('\n')}\n  </g>\n`
+    : ''
   const waterLayers  = renderCodes(WATER_CODES)
   const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
@@ -1181,11 +1209,11 @@ export function buildSvg(elements, bbox, options = {}) {
   const bgFill = isomCatalog.background.color
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${demSeaLayerSvg}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${demSeaLayerSvg}${demLakeLayerSvg}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
