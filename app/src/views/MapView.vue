@@ -210,8 +210,8 @@ const LAYERS = [
   { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk / dybdekurver' },
   { key: 'kontur',     label: 'Høydekurver' },
-  { key: 'bygning',    label: 'Bygninger (frittstående)' },
-  { key: 'bymasse',    label: 'Tett bebyggelse' },
+  { key: 'bygning',    label: 'Bygninger' },
+  { key: 'bymasse',    label: 'Bebyggelse' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'tog',        label: 'Jernbane' },
@@ -234,10 +234,15 @@ const LAYERS = [
 // v8.2.0: lysloype skjules som default (lite relevant for de fleste
 // turkart-bbox), og stedsnavn vises som default (større områdenavn er
 // nyttig kontekst).
-// v8.9.10: 'bymasse' (ISOM 522 tett bebyggelse) er AV som default — på
+// v8.9.10: 'bymasse' (ISOM 522 Bebyggelse) er AV som default — på
 // turkart er hytter/frittstående bygg interessant, mens dominerende by-
 // pattern bare forstyrrer. Brukeren kan slå det på for bymiljø-kart.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
+// v8.9.25: 'dybdeshade' er AV som default — krever Sjøkart-data og
+// fungerer kun på kyst-kart. På innlandskart (Vardåsen, hytteområder)
+// er det ingen 307-polygoner å skygge så toggle-en gjør ingenting, og
+// default ON skapte forvirring. Brukere som vil ha shading på kyst-kart
+// slår det på selv.
+const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse', 'dybdeshade'])
 const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
@@ -573,7 +578,10 @@ function applyDepthShade() {
     img.setAttribute('id', 'depthshade-layer')
     img.setAttribute('data-layer', 'dybdeshade')
     img.setAttribute('preserveAspectRatio', 'none')
-    img.setAttribute('opacity', '0.55')
+    // v8.9.25: opacity bumpet 0.55→0.7. På toppen av de nye diskrete
+    // dybdebånd-fargene (depthToColor) skal shading-en gi et tydelig
+    // soft-gradient-løft mellom båndene, ikke en knapt synlig film.
+    img.setAttribute('opacity', '0.7')
     img.setAttribute('pointer-events', 'none')
     img.style.mixBlendMode = 'multiply'
   }

@@ -18,22 +18,29 @@
  * gråtone proporsjonal med dybden. Returnerer null hvis SVG-en ikke har
  * noen 307-polygoner med dybde-data.
  *
+ * Canvas-dimensjonene cappes på `maxCanvasPx` (default 800) av to grunner:
+ * (1) base64-PNG-en embeddes i SVG-en — store PNG-er sprenger Chrome
+ * Android-eksport på 300 dpi; (2) effekten skal lese som soft shading,
+ * ikke pikselskarp polygonkant — lavere res gjør antialiasing til en
+ * ressurs istedenfor en bug.
+ *
  * @param {SVGElement} svgRoot   Live SVG-rot (etter render)
  * @param {number} widthM        Kartets bredde i meter (viewBox-bredde)
  * @param {number} heightM       Kartets høyde i meter
  * @param {object} [opts]
- * @param {number} [opts.pxPerM=0.6]      Canvas-oppløsning
- * @param {number} [opts.maxDepthM=60]    Dybde der gråtone når ren svart
- * @param {number} [opts.gamma=0.85]      Gamma-kurve så grunne ikke vasker ut
+ * @param {number} [opts.maxCanvasPx=800] Maks canvas-dimensjon (px)
+ * @param {number} [opts.maxDepthM=40]    Dybde der gråtone når ren svart
+ * @param {number} [opts.gamma=0.55]      Gamma-kurve så grunne også mørkner
  * @returns {string|null}                  data:image/png;base64,...
  */
 export function computeDepthShadeDataUrl(svgRoot, widthM, heightM, opts = {}) {
-  const { pxPerM = 0.6, maxDepthM = 60, gamma = 0.85 } = opts
+  const { maxCanvasPx = 800, maxDepthM = 40, gamma = 0.55 } = opts
   if (!svgRoot || !widthM || !heightM) return null
 
   const paths = svgRoot.querySelectorAll('[data-iso="307"][data-dybde]')
   if (paths.length === 0) return null
 
+  const pxPerM = maxCanvasPx / Math.max(widthM, heightM)
   const cw = Math.max(1, Math.round(widthM * pxPerM))
   const ch = Math.max(1, Math.round(heightM * pxPerM))
   const canvas = document.createElement('canvas')
