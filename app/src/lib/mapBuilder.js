@@ -410,26 +410,37 @@ export function buildSvg(elements, bbox, options = {}) {
 
   // Per-kategori forenkling og filtrering. Tunet for å holde SVG <1.5 MB
   // selv i tett bebygde områder som Vardåsen-bbox.
+  //
+  // v8.10.3 — Perf: skalér tersklene med kart-størrelse. Et 10×10 km kart
+  // har 4× areal av et 5×5 km — uten skalering blir det fire ganger så mange
+  // DOM-noder å rendre på samme skjerm. simplifyM skaleres med √(factor)
+  // (mildere — bevarer hjørne-detalj på små polygoner), mens minAreaM2
+  // skaleres lineært (filtrerer aggressivt på små features som likevel ikke
+  // er synlige i 1:10000 ved fullt utzoomet kart). Referanse-størrelse 5 km;
+  // factor er clampet [0.7, 2.5] så ekstreme bbox ikke kollapser geometri.
+  const sizeFactor = Math.max(0.7, Math.min(2.5, widthM / 5000))
+  const simpScale = Math.sqrt(sizeFactor)
+  const areaScale = sizeFactor
   const POLYGON_FILTER = {
     // v8.9.30: senket bygning-terskelene så hytter (typisk 20–60 m²) ikke
     // forsvinner. 80 m² filtrerte bort hele kategorier av småhytter i
     // marka, og simplifyM 3.0 kollapset korner på små rektangler
     // (4×4 m polygon med DP 3.0 → degenerert). 10 m² + 1.5 m DP bevarer
     // hytter og spikertelt, mens skur < 10 m² fortsatt filtreres bort.
-    bygning: { simplifyM: 1.5, minAreaM2: 10 },
-    skog:    { simplifyM: 4.0, minAreaM2: 300 },
-    eng:     { simplifyM: 4.0, minAreaM2: 300 },
-    aker:    { simplifyM: 4.0, minAreaM2: 300 },
-    myr:     { simplifyM: 2.5, minAreaM2: 150 },
-    vann:    { simplifyM: 2.0, minAreaM2: 50 },
-    aapen:   { simplifyM: 4.0, minAreaM2: 300 },
+    bygning: { simplifyM: 1.5 * simpScale, minAreaM2: 10 * areaScale },
+    skog:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    eng:     { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    aker:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    myr:     { simplifyM: 2.5 * simpScale, minAreaM2: 150 * areaScale },
+    vann:    { simplifyM: 2.0 * simpScale, minAreaM2: 50 * areaScale },
+    aapen:   { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
   }
   const LINE_SIMPLIFY = {
-    'vei-stor':  1.5,
-    'vei-liten': 2.5,
-    sti:         2.5,
-    bekk:        2.0,
-    tog:         2.0,
+    'vei-stor':  1.5 * simpScale,
+    'vei-liten': 2.5 * simpScale,
+    sti:         2.5 * simpScale,
+    bekk:        2.0 * simpScale,
+    tog:         2.0 * simpScale,
   }
 
   // Bucket pr ISOM-kode

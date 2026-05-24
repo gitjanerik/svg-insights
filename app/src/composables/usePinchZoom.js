@@ -31,6 +31,12 @@ export function usePinchZoom(elementRef, options = {}) {
   const translateY = ref(0)
   const rotation = ref(0)  // grader, 0 = ikke rotert
   const animating = ref(false)
+  // isGesturing: true mens brukeren pinch-zoomer, panorerer eller wheel-zoomer.
+  // Brukes av MapView for å midlertidig slå av kostbare CSS-effekter
+  // (vector-effect: non-scaling-stroke) under gesten — strokene re-tessellerer
+  // ikke per frame, og snapper tilbake til riktig bredde når gesten slutter.
+  const isGesturing = ref(false)
+  let wheelEndTimer = null
 
   const MIN_SCALE = 0.5
   const MAX_SCALE = 20
@@ -115,6 +121,7 @@ export function usePinchZoom(elementRef, options = {}) {
     if (e.touches.length === 2) {
       isPinching = true
       isPanning = false
+      isGesturing.value = true
       lastDist = dist(e.touches[0], e.touches[1])
       lastAngle = angle(e.touches[0], e.touches[1])
       const c = center(e.touches[0], e.touches[1])
@@ -148,6 +155,7 @@ export function usePinchZoom(elementRef, options = {}) {
       if (scale.value > 1 || rotation.value !== 0) {
         // Pan fungerer som rent translate (rotasjon og skala uendret)
         isPanning = true
+        isGesturing.value = true
         startX = t.clientX - translateX.value
         startY = t.clientY - translateY.value
       }
@@ -186,6 +194,7 @@ export function usePinchZoom(elementRef, options = {}) {
   function onTouchEnd(e) {
     if (e.touches.length < 2) isPinching = false
     if (e.touches.length < 1) isPanning = false
+    if (!isPinching && !isPanning) isGesturing.value = false
   }
 
   function onWheel(e) {
@@ -193,6 +202,12 @@ export function usePinchZoom(elementRef, options = {}) {
     e.preventDefault()
     const delta = e.deltaY > 0 ? 0.9 : 1.1
     zoomAtPoint(scale.value * delta, e.clientX, e.clientY)
+    // Wheel mangler en explicit "slutt"-event så vi debouncer til 200ms etter
+    // siste tick. Verdt det: under en lang wheel-spin spares tusenvis av
+    // re-tessellate-passes.
+    isGesturing.value = true
+    if (wheelEndTimer) clearTimeout(wheelEndTimer)
+    wheelEndTimer = setTimeout(() => { isGesturing.value = false }, 200)
   }
 
   function onDblClick(e) {
@@ -237,6 +252,7 @@ export function usePinchZoom(elementRef, options = {}) {
     el.removeEventListener('wheel', onWheel)
     el.removeEventListener('dblclick', onDblClick)
     if (animTimer) clearTimeout(animTimer)
+    if (wheelEndTimer) clearTimeout(wheelEndTimer)
   })
 
   function zoomBy(factor) {
@@ -281,5 +297,5 @@ export function usePinchZoom(elementRef, options = {}) {
     translateY.value = h / 2 - s * py
   }
 
-  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating }
+  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating, isGesturing }
 }

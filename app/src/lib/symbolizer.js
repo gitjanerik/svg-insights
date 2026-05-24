@@ -384,6 +384,18 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
   rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)
   rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
+  // v8.10.3 — Perf: under aktiv pinch/wheel-gest slår vi av non-scaling-stroke
+  // så browseren slipper å re-tessellere stroke-geometri i device-piksler per
+  // frame. Strokene skalerer med viewBox-transformen mens gesten varer
+  // (visuelt OK i 200 ms) og snapper tilbake til riktig bredde via klassen
+  // som fjernes etter gesten. Stor frame-rate-gevinst på store kart.
+  rules.push(`${root}.is-zooming [data-layer] path { vector-effect: none; }`)
+  // v8.10.3 — Perf: CSS containment isolerer layer-grupper så browseren kan
+  // skippe repaint av lag som ikke har endret seg (toggle av/på, hill-shade
+  // re-render osv). `paint` containment betyr at lag-en ikke "smitter" visuelt
+  // utenfor sin egen bounding box — trygt siden lagene allerede er klippet
+  // til kartets viewBox.
+  rules.push(`${root} [data-layer] { contain: paint; }`)
   // Art-mode opacity for fyll-områder (skog/vann/aker/bygning osv).
   // Stroke-only features beholder full skarphet (fill-opacity påvirker ikke strokes).
   // CSS-var settes av MapView ved tema-bytte; default = 1 (vanlig modus).

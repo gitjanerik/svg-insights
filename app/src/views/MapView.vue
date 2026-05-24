@@ -410,7 +410,19 @@ function applyLayerVisibility() {
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
 const pinchEnabled = computed(() => !curveball.active.value)
-const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
+const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating, isGesturing } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
+
+// v8.10.3: Toggle `.is-zooming` på SVG-host under aktiv gest så CSS-regelen
+// for `vector-effect: non-scaling-stroke` overstyres til `none` — strokene
+// re-tessellerer ikke i device-piksler per frame, og kartet får ~3-5×
+// frame-rate-gevinst på store kart. Strokene "skalerer med" mens du zoomer
+// (visuelt OK i 200 ms), og snapper tilbake til riktig bredde når gesten er over.
+watch(isGesturing, (g) => {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  if (g) svg.classList.add('is-zooming')
+  else svg.classList.remove('is-zooming')
+})
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
