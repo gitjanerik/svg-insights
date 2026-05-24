@@ -19,6 +19,7 @@ import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
+import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import polygonClipping from 'polygon-clipping'
 
@@ -267,8 +268,13 @@ function unionByName(elements, project) {
 
 // Layer-rekkefølge (z-order, bunn til topp). Inspirert av ISOM 2017.
 //
-// Merk: ISOM 522 (tett bebyggelse) er fjernet i v8.9.27 — alle bygninger
-// rendres nå som individuelle ISOM 521.
+// Merk: ISOM 522 (tett bebyggelse) er ikke listet her — den rendres
+// separat fra urbanMassMultiPoly mellom GROUND_CODES og WATER_CODES
+// slik at vann og høydekurver legger seg over bymassen og forblir
+// lesbare i tett bebygde områder (f.eks. Oslo sentrum). v8.9.28: 522
+// toggles sammen med 521 under «Bygninger»-bryteren (categoryFor →
+// 'bygning'), men beholdes som eget render-pass for å holde SVG-
+// størrelsen i sjakk i tettbygde områder.
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
@@ -293,9 +299,10 @@ const LAYER_ORDER = [
   ...PLACEHOLDER_CODES,
   ...ROAD_CODES,
   ...UPPER_CODES,
+  '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -510,11 +517,42 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // v8.9.27: "Bebyggelse" (ISOM 522 pattern-fyll) er fjernet — proximity-
-  // basert klyngegruppering av bygninger fungerte aldri robust (spredte
-  // hytter ble slukt, tette villastrøk slapp gjennom inkonsistent). Alle
-  // bygninger renders nå som individuelle ISOM 521-polygoner og slås
-  // av/på via det samme «Bygninger»-laget i drawer.
+  // ── ISOM 522: tette bebyggelse-klynger ───────────────────────────────
+  // Slå sammen tett bebygde områder til urbanmasse-multipolygoner med
+  // pattern-fyll. Kritisk for å holde SVG-størrelsen i sjakk i tette
+  // strøk — uten dette får nettleseren tusenvis av enkelt-bygnings-
+  // polygoner som gjør pinch/zoom og pan tregt.
+  //
+  // v8.9.28: Toggler sammen med 521 under «Bygninger» (categoryFor →
+  // 'bygning'). Tidligere v8.9.27 forsøk på å fjerne urbanMass helt
+  // ga uakseptabel ytelse i bymiljø-kart.
+  let urbanMassMultiPoly = []
+  if (buckets['521'].length >= 5) {
+    const buildingsXY = buckets['521']
+      .filter(el => el.geometry && el.geometry.length >= 3)
+      .map(el => ({
+        ring: el.geometry.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        }),
+        original: el,
+      }))
+    // v8.9.29: tilbake til 15 m naboradius (original v6.3.0-verdi).
+    // 50/100 m var for slappe — eneboligfelt med store tomter ble
+    // aldri klyngetegnet, og SVG-en blåste opp i tettbygde områder.
+    // Min klyngestørrelse holdes på 5 så enslige tun ikke slukes.
+    const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
+      neighborRadiusM: 15,
+      minClusterSize: 5,
+      bufferM: 6,
+    })
+    if (urbanMass.length > 0) {
+      urbanMassMultiPoly = urbanMass
+      buckets['521'] = scattered.map(b => b.original)
+      counts['521'] = buckets['521'].length
+      counts['522'] = urbanMass.length
+    }
+  }
 
   // ── DEM-deriverte features (konturer, knauser, stupkanter, sjø) ──────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
@@ -1233,8 +1271,20 @@ export function buildSvg(elements, bbox, options = {}) {
       ).join('\n')}\n  </g>\n`
     : ''
 
-  // v8.9.27: ISOM 522 (tett bebyggelse) er fjernet — se buckets-init over.
-  const urbanMassLayerSvg = ''
+  // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
+  // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
+  // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
+  // forblir lesbare over bymassen i tett bebygde områder.
+  //
+  // v8.9.28: data-layer="bygning" (samme som ISOM 521) så «Bygninger»-
+  // toggle slår begge av/på samtidig — visuelt sett er det fortsatt to
+  // ulike strålingsstiler, men brukeren forholder seg til ett lag.
+  const urbanMassPath = urbanMassMultiPoly.length
+    ? multiPolyToPath(urbanMassMultiPoly, fmt)
+    : ''
+  const urbanMassLayerSvg = urbanMassPath
+    ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
+    : ''
 
   const bgFill = isomCatalog.background.color
 
@@ -1260,7 +1310,7 @@ function categoryFor(code) {
     case '308': case '309':                     return 'myr'
     case '301': case '302': case '303': case '307': return 'vann'
     case '304': case '305':                     return 'bekk'
-    case '521':                                  return 'bygning'
+    case '521': case '522':                     return 'bygning'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
