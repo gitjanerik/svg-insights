@@ -537,12 +537,12 @@ export function buildSvg(elements, bbox, options = {}) {
         }),
         original: el,
       }))
-    // v8.9.25: minst 5 bygninger med maks 100 m mellom naboer. Strengere
-    // terskel slipper bare gjennom ekte villastrøk og tettsteds-sentra,
-    // mens hytter i marka og enslige gårder beholder sine ekte OSM-
-    // vektorpolygoner i Bygninger-laget (ISOM 521).
+    // v8.9.29: tilbake til 15 m naboradius (original v6.3.0-verdi).
+    // 50/100 m var for slappe — eneboligfelt med store tomter ble
+    // aldri klyngetegnet, og SVG-en blåste opp i tettbygde områder.
+    // Min klyngestørrelse holdes på 5 så enslige tun ikke slukes.
     const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
-      neighborRadiusM: 100,
+      neighborRadiusM: 15,
       minClusterSize: 5,
       bufferM: 6,
     })
