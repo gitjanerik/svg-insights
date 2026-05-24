@@ -58,6 +58,9 @@ export function buildOverpassQuery(bbox) {
   node["building"~"^(church|chapel)$"];
   way["amenity"="place_of_worship"];
   way["building"~"^(church|chapel)$"];
+  node["amenity"="parking"];
+  way["amenity"="parking"];
+  node["barrier"~"^(gate|lift_gate|swing_gate|bollard|block|cycle_barrier|cattle_grid)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -438,8 +441,11 @@ export function buildSvg(elements, bbox, options = {}) {
   const gruver = []        // ISOM 216 (mine / sjakt)
   const trigpunkter = []   // ISOM 113 (trigonometric point)
   const kirker = []        // ISOM 532-derivert (kirker / chapels)
+  const parkeringer = []   // ISOM 534-derivert (amenity=parking)
+  const broer = []         // ISOM 509-derivert (bridge=yes på highway/path)
+  const bommer = []        // ISOM 526-derivert (barrier=gate/lift_gate/...)
 
-  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0 }
+  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0, parkering: 0, bro: 0, bom: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
@@ -454,6 +460,30 @@ export function buildSvg(elements, bbox, options = {}) {
         counts.kirke++
       }
     }
+    // Way-parkering: polygon med amenity=parking → ett P-symbol på centroid.
+    // classifyToIsom returnerer '534' både for nodes og ways, men ways skal
+    // ikke fortsette inn i buckets — vi rendrer dem som point her.
+    if (el.type === 'way' && el.geometry && el.geometry.length >= 3 && el.tags?.amenity === 'parking') {
+      parkeringer.push(el)
+      counts.parkering++
+    }
+    // Bro-deteksjon: way med bridge=yes (eller annen truthy bridge-verdi)
+    // langs en høyveg-, sti-, fot-, eller togtrasé. Vi plasserer ett bru-
+    // symbol på midten av way-en og roterer det langs sti-tangenten. OSM-
+    // verdien `no` regnes som ikke-bro; alt annet (yes, viaduct, aqueduct,
+    // boardwalk, movable osv.) regnes som bro.
+    if (el.type === 'way' && el.geometry && el.geometry.length >= 2) {
+      const b = el.tags?.bridge
+      if (b && b !== 'no') {
+        // Bare når way-en faktisk er en sti eller veg som vi rendrer.
+        const t = el.tags
+        const isRoute = !!(t.highway || t.railway || t.aerialway || t['piste:type'] || (t.leisure === 'track' && t.sport === 'skiing'))
+        if (isRoute) {
+          broer.push(el)
+          counts.bro++
+        }
+      }
+    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
@@ -463,6 +493,11 @@ export function buildSvg(elements, bbox, options = {}) {
       else if (cls.code === '216') { gruver.push(el); counts.gruve++ }
       else if (cls.code === '113') { trigpunkter.push(el); counts.trig++ }
       else if (cls.code === '532') { kirker.push(el); counts.kirke++ }
+      else if (cls.code === '534') {
+        // Node-parkering (way-varianten ble allerede plukket over).
+        if (el.type === 'node') { parkeringer.push(el); counts.parkering++ }
+      }
+      else if (cls.code === '526') { bommer.push(el); counts.bom++ }
       continue
     }
     if (buckets[cls.code]) {
@@ -1034,10 +1069,11 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${sid}" x="${fmt(p.x - 0.8)}mm" y="${fmt(p.y - 0.8)}mm" width="1.6mm" height="1.6mm"/>`
   }).filter(Boolean).join('\n')
 
-  // Kirke (ISOM 532-derivert): korsmarkør 2.4mm. Node-kirker plasseres
-  // direkte på OSM-noden; way-kirker (building=church polygon) plasseres
-  // på centroid og rendres OVER bygnings-laget så korset er synlig.
-  const kirkeSize = 2.4
+  // Kirke (ISOM 532-derivert): hytte-stil rektangulær ramme med kors 2.6mm.
+  // Node-kirker plasseres direkte på OSM-noden; way-kirker (building=church
+  // polygon) plasseres på centroid og rendres OVER bygnings-laget så
+  // symbolet er synlig over den brune bygnings-fyllen.
+  const kirkeSize = 2.6
   const kirkeSvg = kirker.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
@@ -1047,6 +1083,76 @@ export function buildSvg(elements, bbox, options = {}) {
     if (!sid) return ''
     const half = kirkeSize / 2
     return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/>`
+  }).filter(Boolean).join('\n')
+
+  // Utfartsparkering (ISOM 534-derivert): blå P-symbol 2.4mm. Node-
+  // parkering på OSM-noden, way-parkering på polygon-centroid.
+  const parkeringSize = 2.4
+  const parkeringSvg = parkeringer.map(el => {
+    let p = null
+    if (el.type === 'node') p = project(el.lat, el.lon)
+    else if (el.type === 'way' && el.geometry) p = polygonCentroid(el.geometry)
+    if (!p) return ''
+    const sid = symbolIds.get('parkering')
+    if (!sid) return ''
+    const half = parkeringSize / 2
+    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${parkeringSize}mm" height="${parkeringSize}mm"/>`
+  }).filter(Boolean).join('\n')
+
+  // Bom / barriere (ISOM 526-derivert): sort horisontal bar 1.6mm. OSM-
+  // node-posisjon direkte. Ingen rotasjon — vi har ikke pålitelig vei-
+  // tangent ved barriere-noden uten å indeksere alle ways først.
+  const bomSize = 1.6
+  const bomSvg = bommer.map(el => {
+    if (el.type !== 'node') return ''
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('bom')
+    if (!sid) return ''
+    const half = bomSize / 2
+    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${bomSize}mm" height="${bomSize}mm"/>`
+  }).filter(Boolean).join('\n')
+
+  // Bro / bru (ISOM 509-derivert): to korte parallelle ticks på midten av
+  // bridge=yes-way-en, rotert langs sti-tangenten så de ligger langs sti-
+  // retningen. Wrapped i <g transform="translate(...) rotate(...)"> siden
+  // SVG <use> ikke selv kan både posisjoneres OG roteres mot et lokalt
+  // senter via attributter alene. translate uses user units (meters) som
+  // matcher project()-output, mens use-offsets fortsatt er i mm.
+  const broSize = 1.8
+  const broSvg = broer.map(el => {
+    if (!el.geometry || el.geometry.length < 2) return ''
+    const pts = el.geometry.map(g => project(g.lat, g.lon))
+    let totalLen = 0
+    const segLens = []
+    for (let i = 1; i < pts.length; i++) {
+      const dx = pts[i].x - pts[i - 1].x
+      const dy = pts[i].y - pts[i - 1].y
+      const len = Math.hypot(dx, dy)
+      segLens.push(len)
+      totalLen += len
+    }
+    if (totalLen < 1) return ''
+    const target = totalLen / 2
+    let acc = 0
+    let midX = null, midY = null, midDeg = 0
+    for (let i = 1; i < pts.length; i++) {
+      const segLen = segLens[i - 1]
+      if (acc + segLen >= target) {
+        const t = segLen > 1e-6 ? (target - acc) / segLen : 0
+        const dx = pts[i].x - pts[i - 1].x
+        const dy = pts[i].y - pts[i - 1].y
+        midX = pts[i - 1].x + dx * t
+        midY = pts[i - 1].y + dy * t
+        midDeg = Math.atan2(dy, dx) * 180 / Math.PI
+        break
+      }
+      acc += segLen
+    }
+    if (midX == null) return ''
+    const sid = symbolIds.get('bru')
+    if (!sid) return ''
+    const half = broSize / 2
+    return `    <g transform="translate(${fmt(midX)},${fmt(midY)}) rotate(${fmt(midDeg)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${broSize}mm" height="${broSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
@@ -1238,6 +1344,12 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="trig" data-iso="113">\n${trigSvg}\n  </g>\n` : ''
   const kirkeLayerSvg = kirkeSvg
     ? `  <g data-layer="kirke" data-iso="532">\n${kirkeSvg}\n  </g>\n` : ''
+  const parkeringLayerSvg = parkeringSvg
+    ? `  <g data-layer="parkering" data-iso="534">\n${parkeringSvg}\n  </g>\n` : ''
+  const broLayerSvg = broSvg
+    ? `  <g data-layer="bro" data-iso="509">\n${broSvg}\n  </g>\n` : ''
+  const bomLayerSvg = bomSvg
+    ? `  <g data-layer="bom" data-iso="526">\n${bomSvg}\n  </g>\n` : ''
 
   // ── Stedsnavn for elver og bekker (304/305) ─────────────────────────
   // Gjenta navnet ~hver 2 km langs polylinjen så det er synlig uansett
@@ -1315,7 +1427,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1345,6 +1457,9 @@ function categoryFor(code) {
     case '215': case '216':                          return 'stein'
     case '525': case '528':                     return 'linje'
     case '113':                                  return 'trig'
+    case '509':                                  return 'bro'
+    case '526':                                  return 'bom'
+    case '534':                                  return 'parkering'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
   }
