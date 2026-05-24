@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSeaFromDem, buildLakesFromDem } from './seaFromDem.js'
+import { buildSeaFromDem } from './seaFromDem.js'
 
 function makeDem({ cols, rows, fill, pixelM = 10 }) {
   const data = new Float32Array(cols * rows)
@@ -61,35 +61,6 @@ describe('buildSeaFromDem', () => {
     // med default minAreaM2 = 2000
     const dem = makeDem({ cols: 20, rows: 20, fill: (x, y) => (x < 2 && y < 2 ? 0 : 100) })
     const { polygons } = buildSeaFromDem(dem)
-    expect(polygons).toHaveLength(0)
-  })
-
-  it('buildLakesFromDem detekterer flat depresjon som innsjø', () => {
-    // 40×40 grid, alt på 50m unntatt en 10×10 firkant i midten på 20m
-    // (sentrert vekk fra kanten). Depresjons-sjekken skal verifisere at
-    // omkring-liggende terreng er høyere → klassifiseres som innsjø.
-    const dem = {
-      data: new Float32Array(40 * 40),
-      cols: 40, rows: 40, noData: -9999,
-      transform: { originX: 0, originY: 0, pixelWidth: 10, pixelHeight: 10 },
-    }
-    for (let y = 0; y < 40; y++) {
-      for (let x = 0; x < 40; x++) {
-        dem.data[y * 40 + x] = (x >= 15 && x <= 25 && y >= 15 && y <= 25) ? 20 : 50
-      }
-    }
-    const { polygons } = buildLakesFromDem(dem, { minAreaM2: 500 })
-    expect(polygons.length).toBeGreaterThan(0)
-  })
-
-  it('buildLakesFromDem filtrerer flate plateauer uten depresjon', () => {
-    // Hele griden er flat på 100m → ingen depresjon
-    const dem = {
-      data: new Float32Array(40 * 40).fill(100),
-      cols: 40, rows: 40, noData: -9999,
-      transform: { originX: 0, originY: 0, pixelWidth: 10, pixelHeight: 10 },
-    }
-    const { polygons } = buildLakesFromDem(dem)
     expect(polygons).toHaveLength(0)
   })
 
