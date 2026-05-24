@@ -20,8 +20,6 @@ const SECTIONS = [
   { title: 'Stupkanter & blokker', codes: ['201', '203', '210', '213', '215', '216'], category: 'rock' },
   { title: 'Innlandsvann', codes: ['301', '302', '303', '304', '305', '308', '309'], category: 'water',
     note: 'Innsjø, tjern, bekk, myr. 303 saltvann der OSM tagger fjord.' },
-  { title: 'Sjøkart 🌊 — for padling/båt', codes: ['307', '306', '211', '214', '533', '540', '541', '542', '543', '545', '550', '551', '552'], categoryMap: { '307': 'water', '306': 'water', '211': 'rock', '214': 'rock', '533': 'manmade', '540': 'manmade', '541': 'manmade', '542': 'manmade', '543': 'manmade', '545': 'manmade', '550': 'manmade', '551': 'manmade', '552': 'manmade' },
-    note: 'Dybdeareal får per-polygon-shading basert på dybde (lys = grunt, mørk = dypt). 211 = punkt-skjær, 214 = areal-skjær (lys blå outline). 533 = lanterne (Sjøkart eller OSM man_made=lighthouse). 545 = hovedled (mørk-blå stiplet linje, fra OSM seamark:type=fairway). 550 (slipp) = kajakk-launch, 551 = kai/brygge/pir/molo, 552 = fareområde.' },
   { title: 'Vegetasjon & terreng', codes: ['401', '403', '404', '405', '406', '407', '408', '409'], category: 'terrain' },
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507', '508'], category: 'manmade' },
   { title: 'Jernbane', codes: ['515'], category: 'manmade' },
@@ -33,8 +31,6 @@ function defForCode(category, code) {
   return isomCatalog.categories?.[category]?.[code]
 }
 
-// v7.1.5: Sjøkart-seksjonen mikser koder fra ulike kategorier (water,
-// rock, manmade) — vi har en categoryMap pr seksjon for slike tilfeller.
 function catFor(section, code) {
   if (section.categoryMap) return section.categoryMap[code] ?? section.category
   return section.category

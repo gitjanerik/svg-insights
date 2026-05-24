@@ -4,7 +4,6 @@ import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
-import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { findHighestPoint, packDem } from '../lib/demSampling.js'
@@ -168,25 +167,10 @@ const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, h
 
 const sizeKm = computed(() => (halfKm.value * 2).toFixed(1))
 
-// v7.1.0: 'idle' | 'fetching' | 'awaiting-map-type' | 'building' | 'saving' | 'error'
+// 'idle' | 'fetching' | 'building' | 'saving' | 'error'
 const buildState = ref('idle')
 const buildError = ref(null)
 const buildProgress = ref('')
-
-// v7.1.0: karttype-valg. Brukeren velger eksplisitt for kyst-områder
-// (LAND-kart for hike, SJØ-kart for padling). Lagret preferanse i
-// localStorage så vi ikke spør hver gang.
-const MAP_TYPE_KEY = 'svg-insights:mapType'
-const savedMapTypePref = (() => {
-  try { return localStorage.getItem(MAP_TYPE_KEY) } catch { return null }
-})()
-const mapTypePreference = ref(savedMapTypePref)  // 'land' | 'sea' | null
-
-// Når kart-type-dialogen vises: pendingFetchedData holder all data fra
-// fetch+filter-passet, og generateMap fortsetter når brukeren velger.
-const pendingFetchedData = ref(null)
-const rememberMapType = ref(true)   // checkbox i dialog (default: husk)
-const detectedCoastline = ref(false)
 
 async function generateMap() {
   buildState.value = 'fetching'
@@ -194,32 +178,16 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    // 1. Hent OSM (rik data) + N50-vann + Sjøkart (kyst/dybdedata).
-    //    Tre parallelle kilder. Vann-prioritet i fallende rekkefølge:
-    //      a) N50 Havflate / Innsjø / ElvBekk (autoritativt for innland)
-    //      b) Sjøkart Dybdeareal (autoritativt for kyst — fyller hull
-    //         der N50 Havflate mangler i åpne hav-områder)
-    //      c) OSM `natural=water` som siste fallback
-    //    Sjøkart gir dessuten dybdekonturer, skjær/grunner og lanterner
-    //    som vi rendrer med dedikerte ISOM-koder.
-    const [osmData, n50Water, sjokart] = await Promise.all([
+    const [osmData, n50Water] = await Promise.all([
       fetchOverpass(bbox.value),
       fetchN50Water(bbox.value).catch(e => {
         console.warn('N50-vann ikke tilgjengelig:', e.message)
         return []
       }),
-      fetchSjokart(bbox.value).catch(e => {
-        console.warn('Sjøkart ikke tilgjengelig:', e.message)
-        return null
-      }),
     ])
-    const sjokartEls = sjokart ? sjokartToElements(sjokart) : []
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
-    // (innsjø/tjern/elv) og saltvann (sjø/fjord). Tidligere filter (v6.10.0)
-    // skrudde av ALL OSM natural=water så snart N50 hadde noen ting — også
-    // hvis N50 bare hadde innsjøer i et bbox med fjord. Da forsvant
-    // Oslofjord-relationen og kart endte kremgul i Oslo. Nå filtreres OSM
-    // pr type bare hvis tilsvarende autoritativ kilde finnes.
+    // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
+    // bare hvis tilsvarende N50-kilde finnes.
     const n50HasFreshwater = n50Water.some(el =>
       (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
       el.tags?.waterway === 'stream'
@@ -227,60 +195,14 @@ async function generateMap() {
     const n50HasSea = n50Water.some(el =>
       el.tags?.water === 'sea' || el.tags?.salt === 'yes'
     )
-    const sjokartHasSea = sjokartEls.some(el =>
-      el.type === 'way' && el.tags?.sjokart === 'dybdeareal'
-    )
-    const haveAuthoritativeSea = n50HasSea || sjokartHasSea
 
-    // Detekter om vi må falle tilbake til coastline-rekonstruksjon. Må
-    // beregnes FØR filteret slik at vi kan ekskludere OSM-saltvann-
-    // polygoner i coastline-mode (de er da redundant og kan bløde blå
-    // over mainland-masken hvis de mangler riktige inner-holes).
-    const hasCoastline = osmData.elements.some(el =>
-      el.type === 'way' && el.tags?.natural === 'coastline'
-    )
-    // v6.21.0: coastline-mode er nå standard for ALLE kyst-bboxer, ikke
-    // siste-fallback. Gating-en `hasCoastline && !haveAuthoritativeSea`
-    // var for streng — én eneste Sjøkart-dybdeareal-polygon (eller én
-    // N50 Havflate-flekk) ga `haveAuthoritativeSea=true` og slo av
-    // coastline-rekonstruksjon, selv om Sjøkart/N50 ofte har hull i
-    // sjø-dekningen og ikke faktisk dekker hele sjø-arealet. Resultat:
-    // sjø rendret med kremgul bakgrunn-rect i stedet for blå (Oslofjord,
-    // Asker-skjærgård, Drammen-Konnerud m.fl.). Sjøkart/N50 er nå
-    // *additive* — de maler dybde-tonet blå over allerede-blå bg, gir
-    // dybdekonturer og lanterner og innsjø-elev-labels uten å påvirke
-    // basis-sjøen som coastline-rekonstruksjon håndterer.
-    const useCoastlineFallback = hasCoastline
-
-    // v6.12.1: «Confirmed inland»-deteksjon. Hvis N50 har ferskvann
-    // (innsjø/elv), N50 har INGEN sjø (Havflate), OG ingen OSM coastline,
-    // så er vi trygt inne i innland. OSM-relations som er tagget
-    // place=sea/natural=bay/etc kan strekke seg langt opp i elveos-
-    // områder (Drammensfjorden-relationen dekker Drammenselva forbi
-    // Drammen Sentrum og inn i Gulskogen) → de blør sjøblå over ren
-    // land. Tilsvarende kan Sjøkart Dybdeareal returnere bbox-overlapp
-    // fra fjord-hodet selv om actual bbox er inland.
-    //
-    // Merk: vi bruker n50HasSea (ikke haveAuthoritativeSea) som
-    // sjø-signal, fordi Sjøkart selv kan være kilden til lekkasjen.
-    // N50 Havflate er den eneste 100% autoritative sjø-detektoren.
-    const isConfirmedInland = n50HasFreshwater && !n50HasSea && !hasCoastline
-
-    let removedSaltwater = 0
-    let removedInlandSjokart = 0
     const elements = osmData.elements.filter(el => {
       const t = el.tags ?? {}
       const isWaterPolygon = t.natural === 'water' || !!t.water ||
                              t.natural === 'bay' || t.natural === 'strait' ||
                              t.place === 'sea' || t.place === 'ocean'
       if (isWaterPolygon) {
-        if (isOsmWaterSalty(t)) {
-          // Drop OSM-saltvann i coastline-mode ELLER når bbox er
-          // bekreftet inland — i begge tilfeller er saltvann-tagget
-          // OSM-data feil eller redundant her.
-          if (useCoastlineFallback || isConfirmedInland) { removedSaltwater++; return false }
-          return !haveAuthoritativeSea
-        }
+        if (isOsmWaterSalty(t)) return !n50HasSea
         return !n50HasFreshwater
       }
       if (t.waterway === 'stream' || t.waterway === 'ditch') {
@@ -290,90 +212,12 @@ async function generateMap() {
     })
     if (n50Water.length > 0) elements.push(...n50Water)
 
-    // Filtrer Sjøkart-polygoner i confirmed-inland-bbox. Sjøkart-WFS kan
-    // returnere bbox-clipped fjord-data som strekker seg inn i innland
-    // (særlig ved fjord-hoder som Drammen). Lanterner/skjær er sjø-only
-    // features og dropper også. Beholder dybdepunkt-tekst som er
-    // tilnærmet harmløst hvis det skulle dukke opp.
-    let sjokartFiltered = sjokartEls
-    if (isConfirmedInland && sjokartEls.length > 0) {
-      const before = sjokartEls.length
-      sjokartFiltered = sjokartEls.filter(el => !el.tags?.sjokart)
-      removedInlandSjokart = before - sjokartFiltered.length
-    }
-    if (sjokartFiltered.length > 0) elements.push(...sjokartFiltered)
-
-    const filteredOsmCount = osmData.elements.length - (elements.length - n50Water.length - sjokartFiltered.length)
-    console.log(`[Vann] N50 ferskvann=${n50HasFreshwater} sjø=${n50HasSea} | Sjøkart sjø=${sjokartHasSea} | OSM coastline=${hasCoastline} | coastline-fallback=${useCoastlineFallback} | confirmed-inland=${isConfirmedInland} | filtrerte ${filteredOsmCount} OSM-vann-elementer (${removedSaltwater} saltvann i coastline/inland-mode), ${removedInlandSjokart} Sjøkart-features inland`)
-
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
-    if (sjokart && sjokart.source) {
-      const sjk = (sjokart.dybdeareal?.length ?? 0)
-      const dyb = (sjokart.dybdekontur?.length ?? 0)
-      const grn = (sjokart.grunne?.length ?? 0)
-      const lnt = (sjokart.lanterne?.length ?? 0)
-      sourceParts.push(`Sjøkart (${sjk} sjø, ${dyb} dybdekurver, ${grn} grunner, ${lnt} lanterner)`)
-    }
-    if (!haveAuthoritativeSea) sourceParts.push('OSM natural=water beholdt for sjø')
-    if (useCoastlineFallback) sourceParts.push('coastline-rekonstruksjon aktiv')
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
     buildState.value = 'building'
 
-    // v7.1.0: deteksjon av "kyst-situasjon". Hvis bbox-en har coastline-
-    // ways ELLER autoritativ sjø-data, gir det mening å spørre brukeren
-    // om karttype-fokus (land-tur eller padle/båt). Innlandsbboxer går
-    // automatisk videre med 'land'.
-    const isCoastal = hasCoastline || haveAuthoritativeSea
-    detectedCoastline.value = isCoastal
-
-    // Lagre alle data vi trenger for siste pass (etter eventuelt
-    // karttype-valg). Vi starter ikke DEM-fetch før vi vet vi skal
-    // generere — sparer båndbredde hvis brukeren vil avbryte.
-    pendingFetchedData.value = {
-      elements, source, isCoastal, useCoastlineFallback,
-      // v7.1.5: feilmeldinger fra Sjøkart-WFS-fetcher gis videre til
-      // mapBuilder så de kan eksponeres i meta og MapView UI.
-      sjokartFetchErrors: sjokart?.fetchErrors ?? [],
-      // v7.1.10: response-samples for å diagnose hva serveren faktisk
-      // sender når vi får 0 features.
-      sjokartDebugSamples: sjokart?.debugSamples ?? [],
-    }
-
-    // Hvis kyst-situasjon OG ingen lagret preferanse: vis dialog og vent.
-    // Ellers: bruk preferanse (eller default 'land' for innland).
-    let chosenType = mapTypePreference.value
-    if (isCoastal && !chosenType) {
-      buildState.value = 'awaiting-map-type'
-      return  // venter på chooseMapType()
-    }
-    if (!chosenType) chosenType = 'land'
-    await proceedWithMapType(chosenType)
-  } catch (e) {
-    buildState.value = 'error'
-    buildError.value = e.message ?? 'Bygging feilet'
-  }
-}
-
-// Kalles når brukeren velger karttype i dialogen, ELLER automatisk
-// fra generateMap når vi har lagret preferanse / ikke-kyst-bbox.
-async function chooseMapType(mapType) {
-  if (rememberMapType.value) {
-    try { localStorage.setItem(MAP_TYPE_KEY, mapType) } catch (e) { /* QuotaExceeded osv */ }
-    mapTypePreference.value = mapType
-  }
-  await proceedWithMapType(mapType)
-}
-
-async function proceedWithMapType(mapType) {
-  if (!pendingFetchedData.value) return
-  const { elements, source, useCoastlineFallback, sjokartFetchErrors, sjokartDebugSamples } = pendingFetchedData.value
-  pendingFetchedData.value = null
-  buildState.value = 'building'
-  buildProgress.value = `Bygger ${mapType === 'sea' ? 'sjø' : 'land'}-kart …`
-
-  try {
     const sw = wgs84ToUtm32(bbox.value.south, bbox.value.west)
     const ne = wgs84ToUtm32(bbox.value.north, bbox.value.east)
     const utmBbox = {
@@ -384,13 +228,9 @@ async function proceedWithMapType(mapType) {
     await new Promise(r => setTimeout(r, 30))
     const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 10, useReal: true })
 
-    const { svg, counts, meta } = buildSvg(elements, bbox.value, {
+    const { svg, counts } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
       skipContoursIfSynthetic: true,
-      useCoastlineFallback,
-      mapType,
-      sjokartFetchErrors,
-      sjokartDebugSamples,
     })
 
     buildProgress.value = `Lagrer kart …`
@@ -399,9 +239,6 @@ async function proceedWithMapType(mapType) {
     const id = generateMapId()
     const navn = customName.value.trim() || center.value.name || 'Uten navn'
 
-    // v7.2.0: Persistere DEM med kartet (for CurveBall-fysikk og fremtidige
-    // DEM-baserte features). Hopper over for syntetisk DEM siden den ikke
-    // representerer ekte terreng.
     const isRealDem = dem && !dem.source?.startsWith('synthetic')
     const packedDem = isRealDem ? packDem(dem) : null
     const highestPoint = isRealDem ? findHighestPoint(dem) : null
@@ -412,20 +249,15 @@ async function proceedWithMapType(mapType) {
       bbox: bbox.value,
       center: { ...center.value },
       halfKm: halfKm.value,
-      mapType,            // v7.1.0: lagre brukerens valg
       counts,
       svg,
       source,
       annotations: [],
-      dem: packedDem,         // v7.2.0: ArrayBuffer + meta, eller null
-      highestPoint,           // v7.2.0: {svgX, svgY, elevation} eller null
+      dem: packedDem,
+      highestPoint,
       opprettet: Date.now(),
     }
     await saveMap(entry)
-    // v7.4.1: hvis kartet er bygget fra en delingslenke → marker for auto-
-    // start av spillet i ny MapView. Brukeren skal rett inn i spillet, ikke
-    // måtte tappe Curves-tema og deretter CurveBall-knappen.
-    // v8.0.0: ny key, fjern legacy så vi ikke ender med to verdier.
     if (challenge.value) {
       try {
         sessionStorage.setItem('curveball-autostart-mapId', id)
@@ -437,17 +269,6 @@ async function proceedWithMapType(mapType) {
     buildState.value = 'error'
     buildError.value = e.message ?? 'Bygging feilet'
   }
-}
-
-function cancelMapTypeChoice() {
-  pendingFetchedData.value = null
-  buildState.value = 'idle'
-  buildProgress.value = ''
-}
-
-function clearMapTypePreference() {
-  try { localStorage.removeItem(MAP_TYPE_KEY) } catch { /* ignore */ }
-  mapTypePreference.value = null
 }
 
 // ── Preview med ekte Kartverket-tiler som bakgrunn ─────────────────────────
@@ -860,68 +681,8 @@ onMounted(() => {
                   text-slate-100 text-[11px]">
         {{ buildError }}
       </div>
-      <div class="mt-3 text-[10px] text-white/40 text-center flex items-center justify-center gap-2">
-        <span>Henter data fra OpenStreetMap (ODbL) via Overpass API.</span>
-        <template v-if="mapTypePreference">
-          <span class="text-white/60">·</span>
-          <span class="text-white/60">Lagret: {{ mapTypePreference === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}</span>
-          <button @click="clearMapTypePreference" class="text-sky-400/70 underline">Nullstill</button>
-        </template>
-      </div>
-    </div>
-
-    <!-- v7.1.0 Karttype-dialog (kyst-bbox uten lagret preferanse) -->
-    <div v-if="buildState === 'awaiting-map-type'"
-         class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
-         @click.self="cancelMapTypeChoice">
-      <div class="w-full max-w-md bg-zinc-900 border border-white/10 rounded-2xl p-5 space-y-4">
-        <div>
-          <h3 class="text-base font-semibold text-white">Velg karttype</h3>
-          <p class="text-xs text-white/55 mt-1">
-            Området har kystlinje. Land-kart er optimalisert for hike-tur, sjø-kart for padling/båt.
-            Du kan ikke ha begge i samme kart — velg fokus.
-          </p>
-        </div>
-
-        <div class="space-y-2">
-          <button @click="chooseMapType('land')"
-                  class="w-full text-left p-3 rounded-xl bg-amber-50/10 border border-amber-200/20
-                         hover:bg-amber-50/15 active:scale-[0.99] transition">
-            <div class="flex items-center gap-3">
-              <span class="text-2xl">🥾</span>
-              <div class="flex-1">
-                <div class="text-sm font-semibold text-white">Land-kart (turkart)</div>
-                <div class="text-[11px] text-white/55 mt-0.5">
-                  Stier, vegetasjon, høydekurver, bygninger. Fokus på land-tur.
-                </div>
-              </div>
-            </div>
-          </button>
-
-          <button @click="chooseMapType('sea')"
-                  class="w-full text-left p-3 rounded-xl bg-sky-500/10 border border-sky-300/20
-                         hover:bg-sky-500/15 active:scale-[0.99] transition">
-            <div class="flex items-center gap-3">
-              <span class="text-2xl">🌊</span>
-              <div class="flex-1">
-                <div class="text-sm font-semibold text-white">Sjøkart (padle/båt)</div>
-                <div class="text-[11px] text-white/55 mt-0.5">
-                  Sjø-blå bakgrunn, dybdekontur, sjømerker, lanterner. Fokus på vannveier.
-                </div>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        <label class="flex items-center gap-2 text-[11px] text-white/60 cursor-pointer select-none">
-          <input v-model="rememberMapType" type="checkbox" class="accent-slate-300" />
-          Husk valget mitt — ikke spør neste gang
-        </label>
-
-        <button @click="cancelMapTypeChoice"
-                class="w-full py-2 text-xs text-white/40 hover:text-white/70 transition">
-          Avbryt
-        </button>
+      <div class="mt-3 text-[10px] text-white/40 text-center">
+        Henter data fra OpenStreetMap (ODbL) via Overpass API.
       </div>
     </div>
   </div>

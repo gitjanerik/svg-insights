@@ -19,14 +19,6 @@ import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
-import { depthToColor } from './sjokartFetcher.js'
-// coastline.js: rekonstruerer LAND-polygoner fra OSM natural=coastline
-// linjer. Brukes KUN som siste fallback i kyst-områder der hverken N50
-// Havflate eller Sjøkart Dybdeareal returnerer sjø-polygoner. Ble fjernet
-// i v6.8.0 pga wedger-bug på lake-mistags (Mjøsa, Setten); reintrodusert
-// i v6.10.2 med strikt 50% bbox-areal-filter + kun aktiv når andre vann-
-// kilder feiler. v6.8.4 ring-stitching reduserer wedger-risiko ytterligere.
-import { buildLandPolygonsFromCoastline } from './coastline.js'
 import polygonClipping from 'polygon-clipping'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
@@ -38,7 +30,6 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
   way["natural"="water"];
-  way["natural"="coastline"];
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
@@ -49,8 +40,6 @@ export function buildOverpassQuery(bbox) {
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
   way["place"~"^(island|islet)$"];
-  way["man_made"~"^(pier|breakwater)$"];
-  way["seamark:type"="fairway"];
   way["aerialway"];
   way["railway"~"^(rail|tram|narrow_gauge|light_rail|subway|funicular|monorail)$"];
   way["piste:type"];
@@ -58,11 +47,10 @@ export function buildOverpassQuery(bbox) {
   node["natural"="peak"];
   node["natural"="saddle"];
   node["natural"="cave_entrance"];
-  node["man_made"~"^(adit|mineshaft|survey_point|triangulation_pillar|lighthouse|light)$"];
+  node["man_made"~"^(adit|mineshaft|survey_point|triangulation_pillar)$"];
   node["historic"~"^(mine|survey_point)$"];
   node["survey_point"];
   node["geodesic"];
-  node["seamark:type"];
   node["place"~"^(locality|hamlet|village|town|city|suburb|neighbourhood|quarter|isolated_dwelling|farm)$"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
@@ -281,26 +269,16 @@ function unionByName(elements, project) {
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
-// Vann-stack: dybdeareal (Sjøkart) først som lyseste, så myr-pattern,
-// deretter saltvann/innsjø/tjern (lokale, mer mettete blå), så
-// dybdekontur-linjer og bekker øverst.
-const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '306', '304', '305']
+// Vann-stack: myr-pattern, saltvann/innsjø/tjern (lokale, mettete blå),
+// så bekker øverst.
+const WATER_CODES  = ['308', '309', '303', '301', '302', '304', '305']
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
-// Veier/stier + ski-infrastruktur (510 lysløype, 511 heistrasé) i samme
-// stack som veier siden de visuelt er linjer og ofte krysser veinettet.
 const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '508', '510', '511']
-// v7.1.16 (Fase 5): padle-features lagt til UPPER_CODES.
-//   550 = Slipp (point — kajakk-launch)
-//   551 = Kai/Brygge/Pir/Molo (polygon — havne-strukturer)
-//   552 = Fareområde (polygon — rødt mønster, sikkerhets-zone)
-// v7.1.18: 214 (skjær-areal) over 552 og under havnestruktur så
-// fareområde ikke dekker skjær.
-const UPPER_CODES  = ['214', '551', '552', '521', '525', '528', '545', '533', '550']
+const UPPER_CODES  = ['521', '525', '528']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
-// Beholdes for at MapView sin lag-toggle skal kunne finne tomme grupper.
-const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203', '211']
+const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
 const LAYER_ORDER = [
   ...GROUND_CODES,
   ...WATER_CODES,
@@ -311,8 +289,8 @@ const LAYER_ORDER = [
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '214', '301', '302', '303', '307', '308', '309', '512', '521', '522', '551', '552'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '545', '201', '203', '101', '102', '103', '104'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '308', '309', '512', '521', '522'])
+const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -339,24 +317,6 @@ export function buildSvg(elements, bbox, options = {}) {
     includeKnauser = true,
     includeCliffs = true,
     skipContoursIfSynthetic = false,
-    // v6.10.2: brukes fortsatt av MapPickerView for å trigge coastline-
-    // rekonstruksjon (`buildLandPolygonsFromCoastline`) — ringene brukes i
-    // SEA-mode som bidrag til land-overlay.
-    useCoastlineFallback = false,
-    // v7.1.0: 'land' (kremgul bg + alle features, default) eller 'sea'
-    // (sjø-blå bg + kremgul land-overlay fra coastline-rekonstruksjon +
-    // OSM natural=land-polygoner). Brukeren velger eksplisitt i picker
-    // for kyst-områder. v7.0.0 duomap-mask-arkitekturen er erstattet av
-    // dette valget — én rendering per kart, brukeren bestemmer fokus.
-    mapType = 'land',
-    // v7.1.5: feilmeldinger fra Sjøkart-WFS som ikke svarte. Eksponeres
-    // i meta så MapView UI kan vise "WFS feilet (CORS)" når sjøkart-
-    // counts er 0 — skiller data-mangel fra rendering-bug.
-    sjokartFetchErrors = [],
-    // v7.1.10: response-samples når WFS returnerer 0 features. Brukes
-    // i MapView for å vise hva serveren faktisk sa (ofte ServiceException
-    // eller tom FeatureCollection).
-    sjokartDebugSamples = [],
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -455,96 +415,27 @@ export function buildSvg(elements, bbox, options = {}) {
   for (const code of LAYER_ORDER) buckets[code] = []
   const peaks = []
   const places = []
-  const skjaer = []        // ISOM 211 (sjøkart-grunner)
-  const lanterner = []     // ISOM 533 (sjøkart-lanterner)
-  const dybdepunkter = []  // sjøkart-soundings (tekst-label)
   const huler = []         // ISOM 215 (cave entrance)
   const gruver = []        // ISOM 216 (mine / sjakt)
   const trigpunkter = []   // ISOM 113 (trigonometric point)
-  const stakerPort = []    // ISOM 540 (lateral port — rød)
-  const stakerStb = []     // ISOM 541 (lateral starboard — grønn)
-  const stakerCard = []    // ISOM 542 (cardinal)
-  const stakerSpec = []    // ISOM 543 (spesial / safe water)
-  const slipper = []       // ISOM 550 (kajakk-launch / slipp — Sjøkart)
 
-  const counts = { peak: 0, place: 0, skjaer: 0, lanterne: 0, dybdepunkt: 0, hule: 0, gruve: 0, trig: 0, stake: 0, slipp: 0 }
+  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
-  // Samle OSM natural=coastline + man_made=pier/breakwater ways for siste-
-  // fallback sjø-rekonstruksjon. Pier/breakwater er ofte boundary mellom
-  // sjø og kunstig land (Sørenga, Fornebu, dock-anlegg) og må behandles
-  // som land-grense på samme måte som coastline.
-  const coastlineWays = []
-
-  // v7.1.4: tellere for sjøkart-features (Kartverket WFS). Eksponeres
-  // i meta og vises i MapView attribusjons-boks for synlig diagnose:
-  // hvis alle er 0 → WFS feilet, ikke et rendering-problem.
-  const sjokartCounts = { dybdeareal: 0, dybdekontur: 0, lanterne: 0, grunne: 0, dybdepunkt: 0,
-    slipp: 0, havnestruktur: 0, fareomraade: 0 }
-
   for (const el of elements) {
-    const t = el.tags ?? {}
-    if (t.sjokart && sjokartCounts[t.sjokart] !== undefined) sjokartCounts[t.sjokart]++
-    if (el.type === 'way' && (t.natural === 'coastline' ||
-                               t.man_made === 'pier' ||
-                               t.man_made === 'breakwater')) {
-      coastlineWays.push(el)
-      continue
-    }
     const cls = classifyToIsom(el)
     if (!cls) continue
     if (cls.cat === 'point') {
       if (cls.code === 'peak') { peaks.push(el); counts.peak++ }
       else if (cls.code === 'place') { places.push(el); counts.place++ }
-      else if (cls.code === '211') { skjaer.push(el); counts.skjaer++ }
-      else if (cls.code === '533') { lanterner.push(el); counts.lanterne++ }
       else if (cls.code === '215') { huler.push(el); counts.hule++ }
       else if (cls.code === '216') { gruver.push(el); counts.gruve++ }
       else if (cls.code === '113') { trigpunkter.push(el); counts.trig++ }
-      else if (cls.code === '540') { stakerPort.push(el); counts.stake++ }
-      else if (cls.code === '541') { stakerStb.push(el); counts.stake++ }
-      else if (cls.code === '542') { stakerCard.push(el); counts.stake++ }
-      else if (cls.code === '543') { stakerSpec.push(el); counts.stake++ }
-      else if (cls.code === '550') { slipper.push(el); counts.slipp++ }
-      else if (cls.code === 'dybdepunkt') { dybdepunkter.push(el); counts.dybdepunkt++ }
       continue
     }
     if (buckets[cls.code]) {
       buckets[cls.code].push(el)
       counts[cls.code]++
-    }
-  }
-
-  // ── Sjø-rekonstruksjon fra OSM natural=coastline (standard for kyst) ──
-  // Når useCoastlineFallback er aktiv (alle bboxer der OSM har coastline-
-  // ways): bygg LAND-polygoner og bytt SVG-bakgrunn til sjø-blå. Sjøkart
-  // og N50 Havflate maler dybdetonet detalj OVER den blå bakgrunnen.
-  //
-  // v6.21.0: ikke lenger «siste fallback». Tidligere ble coastline-modus
-  // bare aktivert hvis Sjøkart og N50 begge manglet — men de har ofte
-  // sparse dekning som gir kremgul-flekk-sjø i stedet for kontinuerlig
-  // blå. Coastline-rekonstruksjon er det eneste som garanterer sjø-fyll.
-  let coastlineLandRings = []
-  let coastlineMode = false
-  if (useCoastlineFallback && coastlineWays.length > 0) {
-    try {
-      const result = buildLandPolygonsFromCoastline(coastlineWays, project, widthM, heightM)
-      coastlineLandRings = result.rings
-      // v6.21.1: aktiver coastlineMode (blå bg) når det finnes coastline-
-      // ways UANSETT om rekonstruksjon ga land-polygoner. Hvis vi har
-      // coastline-data men ringer feiler (algoritme-edge-case, OSM-data
-      // fragmentert), er en blå bg uten cream-land-overlay LANGT bedre
-      // enn 100% kremgul over hele sjøen. Ground-layers (vegetasjon,
-      // bygninger, urbanmass) og place=island/islet-overlays dekker
-      // de fleste viktige land-arealer på toppen. Brukerne ser blå sjø
-      // selv ved fragmentert OSM-tagging.
-      coastlineMode = true
-      console.log(`[Kystlinje] ${coastlineWays.length} coastline-ways → ${coastlineLandRings.length} land-polygoner (${result.closedRingsCount} lukkede øyer + ${result.openArcsCount} bbox-lukkede mainland)`)
-      if (coastlineLandRings.length === 0) {
-        console.warn(`[Kystlinje] 0 ringer rekonstruert — bg blir blå men land kan se ufullstendig ut. Stoler på ground-layers og place=island for land-dekning.`)
-      }
-    } catch (e) {
-      console.warn(`[Kystlinje] Land-rekonstruksjon feilet: ${e.message}`)
     }
   }
 
@@ -698,23 +589,8 @@ export function buildSvg(elements, bbox, options = {}) {
           d = subpaths.join(' ')
         }
         if (d) {
-          // v7.1.4: ISOM 307 (Sjøkart dybdeareal) får per-polygon fill
-          // basert på snitt-dybde. Catalog default-fyll er identisk med
-          // SEA_BLUE bg, så en flat fill ville vært usynlig. depthToColor
-          // gir gradient #b6daee (grunt) → #1f5d8a (dypt) som synliggjør
-          // dybde-shading mot bg.
-          let inlineStyle = ''
-          if (code === '307' && el.tags) {
-            const minD = Number(el.tags.minDybde)
-            const maxD = Number(el.tags.maxDybde)
-            const avgD = Number.isFinite(minD) && Number.isFinite(maxD) ? (minD + maxD) / 2
-                       : Number.isFinite(minD) ? minD
-                       : Number.isFinite(maxD) ? maxD
-                       : null
-            if (avgD != null) inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
-          }
           pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd"${inlineStyle} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            `    <path d="${d}" fill-rule="evenodd" data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
         }
       }
@@ -848,12 +724,8 @@ export function buildSvg(elements, bbox, options = {}) {
   // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
   // kontur-laget kun rendres der det er land. Konturer som "krysser"
   // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
-  //
-  // v8.9.8: '307' (Sjøkart dybdeareal) lagt til. Tidligere lekket konturer
-  // og vegetasjon over alt Sjøkart-dekket sjø i kyst-bbox fordi 307 ikke
-  // var i mask-listen.
   const waterPaths = []
-  for (const code of ['301', '302', '303', '307', '308', '309']) {
+  for (const code of ['301', '302', '303', '308', '309']) {
     for (const el of buckets[code] ?? []) {
       if (el.type === 'merged-water' && el._mergedRings) {
         for (const polygon of el._mergedRings) {
@@ -879,54 +751,9 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // v8.9.8: I kyst-bbox dekkes ikke alltid hele sjøen av eksplisitte
-  // vann-polygoner — Sjøkart-WFS har hull, N50 stopper ved kystlinje,
-  // OSM natural=water er ofte fragmentert i skjærgård. Det gir
-  // «implisitt sjø» mellom kystlinje-ringene: områder vi VET er sjø
-  // (utenfor coastline-land), men som ikke har eksplisitt vann-polygon.
-  //
-  // v8.9.9: BEGRENSET til SEA-modus. I LAND-modus var v8.9.8 risikabel
-  // fordi `closeArcsViaBbox` kan produsere mainland-ringer som inkluderer
-  // bbox-kant-bånd (top/bottom-stripes) som faktisk er sjø — det fikk
-  // LAND-kart til å se nesten heldekkende blått ut på kystnære bbox
-  // (Vardåsen-rapport, 23. mai 2026). I SEA-modus er bg uansett blå,
-  // så en for aggressiv mask-utvidelse skjuler bare konturer/vegetasjon
-  // fra det vi uansett ville maskert.
-  let coastalMaskExtras = ''
-  if (mapType === 'sea' && coastlineLandRings.length > 0) {
-    const bboxRectD = `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
-    const landRingsD = coastlineLandRings.map(ring => {
-      if (ring.length < 3) return ''
-      let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-      for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-      return d + 'Z'
-    }).filter(Boolean).join('')
-    if (landRingsD) {
-      // bbox + ringer med evenodd = sjøen (alt utenfor ringene) er svart
-      coastalMaskExtras += `<path d="${bboxRectD}${landRingsD}" fill="black" fill-rule="evenodd"/>`
-    }
-    // place=island/islet-overlay som hvit-fyll: re-eksponer småholmer
-    // som ikke er en del av coastline-rekonstruksjonen (typisk holmer
-    // mappet med place=islet i OSM uten egen natural=coastline-ring)
-    const islandPaths = []
-    for (const el of buckets['001'] ?? []) {
-      if (el.type === 'way' && el.geometry) {
-        islandPaths.push(pathFromGeometry(el.geometry, true))
-      } else if (el.type === 'relation' && el.members) {
-        const outerRings = assembleRelationRings(el.members, 'outer')
-        for (const ring of outerRings) {
-          islandPaths.push(pathFromGeometry(ring, true))
-        }
-      }
-    }
-    if (islandPaths.length > 0) {
-      coastalMaskExtras += `<path d="${islandPaths.join(' ')}" fill="white" fill-rule="evenodd"/>`
-    }
-  }
-
-  const hasMaskContent = waterPaths.length > 0 || coastalMaskExtras.length > 0
+  const hasMaskContent = waterPaths.length > 0
   const landMaskSvg = hasMaskContent
-    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/>${waterPaths.length ? `<path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/>` : ''}${coastalMaskExtras}</mask>`
+    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
     : ''
   const contourMaskAttr = hasMaskContent ? ' mask="url(#land-mask)"' : ''
   // Samme mask brukes for vegetasjon (404, 405-408 etc.) og 522 bymasse
@@ -957,27 +784,6 @@ export function buildSvg(elements, bbox, options = {}) {
     } else {
       contourMinorPaths.push(d)
     }
-  }
-
-  // ── Dybdekontur-labels (Sjøkart 306) ─────────────────────────────────
-  // v7.1.5: meter-tall på sjø-kontur-linjer, samme stil som land-konturer.
-  // Vi tegner kun på lengre dybdekontur-strekninger (>200m i SVG-koord)
-  // for å unngå overcrowding. tags.dybde er i meter (positiv = under
-  // havflaten).
-  const dybdeKonturLabels = []
-  for (const el of buckets['306'] ?? []) {
-    if (el.type !== 'way' || !el.geometry || el.geometry.length < 4) continue
-    const dybde = Number(el.tags?.dybde)
-    if (!Number.isFinite(dybde)) continue
-    const pts = el.geometry.map(g => project(g.lat, g.lon))
-    // Estimere total lengde i SVG-meter
-    let len = 0
-    for (let i = 1; i < pts.length; i++) {
-      len += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
-    }
-    if (len < 200) continue  // kort segment — skip label
-    const mid = pts[Math.floor(pts.length / 2)]
-    dybdeKonturLabels.push({ x: mid.x, y: mid.y, dybde: Math.round(dybde) })
   }
 
   // ── Navn og elevasjon på innsjøer/tjern ──────────────────────────────
@@ -1096,47 +902,6 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
   }).join('\n')
 
-  // ── Sjøkart: skjær (211), lanterner (533), dybdepunkter ──────────────
-  // Rendres som <use> mot point-symbols i defs. Dybdepunkter rendres som
-  // tekst-label med dybde-tall (paint-order: stroke for halo).
-  // v7.1.14: skjær får navn-label hvis Sjøkart-WFS leverte `navn`-felt.
-  // Plasseres litt under symbolet (1mm dy) så det ikke overlapper med
-  // selve skjær-merket.
-  const skjaerSvg = skjaer.map(el => {
-    const p = project(el.lat, el.lon)
-    const sid = symbolIds.get('skjaer')
-    if (!sid) return ''
-    const name = el.tags?.name
-    const nameLabel = name
-      ? `<text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="1.6mm" text-anchor="middle" data-label="skjaer-navn">${xmlEscape(name)}</text>`
-      : ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.5)}mm" y="${fmt(p.y - 0.5)}mm" width="1mm" height="1mm"/>${nameLabel}`
-  }).filter(Boolean).join('\n')
-
-  const lanterneSvg = lanterner.map(el => {
-    const p = project(el.lat, el.lon)
-    const sid = symbolIds.get('lanterne')
-    if (!sid) return ''
-    const name = xmlEscape(el.tags?.name ?? '')
-    const labelPart = name
-      ? `<text x="1mm" y="0.4mm" data-label="lanterne-tall">${name}</text>`
-      : ''
-    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>${labelPart}</g>`
-  }).filter(Boolean).join('\n')
-
-  // v7.1.16: Slipp-punkter (ISOM 550) — kajakk-launch fra Sjøkart-WFS.
-  // Større enn lanterne (2.4mm bredde) for å være tydelig.
-  const slippSvg = slipper.map(el => {
-    const p = project(el.lat, el.lon)
-    const sid = symbolIds.get('slipp')
-    if (!sid) return ''
-    const name = xmlEscape(el.tags?.name ?? '')
-    const labelPart = name
-      ? `<text x="1.4mm" y="0.4mm" data-label="slipp-navn">${name}</text>`
-      : ''
-    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-1.2mm" y="-1.2mm" width="2.4mm" height="2.4mm"/>${labelPart}</g>`
-  }).filter(Boolean).join('\n')
-
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
   const huleSvg = huler.map(el => {
@@ -1160,54 +925,6 @@ export function buildSvg(elements, bbox, options = {}) {
     if (!sid) return ''
     return `    <use href="#${sid}" x="${fmt(p.x - 0.8)}mm" y="${fmt(p.y - 0.8)}mm" width="1.6mm" height="1.6mm"/>`
   }).filter(Boolean).join('\n')
-
-  // Sjømerker (ISOM 540-543): stake-port (rød), starboard (grønn),
-  // cardinal (gul/sort), spesial (gul). Alle 1.4mm sentrert.
-  const renderStake = (list, symId) => list.map(el => {
-    const p = project(el.lat, el.lon)
-    const sid = symbolIds.get(symId)
-    if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
-  }).filter(Boolean).join('\n')
-  const stakerPortSvg = renderStake(stakerPort, 'stake-port')
-  const stakerStbSvg  = renderStake(stakerStb,  'stake-starboard')
-  const stakerCardSvg = renderStake(stakerCard, 'stake-cardinal')
-  const stakerSpecSvg = renderStake(stakerSpec, 'stake-special')
-
-  // v7.1.13: grid-filtrering av dybdepunkter for elegant kart-look.
-  // Sjøkart-WFS leverer ofte 5000+ soundings (capped på vår COUNT). For
-  // padle-/båt-kart trenger man ikke et tall hvert 5. meter — det blir
-  // visuell støy. Strategi: del bbox i 400m × 400m celler i SVG-koord,
-  // behold KUN punktet med minst dybde per celle (grunneste = viktigst
-  // for sikkerhet). Resultat for 5km bbox: max ~150 punkter i stedet
-  // for 5000. Skipperen mister ingen kritisk info; padleren får ren
-  // kart-flate.
-  const DYBDE_GRID_M = 400
-  const dybdeGrid = new Map()  // "col,row" → { el, p, dybde }
-  for (const el of dybdepunkter) {
-    const dybde = Number(el.tags?.dybde)
-    if (!Number.isFinite(dybde)) continue
-    const p = project(el.lat, el.lon)
-    const col = Math.floor(p.x / DYBDE_GRID_M)
-    const row = Math.floor(p.y / DYBDE_GRID_M)
-    const key = `${col},${row}`
-    const existing = dybdeGrid.get(key)
-    if (!existing || dybde < existing.dybde) {
-      dybdeGrid.set(key, { el, p, dybde })
-    }
-  }
-  const dybdepunktFiltered = Array.from(dybdeGrid.values())
-  if (dybdepunkter.length > 0) {
-    console.log(`[Sjøkart] Dybdepunkt: ${dybdepunkter.length} → ${dybdepunktFiltered.length} etter grid-filter (${DYBDE_GRID_M}m, grunneste vinner)`)
-  }
-  // Overstyr sjokartCounts.dybdepunkt så UI reflekterer antall faktisk
-  // vist på kartet (etter grid-filter), ikke antall mottatt fra WFS.
-  sjokartCounts.dybdepunkt = dybdepunktFiltered.length
-
-  const dybdepunktSvg = dybdepunktFiltered.map(({ p, el }) => {
-    const dybde = el.tags?.dybde
-    return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" text-anchor="middle" data-label="dybde-tall">${xmlEscape(dybde)}</text>`
-  }).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
   // ekte DEM, sampler vi høyde på begge sider av spine for å velge
@@ -1261,16 +978,6 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <path d="${linePath}" />${teeth}`
   }).join('\n')
 
-  // v7.1.15: useSeaBg respekterer mapType STRENGT. v7.1.3 forsøkte å
-  // gjøre kyst-Land-kart bl&aring;-bakgrunn for &oslash;y-synlighet, men det skapte
-  // motsatt problem: Drammen-omegn-bbox der bare en fjordarm passerer
-  // fikk bl&aring; bg selv om brukeren valgte Land-kart. Ren regel:
-  //   - mapType='sea' → bl&aring; bg (alltid)
-  //   - mapType='land' → kremgul bg (alltid, selv ved kyst)
-  // Brukeren m&aring; velge mapType ut fra prim&aelig;rt fokus.
-  const isCoastalRender = coastlineLandRings.length > 0
-  const useSeaBg = mapType === 'sea'
-
   const meta = {
     bbox,
     utmBbox: { minE, minN, maxE, maxN },
@@ -1285,23 +992,6 @@ export function buildSvg(elements, bbox, options = {}) {
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,
     contoursSkipped: dem && !usableDem ? 'syntetisk DEM — ingen ekte høydekurver tilgjengelig' : null,
-    // v7.1.0: mapType er den autoritative kart-modus-indikatoren
-    // (brukervalg). v7.1.3: useSeaBg er derived state — true hvis bg
-    // skal være blå (kyst-bbox eller eksplisitt sjø-modus). Brukes av
-    // MapView.applyTheme for å re-applysere --bg etter theme-reset.
-    mapType,
-    useSeaBg,
-    // v7.1.4: synlig sjøkart-feature-diagnose i kart-UI. Hvis alle 0 →
-    // WFS feilet (CORS/nett), ikke rendering-problem.
-    sjokartCounts,
-    // v7.1.5: feilmeldinger fra Sjøkart-WFS — gjør UI i stand til å
-    // vise konkret årsak (CORS, HTTP-feil, ikke-JSON-svar) når counts=0.
-    sjokartFetchErrors,
-    // v7.1.10: råe response-samples for diagnose når 0 features.
-    sjokartDebugSamples,
-    coastlineLandRings: coastlineLandRings.length || null,
-    coastlineWaysCount: coastlineWays.length,
-    useCoastlineFallback: !!useCoastlineFallback,
     isomVersion: '2017-2-derived',
     source: 'OpenStreetMap (ODbL) + ISOM-katalog v6.5' + (usableDem ? ` + DEM (${dem.source})` : ''),
     generated: new Date().toISOString(),
@@ -1377,36 +1067,12 @@ export function buildSvg(elements, bbox, options = {}) {
   const cliffsLayerSvg = cliffsSvg
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
-  // Sjøkart-punkter (skjær, lanterner) og dybdepunkt-labels.
-  const skjaerLayerSvg = skjaerSvg
-    ? `  <g data-layer="stein" data-iso="211">\n${skjaerSvg}\n  </g>\n` : ''
   const huleLayerSvg = huleSvg
     ? `  <g data-layer="stein" data-iso="215">\n${huleSvg}\n  </g>\n` : ''
   const gruveLayerSvg = gruveSvg
     ? `  <g data-layer="stein" data-iso="216">\n${gruveSvg}\n  </g>\n` : ''
   const trigLayerSvg = trigSvg
     ? `  <g data-layer="trig" data-iso="113">\n${trigSvg}\n  </g>\n` : ''
-  const stakerLayerSvg = (stakerPortSvg || stakerStbSvg || stakerCardSvg || stakerSpecSvg)
-    ? `  <g data-layer="staker">\n` +
-      (stakerPortSvg ? `    <g data-iso="540">\n${stakerPortSvg}\n    </g>\n` : '') +
-      (stakerStbSvg  ? `    <g data-iso="541">\n${stakerStbSvg}\n    </g>\n` : '') +
-      (stakerCardSvg ? `    <g data-iso="542">\n${stakerCardSvg}\n    </g>\n` : '') +
-      (stakerSpecSvg ? `    <g data-iso="543">\n${stakerSpecSvg}\n    </g>\n` : '') +
-      `  </g>\n`
-    : ''
-  const lanterneLayerSvg = lanterneSvg
-    ? `  <g data-layer="sjokart" data-iso="533">\n${lanterneSvg}\n  </g>\n` : ''
-  const slippLayerSvg = slippSvg
-    ? `  <g data-layer="sjokart" data-iso="550">\n${slippSvg}\n  </g>\n` : ''
-  const dybdepunktLayerSvg = dybdepunktSvg
-    ? `  <g data-layer="dybde">\n${dybdepunktSvg}\n  </g>\n` : ''
-
-  // v7.1.5: dybdekontur-meter-tall (samme stil som land-kontur). Tekst-
-  // farge matcher dybde-kontur-stroke (#3a8db8) for visuell sammenheng.
-  const dybdeKonturLabelSvg = dybdeKonturLabels.length
-    ? `  <g data-label="dybde-kontur-tall">\n${dybdeKonturLabels.slice(0, 80).map(l =>
-        `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.dybde}</text>`).join('\n')}\n  </g>\n`
-    : ''
 
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
@@ -1424,46 +1090,14 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bymasse" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
-  // v7.1.3: kyst-bbox skal alltid ha blå sjø — også i Land-kart-modus.
-  // Tidligere var bg-flippet bundet til mapType=sea; men brukerrapport
-  // viser at LAND-kart i kystområde også trenger blå sjø for å se
-  // korrekt ut (kremgul-flekker rundt øyer er bare forvirring). mapType
-  // bestemmer FOKUS (sjøkart-detaljer eller ikke), ikke bg-fargen.
-  const SEA_BLUE = '#9ec9de'  // matcher ISOM 307 dybdeareal-farge
-  const landFill = isomCatalog.background.color
-  // useSeaBg/isCoastalRender beregnet høyere oppe (før meta-blokken).
-  const bgFill = useSeaBg ? SEA_BLUE : landFill
-
-  // Render coastline-rekonstruerte land-ringer som kremgule polygoner
-  // over blå bg når bg er blå. I begge modi (land/sea), så lenge vi
-  // har kystdata. For pure innland skipper vi (kremgul-på-kremgul =
-  // unødvendig).
-  const coastlineLandSvg = useSeaBg && coastlineLandRings.length
-    ? `  <g id="kyst-land" data-layer="land" data-iso="001">\n` +
-      coastlineLandRings.map(ring => {
-        if (ring.length < 3) return ''
-        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-        d += 'Z'
-        return `    <path d="${d}" fill="${landFill}" data-src="kystlinje"/>`
-      }).filter(Boolean).join('\n') +
-      `\n  </g>\n`
-    : ''
-
-  // v8.9.9: coastalSeaFillSvg fra v8.9.8 fjernet. Den fylte implisitt-sjø
-  // med blå i LAND-modus, men closeArcsViaBbox kan produsere ringer som
-  // inkluderer bbox-kant-bånd der det faktisk er sjø — som gjorde at
-  // LAND-kart over kyst-bbox så ut som sjøkart med kremgul-stripe på
-  // toppen (Vardåsen-rapport). Tilbake til v7.1.x-prinsippet: i LAND-
-  // modus styrer Sjøkart-307-polygoner sjø-utseendet der WFS har data,
-  // og bg forblir kremgul ellers.
+  const bgFill = isomCatalog.background.color
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${coastlineLandSvg}${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${dybdepunktLayerSvg}${dybdeKonturLabelSvg}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${skjaerLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${stakerLayerSvg}${lanterneLayerSvg}${slippLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${waterLayers}${landOverlayLayers}${lakeLabelLayer}${contourLayerSvg}${roadLayers}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1478,8 +1112,8 @@ function categoryFor(code) {
     case '404':                                  return 'aker'
     case '406': case '407': case '408': case '409': return 'skog'
     case '308': case '309':                     return 'myr'
-    case '301': case '302': case '303': case '307': return 'vann'
-    case '304': case '305': case '306':         return 'bekk'
+    case '301': case '302': case '303':         return 'vann'
+    case '304': case '305':                     return 'bekk'
     case '521':                                  return 'bygning'
     case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
@@ -1491,13 +1125,10 @@ function categoryFor(code) {
     case '512':                                  return 'slalombakke'
     case '515':                                  return 'tog'
     case '201': case '203':                     return 'stupkant'
-    case '210': case '211': case '212': case '213': case '214':
+    case '210': case '213':
     case '215': case '216':                          return 'stein'
     case '525': case '528':                     return 'linje'
-    case '533':                                  return 'sjokart'
-    case '545': case '550': case '551': case '552':         return 'sjokart'
     case '113':                                  return 'trig'
-    case '540': case '541': case '542': case '543': return 'staker'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
   }
