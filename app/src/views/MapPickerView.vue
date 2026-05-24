@@ -203,6 +203,12 @@ async function generateMap() {
                              t.place === 'sea' || t.place === 'ocean'
       if (isWaterPolygon) {
         if (isOsmWaterSalty(t)) return !n50HasSea
+        // Navngitte ferskvann beholdes selv om N50 har data: N50-utvalget
+        // er ofte ufullstendig (Nesøyatjern-typetilfellet — N50 returnerte
+        // andre tjern i bbox, og det globale n50HasFreshwater-flagget
+        // filtrerte ut OSM Nesøyatjern). Navnløse polygoner kan være
+        // OSM-mistags eller wedger og filtreres når N50 dekker.
+        if (t.name) return true
         return !n50HasFreshwater
       }
       if (t.waterway === 'stream' || t.waterway === 'ditch') {

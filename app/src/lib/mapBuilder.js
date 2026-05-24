@@ -15,7 +15,7 @@ import {
   isomCatalog,
 } from './symbolizer.js'
 import { buildContours, detectKnauser, detectCliffs } from './dem.js'
-import { buildSeaFromDem } from './seaFromDem.js'
+import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
@@ -522,6 +522,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // ── DEM-deriverte features (konturer, knauser, stupkanter, sjø) ──────
   let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
   let demSeaPolygons = []
+  let demSeaBands = []
   if (usableDem) {
     const c = buildContours(usableDem, contourIntervalM, 5)
     const k = includeKnauser ? detectKnauser(usableDem, 5, 1.5) : []
@@ -530,8 +531,22 @@ export function buildSvg(elements, bbox, options = {}) {
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). Pålitelig fordi
     // det er Kartverkets eget DTM — ingen OSM-mistags eller WFS-CORS-issues.
-    const seaResult = buildSeaFromDem(usableDem, { thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2 })
+    // requireBoundaryTouch filtrerer ut innsjøer/tjern som ligger nær 0 m
+    // over havet (Nesøyatjern-typetilfellet) ved å kreve at sjø-polygonet
+    // berører bbox-kanten.
+    const seaResult = buildSeaFromDem(usableDem, {
+      thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
+    })
     demSeaPolygons = seaResult.polygons
+    // Grunn-bånd: chamfer-distance fra kysten gir gradient-effekt der sjø
+    // nær land tegnes lysere enn åpent vann. To bånd: 0-50 m og 0-200 m
+    // fra land, lagt på toppen av basis-sjø-laget i den rekkefølgen.
+    if (demSeaPolygons.length) {
+      const shallow = buildSeaShallowBands(usableDem, {
+        thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+      })
+      demSeaBands = shallow.bands
+    }
   }
 
   // Bygg ISOM-defs (patterns + symbols) og CSS
@@ -1027,22 +1042,45 @@ export function buildSvg(elements, bbox, options = {}) {
   const renderCodes = (codes) => codes.map(layerSvg).join('')
   const groundLayers = renderCodes(GROUND_CODES)
   // DEM-derivert sjø: blå polygoner under N50/OSM-vannlag, så autoritative
-  // vann-polygoner overstyrer der de finnes.
-  const demSeaLayerSvg = demSeaPolygons.length
+  // vann-polygoner overstyrer der de finnes. Basis-laget får ISOM 303-blå
+  // (mørk dyp); grunne-bånd legges på toppen med gradient-toner.
+  const polygonsToPathRing = (poly) => {
+    const ringPaths = []
+    for (const ring of poly) {
+      if (ring.length < 3) continue
+      let rd = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+      for (let i = 1; i < ring.length; i++) rd += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+      rd += 'Z'
+      ringPaths.push(rd)
+    }
+    return ringPaths.join(' ')
+  }
+  const demSeaBaseSvg = demSeaPolygons.length
     ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea">\n${demSeaPolygons.map(poly => {
-        const ringPaths = []
-        for (const ring of poly) {
-          if (ring.length < 3) continue
-          let rd = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-          for (let i = 1; i < ring.length; i++) rd += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-          rd += 'Z'
-          ringPaths.push(rd)
-        }
-        return ringPaths.length
-          ? `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd"/>`
-          : ''
+        const d = polygonsToPathRing(poly)
+        return d ? `    <path d="${d}" fill-rule="evenodd"/>` : ''
       }).filter(Boolean).join('\n')}\n  </g>\n`
     : ''
+  // Grunn-bånd: kumulative subset-polygoner (≤50 m ⊂ ≤200 m ⊂ alt sjø).
+  // Renderingsrekkefølge: største bånd FØRST (mørkere), så minste sist
+  // (lysest) så grunnest farge overstyrer ved kysten. Basis-sjø er
+  // ISOM 303-mørk; båndene blir progressivt lysere mot land.
+  const BAND_COLORS_BY_DESC_DISTANCE = ['#8fc4dd', '#b6daee']
+  const sortedBands = [...demSeaBands].sort((a, b) => b.maxDistanceM - a.maxDistanceM)
+  const demSeaBandsSvg = sortedBands
+    .map((band, idx) => {
+      const color = BAND_COLORS_BY_DESC_DISTANCE[idx] ?? '#b6daee'
+      const paths = band.polygons.map(poly => {
+        const d = polygonsToPathRing(poly)
+        return d ? `    <path d="${d}" fill="${color}" fill-rule="evenodd"/>` : ''
+      }).filter(Boolean).join('\n')
+      return paths
+        ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea-band" data-band-m="${band.maxDistanceM}">\n${paths}\n  </g>\n`
+        : ''
+    })
+    .filter(Boolean)
+    .join('')
+  const demSeaLayerSvg = demSeaBaseSvg + demSeaBandsSvg
   const waterLayers  = renderCodes(WATER_CODES)
   const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
