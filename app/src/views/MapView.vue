@@ -1376,6 +1376,11 @@ function setupHostSvg(sourceRoot) {
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', sourceRoot.getAttribute('viewBox'))
   svg.setAttribute('xmlns', ns)
+  // v8.9.26: xmlns:xlink må deklareres her — hill-shading og dybde-skygge
+  // legger til `xlink:href` på <image>-elementer via setAttributeNS, og
+  // uten denne deklarasjonen på root får serialisert eksport "Namespace
+  // prefix xlink for href on image is not defined" i Chrome (Android).
+  svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   svg.setAttribute('class', 'isom-map')
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')

@@ -28,6 +28,12 @@ const MAX_CANVAS_PX = 4096
  * potensielt store dybde-shading PNG-er hvis de er inni `<img>`-
  * inkompatible <image>-tagger. Hill-shading beholdes — den er en
  * autoritativ kart-feature, ikke en bruker-overlay.
+ *
+ * v8.9.26: sørger også for at root-svg har `xmlns:xlink` deklarert.
+ * Setup-koden i MapView lager <svg> via createElementNS uten å sette
+ * xlink-namespace, mens applyHillshade / applyDepthShade legger til
+ * `xlink:href` på <image>-elementene. Uten deklarasjonen feiler XML-
+ * parsing i Chrome Android ved gjenåpning av eksportert SVG.
  */
 function stripRuntimeOverlays(svgString) {
   // Match og fjern <g id="user-layer">…</g>, og tilsvarende for andre
@@ -38,6 +44,9 @@ function stripRuntimeOverlays(svgString) {
   for (const id of layerIds) {
     const re = new RegExp(`<g[^>]*id="${id}"[^]*?</g>`, 'g')
     s = s.replace(re, '')
+  }
+  if (!s.includes('xmlns:xlink')) {
+    s = s.replace(/<svg\b([^>]*)>/, '<svg$1 xmlns:xlink="http://www.w3.org/1999/xlink">')
   }
   return s
 }
