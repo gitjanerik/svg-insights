@@ -61,22 +61,71 @@ function bestKindRank(kind) {
   return 5
 }
 
+// Parsererer `transform="translate(x, y)"` (det eneste mapBuilder skriver
+// på label-grupper). Returnerer [dx, dy] eller [0, 0] hvis ikke matchet.
+const TRANSLATE_RE = /translate\s*\(\s*([\-0-9.eE]+)[\s,]+([\-0-9.eE]+)\s*\)/
+
+function parseTranslate(transformStr) {
+  if (!transformStr) return null
+  const m = TRANSLATE_RE.exec(transformStr)
+  if (!m) return null
+  const dx = parseFloat(m[1])
+  const dy = parseFloat(m[2])
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return null
+  return [dx, dy]
+}
+
 /**
- * Pluck en representativ (x, y) i SVG-rotens koordinatsystem (user-units)
- * for et element, ved å kombinere getBBox() med getCTM().
+ * Akkumuler `transform="translate(...)"` opp parent-kjeden fra `el` til
+ * `stopEl` (eksklusiv). Vi bruker dette istedenfor `getCTM()` fordi getCTM
+ * returnerer matrise til SVG-viewportens CSS-pikselsystem, ikke til viewBox-
+ * koordinatene (meter). For vårt formål — finne ankerpunkt i user-units —
+ * må vi walke trærd selv. Kun translate støttes; mapBuilder skriver ingen
+ * rotate/scale på label-grupper, så det er trygt.
+ */
+function ancestorTranslate(el, stopEl) {
+  let dx = 0, dy = 0
+  let p = el.parentElement
+  while (p && p !== stopEl && p.nodeType === 1) {
+    const t = parseTranslate(p.getAttribute('transform'))
+    if (t) { dx += t[0]; dy += t[1] }
+    p = p.parentElement
+  }
+  return [dx, dy]
+}
+
+/**
+ * Pluck en representativ (x, y) i SVG-rotens koordinatsystem (user-units).
+ *
+ * For <text>: bruker x/y-attributtene som ankerpunkt og legger til
+ * akkumulerte translate fra parent-chain. Fungerer også når elementet er i
+ * et display:none-lag (stedsnavn-overlayet sendes med inline display:none
+ * og toggles av MapView.applyLayerVisibility — getBBox() ville gitt (0,0)
+ * for skjulte elementer; getCTM() ville gitt CSS-piksler).
+ *
+ * For path/polygon med data-name: getBBox() gir lokal bbox i parent-coord-
+ * system. Vi legger til parent-translate for å mappe til root.
  */
 function elementPosition(svgEl, el) {
   try {
+    if (el.tagName === 'text') {
+      // parseFloat strips ev. mm-suffiks (peak-labels bruker "2mm"); 2 user-
+      // units = 2 m, neglisjerbart relativt til parent-gruppens translate
+      // som inneholder den ekte posisjonen.
+      const ax = parseFloat(el.getAttribute('x') ?? '') || 0
+      const ay = parseFloat(el.getAttribute('y') ?? '') || 0
+      const [dx, dy] = ancestorTranslate(el, svgEl)
+      return { x: ax + dx, y: ay + dy }
+    }
     const bb = el.getBBox()
     if (!Number.isFinite(bb.x) || !Number.isFinite(bb.y)) return null
-    const ctm = el.getCTM()
-    if (!ctm) return null
-    const pt = svgEl.createSVGPoint()
-    pt.x = bb.x + bb.width / 2
-    pt.y = bb.y + bb.height / 2
-    const out = pt.matrixTransform(ctm)
-    if (!Number.isFinite(out.x) || !Number.isFinite(out.y)) return null
-    return { x: out.x, y: out.y, bbox: bb }
+    // Degenerert bbox (display:none / tomt polygon) — skip
+    if (bb.width <= 0 && bb.height <= 0) return null
+    const [dx, dy] = ancestorTranslate(el, svgEl)
+    return {
+      x: bb.x + bb.width / 2 + dx,
+      y: bb.y + bb.height / 2 + dy,
+    }
   } catch {
     return null
   }
@@ -92,7 +141,6 @@ function pushRaw(out, name, kind, pos, el) {
     label: labelFor(kind),
     x: pos.x,
     y: pos.y,
-    bbox: pos.bbox,
     el,
   })
 }
