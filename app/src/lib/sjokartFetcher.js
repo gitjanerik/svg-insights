@@ -659,18 +659,23 @@ function pushAnyGeom(feature, tags, out, nextId) {
 
 /**
  * Lag en gradert blå farge for et dybdekontur basert på dyp i meter.
- * Lyseste (~5m) til mørkeste (~100m) blå nyanse, kompatibel med
- * ISOM 304 saltvann-stil.
+ * 4 diskrete bånd istedenfor kontinuerlig gradient — gir et fornuftig
+ * sjødybde-skala der hver tone betyr noe konkret istedenfor en uleselig
+ * blå-glidning. Lyseste = grunt vann (0-2 m) som indikerer skjær/grunne,
+ * mørkeste = dypt vann (50 m+).
+ *
+ * Bånd (v8.9.25):
+ *   <2 m   #d0e4f0  lyseste — grunt, navigasjonsfare
+ *   2-10 m #94c3dc  lys — sandbank-/strandsone-dyp
+ *   10-50 m #4d89af mid — typisk fjord/innskjær
+ *   50+ m  #1f5d8a  mørkeste — dypt fjord-/havvann
  *
  * @param {number} dybde meter (positivt tall = dyp)
  * @returns {string} hex-farge
  */
 export function depthToColor(dybde) {
-  // Klem til 0-100 og normaliser. Lyseste = #b6daee, mørkeste = #1f5d8a
-  const t = Math.max(0, Math.min(1, dybde / 100))
-  const lerp = (a, b) => Math.round(a + (b - a) * t)
-  const r = lerp(0xb6, 0x1f)
-  const g = lerp(0xda, 0x5d)
-  const b = lerp(0xee, 0x8a)
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+  if (!Number.isFinite(dybde) || dybde < 2) return '#d0e4f0'
+  if (dybde < 10) return '#94c3dc'
+  if (dybde < 50) return '#4d89af'
+  return '#1f5d8a'
 }

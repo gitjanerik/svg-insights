@@ -15,15 +15,60 @@
 //      Åpner et nytt vindu og triggrer window.print() — for de som vil
 //      printe på papir. Dropper kombinasjon med PDF (egen funksjon).
 
+// v8.9.25: max canvas-dimensjon (px). Chrome Android OOM-feilet på
+// fullscale 5–10 km kart ved 300 dpi (canvas-bytes = px² × 4 — et
+// 6000×6000 canvas = 144 MB). Clamp til 4096 → maks 64 MB canvas,
+// trygt på alle mobile chromium. Print-kvalitet beholdes på A3/A4
+// utskrifter; A0/A1 må eksporteres som SVG fra desktop.
+const MAX_CANVAS_PX = 4096
+
+/**
+ * Fjern runtime-overlay-lag som ikke skal inn i eksporterte filer:
+ * GPS-spor, brukerposisjon, annotation-pin-er, måleverktøy, samt
+ * potensielt store dybde-shading PNG-er hvis de er inni `<img>`-
+ * inkompatible <image>-tagger. Hill-shading beholdes — den er en
+ * autoritativ kart-feature, ikke en bruker-overlay.
+ *
+ * v8.9.26: sørger også for at root-svg har `xmlns:xlink` deklarert.
+ * Setup-koden i MapView lager <svg> via createElementNS uten å sette
+ * xlink-namespace, mens applyHillshade / applyDepthShade legger til
+ * `xlink:href` på <image>-elementene. Uten deklarasjonen feiler XML-
+ * parsing i Chrome Android ved gjenåpning av eksportert SVG.
+ */
+function stripRuntimeOverlays(svgString) {
+  // Match og fjern <g id="user-layer">…</g>, og tilsvarende for andre
+  // klient-injiserte lag. Bruker non-greedy match og `[^]*` for å fange
+  // newlines (`.` matcher ikke \n uten s-flag, ikke alle JS-runtimes har).
+  let s = svgString
+  const layerIds = ['user-layer', 'annotation-layer', 'track-layer', 'measure-layer']
+  for (const id of layerIds) {
+    const re = new RegExp(`<g[^>]*id="${id}"[^]*?</g>`, 'g')
+    s = s.replace(re, '')
+  }
+  if (!s.includes('xmlns:xlink')) {
+    s = s.replace(/<svg\b([^>]*)>/, '<svg$1 xmlns:xlink="http://www.w3.org/1999/xlink">')
+  }
+  return s
+}
+
 export function exportSvgFile(svgString, filename = 'turkart.svg') {
-  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const cleaned = stripRuntimeOverlays(svgString)
+  const blob = new Blob([cleaned], { type: 'image/svg+xml;charset=utf-8' })
   triggerDownload(blob, filename)
 }
 
+function clampCanvasDims(pxW, pxH) {
+  const maxDim = Math.max(pxW, pxH)
+  if (maxDim <= MAX_CANVAS_PX) return { pxW, pxH }
+  const k = MAX_CANVAS_PX / maxDim
+  return { pxW: Math.round(pxW * k), pxH: Math.round(pxH * k) }
+}
+
 export async function exportPngFile(svgString, filename = 'turkart.png', { dpi = 300 } = {}) {
+  const cleanedSvg = stripRuntimeOverlays(svgString)
   // Parse for å få viewBox
   const parser = new DOMParser()
-  const doc = parser.parseFromString(svgString, 'image/svg+xml')
+  const doc = parser.parseFromString(cleanedSvg, 'image/svg+xml')
   const root = doc.documentElement
   const widthAttr = root.getAttribute('width')
   const heightAttr = root.getAttribute('height')
@@ -42,13 +87,15 @@ export async function exportPngFile(svgString, filename = 'turkart.png', { dpi =
     pxH = Math.round(vb[3])
   }
 
+  ;({ pxW, pxH } = clampCanvasDims(pxW, pxH))
+
   const canvas = document.createElement('canvas')
   canvas.width = pxW
   canvas.height = pxH
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas-context utilgjengelig')
 
-  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const blob = new Blob([cleanedSvg], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   try {
     const img = new Image()
@@ -71,8 +118,9 @@ export async function exportPngFile(svgString, filename = 'turkart.png', { dpi =
  * Render SVG til kanvas + returner pxW/pxH/wMm/hMm. Gjenbrukes av PNG og PDF.
  */
 async function renderSvgToCanvas(svgString, dpi) {
+  const cleanedSvg = stripRuntimeOverlays(svgString)
   const parser = new DOMParser()
-  const doc = parser.parseFromString(svgString, 'image/svg+xml')
+  const doc = parser.parseFromString(cleanedSvg, 'image/svg+xml')
   const root = doc.documentElement
   const widthAttr = root.getAttribute('width')
   const heightAttr = root.getAttribute('height')
@@ -91,13 +139,15 @@ async function renderSvgToCanvas(svgString, dpi) {
     hMm = pxH * 25.4 / dpi
   }
 
+  ;({ pxW, pxH } = clampCanvasDims(pxW, pxH))
+
   const canvas = document.createElement('canvas')
   canvas.width = pxW
   canvas.height = pxH
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas-context utilgjengelig')
 
-  const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const blob = new Blob([cleanedSvg], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   try {
     const img = new Image()
@@ -136,6 +186,7 @@ export async function exportPdfFile(svgString, filename = 'turkart.pdf', { dpi =
 export function printDocument(svgString, { title = 'Turkart' } = {}) {
   const w = window.open('', '_blank', 'width=1200,height=900')
   if (!w) { alert('Tillat popup for å printe'); return }
+  const cleanedSvg = stripRuntimeOverlays(svgString)
   // Sett inn SVG i et minimalt dokument
   w.document.write(`<!doctype html><html><head>
     <title>${title}</title>
@@ -148,7 +199,7 @@ export function printDocument(svgString, { title = 'Turkart' } = {}) {
         svg { width: 100%; height: auto; }
       }
     </style>
-  </head><body>${svgString}<script>
+  </head><body>${cleanedSvg}<script>
     window.addEventListener('load', () => setTimeout(() => window.print(), 300))
   </script></body></html>`)
   w.document.close()

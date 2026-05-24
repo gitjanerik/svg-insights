@@ -271,10 +271,13 @@ function unionByName(elements, project) {
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
 const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
-// Vann-stack: dybdeareal (Sjøkart 307, gradient blå pr dybdebånd) først,
+// Vann-stack: dybdeareal (Sjøkart 307, diskrete blå-bånd pr dybde) først,
 // så myr-pattern, så ISOM 303/301/302 (mer mettete blå overstyrer for navn-
-// gitte vann), så bekker. Dybdekontur (306) sist så linjene tegnes oppå.
-const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305', '306']
+// gitte vann), så bekker.
+// v8.9.25: ISOM 306 (dybdekontur-linjer) er fjernet — de lå alt for tett
+// og maskerte fargebåndene. Dybde formidles nå via 307-polygonens
+// fargeskala (depthToColor) som har 4 distinkte blå-bånd.
+const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305']
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
@@ -293,7 +296,7 @@ const LAYER_ORDER = [
 ]
 
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
+const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -498,7 +501,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // Slå sammen tett bebygde områder til urbanmasse-multipolygoner med
   // pattern-fyll. Reduserer SVG-størrelsen og gir bedre kart-look.
   let urbanMassMultiPoly = []
-  if (buckets['521'].length >= 4) {
+  if (buckets['521'].length >= 5) {
     const buildingsXY = buckets['521']
       .filter(el => el.geometry && el.geometry.length >= 3)
       .map(el => ({
@@ -508,15 +511,16 @@ export function buildSvg(elements, bbox, options = {}) {
         }),
         original: el,
       }))
-    // v8.9.24: definisjonen på tett bebyggelse er nå "minst 3 bygninger med
-    // maks 50 m mellom naboer". Med 15 m fanget vi bare svært tette
-    // sentrumsstrøk; 50 m matcher norsk eneboligbebyggelse og koloni-
-    // hyttefelt der lufta mellom hyttene gjør at en menneskelig kartleser
-    // ville oppfattet dem som ett felt. Frittstående bygninger forblir som
-    // ekte OSM-vektorpolygoner i ISOM 521-laget.
+    // v8.9.25: definisjonen på "Bebyggelse" (ISOM 522 pattern-fyll) er nå
+    // minst 5 bygninger med maks 100 m mellom naboer. Strengere terskel enn
+    // v8.9.24 (50 m / 3 bygninger) som klassifiserte for aggressivt og
+    // slukte spredte eneboliger som burde stått som frittstående bygninger.
+    // Med 100 m / 5 stk slipper vi bare gjennom ekte villastrøk og
+    // tettsteds-sentra, mens hytter i marka og enslige gårder beholder sine
+    // ekte OSM-vektorpolygoner i Bygninger-laget (ISOM 521).
     const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
-      neighborRadiusM: 50,
-      minClusterSize: 3,
+      neighborRadiusM: 100,
+      minClusterSize: 5,
       bufferM: 6,
     })
     if (urbanMass.length > 0) {
@@ -1213,7 +1217,7 @@ function categoryFor(code) {
     case '406': case '407': case '408': case '409': return 'skog'
     case '308': case '309':                     return 'myr'
     case '301': case '302': case '303': case '307': return 'vann'
-    case '304': case '305': case '306':         return 'bekk'
+    case '304': case '305':                     return 'bekk'
     case '521':                                  return 'bygning'
     case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
