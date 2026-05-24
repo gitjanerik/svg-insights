@@ -249,5 +249,37 @@ export function usePinchZoom(elementRef, options = {}) {
   function zoomIn() { zoomBy(1.5) }
   function zoomOut() { zoomBy(1 / 1.5) }
 
-  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, animating }
+  /**
+   * Panorer + skaler så viewBox-punktet (vbX, vbY) ender midt i wrapperen.
+   * Brukes av søke-flowen for å sentrere på et stedsnavn-treff. Resetter
+   * rotasjon til 0 (enklere matte, og brukeren forventer at «kart-nord opp»
+   * etter et søk).
+   *
+   * Forutsetninger:
+   *   - SVG-en inne i wrapperen bruker preserveAspectRatio="xMidYMid meet"
+   *     med samme viewBox-bredde/-høyde som overført her
+   *   - Unified transform M = T(tx,ty) ∘ R(rot) ∘ S(s) påføres ÉN node inni
+   *     wrapperen (slik som i MapView)
+   */
+  function panTo(vbX, vbY, { vbWidth, vbHeight, targetScale = scale.value } = {}) {
+    const el = elementRef.value
+    if (!el || !vbWidth || !vbHeight) return
+    const r = el.getBoundingClientRect()
+    const w = r.width
+    const h = r.height
+    if (!w || !h) return
+    const fit = Math.min(w / vbWidth, h / vbHeight)
+    const offsetX = (w - vbWidth * fit) / 2
+    const offsetY = (h - vbHeight * fit) / 2
+    const px = offsetX + vbX * fit
+    const py = offsetY + vbY * fit
+    const s = clampScale(targetScale)
+    animate()
+    scale.value = s
+    rotation.value = 0
+    translateX.value = w / 2 - s * px
+    translateY.value = h / 2 - s * py
+  }
+
+  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating }
 }
