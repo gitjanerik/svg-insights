@@ -14,6 +14,7 @@ import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
+import { computeDepthShadeDataUrl } from '../lib/depthShade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
@@ -201,6 +202,7 @@ const BUILTIN = {
 // 'hillshade' og 'spor' er klient-side syntetiske lag (ikke fra mapBuilder).
 const LAYERS = [
   { key: 'hillshade',  label: 'Reliefskygge' },
+  { key: 'dybdeshade', label: 'Dybdeskygge' },
   { key: 'skog',       label: 'Skog' },
   { key: 'aapen',      label: 'Åpen mark' },
   { key: 'aker',       label: 'Åker' },
@@ -214,7 +216,6 @@ const LAYERS = [
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'tog',        label: 'Jernbane' },
   { key: 'sti',        label: 'Sti' },
-  { key: 'sykkel',     label: 'Sykkel-sti' },
   { key: 'lysloype',   label: 'Lysløype' },
   { key: 'heistrase',  label: 'Heistrasé' },
   { key: 'slalombakke', label: 'Slalombakke' },
@@ -534,6 +535,58 @@ async function applyHillshade() {
 }
 
 watch([() => visibleLayers.value, storedDem], () => { applyHillshade() })
+
+// Dybdeskygge (v8.9.24) — raster-fyller Sjøkart-dybde-polygoner (ISOM 307)
+// med gråtoner og embedder som SVG <image> med multiply-blend så sjøen
+// mørkner med økende dybde. Cache er signatur-basert (kart-id) siden
+// dybdedata ligger statisk i SVG-en — ingen DEM-fetch nødvendig.
+let cachedDepthShadeUrl = null
+let cachedDepthShadeSig = null
+
+function applyDepthShade() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || !meta.value) return
+  const wantOn = visibleLayers.value.has('dybdeshade')
+  let img = svg.querySelector('#depthshade-layer')
+  if (!wantOn) {
+    if (img) img.remove()
+    return
+  }
+  const sig = `${mapId.value}|${svg.querySelectorAll('[data-iso="307"][data-dybde]').length}`
+  if (cachedDepthShadeSig !== sig) {
+    cachedDepthShadeUrl = computeDepthShadeDataUrl(svg, meta.value.widthM, meta.value.heightM)
+    cachedDepthShadeSig = sig
+  }
+  if (!cachedDepthShadeUrl) {
+    if (img) img.remove()
+    return
+  }
+  // Plasseres mellom dybdeareal-polygonene og vann-konturene så toningen
+  // overlapper sjø-fyllet uten å skygge for høydekurver, navn osv.
+  const insertBefore = svg.querySelector('#user-layer')
+                    ?? svg.querySelector('#annotation-layer')
+                    ?? svg.querySelector('#track-layer')
+                    ?? svg.querySelector('#measure-layer')
+  if (!img) {
+    const ns = 'http://www.w3.org/2000/svg'
+    img = document.createElementNS(ns, 'image')
+    img.setAttribute('id', 'depthshade-layer')
+    img.setAttribute('data-layer', 'dybdeshade')
+    img.setAttribute('preserveAspectRatio', 'none')
+    img.setAttribute('opacity', '0.55')
+    img.setAttribute('pointer-events', 'none')
+    img.style.mixBlendMode = 'multiply'
+  }
+  if (insertBefore) svg.insertBefore(img, insertBefore)
+  else svg.appendChild(img)
+  img.setAttribute('x', '0'); img.setAttribute('y', '0')
+  img.setAttribute('width', String(meta.value.widthM))
+  img.setAttribute('height', String(meta.value.heightM))
+  img.setAttribute('href', cachedDepthShadeUrl)
+  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedDepthShadeUrl)
+}
+
+watch(() => visibleLayers.value, () => { applyDepthShade() })
 
 // Måleverktøy — distanse + areal (v8.9.4). Aktiveres via knapp i drawer.
 // Tap-på-kart i denne modusen plasserer vertices. Lukket polygon viser
@@ -1300,6 +1353,8 @@ async function loadMap() {
     // Hill-shading er default ON — fire-and-forget. Lazy DEM-load skjer
     // internt hvis nødvendig (Vardåsen).
     applyHillshade()
+    // Dybdeskygge for kart med Sjøkart-data — noop for kart uten 307-paths.
+    applyDepthShade()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'

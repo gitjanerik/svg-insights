@@ -30,7 +30,7 @@ export function buildOverpassQuery(bbox) {
 [out:json][timeout:90][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
 (
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
-  way["highway"~"^(path|track|footway|bridleway|cycleway|steps)$"];
+  way["highway"~"^(path|track|bridleway|steps)$"];
   way["natural"="water"];
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
@@ -278,7 +278,7 @@ const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305', '3
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
-const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '508', '510', '511']
+const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '510', '511']
 const UPPER_CODES  = ['521', '525', '528']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
@@ -293,7 +293,7 @@ const LAYER_ORDER = [
 ]
 
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
-const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '508', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
+const LINE_CODES = new Set(['304', '305', '306', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
  * Bygg ferdig SVG-streng for et bbox + Overpass-elementer. ISOM-inspirert
@@ -508,8 +508,14 @@ export function buildSvg(elements, bbox, options = {}) {
         }),
         original: el,
       }))
+    // v8.9.24: definisjonen på tett bebyggelse er nå "minst 3 bygninger med
+    // maks 50 m mellom naboer". Med 15 m fanget vi bare svært tette
+    // sentrumsstrøk; 50 m matcher norsk eneboligbebyggelse og koloni-
+    // hyttefelt der lufta mellom hyttene gjør at en menneskelig kartleser
+    // ville oppfattet dem som ett felt. Frittstående bygninger forblir som
+    // ekte OSM-vektorpolygoner i ISOM 521-laget.
     const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
-      neighborRadiusM: 15,
+      neighborRadiusM: 50,
       minClusterSize: 3,
       bufferM: 6,
     })
@@ -550,9 +556,10 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // Bygg ISOM-defs (patterns + symbols) og CSS
+  // Bygg ISOM-defs (patterns + symbols) og CSS. widthM sendes inn så
+  // label-fonts skaleres proporsjonalt med kartstørrelsen (v8.9.24).
   const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
-  const isomCss = buildIsomCss(isomCatalog, patternIds)
+  const isomCss = buildIsomCss(isomCatalog, patternIds, { widthM })
 
   const layerSvg = (code, phase = 'both') => {
     const els = buckets[code]
@@ -617,6 +624,7 @@ export function buildSvg(elements, bbox, options = {}) {
           // til dyp (#1f5d8a) så dybde-skiftene blir synlige som distinkte
           // blå-toner istedenfor ett flat farget areal.
           let inlineStyle = ''
+          let dybdeAttr = ''
           if (code === '307' && el.tags) {
             const minD = Number(el.tags.minDybde)
             const maxD = Number(el.tags.maxDybde)
@@ -624,10 +632,15 @@ export function buildSvg(elements, bbox, options = {}) {
                        : Number.isFinite(minD) ? minD
                        : Number.isFinite(maxD) ? maxD
                        : null
-            if (avgD != null) inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
+            if (avgD != null) {
+              inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
+              // v8.9.24: data-dybde lar MapView lage depth-shade PNG ved å
+              // raster-fylle disse polygonene i gråtoner (Path2D på d-attr).
+              dybdeAttr = ` data-dybde="${fmt(avgD)}"`
+            }
           }
           pathElements.push(
-            `    <path d="${d}" fill-rule="evenodd"${inlineStyle} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+            `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
           )
         }
       }
@@ -1206,7 +1219,6 @@ function categoryFor(code) {
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
-    case '508':                                  return 'sykkel'
     case '510':                                  return 'lysloype'
     case '511':                                  return 'heistrase'
     case '512':                                  return 'slalombakke'
