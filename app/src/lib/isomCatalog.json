@@ -636,10 +636,10 @@
       ]
     },
     "hugst": {
-      "$comment": "Diagonale grønne tikker",
+      "$comment": "Åker — varmgul/hvete-bakgrunn med smal brun tikk. Bakgrunnen var tidligere skog-grønn (#cae8a3 = identisk ISOM 406), så åker ble visuelt umulig å skille fra skog. v8.9.24: byttet til hvete-tan (#f1e0a8) med varm brun tikk (#a87832).",
       "widthMm": 2,
       "heightMm": 2,
-      "background": "#cae8a3",
+      "background": "#f1e0a8",
       "elements": [
         {
           "type": "line",
@@ -647,8 +647,8 @@
           "y1": 0.3,
           "x2": 0.7,
           "y2": 1.7,
-          "stroke": "#5cb348",
-          "widthMm": 0.1
+          "stroke": "#a87832",
+          "widthMm": 0.12
         }
       ]
     },
@@ -1640,7 +1640,7 @@
         },
         "404": {
           "fill": {
-            "color": "#d8be8a"
+            "color": "#e8c66a"
           }
         },
         "405": {

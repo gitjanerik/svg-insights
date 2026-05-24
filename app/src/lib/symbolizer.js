@@ -217,22 +217,15 @@ export function classifyToIsom(el) {
   if (t.highway === 'tertiary' || t.highway === 'residential' || t.highway === 'unclassified') return { code: '503', cat: 'manmade' }
   if (t.highway === 'service' || t.highway === 'living_street') return { code: '503', cat: 'manmade' }
   if (t.highway === 'track')                        return { code: '504', cat: 'manmade' }
-  // Sykkel-sti (508) før gang-sti så cycleway ikke blir behandlet som
-  // vanlig sti. Også OSM highway=path/footway med bicycle=designated/yes.
-  if (t.highway === 'cycleway')                     return { code: '508', cat: 'manmade' }
-  if ((t.highway === 'path' || t.highway === 'footway') &&
-      (t.bicycle === 'designated' || t.bicycle === 'yes')) {
-    return { code: '508', cat: 'manmade' }
-  }
-  // Sti-differensiering basert på OSM-tagger:
-  //   trail_visibility (excellent|good|intermediate|bad|horrible|no)
-  //   path:visibility (alternativ skrivemåte)
-  //   informal=yes (uoffisielt tråkk uten skilting)
-  //   sac_scale (T1=hiking, T2=mountain_hiking, T3+=demanding/alpine)
-  // Faller tilbake til 505 (sti godt løp) for vanlige path/footway/bridleway
-  // når ingen kvalitets-tags finnes. Tidligere ble ALLE sliket kodet 505,
-  // så ingen skille mellom DNT-merket sti og knapt synlig stitråkk.
-  if (t.highway === 'path' || t.highway === 'footway' || t.highway === 'bridleway') {
+  // v8.9.24: gang-/sykkelstier og fortau er fjernet fra turkartet — ISOM 508
+  // (sykkel-sti) blir ikke lenger emittet, og OSM highway=footway/cycleway
+  // filtreres bort i Overpass-spørringen. Bredere markerte stier
+  // (highway=path/bridleway) beholdes som ISOM 505/506/507 nedenfor.
+  // Fortau (footway=sidewalk) faller automatisk bort siden vi avviser
+  // footway-ways helt; sidewalks tagget på vei-objekt selv (sidewalk=*)
+  // genererer ikke egen way og rendres dermed ikke.
+  if (t.footway === 'sidewalk') return null
+  if (t.highway === 'path' || t.highway === 'bridleway') {
     const tv = t.trail_visibility ?? t['path:visibility']
     // 507 — knapt synlig stitråkk
     if (tv === 'horrible' || tv === 'no' ||
@@ -335,10 +328,28 @@ export function pathAttrsForIsomCode(code, catalog = isomCatalogDefault, pattern
 
 /** Inline CSS for en kategori-stil. Alle regler er prefikset med
  * `.isom-map` slik at stilene ikke lekker til andre SVG-er på siden
- * (f.eks. ikoner i toppbar-knapper). */
-export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
+ * (f.eks. ikoner i toppbar-knapper).
+ *
+ * v8.9.24: `options.widthM` skalerer label-font og halo proporsjonalt
+ * med kartstørrelsen. Bakgrunn: viewBox er i meter (1 user-unit = 1m),
+ * mens label-font er i mm (absolutt = ~3.78 user-units pr mm). Et større
+ * kart har større viewBox, så absolutte mm-størrelser blir en mindre
+ * andel av synlig kart — labels blir mikroskopiske ved max zoom. Vi
+ * skalerer mm-verdiene med `clamp(widthM/4000, 1, 3)` så et 10 km kart
+ * får 2.5× større labels (matches det 4 km referansekart leverte) uten
+ * å sprenge ved ekstreme 30 km+ kart.
+ */
+export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options = {}) {
   const rules = []
   const root = `.isom-map`
+  const widthM = Number(options.widthM)
+  const labelScale = Number.isFinite(widthM) && widthM > 0
+    ? Math.min(3, Math.max(1, widthM / 4000))
+    : 1
+  const mm = (v) => `${Number((v * labelScale).toFixed(3))}mm`
+  // Halo skal vokse mindre dramatisk (bare ~kvadratrot) så ikke teksten
+  // drukner i hvit ramme på store kart.
+  const haloMm = (v) => `${Number((v * Math.sqrt(labelScale)).toFixed(3))}mm`
   rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
   // Bakgrunn-rect bruker også --bg så mørk modus erstatter den kremgule
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
@@ -355,7 +366,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
       const props = []
       if (def.fill) {
         if (def.fill.type === 'pattern' && def.fill.pattern) {
-          props.push(`fill: url(#${patternIds.get(def.fill.pattern)})`)
+          // v8.9.24: pattern-fills får også CSS-var-fallback så tema-
+          // overstyringer (mørk, sepia, indigo, mocha, forest) faktisk
+          // bytter åker-fyllet, ikke bare solid-fyll-koder. Settes ved
+          // applyTheme() i MapView; default (lys/ISOM) bruker pattern.
+          props.push(`fill: var(--iso-${code}-fill, url(#${patternIds.get(def.fill.pattern)}))`)
         } else if (def.fill.color) {
           props.push(`fill: var(--iso-${code}-fill, ${def.fill.color})`)
         }
@@ -394,45 +409,47 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: 0.3mm; stroke-linecap: square; fill: none }`)
 
   // Etiketter — fill og halo er CSS-variabler så MapView kan overstyre i mørk modus.
+  // Font og halo skaleres med kartstørrelse (se labelScale over) så et 10 km
+  // kart leverer like lesbare labels ved max zoom som 4 km referanse-kart.
   const lab = catalog.labels
-  rules.push(`${root} [data-label] { font-size: ${lab.place.fontSizeMm}mm; fill: var(--label-place-fill, ${lab.place.color}); paint-order: stroke; stroke: var(--label-place-halo, ${lab.place.haloColor}); stroke-width: ${lab.place.haloWidthMm}mm; stroke-linejoin: round; }`)
-  rules.push(`${root} [data-label="peak"] { font-size: ${lab.peak.fontSizeMm}mm; fill: var(--label-peak-fill, ${lab.peak.color}); font-weight: ${lab.peak.weight}; stroke: var(--label-peak-halo, ${lab.peak.haloColor}); stroke-width: ${lab.peak.haloWidthMm}mm; paint-order: stroke; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label] { font-size: ${mm(lab.place.fontSizeMm)}; fill: var(--label-place-fill, ${lab.place.color}); paint-order: stroke; stroke: var(--label-place-halo, ${lab.place.haloColor}); stroke-width: ${haloMm(lab.place.haloWidthMm)}; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label="peak"] { font-size: ${mm(lab.peak.fontSizeMm)}; fill: var(--label-peak-fill, ${lab.peak.color}); font-weight: ${lab.peak.weight}; stroke: var(--label-peak-halo, ${lab.peak.haloColor}); stroke-width: ${haloMm(lab.peak.haloWidthMm)}; paint-order: stroke; stroke-linejoin: round; }`)
   if (lab['peak-ele']) {
     const pe = lab['peak-ele']
     const styleProps = [
-      `font-size: ${pe.fontSizeMm}mm`,
+      `font-size: ${mm(pe.fontSizeMm)}`,
       `fill: var(--label-peak-ele-fill, ${pe.color})`,
       pe.italic ? 'font-style: italic' : null,
       pe.weight ? `font-weight: ${pe.weight}` : null,
       `stroke: var(--label-peak-ele-halo, ${pe.haloColor})`,
-      `stroke-width: ${pe.haloWidthMm}mm`,
+      `stroke-width: ${haloMm(pe.haloWidthMm)}`,
       'paint-order: stroke',
       'stroke-linejoin: round',
     ].filter(Boolean).join('; ')
     rules.push(`${root} [data-label="peak-ele"] { ${styleProps} }`)
   }
-  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${lab['kontur-tall'].fontSizeMm}mm; fill: var(--label-kontur-tall-fill, ${lab['kontur-tall'].color}); font-style: italic; }`)
+  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${mm(lab['kontur-tall'].fontSizeMm)}; fill: var(--label-kontur-tall-fill, ${lab['kontur-tall'].color}); font-style: italic; }`)
   if (lab['vann-navn']) {
     const vn = lab['vann-navn']
     const styleProps = [
-      `font-size: ${vn.fontSizeMm}mm`,
+      `font-size: ${mm(vn.fontSizeMm)}`,
       `fill: var(--label-vann-navn-fill, ${vn.color})`,
       vn.italic ? 'font-style: italic' : null,
       vn.weight ? `font-weight: ${vn.weight}` : null,
       `stroke: var(--label-vann-navn-halo, ${vn.haloColor})`,
-      `stroke-width: ${vn.haloWidthMm}mm`,
+      `stroke-width: ${haloMm(vn.haloWidthMm)}`,
       'paint-order: stroke',
       'stroke-linejoin: round',
     ].filter(Boolean).join('; ')
     rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
   }
   if (lab['vann-tall']) {
-    rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
+    rules.push(`${root} [data-label="vann-tall"] { font-size: ${mm(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
   // v8.1.0: stedsnavn-overlay — stor, fet skrift med tydelig hvit halo
   // som overlay over kartet. Toggleable via 'Stedsnavn'-knapp i drawer
   // (default AV). Bruker --label-stedsnavn-* CSS-vars så tema kan tilpasse.
-  rules.push(`${root} [data-label="stedsnavn"] { font-size: 6.4mm; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: 1.2mm; stroke-linejoin: round; pointer-events: none; }`)
+  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${mm(6.4)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
 
   return rules.join(' ')
 }
