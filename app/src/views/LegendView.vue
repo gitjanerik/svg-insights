@@ -24,7 +24,7 @@ const SECTIONS = [
   { title: 'Veier & stier', codes: ['501', '502', '503', '504', '505', '506', '507'], category: 'manmade' },
   { title: 'Jernbane', codes: ['515'], category: 'manmade' },
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
-  { title: 'Bygninger', codes: ['521', '532', '525', '528'], category: 'manmade' },
+  { title: 'Bygninger', codes: ['521', '522', '532', '525', '528'], category: 'manmade' },
 ]
 
 function defForCode(category, code) {

@@ -234,9 +234,10 @@ const LAYERS = [
 // v8.2.0: lysloype skjules som default (lite relevant for de fleste
 // turkart-bbox), og stedsnavn vises som default (større områdenavn er
 // nyttig kontekst).
-// v8.9.27: 'bymasse' (ISOM 522 Bebyggelse) er fjernet — proximity-basert
-// klyngegruppering fungerte aldri som tilsiktet. Alle bygninger renders
-// nå som individuelle ISOM 521 og toggles via Bygninger-laget.
+// v8.9.28: ISOM 521 (frittstående bygg) og 522 (tett bebyggelse pattern-
+// fyll) deler samme «Bygninger»-bryter. 522 beholdes som eget render-pass
+// for å holde SVG-størrelsen i sjakk i tettbygde områder, men brukeren
+// forholder seg til ett lag i UI-et.
 // v8.9.25: 'dybdeshade' er AV som default — krever Sjøkart-data og
 // fungerer kun på kyst-kart. På innlandskart (Vardåsen, hytteområder)
 // er det ingen 307-polygoner å skygge så toggle-en gjør ingenting, og
