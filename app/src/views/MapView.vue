@@ -223,9 +223,6 @@ const LAYERS = [
   { key: 'trig',       label: 'Trigpunkter' },
   { key: 'stupkant',   label: 'Stupkant' },
   { key: 'linje',      label: 'Gjerde / kraft' },
-  { key: 'sjokart',    label: 'Lanterner / fyr' },
-  { key: 'staker',     label: 'Sjømerker / staker' },
-  { key: 'dybde',      label: 'Dybdetall' },
   { key: 'navn',       label: 'Navn' },
   { key: 'stedsnavn',  label: 'Stedsnavn' },
   { key: 'spor',       label: 'GPS-spor' },
@@ -1288,17 +1285,6 @@ async function loadMap() {
       source: m.source,
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
-      // v7.1.2: kritisk for SEA-mode bg-fix. applyTheme() leser
-      // meta.value.mapType for å re-applysere --bg=#9ec9de etter
-      // theme-reset. Manglende mapType i denne mappingen var hvorfor
-      // v7.1.1 ikke virket — vi sjekket alltid mot undefined.
-      mapType: m.mapType ?? null,
-      useSeaBg: !!m.useSeaBg,
-      sjokartCounts: m.sjokartCounts ?? null,
-      sjokartFetchErrors: Array.isArray(m.sjokartFetchErrors) ? m.sjokartFetchErrors : [],
-      sjokartDebugSamples: Array.isArray(m.sjokartDebugSamples) ? m.sjokartDebugSamples : [],
-      coastlineLandRings: m.coastlineLandRings ?? null,
-      coastlineWaysCount: m.coastlineWaysCount,
     }
     setupHostSvg(root)
     loading.value = false
@@ -1418,49 +1404,6 @@ const equidistanceLabel = computed(() => {
   return 'Høydekurver ikke tilgjengelig'
 })
 
-// v7.1.5: oppsummer Sjøkart-WFS-feil til kort tekst for attribusjons-
-// boksen. Hvis fetcher fanget exceptions, vis dominerende feiltype så
-// brukeren ser at det er WFS-side, ikke app-side.
-// v7.1.10: viser kort hvis ALLE sjøkart-counts er 0, så vi kan vise
-// første response-sample for debugging.
-const sjokartZeroFeatures = computed(() => {
-  const c = meta.value?.sjokartCounts
-  if (!c) return false
-  return (c.dybdeareal ?? 0) + (c.dybdekontur ?? 0) + (c.lanterne ?? 0)
-       + (c.grunne ?? 0) + (c.dybdepunkt ?? 0) === 0
-})
-
-const sjokartFirstSample = computed(() => {
-  const samples = meta.value?.sjokartDebugSamples
-  if (!Array.isArray(samples) || samples.length === 0) return null
-  const s = samples[0]
-  return `${s.typeName} (${s.length}b): ${s.sample.slice(0, 120)}…`
-})
-
-const sjokartFetchErrorSummary = computed(() => {
-  const errs = meta.value?.sjokartFetchErrors
-  if (!Array.isArray(errs) || errs.length === 0) return null
-  // v7.1.17: hvis vi faktisk har features fra Sjøkart, skjul WFS-
-  // advarselen. Én feil av mange typenames (typisk lanterne som
-  // ikke er i wfs.dybdedata) skal ikke skremme brukeren når andre
-  // typenames leverer fint.
-  if (!sjokartZeroFeatures.value) return null
-  // Tell pr type, vis mest vanlige
-  const counts = {}
-  for (const e of errs) counts[e.kind] = (counts[e.kind] ?? 0) + 1
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
-  const labels = {
-    'network-or-cors': 'CORS/nettfeil',
-    'http-error': 'HTTP-feil',
-    'not-json': 'GML/XML-svar',
-    'zero-features': 'tom respons',
-    'aborted': 'avbrutt',
-    'endpoint-deprecated': 'utdatert endepunkt',
-    'unknown': 'ukjent feil',
-  }
-  return sorted.slice(0, 2).map(([k, n]) => `${labels[k] ?? k} (${n})`).join(', ')
-})
-
 const wrapperSize = ref({ w: 0, h: 0 })
 function measureWrapper() {
   const r = wrapperRef.value?.getBoundingClientRect()
@@ -1505,13 +1448,6 @@ function applyTheme() {
   }
   svg.style.removeProperty('--bg')
   svg.style.removeProperty('--art-fill-opacity')
-  // v7.1.15: bg respekterer mapType strengt. Tidligere v7.1.3-logikk
-  // (useSeaBg basert på coastline-rekonstruksjon) ga uventet blå bg på
-  // kyst-Land-kart der bare en fjordarm passerer. Nå: mapType='sea' →
-  // blå, ellers kremgul (catalog-fallback).
-  if (meta.value?.mapType === 'sea') {
-    svg.style.setProperty('--bg', '#9ec9de')
-  }
   for (const code of allCodes) {
     svg.style.removeProperty(`--iso-${code}-fill`)
     svg.style.removeProperty(`--iso-${code}-stroke`)
@@ -1580,21 +1516,12 @@ function applyDiagnoseMode() {
       .isom-map [data-src="way"]      { fill: hsl(220, 80%, 60%) !important; opacity: 0.85 !important; }
       .isom-map [data-src="relation"] { fill: hsl(300, 80%, 60%) !important; opacity: 0.85 !important; }
       .isom-map [data-src="merged"]   { fill: hsl(45, 90%, 55%) !important; opacity: 0.85 !important; }
-      .isom-map [data-src="sjokart"]  { fill: hsl(160, 70%, 50%) !important; opacity: 0.85 !important; }
-      .isom-map [data-src="kystlinje"] { fill: hsl(20, 80%, 55%) !important; opacity: 0.85 !important; }
     `
   } else if (style) {
     style.remove()
   }
 }
 watch(diagnose, applyDiagnoseMode)
-
-// v7.1.0: nullstill globalt karttype-valg slik at picker spør på nytt
-// neste gang. Påvirker ikke gjeldende kart (det er allerede generert med
-// sin valgte type), kun fremtidige genereringer.
-function clearMapTypePreference() {
-  try { localStorage.removeItem('svg-insights:mapType') } catch { /* ignore */ }
-}
 
 /**
  * v7.4.1: Auto-start curveball hvis brukeren akkurat bygde dette kartet
@@ -1987,29 +1914,6 @@ onUnmounted(stopGpsTick)
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
-      <template v-if="meta?.mapType">
-        <br><span class="text-white/65">{{ meta.mapType === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}</span>
-        <button @click="clearMapTypePreference"
-                class="ml-1 text-[8px] text-sky-400/70 underline pointer-events-auto"
-                :title="'Nullstiller globalt karttype-valg. Du blir spurt på nytt neste gang.'">
-          Nullstill
-        </button>
-        <template v-if="meta.mapType === 'sea' && meta.sjokartCounts">
-          <br><span class="text-sky-300/70">Sjøkart: omr={{ meta.sjokartCounts.dybdeareal }} kontur={{ meta.sjokartCounts.dybdekontur }} skj={{ meta.sjokartCounts.grunne }} dyb={{ meta.sjokartCounts.dybdepunkt }} lan={{ meta.sjokartCounts.lanterne }}</span>
-          <template v-if="(meta.sjokartCounts.slipp ?? 0) + (meta.sjokartCounts.havnestruktur ?? 0) + (meta.sjokartCounts.fareomraade ?? 0) > 0">
-            <br><span class="text-sky-300/70">Padle: slipp={{ meta.sjokartCounts.slipp ?? 0 }} hav={{ meta.sjokartCounts.havnestruktur ?? 0 }} fare={{ meta.sjokartCounts.fareomraade ?? 0 }}</span>
-          </template>
-        </template>
-        <template v-if="meta.mapType === 'sea' && sjokartFetchErrorSummary">
-          <br><span class="text-amber-300/85">⚠ Sjøkart-WFS feilet: {{ sjokartFetchErrorSummary }}</span>
-        </template>
-        <template v-if="meta.mapType === 'sea' && sjokartZeroFeatures && sjokartFirstSample">
-          <br><span class="text-amber-200/70 break-all">Sample: {{ sjokartFirstSample }}</span>
-        </template>
-      </template>
-      <template v-else-if="meta?.coastlineWaysCount !== undefined">
-        <br><span class="text-sky-300/85">Kyst: ways={{ meta.coastlineWaysCount }} ringer={{ meta?.coastlineLandRings ?? 0 }}</span>
-      </template>
     </div>
 
     <!-- Kontrollpanel (drawer) -->
@@ -2513,20 +2417,6 @@ onUnmounted(stopGpsTick)
                 Reliefskygge: Horn-formel hill-shading rendret som grayscale-PNG i
                 SVG-en med <code class="text-white/85">mix-blend-mode: multiply</code>.
               </p>
-              <!-- v8.9.9: Karttype-info + nullstill-knapp. Tidligere var dette
-                   bare synlig som liten tekst nede i attribusjons-boksen og
-                   ble lett oversett (rapportert 23. mai 2026). -->
-              <div v-if="meta?.mapType" class="mt-3 pt-3 border-t border-white/10 flex items-center justify-between gap-2">
-                <span class="text-white/80">
-                  Karttype: {{ meta.mapType === 'sea' ? '🌊 Sjøkart' : '🥾 Land-kart' }}
-                </span>
-                <button @click="clearMapTypePreference"
-                        class="px-2 py-1 rounded-md bg-sky-500/15 border border-sky-400/40
-                               text-sky-200 text-[11px] hover:bg-sky-500/25"
-                        title="Nullstiller globalt karttype-valg. Du blir spurt på nytt neste gang du lager et kart.">
-                  Nullstill valg
-                </button>
-              </div>
               <p class="text-white/45 text-[10px]">v{{ APP_VERSION }}</p>
             </div>
           </div>

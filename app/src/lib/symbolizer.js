@@ -174,67 +174,7 @@ export function classifyToIsom(el) {
   if (el.type === 'node' && isTrigPoint(t)) {
     return { code: '113', cat: 'point' }
   }
-  // Sjømerker (ISOM 540-543). OSM `seamark:type=*` med fargevariant fra
-  // colour-tag. Lateral skiller på colour=red/green; cardinal og spesial
-  // eget kode.
-  if (el.type === 'node' && t['seamark:type']) {
-    const stype = t['seamark:type']
-    if (stype === 'buoy_lateral' || stype === 'beacon_lateral') {
-      const colour = (t['seamark:buoy_lateral:colour'] ?? t['seamark:beacon_lateral:colour'] ?? t['seamark:lateral:colour'] ?? '').toLowerCase()
-      if (colour.includes('red')) return { code: '540', cat: 'point' }
-      if (colour.includes('green')) return { code: '541', cat: 'point' }
-      return { code: '543', cat: 'point' }
-    }
-    if (stype === 'buoy_cardinal' || stype === 'beacon_cardinal') return { code: '542', cat: 'point' }
-    if (stype === 'buoy_safe_water' || stype === 'beacon_safe_water' ||
-        stype === 'buoy_special_purpose' || stype === 'beacon_special_purpose' ||
-        stype === 'buoy_isolated_danger' || stype === 'beacon_isolated_danger') {
-      return { code: '543', cat: 'point' }
-    }
-    // v7.1.18 Fase 2: lanterner/fyr fra OSM som backup når
-    // wfs.dybdedata-tjenesten mangler dem (verifisert: ingen Lanterne
-    // typename i wfs.dybdedata).
-    if (stype === 'light_major' || stype === 'light_minor' ||
-        stype === 'light_float' || stype === 'light_vessel' ||
-        stype === 'lighthouse' || stype === 'beacon') {
-      return { code: '533', cat: 'point' }
-    }
-  }
-  // v7.1.18 Fase 2: lighthouse/light som man_made-tag (OSM-konvensjon).
-  if (el.type === 'node' && (t.man_made === 'lighthouse' || t.man_made === 'light')) {
-    return { code: '533', cat: 'point' }
-  }
-  // v7.1.18 Fase 3: hovedled / skipsled fra OSM seamark:type=fairway.
-  // Linje-feature; mørk-blå stiplet linje med pil-marker.
-  if (el.type === 'way' && t['seamark:type'] === 'fairway') {
-    return { code: '545', cat: 'manmade' }
-  }
   if (el.type === 'node' && t.place) return { code: 'place', cat: 'point' }
-
-  // ── Sjøkart-spesifikke tags (Kartverket Sjøkart-Dybdedata WFS) ────────
-  // Disse settes av sjokartFetcher.sjokartToElements() og må mappes
-  // før de generelle natural=water-reglene under (siden Dybdeareal også
-  // har natural=water + water=sea satt for backward-kompatibilitet).
-  if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
-  if (t.sjokart === 'grunne') {
-    // v7.1.18: skjær/grunne — node = punkt-symbol (211), polygon =
-    // areal-overlegg (212, lys blå outline). Polygon-skjær fikk tidligere
-    // natural=rock og rendret som svart 210-blokkmark-pattern.
-    return el.type === 'node' ? { code: '211', cat: 'point' } : { code: '214', cat: 'rock' }
-  }
-  if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
-  if (t.sjokart === 'dybdekontur') return { code: '306', cat: 'water' }
-  if (t.sjokart === 'dybdeareal')  return { code: '307', cat: 'water' }
-  // v7.1.16: padle-features fra Sjøkart-WFS (Fase 5)
-  // Slipp kan være Point eller Polygon i WFS — håndteres som point
-  // hvis node, ellers polygon med samme styling som havnestruktur (551).
-  if (t.sjokart === 'slipp') {
-    return el.type === 'node'
-      ? { code: '550', cat: 'point' }
-      : { code: '551', cat: 'manmade' }
-  }
-  if (t.sjokart === 'havnestruktur')  return { code: '551', cat: 'manmade' }
-  if (t.sjokart === 'fareomraade')    return { code: '552', cat: 'manmade' }
 
   // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
   // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har
@@ -477,22 +417,6 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds) {
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${lab['vann-tall'].fontSizeMm}mm; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${lab['vann-tall'].haloWidthMm}mm; }`)
   }
-  if (lab['dybde-tall']) {
-    rules.push(`${root} [data-label="dybde-tall"] { font-size: ${lab['dybde-tall'].fontSizeMm}mm; fill: var(--label-dybde-tall-fill, ${lab['dybde-tall'].color}); stroke: var(--label-dybde-tall-halo, ${lab['dybde-tall'].haloColor}); stroke-width: ${lab['dybde-tall'].haloWidthMm}mm; }`)
-  }
-  // v7.1.5: dybde-kontur-tall (meter-tall på Sjøkart-konturer). Mindre
-  // enn vann-tall, samme blå-farge som dybdekontur-strek for visuell
-  // sammenheng. Bruker dybde-tall-config hvis den finnes, ellers
-  // hardkodet ISOM-default.
-  const dyk = lab['dybde-kontur-tall'] ?? lab['dybde-tall'] ?? {
-    fontSizeMm: 1.6, color: '#1f5d8a', haloColor: '#fff', haloWidthMm: 0.5,
-  }
-  rules.push(`${root} [data-label="dybde-kontur-tall"] text { font-size: ${dyk.fontSizeMm}mm; fill: var(--label-dybde-kontur-tall-fill, ${dyk.color}); paint-order: stroke; stroke: ${dyk.haloColor}; stroke-width: ${dyk.haloWidthMm}mm; stroke-linejoin: round; font-style: italic; }`)
-
-  // v7.1.14: skjær-navn — italic, mindre font enn place-navn, mørk-blå
-  // halo for å være synlig mot blå sjø-bg.
-  rules.push(`${root} [data-label="skjaer-navn"] { font-size: 1.8mm; font-style: italic; fill: #1f3a5c; paint-order: stroke; stroke: #fff; stroke-width: 0.4mm; stroke-linejoin: round; }`)
-
   // v8.1.0: stedsnavn-overlay — stor, fet skrift med tydelig hvit halo
   // som overlay over kartet. Toggleable via 'Stedsnavn'-knapp i drawer
   // (default AV). Bruker --label-stedsnavn-* CSS-vars så tema kan tilpasse.

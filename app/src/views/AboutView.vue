@@ -87,18 +87,16 @@ const TABS = [
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn, øy-overlay</li>
           <li><strong class="text-white/75">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
-          <li><strong class="text-white/75">Kartverket Sjøkart Dybdedata</strong> via WFS — kystkonturer, dybdeareal, dybdekurver, skjær, lanterner</li>
           <li><strong class="text-white/75">Kartverket DTM 1m/10m</strong> via WCS — terrengmodell for høydekurver og stupkanter</li>
           <li><strong class="text-white/75">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Pipeline (fra OSM/N50/Sjøkart/DEM til ISOM-SVG)</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Pipeline (fra OSM/N50/DEM til ISOM-SVG)</h4>
         <ol class="text-xs text-white/50 space-y-1.5 list-decimal list-inside leading-relaxed">
           <li>Bbox velges i picker (UTM 32N, 1×10 km bredde, 5/10/20/50/100 m ekvidistanse)</li>
           <li>OSM-features hentes via Overpass for valgt bbox; reprojiseres med håndskrevet UTM-formel</li>
-          <li>Vann-data hentes parallelt fra tre kilder med fallback-prioritet: N50 Havflate/Innsjø/ElvBekk → Sjøkart Dybdeareal (kyst-fyll) → OSM <code>natural=water</code></li>
-          <li>Sjøkart-data inkluderer dybdekurver (ISOM 306, lyseste til mørkeste blå), skjær/grunner (ISOM 211), lanterner/fyr (ISOM 533) og dybdetall (soundings)</li>
+          <li>Vann-data hentes parallelt fra to kilder med fallback-prioritet: N50 Havflate/Innsjø/ElvBekk → OSM <code>natural=water</code></li>
           <li>OSM <code>place=island/islet</code> renderes som kremgul land-overlay (ISOM 001) etter vann-laget for å maskere bort feilplassert OSM-vann i kyst-arkipel</li>
           <li>DTM hentes som GeoTIFF fra Kartverket WCS, parses med <code>geotiff.js</code></li>
           <li>Høydekurver: <code>d3-contour</code> marching squares → Chaikin-glatting → DP-forenkling</li>
