@@ -6,6 +6,7 @@ import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
 import { buildWaterMaskFromTiles, polygonsToOsmLikeWays } from '../lib/waterMaskFromTiles.js'
+import { buildWaterMaskFromWms } from '../lib/waterMaskFromWms.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { findHighestPoint, packDem } from '../lib/demSampling.js'
@@ -180,7 +181,7 @@ async function generateMap() {
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
 
   try {
-    const [osmData, n50Water, sjokart, wmtsWater] = await Promise.all([
+    const [osmData, n50Water, sjokart, wmsWater] = await Promise.all([
       fetchOverpass(bbox.value),
       fetchN50Water(bbox.value).catch(e => {
         console.warn('N50-vann ikke tilgjengelig:', e.message)
@@ -192,17 +193,29 @@ async function generateMap() {
         console.warn('Sjøkart-Dybdedata ikke tilgjengelig:', e.message)
         return { dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [] }
       }),
-      // Norgeskart WMTS-vannmaske: autoritativ Kartverket-rendering parset
-      // til polygoner. Dekker både sjø og innsjø/tjern uten å være avhengig
-      // av OSM-tagging eller N50-WFS-CORS. Graceful fail hvis tile-fetch
-      // svikter.
-      buildWaterMaskFromTiles(bbox.value).catch(e => {
-        console.warn('WMTS-vannmaske ikke tilgjengelig:', e.message)
-        return { polygons: [], source: 'failed', tilesFetched: 0, tilesFailed: 0 }
+      // Kartverket FKB-Vann WMS: rendrer KUN vann på transparent bakgrunn,
+      // så vann-deteksjon er alpha-basert (alpha > 0 = vann) istedenfor HSL-
+      // heuristikk på stilisert kart. Autoritativ og uavhengig av zoom-
+      // generalisering i Norgeskart-rendering.
+      buildWaterMaskFromWms(bbox.value).catch(e => {
+        console.warn('WMS-vannmaske ikke tilgjengelig:', e.message)
+        return { polygons: [], source: 'failed' }
       }),
     ])
     const sjokartElements = sjokartToElements(sjokart)
-    const wmtsElements = polygonsToOsmLikeWays(wmtsWater.polygons)
+
+    // FALLBACK: hvis WMS-probes svikter (alle endepunkter feiler / CORS), bruk
+    // den eldre WMTS-tile-baserte HSL-detektoren som backup. Mindre presis,
+    // men har dekning når WMS er nede.
+    let waterMask = wmsWater
+    if (waterMask.source !== 'wms' || waterMask.polygons.length === 0) {
+      console.warn('[Vannmaske] WMS uten data, faller tilbake til WMTS-tile')
+      const wmtsBackup = await buildWaterMaskFromTiles(bbox.value).catch(() =>
+        ({ polygons: [], source: 'failed' })
+      )
+      if (wmtsBackup.polygons.length > 0) waterMask = wmtsBackup
+    }
+    const waterMaskElements = polygonsToOsmLikeWays(waterMask.polygons)
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
     // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
     // bare hvis tilsvarende N50-kilde finnes.
@@ -236,15 +249,18 @@ async function generateMap() {
     })
     if (n50Water.length > 0) elements.push(...n50Water)
     if (sjokartElements.length > 0) elements.push(...sjokartElements)
-    if (wmtsElements.length > 0) elements.push(...wmtsElements)
+    if (waterMaskElements.length > 0) elements.push(...waterMaskElements)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
     if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
-    if (wmtsElements.length > 0) {
-      const seaCount = wmtsWater.polygons.filter(p => p.type === 'sea').length
-      const lakeCount = wmtsWater.polygons.filter(p => p.type === 'lake').length
-      sourceParts.push(`WMTS-vann (${seaCount} sjø + ${lakeCount} innsjø, ${wmtsWater.tilesFetched} tiler)`)
+    if (waterMaskElements.length > 0) {
+      const seaCount = waterMask.polygons.filter(p => p.type === 'sea').length
+      const lakeCount = waterMask.polygons.filter(p => p.type === 'lake').length
+      const srcLabel = waterMask.source === 'wms'
+        ? `WMS-vann (${waterMask.endpoint ?? 'ukjent'})`
+        : 'WMTS-vann (fallback)'
+      sourceParts.push(`${srcLabel}: ${seaCount} sjø + ${lakeCount} innsjø`)
     }
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
@@ -260,15 +276,15 @@ async function generateMap() {
     await new Promise(r => setTimeout(r, 30))
     const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 10, useReal: true })
 
-    // Når WMTS-vannmaske leverte data: dropp heuristisk DEM-sjø-deteksjon
-    // og distance-bånd. WMTS er per-piksel presis fra Kartverket, så de
-    // heuristiske lagene tilfører bare risiko for at sjø "smitter" inn på
-    // små øyer DEM-resolusjonen ikke fanger. Fall tilbake til DEM når
-    // WMTS feiler (offline/CORS).
+    // Når autoritativ vannmaske (WMS eller WMTS-fallback) leverte data:
+    // dropp heuristisk DEM-sjø-deteksjon og distance-bånd. Vannmasken er
+    // per-piksel presis fra Kartverket, så de heuristiske lagene tilfører
+    // bare risiko for at sjø "smitter" inn på små øyer DEM-resolusjonen
+    // ikke fanger. Fall tilbake til DEM-heuristikk når begge feiler.
     const { svg, counts } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
       skipContoursIfSynthetic: true,
-      skipDemSea: wmtsElements.length > 0,
+      skipDemSea: waterMaskElements.length > 0,
     })
 
     buildProgress.value = `Lagrer kart …`
