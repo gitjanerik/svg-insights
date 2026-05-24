@@ -5,7 +5,7 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { fetchOverpass, buildSvg, bboxFromCenter } from '../lib/mapBuilder.js'
 import { fetchN50Water } from '../lib/n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from '../lib/sjokartFetcher.js'
-import { buildWaterMaskFromTiles, polygonsToOsmLikeWays } from '../lib/waterMaskFromTiles.js'
+import { polygonsToOsmLikeWays } from '../lib/waterMaskFromTiles.js'
 import { buildWaterMaskFromWms } from '../lib/waterMaskFromWms.js'
 import { isOsmWaterSalty } from '../lib/symbolizer.js'
 import { fetchDEM } from '../lib/demFetcher.js'
@@ -204,17 +204,13 @@ async function generateMap() {
     ])
     const sjokartElements = sjokartToElements(sjokart)
 
-    // FALLBACK: hvis WMS-probes svikter (alle endepunkter feiler / CORS), bruk
-    // den eldre WMTS-tile-baserte HSL-detektoren som backup. Mindre presis,
-    // men har dekning når WMS er nede.
-    let waterMask = wmsWater
-    if (waterMask.source !== 'wms' || waterMask.polygons.length === 0) {
-      console.warn('[Vannmaske] WMS uten data, faller tilbake til WMTS-tile')
-      const wmtsBackup = await buildWaterMaskFromTiles(bbox.value).catch(() =>
-        ({ polygons: [], source: 'failed' })
-      )
-      if (wmtsBackup.polygons.length > 0) waterMask = wmtsBackup
-    }
+    // Vannmaske KUN fra autoritativ Kartverket-WMS. Hvis WMS svikter, godtar
+    // vi degradering (kremgul der det skulle vært sjø) heller enn å falle
+    // tilbake til HSL-pikseldeteksjon eller DEM-heuristikk — begge har vist
+    // seg å gi feilklassifisering (Mini-Venezia-Oslo i v8.9.17, Drammen-
+    // Gulskogen i v8.9.22). Brukerens prinsipp: ingen flere lapper på
+    // symptomer.
+    const waterMask = wmsWater
     const waterMaskElements = polygonsToOsmLikeWays(waterMask.polygons)
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
     // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
@@ -257,10 +253,11 @@ async function generateMap() {
     if (waterMaskElements.length > 0) {
       const seaCount = waterMask.polygons.filter(p => p.type === 'sea').length
       const lakeCount = waterMask.polygons.filter(p => p.type === 'lake').length
-      const srcLabel = waterMask.source === 'wms'
-        ? `WMS-vann (${waterMask.endpoint ?? 'ukjent'})`
-        : 'WMTS-vann (fallback)'
-      sourceParts.push(`${srcLabel}: ${seaCount} sjø + ${lakeCount} innsjø`)
+      sourceParts.push(`WMS-vann (${waterMask.endpoint ?? 'ukjent'}): ${seaCount} sjø + ${lakeCount} innsjø`)
+    } else if (waterMask.source === 'failed') {
+      // Tydelig synlig advarsel: vannmasken svikta og vi har ingen autoritativ
+      // sjø-data. Brukeren ser kremgul der det skulle vært vann.
+      sourceParts.push(`⚠ WMS-vann feilet (${waterMask.reason ?? 'ukjent'}) — sjø kan mangle`)
     }
     const source = sourceParts.join(' + ')
     buildProgress.value = `Bygger SVG fra ${elements.length} elementer (kilde: ${source}) …`
@@ -284,7 +281,10 @@ async function generateMap() {
     const { svg, counts } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
       skipContoursIfSynthetic: true,
-      skipDemSea: waterMaskElements.length > 0,
+      // DEM-sjø-deteksjon ved DTM ≤ 0.5m heuristikk slått av permanent
+      // (v8.9.23). Den smitter inn på lavt-liggende byer (Drammen-bug).
+      // Sjø-data kommer KUN fra autoritativ WMS + OSM/N50/Sjøkart.
+      skipDemSea: true,
     })
 
     buildProgress.value = `Lagrer kart …`
