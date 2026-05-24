@@ -194,6 +194,15 @@ export function classifyToIsom(el) {
   // som kremgul polygon ETTER vann-laget, før konturer/veier.
   if (t.place === 'island' || t.place === 'islet') return { code: '001', cat: 'land' }
 
+  // Kirke (ISOM 532-derivert): point-symbol. OSM tagger churches på flere
+  // måter — `amenity=place_of_worship` (vanligst), eller `building=church`
+  // direkte. Node-varianten klassifiseres her som point; way-varianten
+  // (en bygning som *er* kirken) faller gjennom til 521 og får en
+  // korsmarkør plassert på centroid i mapBuilder.
+  if (el.type === 'node' && (t.amenity === 'place_of_worship' || t.building === 'church' || t.building === 'chapel')) {
+    return { code: '532', cat: 'point' }
+  }
+
   if (t.building)                                   return { code: '521', cat: 'manmade' }
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
   // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
