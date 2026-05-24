@@ -17,7 +17,7 @@
 
 import { contours as d3Contours } from 'd3-contour'
 import { simplifyDP, chaikin } from './pathUtils.js'
-import { wgs84ToUtm32, utm32ToWgs84 } from './utm.js'
+import { wgs84ToUtm32 } from './utm.js'
 
 const TILE_URL = 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator'
 const TILE_SIZE = 256
@@ -249,49 +249,48 @@ function signedArea(ring) {
 }
 
 /**
- * Konverter WMTS-polygoner til OSM-like elementer som mapBuilder rendrer
+ * Konverter WMTS-polygoner til mapBuilder-kompatible elementer som rendrer
  * via standard waterLayers-pipelinen. Sjø-polygoner blir ISOM 303,
  * innsjø-polygoner blir ISOM 301.
  *
- * Polygonene leveres i bbox-meter-koord; vi konverterer tilbake til lat/lon
- * så pipelinen kan re-projisere via project() (samme mønster som N50).
+ * Bruker `merged-water`-formatet med `_mergedRings` som bevarer outer/hole-
+ * topologi. Hvert WMTS-polygon = én entry i `_mergedRings` = `[outer, ...holes]`.
+ * Holes (øyer i sjø, øyer i innsjøer) rendres som hull via fill-rule="evenodd"
+ * istedenfor å bli klassifisert som «vann».
+ *
+ * Koordinatene er allerede i SVG-meter-rom (samme som mapBuilder bruker for
+ * `_mergedRings`), så ingen WGS84-rundtur er nødvendig.
  *
  * @param {Array} wmtsPolygons   Output fra buildWaterMaskFromTiles
- * @param {{south, west, north, east}} bbox
- * @returns {Array}              OSM-aktige way-elementer
+ * @returns {Array}              merged-water-elementer
  */
-export function polygonsToOsmLikeWays(wmtsPolygons, bbox) {
-  // Vi har polygoner i bbox-meter-koord. Konverter tilbake til lat/lon via
-  // approks (lineær interpolasjon over bbox-en).
-  const swM = wgs84ToUtm32(bbox.south, bbox.west)
-  const neM = wgs84ToUtm32(bbox.north, bbox.east)
-  const minE = Math.min(swM.e, neM.e)
-  const minN = Math.min(swM.n, neM.n)
-  const maxN = Math.max(swM.n, neM.n)
-  const bboxHeightM = maxN - minN
-
-  const elements = []
-  let id = 5_000_000
+export function polygonsToOsmLikeWays(wmtsPolygons) {
+  if (!wmtsPolygons.length) return []
+  const seaPolys = []
+  const lakePolys = []
   for (const poly of wmtsPolygons) {
-    const tags = poly.type === 'sea'
-      ? { natural: 'water', water: 'sea', salt: 'yes', _source: 'wmts-sea' }
-      : { natural: 'water', _source: 'wmts-lake' }
-    // Bygg en geometry-array per ring; outer + inners blir hvert sitt way
-    // (taper hole-relasjon, men det er OK for små innsjøer uten kjente øyer).
-    for (const ring of poly.rings) {
-      const geometry = ring.map(([xM, yM]) => {
-        const e = minE + xM
-        const n = maxN - yM
-        return utm32ToWgs84(e, n)
-      })
-      elements.push({
-        type: 'way',
-        id: id++,
-        geometry,
-        tags: { ...tags },
-        _source: tags._source,
-      })
-    }
+    if (!poly.rings?.length) continue
+    if (poly.type === 'sea') seaPolys.push(poly.rings)
+    else lakePolys.push(poly.rings)
+  }
+  const elements = []
+  if (seaPolys.length) {
+    elements.push({
+      type: 'merged-water',
+      id: 5_000_001,
+      tags: { natural: 'water', water: 'sea', salt: 'yes' },
+      _mergedRings: seaPolys,
+      _source: 'wmts-sea',
+    })
+  }
+  if (lakePolys.length) {
+    elements.push({
+      type: 'merged-water',
+      id: 5_000_002,
+      tags: { natural: 'water' },
+      _mergedRings: lakePolys,
+      _source: 'wmts-lake',
+    })
   }
   return elements
 }

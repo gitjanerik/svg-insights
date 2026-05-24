@@ -202,7 +202,7 @@ async function generateMap() {
       }),
     ])
     const sjokartElements = sjokartToElements(sjokart)
-    const wmtsElements = polygonsToOsmLikeWays(wmtsWater.polygons, bbox.value)
+    const wmtsElements = polygonsToOsmLikeWays(wmtsWater.polygons)
     // Granulær autoritets-deteksjon. Vi differensierer mellom ferskvann
     // (innsjø/tjern/elv) og saltvann (sjø/fjord). Filtreres OSM pr type
     // bare hvis tilsvarende N50-kilde finnes.

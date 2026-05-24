@@ -207,7 +207,6 @@ const LAYERS = [
   { key: 'myr',        label: 'Myr' },
   { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk / dybdekurver' },
-  { key: 'land',       label: 'Land-overlay (øyer)' },
   { key: 'kontur',     label: 'Høydekurver' },
   { key: 'bygning',    label: 'Bygninger (frittstående)' },
   { key: 'bymasse',    label: 'Tett bebyggelse' },
