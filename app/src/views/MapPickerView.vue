@@ -260,9 +260,15 @@ async function generateMap() {
     await new Promise(r => setTimeout(r, 30))
     const dem = await fetchDEM(bbox.value, utmBbox, { resolutionM: 10, useReal: true })
 
+    // Når WMTS-vannmaske leverte data: dropp heuristisk DEM-sjø-deteksjon
+    // og distance-bånd. WMTS er per-piksel presis fra Kartverket, så de
+    // heuristiske lagene tilfører bare risiko for at sjø "smitter" inn på
+    // små øyer DEM-resolusjonen ikke fanger. Fall tilbake til DEM når
+    // WMTS feiler (offline/CORS).
     const { svg, counts } = buildSvg(elements, bbox.value, {
       dem, contourIntervalM: equidistanceM.value, scaleDenom: 10000,
       skipContoursIfSynthetic: true,
+      skipDemSea: wmtsElements.length > 0,
     })
 
     buildProgress.value = `Lagrer kart …`

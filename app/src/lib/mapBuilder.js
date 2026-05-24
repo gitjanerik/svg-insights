@@ -320,6 +320,7 @@ export function buildSvg(elements, bbox, options = {}) {
     includeKnauser = true,
     includeCliffs = true,
     skipContoursIfSynthetic = false,
+    skipDemSea = false,
   } = options
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
@@ -531,23 +532,21 @@ export function buildSvg(elements, bbox, options = {}) {
     const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
     demFeatures = { contours: c, knauser: k, cliffs: cl, equidistanceM: contourIntervalM }
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
-    // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). Pålitelig fordi
-    // det er Kartverkets eget DTM — ingen OSM-mistags eller WFS-CORS-issues.
-    // requireBoundaryTouch filtrerer ut innsjøer/tjern som ligger nær 0 m
-    // over havet (Nesøyatjern-typetilfellet) ved å kreve at sjø-polygonet
-    // berører bbox-kanten.
-    const seaResult = buildSeaFromDem(usableDem, {
-      thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
-    })
-    demSeaPolygons = seaResult.polygons
-    // Grunn-bånd: chamfer-distance fra kysten gir gradient-effekt der sjø
-    // nær land tegnes lysere enn åpent vann. To bånd: 0-50 m og 0-200 m
-    // fra land, lagt på toppen av basis-sjø-laget i den rekkefølgen.
-    if (demSeaPolygons.length) {
-      const shallow = buildSeaShallowBands(usableDem, {
-        thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+    // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
+    // WMTS-vannmaske ikke leverte data — heuristikken kan "smitte" inn på
+    // lavtliggende øyer DEM-resolusjonen ikke fanger, så WMTS foretrekkes
+    // når det er tilgjengelig (skipDemSea=true).
+    if (!skipDemSea) {
+      const seaResult = buildSeaFromDem(usableDem, {
+        thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
       })
-      demSeaBands = shallow.bands
+      demSeaPolygons = seaResult.polygons
+      if (demSeaPolygons.length) {
+        const shallow = buildSeaShallowBands(usableDem, {
+          thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+        })
+        demSeaBands = shallow.bands
+      }
     }
   }
 
