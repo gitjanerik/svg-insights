@@ -96,13 +96,41 @@ describe('useMapSearch', () => {
       expect(filterIndex(mockIndex, '   ')).toEqual([])
     })
 
-    it('sorts results alphabetically', () => {
-      // Query "vann" treffer 3 entries via categories. Sorteringen er
-      // ren alfabetisk på navn (norsk collation), ikke etter relevans
-      // eller størrelse.
+    it('sorts named entries alphabetically, unnamed lakes last by area desc', () => {
+      // Query "vann" treffer 3 entries via categories.
+      //   - Hestesund (named, kind=omrade) — alfabetisk gruppe, alene
+      //   - 2 unavngitte vann-omrader — sorteres etter areal desc til
+      //     slutt: innsjø (10 000 m²) før tjern (500 m²)
       const results = filterIndex(mockIndex, 'vann')
       const names = results.map(r => r.name)
-      expect(names).toEqual(['Hestesund', 'Innsjø uten navn (~1 ha)', 'Tjern uten navn (~500 m²)'])
+      expect(names).toEqual([
+        'Hestesund',
+        'Innsjø uten navn (~1 ha)',
+        'Tjern uten navn (~500 m²)',
+      ])
+    })
+
+    it('unnamed lakes sort by area desc regardless of alphabetic order', () => {
+      // Konstruer eksempel der alfabetisk ville gitt motsatt rekkefølge
+      const mini = [
+        {
+          id: 'small', name: 'Innsjø uten navn (~200 m²)',
+          folded: 'innsjoe uten navn (~200 m2)', kind: 'vann-omrade',
+          x: 0, y: 0, categories: ['vann', 'innsjo'], areaM2: 200,
+        },
+        {
+          id: 'big', name: 'Tjern uten navn (~5 ha)',
+          folded: 'tjern uten navn (~5 ha)', kind: 'vann-omrade',
+          x: 0, y: 0, categories: ['vann', 'tjern'], areaM2: 50_000,
+        },
+      ]
+      const results = filterIndex(mini, 'vann')
+      // Alfabetisk ville 'Innsjø …' kommet før 'Tjern …', men her
+      // sorteres unavngitte etter areal desc → Tjern (5 ha) først.
+      expect(results.map(r => r.name)).toEqual([
+        'Tjern uten navn (~5 ha)',
+        'Innsjø uten navn (~200 m²)',
+      ])
     })
 
     it('alphabetical sort works across mixed kinds', () => {
