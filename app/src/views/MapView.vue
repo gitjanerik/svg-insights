@@ -8,6 +8,7 @@ import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
+import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/mapStorage.js'
@@ -2108,6 +2109,12 @@ const showLowAccuracyBanner = computed(() =>
 function dismissLowAccuracy() { lowAccuracyDismissed.value = true }
 watch(() => userPos.isWatching, (on) => { if (on) lowAccuracyDismissed.value = false })
 
+// Screen Wake Lock — holder skjermen våken når brukeren bruker kartet til
+// orientering ute. Persisteres i localStorage (default PÅ). Re-requestes
+// automatisk når fanen blir synlig igjen siden browseren alltid slipper
+// wake-locks ved fane-bytte.
+const screenWake = useScreenWakeLock()
+
 onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -2117,9 +2124,13 @@ onMounted(() => {
   loadUserMapsForTournament()
   maybeRestoreTournament()
   maybeAutostartFromShare()
+  screenWake.start()
 })
 
-onUnmounted(stopGpsTick)
+onUnmounted(() => {
+  stopGpsTick()
+  screenWake.stop()
+})
 </script>
 
 <template>
@@ -2474,8 +2485,9 @@ onUnmounted(stopGpsTick)
       </button>
     </div>
 
-    <!-- Skala + ekvidistanse + ISOM-info (skjult i CurveBall-modus) -->
-    <div v-if="!loading && !curveball.active.value"
+    <!-- Skala + ekvidistanse + ISOM-info (skjult i CurveBall-modus og under
+         aktivt søk så den ikke ligger under treff-listen). -->
+    <div v-if="!loading && !curveball.active.value && !searchOpen"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
       <div class="px-3 py-2 rounded-lg bg-zinc-950 text-white text-[11px]
                   font-medium space-y-1.5 shadow-lg">
@@ -2498,8 +2510,8 @@ onUnmounted(stopGpsTick)
       </div>
     </div>
 
-    <!-- Attribusjon (skjult i CurveBall-modus) -->
-    <div v-if="!loading && !curveball.active.value"
+    <!-- Attribusjon (skjult i CurveBall-modus og under aktivt søk) -->
+    <div v-if="!loading && !curveball.active.value && !searchOpen"
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
@@ -3041,6 +3053,26 @@ onUnmounted(stopGpsTick)
 
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
           <div v-show="activeTab === 'om'">
+            <!-- Innstillinger: hold skjerm våken. Default PÅ — nyttig når
+                 brukeren bruker kartet til orientering ute og ikke vil at
+                 telefonen skal låse skjermen midt i navigasjonen. -->
+            <div v-if="screenWake.supported"
+                 class="rounded-lg bg-white/5 px-3 py-2.5 mb-3 flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] text-white font-medium">Hold skjerm våken</div>
+                <div class="text-[11px] text-white/55 leading-snug">
+                  Hindrer at telefonen låser skjermen mens kartet er åpent. Slå av for å spare batteri.
+                </div>
+              </div>
+              <button @click="screenWake.setEnabled(!screenWake.enabled.value)"
+                      :aria-pressed="screenWake.enabled.value"
+                      :aria-label="screenWake.enabled.value ? 'Slå av skjerm-våken' : 'Slå på skjerm-våken'"
+                      class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+                      :class="screenWake.enabled.value ? 'bg-emerald-500' : 'bg-white/15'">
+                <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                      :class="screenWake.enabled.value ? 'left-5' : 'left-0.5'" />
+              </button>
+            </div>
             <div class="text-white/70 text-[12px] leading-relaxed space-y-2">
               <p>
                 <strong class="text-white">SVG Insights</strong> utforsker hva man kan
