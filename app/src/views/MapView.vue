@@ -2274,8 +2274,10 @@ onUnmounted(stopGpsTick)
     <!-- FAB-stack: on-the-fly / zoom inn / zoom ut / sentrer. Synlig både når
          drawer er åpen og lukket. Når drawer er åpen flyttes FAB-en opp over
          drawer-toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
-         ligger over drawer (z-30). Skjult i CurveBall-modus. -->
-    <div v-if="!curveball.active.value"
+         ligger over drawer (z-30). Skjult i CurveBall-modus og når søke-
+         overlayen er åpen (begge bruker z-40 og ville ellers overlappe på
+         høyre kant av treff-listen). -->
+    <div v-if="!curveball.active.value && !searchOpen"
          class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
          :style="{
            bottom: showControls
