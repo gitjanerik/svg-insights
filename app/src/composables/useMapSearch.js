@@ -335,26 +335,28 @@ export function buildSearchIndex(svgEl) {
     })
   }
 
-  // Dedupe: samme navn (folded) innen ~50m skal kun gi ett resultat. Behold
-  // den med best kind-rank (helst stedsnavn over polygon). Unavngitte
-  // vann har unike syntetiske navn per posisjon, så dedupen treffer dem ikke.
+  // Dedupe på navn: samme folded navn = samme «sted» for søke-formål. Beholder
+  // FØRSTE forekomst i indekseringsrekkefølgen — viktig for elver/bekker
+  // som har samme navn-label gjentatt langs path-en (typisk hver ~2 km i
+  // OSM). Tidligere brukte vi en 50 m bucket sammen med navnet, men det
+  // beholdt alle de gjentatte rivernavn-labels og spammet resultatlisten.
+  //
+  // Unavngitte vann-polygoner får syntetiske navn med areal-suffiks som
+  // kan kollidere (to ulike små vann begge runder til "~300 m²"); for dem
+  // bruker vi den unike id-en som nøkkel slik at vi ikke filtrerer bort
+  // ekte ulike features.
   const seen = new Map()
   for (const r of out) {
-    // Bucket-størrelse i meter — to elementer i samme bucket regnes som duplikat
-    const bucket = `${r.folded}|${Math.round(r.x / 50)}|${Math.round(r.y / 50)}`
-    const existing = seen.get(bucket)
-    if (!existing || bestKindRank(r.kind) < bestKindRank(existing.kind)) {
-      // Bevar ev. kategori-tags fra den entryen vi nå overskriver — slik at
-      // f.eks. en stedsnavn-label som vinner over en omrade-entry for samme
-      // vann fortsatt matcher kategori-søk på "vann".
-      if (existing && existing.categories && !r.categories) {
-        r.categories = existing.categories
-      }
-      seen.set(bucket, r)
-    } else if (r.categories && !existing.categories) {
-      // r ble droppet av rank, men har kategori-info existing mangler
-      existing.categories = r.categories
+    const key = r.kind === 'vann-omrade' ? r.id : r.folded
+    const existing = seen.get(key)
+    if (existing) {
+      // Bevar kategori-tags fra senere entries hvis vi første gang så
+      // dem på en variant uten tag (f.eks. omrade-polygon kommer etter
+      // vann-navn-tekstlabelen i pass-rekkefølgen).
+      if (r.categories && !existing.categories) existing.categories = r.categories
+      continue
     }
+    seen.set(key, r)
   }
   return Array.from(seen.values())
 }
@@ -382,22 +384,13 @@ export function filterIndex(index, query, limit = 60) {
     if (!nameMatch && !catMatch) continue
     if (seenIds.has(r.id)) continue
     seenIds.add(r.id)
-    out.push({
-      ...r,
-      _matchPos: nameMatch ? idx : Number.MAX_SAFE_INTEGER,
-      _byCategory: !nameMatch && catMatch,
-    })
+    out.push(r)
   }
-  out.sort((a, b) => {
-    // Navngitte (name-match eller named omrade) før unavngitte
-    const ar = bestKindRank(a.kind)
-    const br = bestKindRank(b.kind)
-    if (a._matchPos !== b._matchPos) return a._matchPos - b._matchPos
-    if (ar !== br) return ar - br
-    // For samme rank — bruk areal desc hvis det finnes (større vann først)
-    if (a.areaM2 && b.areaM2 && a.areaM2 !== b.areaM2) return b.areaM2 - a.areaM2
-    return a.name.length - b.name.length
-  })
+  // Alfabetisk sortering på det viste navnet, med norsk collation
+  // (localeCompare med 'no'). Foldet form bruker æ/ø/å→ae/oe/aa allerede,
+  // men det opprinnelige navnet beholder de norske tegnene, og brukeren
+  // forventer at f.eks. «Åse» kommer etter «Å» etc. — bruk r.name.
+  out.sort((a, b) => a.name.localeCompare(b.name, 'no'))
   return out.slice(0, limit)
 }
 
