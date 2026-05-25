@@ -1584,10 +1584,14 @@ async function createOnTheFly() {
     })
     // Forwarde tema + synlige lag til den nye kart-visningen via session-
     // storage. Brukes én gang (consume-on-read), ingen entry-schema-endring.
+    // autoStartGps speiler at GPS allerede var aktivt i kilde-MapView
+    // (FAB er kun synlig når GPS er på) så det nye kartet åpnes med GPS
+    // også aktivt — brukeren skal ikke trenge å starte det manuelt igjen.
     try {
       sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
         theme: currentTheme.value,
         layers: Array.from(visibleLayers.value),
+        autoStartGps: true,
       }))
     } catch { /* noop */ }
     router.push({ name: 'kart-vis', params: { id } })
@@ -1684,6 +1688,7 @@ async function loadMap() {
     }
     // Forbruk init-prefs fra on-the-fly snarvei (tema + synlige lag fra
     // forrige kart). Én gang per ny mapId.
+    let pendingAutoStartGps = false
     try {
       const k = `mapview-init-prefs:${mapId.value}`
       const raw = sessionStorage.getItem(k)
@@ -1692,6 +1697,7 @@ async function loadMap() {
         const prefs = JSON.parse(raw)
         if (prefs.theme) currentTheme.value = prefs.theme
         if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
+        if (prefs.autoStartGps) pendingAutoStartGps = true
       }
     } catch { /* noop */ }
     setupHostSvg(root)
@@ -1700,6 +1706,10 @@ async function loadMap() {
     applyLayerVisibility()
     applyTheme()
     userPos.recompute()
+    // Auto-start GPS når init-prefs ber om det (kommer fra on-the-fly-
+    // snarveien i MapHomeView, der bruker ikke har annen vei til å slå
+    // GPS på). Trygt å kalle flere ganger — start() er idempotent.
+    if (pendingAutoStartGps) userPos.start()
     await annot.load()
     renderAnnotations()
     await tracker.load()
