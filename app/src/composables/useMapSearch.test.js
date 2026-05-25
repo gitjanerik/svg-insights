@@ -24,17 +24,17 @@ describe('useMapSearch', () => {
     const mockIndex = [
       {
         id: 'a', name: 'Hestesund', folded: 'hestesund', kind: 'omrade',
-        label: 'Vann', x: 100, y: 100, categories: ['vann', 'innsjo'], areaM2: 50_000,
+        label: 'Vann', x: 100, y: 100, categories: ['vann'], areaM2: 50_000,
       },
       {
         id: 'b', name: 'Innsjø uten navn (~1 ha)', folded: 'innsjoe uten navn (~1 ha)',
         kind: 'vann-omrade', label: 'Vann', x: 200, y: 200,
-        categories: ['vann', 'innsjo'], areaM2: 10_000,
+        categories: ['vann'], areaM2: 10_000,
       },
       {
         id: 'c', name: 'Tjern uten navn (~500 m²)', folded: 'tjern uten navn (~500 m2)',
         kind: 'vann-omrade', label: 'Vann', x: 300, y: 300,
-        categories: ['vann', 'tjern'], areaM2: 500,
+        categories: ['vann'], areaM2: 500,
       },
       {
         id: 'd', name: 'Bergetoppen', folded: 'bergetoppen', kind: 'peak',
@@ -66,22 +66,17 @@ describe('useMapSearch', () => {
       expect(names).not.toContain('Trondheimsfjorden')
     })
 
-    it('returns only tjern-tagged entries when query is "tjern"', () => {
-      const results = filterIndex(mockIndex, 'tjern')
-      const names = results.map(r => r.name)
-      expect(names).toContain('Tjern uten navn (~500 m²)')
-      expect(names).not.toContain('Hestesund')
-      expect(names).not.toContain('Innsjø uten navn (~1 ha)')
-    })
-
-    it('returns only innsjo-tagged entries when query is "innsjø"', () => {
-      const results = filterIndex(mockIndex, 'innsjø')
-      const names = results.map(r => r.name)
-      // Hestesund (innsjo-tag) + unnavngitt innsjø (innsjo-tag)
-      expect(names).toContain('Hestesund')
-      expect(names).toContain('Innsjø uten navn (~1 ha)')
-      // Tjern er ikke innsjø
-      expect(names).not.toContain('Tjern uten navn (~500 m²)')
+    it('treats "tjern", "innsjø" and "vann" as synonyms — all return same set', () => {
+      const vannResults = filterIndex(mockIndex, 'vann').map(r => r.name)
+      const tjernResults = filterIndex(mockIndex, 'tjern').map(r => r.name)
+      const innsjoResults = filterIndex(mockIndex, 'innsjø').map(r => r.name)
+      // Alle tre keyword-formene må returnere identisk resultat
+      expect(tjernResults).toEqual(vannResults)
+      expect(innsjoResults).toEqual(vannResults)
+      // Sjekk at faktisk innholdet er det vi forventer (alle ferskvann)
+      expect(vannResults).toContain('Hestesund')
+      expect(vannResults).toContain('Innsjø uten navn (~1 ha)')
+      expect(vannResults).toContain('Tjern uten navn (~500 m²)')
     })
 
     it('partial query "vannet" does NOT trigger category mode', () => {
@@ -116,12 +111,12 @@ describe('useMapSearch', () => {
         {
           id: 'small', name: 'Innsjø uten navn (~200 m²)',
           folded: 'innsjoe uten navn (~200 m2)', kind: 'vann-omrade',
-          x: 0, y: 0, categories: ['vann', 'innsjo'], areaM2: 200,
+          x: 0, y: 0, categories: ['vann'], areaM2: 200,
         },
         {
           id: 'big', name: 'Tjern uten navn (~5 ha)',
           folded: 'tjern uten navn (~5 ha)', kind: 'vann-omrade',
-          x: 0, y: 0, categories: ['vann', 'tjern'], areaM2: 50_000,
+          x: 0, y: 0, categories: ['vann'], areaM2: 50_000,
         },
       ]
       const results = filterIndex(mini, 'vann')
