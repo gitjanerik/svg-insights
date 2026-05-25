@@ -231,13 +231,29 @@ export function classifyToIsom(el) {
   //
   // OSM tagger Norske naturreservater/nasjonalparker som ENTEN:
   //   - leisure=nature_reserve (vanlig på way)
-  //   - boundary=protected_area + protect_class=1..7 (vanlig på relation)
-  //   - boundary=national_park (egen kategori men samme rendering)
+  //   - boundary=protected_area + protect_class=1/1a/1b/4 (vanlig på relation,
+  //     tilsvarer IUCN-kategoriene for strict nature reserve / habitat management
+  //     = norske naturreservater og biotopvern)
+  //   - boundary=national_park (nasjonalparker, egen kategori men samme rendering)
+  //
+  // KRITISK: krever name-tag. Uten denne sjekken fanget vi opp store unavn-
+  // gitte multipolygoner (f.eks. friluftslivsområder / markalov-områder feil-
+  // tagget i OSM) som dekket hele kart-bbox-en med grønn overlay (v8.10.14
+  // bug-rapport: Kjekstadmarka). Ekte naturreservater og nasjonalparker har
+  // ALLTID et navn — så name-kravet er trygt og filtrerer effektivt bort
+  // mistags.
+  //
+  // protect_class er strammere enn før: tidligere ^[1-7]$ inkluderte også
+  // landskapsvernområder (5) og managed resources (6) som kan dekke vast
+  // arealer. Nå kun strict reserves (1/1a/1b) og habitat management (4).
   if (el.type !== 'node') {
-    if (t.leisure === 'nature_reserve') return { code: '520', cat: 'manmade' }
-    if (t.boundary === 'national_park') return { code: '520', cat: 'manmade' }
-    if (t.boundary === 'protected_area' && /^[1-7]$/.test(String(t.protect_class ?? ''))) {
-      return { code: '520', cat: 'manmade' }
+    const name = t.name ?? t['name:no'] ?? t['name:nb']
+    if (name && String(name).trim()) {
+      if (t.leisure === 'nature_reserve') return { code: '520', cat: 'manmade' }
+      if (t.boundary === 'national_park') return { code: '520', cat: 'manmade' }
+      if (t.boundary === 'protected_area' && /^(1|1a|1b|4)$/.test(String(t.protect_class ?? ''))) {
+        return { code: '520', cat: 'manmade' }
+      }
     }
   }
   if (t.building)                                   return { code: '521', cat: 'manmade' }
@@ -520,7 +536,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${mm(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
   // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
-  for (const kind of ['omrade-navn', 'hytte-navn']) {
+  // v8.10.15: naturreservat-navn — grønn skrift + hvit halo, samme visuelle
+  // hierarki som blå vann-navn over innsjø-flater.
+  for (const kind of ['omrade-navn', 'hytte-navn', 'naturreservat-navn']) {
     const cfg = lab[kind]
     if (!cfg) continue
     const styleProps = [

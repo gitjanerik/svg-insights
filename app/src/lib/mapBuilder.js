@@ -39,9 +39,9 @@ export function buildOverpassQuery(bbox) {
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
   way["building"];
   way["leisure"~"^(park|pitch|playground)$"];
-  way["leisure"="nature_reserve"];
-  way["boundary"="protected_area"]["protect_class"~"^[1-7]$"];
-  way["boundary"="national_park"];
+  way["leisure"="nature_reserve"]["name"];
+  way["boundary"="protected_area"]["protect_class"~"^(1|1a|1b|4)$"]["name"];
+  way["boundary"="national_park"]["name"];
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
   way["place"~"^(island|islet)$"];
@@ -69,9 +69,9 @@ export function buildOverpassQuery(bbox) {
   relation["place"~"^(sea|ocean)$"];
   relation["place"~"^(island|islet)$"];
   relation["piste:type"];
-  relation["leisure"="nature_reserve"];
-  relation["boundary"="protected_area"]["protect_class"~"^[1-7]$"];
-  relation["boundary"="national_park"];
+  relation["leisure"="nature_reserve"]["name"];
+  relation["boundary"="protected_area"]["protect_class"~"^(1|1a|1b|4)$"]["name"];
+  relation["boundary"="national_park"]["name"];
 );
 out geom;
 `.trim()
@@ -445,7 +445,13 @@ export function buildSvg(elements, bbox, options = {}) {
     myr:     { simplifyM: 2.5 * simpScale, minAreaM2: 150 * areaScale },
     vann:    { simplifyM: 2.0 * simpScale, minAreaM2: 50 * areaScale },
     aapen:   { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
-    naturreservat: { simplifyM: 3.0 * simpScale, minAreaM2: 1000 * areaScale },
+    // Naturreservat: maxAreaM2 = 200 km² er forsvar mot OSM-mistags. Norges
+    // største naturreservat (Mølen) er ~7 km²; største landskapsvernområde
+    // (Trillemarka-Rollagsfjell) er 147 km². 200 km² catcher alle ekte
+    // verneområder mens markalov-/friluftslivs-mistags (Oslomarka ~1700 km²)
+    // filtreres bort. Område-cappingen lever i layerSvg() siden den er
+    // POLYGON_FILTER-drevet.
+    naturreservat: { simplifyM: 3.0 * simpScale, minAreaM2: 1000 * areaScale, maxAreaM2: 200_000_000 },
   }
   const LINE_SIMPLIFY = {
     'vei-stor':  1.5 * simpScale,
@@ -706,6 +712,7 @@ export function buildSvg(elements, bbox, options = {}) {
         if (el.type === 'way' && el.geometry) {
           const areaM2 = polygonAreaM2(el.geometry)
           if (filter.minAreaM2 && areaM2 < filter.minAreaM2) continue
+          if (filter.maxAreaM2 && areaM2 > filter.maxAreaM2) continue
           // ISOM 521: små bygg (< 500 m², typisk hytter/uthus inkludert
           // turisthytter) erstattes med standardisert kvadrat-symbol
           // (13 m × 13 m = 1.3 mm @ 1:10k) sentrert på OSM-bygnings-
@@ -730,6 +737,17 @@ export function buildSvg(elements, bbox, options = {}) {
           // så vi får ekte lukkede ringer i stedet for segment-trekanter.
           const outerRings = assembleRelationRings(el.members, 'outer')
           const innerRings = assembleRelationRings(el.members, 'inner')
+          // maxAreaM2-cap også på relations — naturreservat-mistags er
+          // oftest store multipolygoner. Beregn samlet outer-areal og dropp
+          // hele relasjonen hvis den overskrider terskelen.
+          if (filter.maxAreaM2 && outerRings.length) {
+            let totalOuterM2 = 0
+            for (const ring of outerRings) {
+              totalOuterM2 += polygonAreaM2(ring)
+              if (totalOuterM2 > filter.maxAreaM2) break
+            }
+            if (totalOuterM2 > filter.maxAreaM2) continue
+          }
           const subpaths = []
           for (const ring of [...outerRings, ...innerRings]) {
             const sd = pathFromGeometry(ring, true, filter.simplifyM)
@@ -1161,11 +1179,23 @@ export function buildSvg(elements, bbox, options = {}) {
     if (!cent) continue
 
     const isBuilding = !!tags.building
+    // Naturreservat/nasjonalpark får dedikert grønn-på-hvit label (matcher
+    // visuell hierarki for vann/innsjø som er blå-på-hvit). Speiler classify-
+    // ToIsom-reglene for kode 520 så samme polygoner som får grønn overlay
+    // også får grønn navn-label.
+    const isNatRes = (
+      tags.leisure === 'nature_reserve' ||
+      tags.boundary === 'national_park' ||
+      (tags.boundary === 'protected_area' && /^(1|1a|1b|4)$/.test(String(tags.protect_class ?? '')))
+    )
     // Hytter rendrer som lite symbol (13×13 m kvadrat) — minst krav er at
     // bygget er gjenkjent. Andre arealer trenger større minimum for å unngå
     // å spamme bbox med navn på tiny features.
     const minArea = isBuilding ? 0 : 1000
     if (areaM2 < minArea) continue
+    // Naturreservat-mistags (gigantiske polygoner) labels også droppes —
+    // speiler maxAreaM2-cappingen i POLYGON_FILTER.naturreservat.
+    if (isNatRes && areaM2 > 200_000_000) continue
     // Bare label hytter (små bygg < 500m²) — store bygninger får ikke navn
     // for å unngå rot i tette boligområder. 521-terskel ovenfor speiles her.
     if (isBuilding && areaM2 >= 500) continue
@@ -1177,7 +1207,7 @@ export function buildSvg(elements, bbox, options = {}) {
     omradeSeen.add(key)
 
     omradenavnLabels.push({
-      x: cent.x, y: cent.y, name, isBuilding,
+      x: cent.x, y: cent.y, name, isBuilding, isNatRes,
     })
   }
 
@@ -1561,6 +1591,11 @@ export function buildSvg(elements, bbox, options = {}) {
         if (l.isBuilding) {
           // Hytte-navn: 1.2 mm til høyre for symbolet, vertikalt midt-ish
           return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dx="1.2mm" dy="0.4mm" text-anchor="start" data-label="hytte-navn">${xmlEscape(l.name)}</text>`
+        }
+        // Naturreservat-navn: grønn skrift + hvit halo, samme visuelle vekt
+        // som blå vann-navn — markerer vernet område tydelig på kartet.
+        if (l.isNatRes) {
+          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="naturreservat-navn">${xmlEscape(l.name)}</text>`
         }
         return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="omrade-navn">${xmlEscape(l.name)}</text>`
       }).join('\n')}\n  </g>\n`
