@@ -2,6 +2,7 @@
 import { ref, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
+import { buildMapFromCenter } from '../lib/createMapFlow.js'
 
 const router = useRouter()
 const maps = ref([])
@@ -45,6 +46,64 @@ function formatDate(ts) {
     day: '2-digit', month: 'short', year: 'numeric'
   })
 }
+
+// ── On-the-fly snarvei: «Lag kart der jeg er» ───────────────────────────
+// Krever GPS. Ett trykk → hent posisjon → bygg 4×4 km, 20 m ekvidistanse,
+// åpne nytt kart sentrert på brukeren. Full-screen loader vises mens
+// pipelinen kjører (Overpass, N50, Sjøkart, WMS, DEM, buildSvg, saveMap).
+const supportsGeolocation = typeof navigator !== 'undefined' && !!navigator.geolocation
+const buildingOnTheFly = ref(false)
+const buildingProgress = ref('')
+
+async function onCreateHere() {
+  if (buildingOnTheFly.value) return
+  if (!supportsGeolocation) {
+    alert('Nettleseren støtter ikke GPS')
+    return
+  }
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Henter posisjon …'
+  let coords
+  try {
+    coords = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        reject,
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+      )
+    })
+  } catch (err) {
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    const map = {
+      1: 'GPS-tillatelse avvist',
+      2: 'GPS-posisjon ikke tilgjengelig',
+      3: 'GPS-forespørsel tok for lang tid',
+    }
+    alert(map[err.code] ?? 'GPS-feil — kan ikke opprette kart her')
+    return
+  }
+  try {
+    const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
+    const { id } = await buildMapFromCenter({
+      center: {
+        lat: coords.coords.latitude,
+        lon: coords.coords.longitude,
+        name: 'Min posisjon',
+      },
+      halfKm: 2,         // 4 × 4 km
+      equidistanceM: 20, // 20 m ekvidistanse
+      navn: `Tur ${stamp}`,
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    router.push({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('On-the-fly kart-bygging feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+  }
+}
 </script>
 
 <template>
@@ -70,7 +129,7 @@ function formatDate(ts) {
 
       <!-- "Nytt kart"-CTA -->
       <button @click="router.push('/kart/nytt')"
-              class="w-full mb-4 rounded-xl p-4 flex items-center gap-4 text-left
+              class="w-full mb-3 rounded-xl p-4 flex items-center gap-4 text-left
                      bg-slate-500/25 border border-slate-300/40
                      active:bg-slate-500/30 active:scale-[0.99] transition">
         <div class="shrink-0 w-11 h-11 rounded-lg bg-slate-400/20 border border-slate-300/30
@@ -83,6 +142,33 @@ function formatDate(ts) {
         <div class="flex-1">
           <div class="text-white font-medium">Lag nytt turkart</div>
           <div class="text-[12px] text-white/65 mt-0.5">Søk etter sted og last ned område</div>
+        </div>
+        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/50" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- Snarvei: lag kart der jeg er. Krever GPS-tillatelse ved tap.
+           4 × 4 km, 20 m ekvidistanse, åpnes med GPS-posisjon midt i kartet. -->
+      <button v-if="supportsGeolocation"
+              @click="onCreateHere"
+              :disabled="buildingOnTheFly"
+              class="w-full mb-4 rounded-xl p-4 flex items-center gap-4 text-left
+                     bg-emerald-500/15 border border-emerald-300/35
+                     active:bg-emerald-500/25 active:scale-[0.99] transition
+                     disabled:opacity-60 disabled:active:scale-100">
+        <div class="shrink-0 w-11 h-11 rounded-lg bg-emerald-500/25 border border-emerald-300/35
+                    flex items-center justify-center text-emerald-200">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="11" r="3"/>
+            <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+          </svg>
+        </div>
+        <div class="flex-1">
+          <div class="text-white font-medium">Lag kart der jeg er</div>
+          <div class="text-[12px] text-white/65 mt-0.5">4 × 4 km · 20 m ekvidistanse · GPS</div>
         </div>
         <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/50" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -190,5 +276,30 @@ function formatDate(ts) {
         </svg>
       </button>
     </div>
+
+    <!-- Full-screen loader for on-the-fly kart-bygging -->
+    <Transition name="overlay-fade">
+      <div v-if="buildingOnTheFly"
+           class="fixed inset-0 z-[60] bg-zinc-950/92 backdrop-blur-sm
+                  flex flex-col items-center justify-center text-white">
+        <div class="w-16 h-16 mb-4">
+          <svg viewBox="0 0 50 50" class="w-full h-full animate-spin"
+               fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+            <circle cx="25" cy="25" r="20" stroke-opacity="0.18"/>
+            <path d="M25 5 a20 20 0 0 1 20 20"/>
+          </svg>
+        </div>
+        <div class="text-[16px] font-semibold mb-1">Oppretter kart</div>
+        <div class="text-[12px] text-white/65 px-6 text-center max-w-[280px]
+                    min-h-[18px] leading-snug">
+          {{ buildingProgress }}
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
+
+<style scoped>
+.overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.22s ease; }
+.overlay-fade-enter-from, .overlay-fade-leave-to       { opacity: 0; }
+</style>
