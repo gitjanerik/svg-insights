@@ -2134,7 +2134,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full h-[100dvh] overflow-hidden"
+  <div class="kart-ui relative w-full h-[100dvh] overflow-hidden"
        :class="isDark ? 'bg-zinc-900' : 'bg-stone-100'">
 
     <!-- Toppbar. v8.7.1: skjult i Curve Invaders-modus — den lå tidligere
@@ -3158,18 +3158,16 @@ onUnmounted(() => {
                       stroke-linecap="round" stroke-linejoin="round"
                       vector-effect="non-scaling-stroke"/>
                 <!-- Y-akse-labels: max + min høyde -->
-                <text x="6" y="14" fill="#ec4899" font-size="11" font-weight="600"
-                      style="font-family: ui-sans-serif, system-ui">
+                <text x="6" y="14" fill="#ec4899" font-size="11" font-weight="600">
                   {{ Math.round(profileFor(tr).maxElev) }} moh
                 </text>
-                <text x="6" y="174" fill="#ec4899" font-size="11" font-weight="600"
-                      style="font-family: ui-sans-serif, system-ui">
+                <text x="6" y="174" fill="#ec4899" font-size="11" font-weight="600">
                   {{ Math.round(profileFor(tr).minElev) }} moh
                 </text>
                 <text x="594" y="14" fill="rgba(255,255,255,0.4)" font-size="10"
-                      text-anchor="end" style="font-family: ui-sans-serif, system-ui">0 m</text>
+                      text-anchor="end">0 m</text>
                 <text x="594" y="174" fill="rgba(255,255,255,0.4)" font-size="10"
-                      text-anchor="end" style="font-family: ui-sans-serif, system-ui">
+                      text-anchor="end">
                   {{ formatDistance(profileFor(tr).totalDistM) }}
                 </text>
               </svg>
