@@ -1214,9 +1214,15 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/>`
   }).filter(Boolean).join('\n')
 
-  // Utfartsparkering (ISOM 534-derivert): blå P-symbol 2.4mm. Node-
-  // parkering på OSM-noden, way-parkering på polygon-centroid.
-  const parkeringSize = 2.4
+  // Utfartsparkering (ISOM 534-derivert): blå P-symbol 7.2mm (300% av v8.10.2-
+  // basis). Node-parkering på OSM-noden, way-parkering på polygon-centroid.
+  // Posisjon må gå via transform=translate(...) i user-units (meter) — å skrive
+  // x="<meter>mm" tolkes av nettleseren som ~3.78× user-units pr mm (CSS-spec),
+  // så symbolet havner langt unna der project() ga oss. Bro-renderingen bruker
+  // samme pattern; nå også parkering.
+  // data-upright="1" gjør at MapView counter-roterer symbolet ved kart-
+  // rotasjon, så "P" alltid leses vannrett med skjermens topp som rettesnor.
+  const parkeringSize = 7.2
   const parkeringSvg = parkeringer.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
@@ -1225,7 +1231,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const sid = symbolIds.get('parkering')
     if (!sid) return ''
     const half = parkeringSize / 2
-    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${parkeringSize}mm" height="${parkeringSize}mm"/>`
+    return `    <g data-upright="1" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${parkeringSize}mm" height="${parkeringSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Bom / barriere (ISOM 526-derivert): sort horisontal bar 1.6mm. OSM-

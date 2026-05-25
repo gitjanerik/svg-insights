@@ -1313,6 +1313,16 @@ function applyUprightLabels() {
     const trans = m ? m[0] : ''
     el.setAttribute('transform', `${trans} rotate(${rot})`)
   }
+  // Auto-genererte symboler markert med data-upright (foreløpig kun
+  // parkerings-P) skal leses vannrett med skjermens topp — bruker samme
+  // mønster som stedsmerke: bevar translate, bytt rotate-segmentet.
+  const upright = svg.querySelectorAll('[data-upright="1"]')
+  for (const el of upright) {
+    const existing = el.getAttribute('transform') ?? ''
+    const m = existing.match(/translate\([^)]+\)/)
+    const trans = m ? m[0] : ''
+    el.setAttribute('transform', `${trans} rotate(${rot})`)
+  }
 }
 
 // Watch rotasjon — billig attributt-oppdatering, ingen full re-render.
