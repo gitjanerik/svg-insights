@@ -1200,6 +1200,15 @@
       "weight": 500,
       "haloColor": "#fff",
       "haloWidthMm": 0.5
+    },
+    "naturreservat-navn": {
+      "$comment": "Naturreservat-navn: mørkegrønn skrift med hvit halo, italic — samme visuelle hierarki som innsjø-navn (blå/hvit) gir vann.",
+      "fontSizeMm": 3.0,
+      "color": "#1f5e12",
+      "italic": true,
+      "weight": 600,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.7
     }
   },
   "darkMode": {
