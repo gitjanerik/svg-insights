@@ -412,7 +412,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Halo skal vokse mindre dramatisk (bare ~kvadratrot) så ikke teksten
   // drukner i hvit ramme på store kart.
   const haloMm = (v) => `${Number((v * Math.sqrt(labelScale)).toFixed(3))}mm`
-  rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: ui-sans-serif, system-ui, sans-serif; }`)
+  // Inter variable webfont (selv-hostet via @fontsource-variable/inter, lastet
+  // i appens style.css). font-weight: 400 er base for labels; spesifikke labels
+  // (peak, stedsnavn) overstyrer under. tabular-nums sørger for at høyde-,
+  // dybde- og kontur-tall står monospaced.
+  rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-weight: 400; font-variant-numeric: tabular-nums; }`)
   // Bakgrunn-rect bruker også --bg så mørk modus erstatter den kremgule
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
   rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)

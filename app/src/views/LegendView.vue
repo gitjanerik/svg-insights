@@ -108,7 +108,7 @@ function sampleSvg(category, code) {
 </script>
 
 <template>
-  <div class="min-h-screen" :class="isDark ? 'bg-zinc-950 text-white/85' : 'bg-stone-100 text-zinc-900'">
+  <div class="kart-ui min-h-screen" :class="isDark ? 'bg-zinc-950 text-white/85' : 'bg-stone-100 text-zinc-900'">
     <header class="sticky top-0 z-10 backdrop-blur"
             :class="isDark ? 'bg-zinc-950/85 border-b border-white/10' : 'bg-stone-100/85 border-b border-zinc-300'">
       <div class="px-4 py-3 flex items-center gap-3">

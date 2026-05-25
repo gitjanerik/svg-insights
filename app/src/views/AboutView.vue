@@ -145,6 +145,19 @@ const TABS = [
           ~3000 linjer JavaScript og kjører dels i nettleseren (interaktiv generering for
           brukerens egne kart) og dels i GitHub Actions (innebygde demokart med ekte WCS-data).
         </p>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Typografi</h4>
+        <p class="text-xs text-white/50 leading-relaxed">
+          Turkart-sporet bruker <a href="https://rsms.me/inter/" target="_blank" rel="noopener"
+             class="text-white/75 underline decoration-white/30 underline-offset-2">Inter</a>
+          — en moderne, variabel webfont av Rasmus Andersson. Selv-hostet via
+          <code>@fontsource-variable/inter</code>, ingen CDN — Vite bundler woff2-filene inn i
+          appen, og unicode-range subsetting gjør at norsk-tekst kun trenger latin-subsettet
+          (~50 KB roman + ~50 KB italic). Base-vekt er <code>400</code>. Alle tall (høyder, dybder,
+          lengder, kontur-tall i SVG-en og statistikker i UI-et) bruker
+          <code>font-variant-numeric: tabular-nums</code> så sifrene står på faste posisjoner
+          og er lette å sammenligne.
+        </p>
       </section>
 
       <!-- Tab: Webfont -->

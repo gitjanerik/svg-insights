@@ -116,7 +116,7 @@ async function onCreateHere() {
 </script>
 
 <template>
-  <div class="relative w-full min-h-[100dvh] flex flex-col bg-[#0e1116] text-white/90">
+  <div class="kart-ui relative w-full min-h-[100dvh] flex flex-col bg-[#0e1116] text-white/90">
 
     <!-- Toppbar -->
     <div class="shrink-0 px-3 py-3 flex items-center justify-between
