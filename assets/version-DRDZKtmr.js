@@ -1,0 +1,1 @@
+var e=`8.10.12`;export{e as t};
