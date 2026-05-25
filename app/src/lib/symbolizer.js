@@ -502,6 +502,22 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${mm(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
+  // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
+  for (const kind of ['omrade-navn', 'hytte-navn']) {
+    const cfg = lab[kind]
+    if (!cfg) continue
+    const styleProps = [
+      `font-size: ${mm(cfg.fontSizeMm)}`,
+      `fill: var(--label-${kind}-fill, ${cfg.color})`,
+      cfg.italic ? 'font-style: italic' : null,
+      cfg.weight ? `font-weight: ${cfg.weight}` : null,
+      `stroke: var(--label-${kind}-halo, ${cfg.haloColor})`,
+      `stroke-width: ${haloMm(cfg.haloWidthMm)}`,
+      'paint-order: stroke',
+      'stroke-linejoin: round',
+    ].filter(Boolean).join('; ')
+    rules.push(`${root} [data-label="${kind}"] { ${styleProps} }`)
+  }
   // v8.1.0: stedsnavn-overlay — stor, fet skrift med tydelig hvit halo
   // som overlay over kartet. Toggleable via 'Stedsnavn'-knapp i drawer
   // (default AV). Bruker --label-stedsnavn-* CSS-vars så tema kan tilpasse.

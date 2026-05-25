@@ -1173,6 +1173,22 @@
       "italic": false,
       "haloColor": "#fff",
       "haloWidthMm": 0.5
+    },
+    "omrade-navn": {
+      "fontSizeMm": 3.0,
+      "color": "#3a3a3a",
+      "italic": true,
+      "weight": 500,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.55
+    },
+    "hytte-navn": {
+      "fontSizeMm": 2.4,
+      "color": "#3a3a3a",
+      "italic": false,
+      "weight": 500,
+      "haloColor": "#fff",
+      "haloWidthMm": 0.5
     }
   },
   "darkMode": {

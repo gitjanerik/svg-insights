@@ -694,13 +694,16 @@ export function buildSvg(elements, bbox, options = {}) {
         if (el.type === 'way' && el.geometry) {
           const areaM2 = polygonAreaM2(el.geometry)
           if (filter.minAreaM2 && areaM2 < filter.minAreaM2) continue
-          // ISOM 521: små bygg (< 70 m², typisk hytter/uthus) erstattes
-          // med standardisert kvadrat-symbol (13 m × 13 m = 1.3 mm @ 1:10k)
-          // sentrert på OSM-bygnings-centroid. Faktiske små OSM-polygoner
-          // er ofte irregulære og masketes lett av nærliggende stier; et
-          // rent, lett over-dimensjonert kvadrat med tynt omriss leses
-          // klart på alle zoom-nivåer (Kartverket-konvensjon).
-          if (code === '521' && areaM2 < 70) {
+          // ISOM 521: små bygg (< 500 m², typisk hytter/uthus inkludert
+          // turisthytter) erstattes med standardisert kvadrat-symbol
+          // (13 m × 13 m = 1.3 mm @ 1:10k) sentrert på OSM-bygnings-
+          // centroid. Faktiske små OSM-polygoner er ofte irregulære og
+          // masketes lett av nærliggende stier; et rent, lett over-
+          // dimensjonert kvadrat med tynt omriss leses klart på alle
+          // zoom-nivåer (Kartverket-konvensjon). v8.10.9: terskelen er
+          // hevet fra 70 → 500 m² så også turisthytter (Sjusjøstua,
+          // Glitterheim osv.) får hytte-symbol istedenfor å forsvinne.
+          if (code === '521' && areaM2 < 500) {
             const c = polygonCentroid(el.geometry)
             if (!c) continue
             const half = 6.5
@@ -1093,6 +1096,79 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Områdenavn (v8.10.9) ──────────────────────────────────────────────
+  // Navn på hytter, myrer, husmannsplasser, gløtter, sletter osv — alt
+  // navngitt polygon-areal som IKKE er vannflate eller fjelltopp (de er
+  // allerede labelet). Hytter (små bygg med name) får navnet vist ved
+  // siden av symbolet. Større arealer (myr, heath, grassland, meadow,
+  // locality-polygoner) får navn ved sentroiden.
+  const omradenavnLabels = []
+  const omradeSeen = new Set()
+  for (const el of elements) {
+    const name = el.tags?.name?.trim()
+    if (!name) continue
+    const tags = el.tags
+    // Vannflater og bekker labels håndteres av lakeLabels/waterwayLabels
+    const isWater = tags.natural === 'water' || !!tags.water ||
+                    tags.natural === 'bay' || tags.natural === 'strait' ||
+                    tags.place === 'sea' || tags.place === 'ocean' ||
+                    !!tags.waterway
+    if (isWater) continue
+    // Fjelltopper rendrer egen label via peaksSvg
+    if (tags.natural === 'peak' || tags.natural === 'saddle') continue
+    // place=*-noder rendrer egen label via stedsnavnSvg / places
+    if (el.type === 'node' && tags.place) continue
+
+    let cent = null
+    let areaM2 = 0
+    if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+      areaM2 = polygonAreaM2(el.geometry)
+      cent = polygonCentroid(el.geometry)
+    } else if (el.type === 'relation' && el.members) {
+      const outerRings = assembleRelationRings(el.members, 'outer')
+      if (outerRings.length === 0) continue
+      let largestArea = 0
+      let largestCent = null
+      for (const ring of outerRings) {
+        const projected = ring.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        })
+        const ac = ringAreaCentroid(projected)
+        if (ac && ac.areaM2 > largestArea) {
+          largestArea = ac.areaM2
+          largestCent = { x: ac.x, y: ac.y }
+        }
+      }
+      if (!largestCent) continue
+      areaM2 = largestArea
+      cent = largestCent
+    } else {
+      continue
+    }
+    if (!cent) continue
+
+    const isBuilding = !!tags.building
+    // Hytter rendrer som lite symbol (13×13 m kvadrat) — minst krav er at
+    // bygget er gjenkjent. Andre arealer trenger større minimum for å unngå
+    // å spamme bbox med navn på tiny features.
+    const minArea = isBuilding ? 0 : 1000
+    if (areaM2 < minArea) continue
+    // Bare label hytter (små bygg < 500m²) — store bygninger får ikke navn
+    // for å unngå rot i tette boligområder. 521-terskel ovenfor speiles her.
+    if (isBuilding && areaM2 >= 500) continue
+
+    // Dedupe: samme navn innen ~80 m bucket (få store myr/heath kan ha
+    // flere subareal-polygoner med samme navn — vi vil bare ha én label)
+    const key = `${name}|${Math.round(cent.x / 80)}|${Math.round(cent.y / 80)}`
+    if (omradeSeen.has(key)) continue
+    omradeSeen.add(key)
+
+    omradenavnLabels.push({
+      x: cent.x, y: cent.y, name, isBuilding,
+    })
+  }
+
   const knauserSvg = demFeatures.knauser.map(k => {
     const [x, y] = demProject([k.x, k.y])
     return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
@@ -1458,6 +1534,19 @@ export function buildSvg(elements, bbox, options = {}) {
       ).join('\n')}\n  </g>\n`
     : ''
 
+  // v8.10.9: Områdenavn — hytter med navn (offset til høyre for symbolet)
+  // og navngitte arealer (myr, heath, grassland, locality-polygoner osv).
+  // Toggle-bar via 'navn'-laget i MapView (default på).
+  const omradenavnLayer = omradenavnLabels.length
+    ? `  <g data-layer="navn">\n${omradenavnLabels.map(l => {
+        if (l.isBuilding) {
+          // Hytte-navn: 1.2 mm til høyre for symbolet, vertikalt midt-ish
+          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dx="1.2mm" dy="0.4mm" text-anchor="start" data-label="hytte-navn">${xmlEscape(l.name)}</text>`
+        }
+        return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="omrade-navn">${xmlEscape(l.name)}</text>`
+      }).join('\n')}\n  </g>\n`
+    : ''
+
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
   // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
@@ -1480,7 +1569,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }

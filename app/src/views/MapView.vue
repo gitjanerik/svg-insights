@@ -18,6 +18,7 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { computeDepthShadeDataUrl } from '../lib/depthShade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
+import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
 import CurveBallLayer from '../components/CurveBallLayer.vue'
 import CurveBallHUD from '../components/CurveBallHUD.vue'
@@ -1525,6 +1526,81 @@ function onExportTrackGpx(tr) {
   downloadGpx(tr, meta.value, mapTitle.value)
 }
 
+// ── On-the-fly kart-snarvei ──────────────────────────────────────────────
+// Avstand fra brukerens posisjon til kartets sentrum (i SVG-units = meter).
+// Brukes til 500 m-grensen: snarveien skal ikke kunne lage et nytt kart som
+// dekker det samme området man allerede står midt i.
+const distFromMapCenter = computed(() => {
+  if (!meta.value) return null
+  if (userPos.svgX == null || userPos.svgY == null) return null
+  const cx = meta.value.widthM / 2
+  const cy = meta.value.heightM / 2
+  return Math.hypot(userPos.svgX - cx, userPos.svgY - cy)
+})
+const onTheFlyEnabled = computed(() =>
+  userPos.isWatching &&
+  distFromMapCenter.value != null &&
+  distFromMapCenter.value >= 500
+)
+const buildingOnTheFly = ref(false)
+const buildingProgress = ref('')
+const onTheFlyHintTimer = ref(null)
+const showOnTheFlyHint = ref(false)
+
+function onOnTheFlyTap() {
+  if (buildingOnTheFly.value) return
+  if (!onTheFlyEnabled.value) {
+    // Vis info-bobbel og fade ut igjen etter 3.5 s
+    showOnTheFlyHint.value = true
+    if (onTheFlyHintTimer.value) clearTimeout(onTheFlyHintTimer.value)
+    onTheFlyHintTimer.value = setTimeout(() => {
+      showOnTheFlyHint.value = false
+    }, 3500)
+    return
+  }
+  void createOnTheFly()
+}
+
+async function createOnTheFly() {
+  if (!meta.value) return
+  if (userPos.latRaw == null || userPos.lonRaw == null) return
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Forbereder …'
+  closeDrawer()
+  closeSearch()
+  try {
+    const halfKm = +(meta.value.widthM / 2000).toFixed(3)
+    const equidistanceM = meta.value.equidistance ?? 20
+    const center = {
+      lat: userPos.latRaw,
+      lon: userPos.lonRaw,
+      name: 'Min posisjon',
+    }
+    const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
+    const navn = `Tur ${stamp}`
+    const { id } = await buildMapFromCenter({
+      center, halfKm, equidistanceM, navn,
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    // Forwarde tema + synlige lag til den nye kart-visningen via session-
+    // storage. Brukes én gang (consume-on-read), ingen entry-schema-endring.
+    try {
+      sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
+        theme: currentTheme.value,
+        layers: Array.from(visibleLayers.value),
+      }))
+    } catch { /* noop */ }
+    router.push({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('On-the-fly kart-bygging feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+  }
+  // Merk: vi lar buildingOnTheFly stå true til komponenten rives av router.push,
+  // så loaderen holder seg synlig under navigasjonen.
+}
+
 // Slå opp symbolKey + label for en lagret annotering. Faller tilbake til
 // råverdien fra entry hvis isomCode ikke matcher noen kjent type (skulle
 // ikke skje, men beskytter mot kart-data som er lagret med en eldre
@@ -1606,6 +1682,18 @@ async function loadMap() {
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
     }
+    // Forbruk init-prefs fra on-the-fly snarvei (tema + synlige lag fra
+    // forrige kart). Én gang per ny mapId.
+    try {
+      const k = `mapview-init-prefs:${mapId.value}`
+      const raw = sessionStorage.getItem(k)
+      if (raw) {
+        sessionStorage.removeItem(k)
+        const prefs = JSON.parse(raw)
+        if (prefs.theme) currentTheme.value = prefs.theme
+        if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
+      }
+    } catch { /* noop */ }
     setupHostSvg(root)
     loading.value = false
     await nextTick()
@@ -2163,9 +2251,9 @@ onUnmounted(stopGpsTick)
       </div>
     </div>
 
-    <!-- FAB-stack: zoom inn / zoom ut / sentrer. Synlig både når drawer er
-         åpen og lukket. Når drawer er åpen flyttes FAB-en opp over drawer-
-         toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
+    <!-- FAB-stack: on-the-fly / zoom inn / zoom ut / sentrer. Synlig både når
+         drawer er åpen og lukket. Når drawer er åpen flyttes FAB-en opp over
+         drawer-toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
          ligger over drawer (z-30). Skjult i CurveBall-modus. -->
     <div v-if="!curveball.active.value"
          class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
@@ -2174,6 +2262,38 @@ onUnmounted(stopGpsTick)
              ? 'calc(45dvh + 0.75rem)'
              : 'calc(env(safe-area-inset-bottom, 0px) + 5rem)'
          }">
+      <!-- On-the-fly snarvei: synlig når GPS er aktivert. Inaktiv (grayet ut)
+           hvis brukeren er < 500 m fra kartets sentrum. Tap når inaktiv viser
+           kort info-bobbel; tap når aktiv starter bygging av nytt kart
+           sentrert på brukeren med samme størrelse/ekvidistanse. -->
+      <div v-if="userPos.isWatching" class="relative">
+        <button @click="onOnTheFlyTap"
+                :aria-label="onTheFlyEnabled ? 'Lag nytt kart her' : 'Du er for nær kartets sentrum'"
+                class="w-12 h-12 rounded-full shadow-lg flex items-center justify-center
+                       active:scale-95 transition relative"
+                :class="onTheFlyEnabled
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-zinc-950 text-white/40'">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <!-- kartblad + pluss-merke i hjørnet -->
+            <path d="M3 6 L9 4 L15 6 L21 4 V18 L15 20 L9 18 L3 20 Z"/>
+            <path d="M9 4 V18 M15 6 V20"/>
+            <circle cx="18" cy="6" r="3.5" fill="currentColor" stroke="none" opacity="0.95"/>
+            <line x1="18" y1="4.3" x2="18" y2="7.7" stroke="#0e1116" stroke-width="1.6"/>
+            <line x1="16.3" y1="6" x2="19.7" y2="6" stroke="#0e1116" stroke-width="1.6"/>
+          </svg>
+        </button>
+        <!-- Info-bobbel — vises 3.5 s etter tap på inaktiv knapp -->
+        <Transition name="hint-fade">
+          <div v-if="showOnTheFlyHint"
+               class="absolute right-14 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg
+                      bg-zinc-950/95 text-white text-[11px] leading-tight shadow-lg
+                      whitespace-nowrap pointer-events-none border border-white/10">
+            Flytt deg minst 500 m fra kartets sentrum
+          </div>
+        </Transition>
+      </div>
       <button @click="zoomIn()" aria-label="Zoom inn"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
                      flex items-center justify-center active:scale-95 transition">
@@ -3028,6 +3148,27 @@ onUnmounted(stopGpsTick)
         </template>
       </div>
     </div>
+
+    <!-- Full-screen loader for on-the-fly kart-bygging. z-[60] over alt
+         annet inkludert drawer + søk så ingen tilfeldige klikk lekker. -->
+    <Transition name="overlay-fade">
+      <div v-if="buildingOnTheFly"
+           class="absolute inset-0 z-[60] bg-zinc-950/92 backdrop-blur-sm
+                  flex flex-col items-center justify-center text-white">
+        <div class="w-16 h-16 mb-4">
+          <svg viewBox="0 0 50 50" class="w-full h-full animate-spin"
+               fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+            <circle cx="25" cy="25" r="20" stroke-opacity="0.18"/>
+            <path d="M25 5 a20 20 0 0 1 20 20"/>
+          </svg>
+        </div>
+        <div class="text-[16px] font-semibold mb-1">Oppretter kart</div>
+        <div class="text-[12px] text-white/65 px-6 text-center max-w-[280px]
+                    min-h-[18px] leading-snug">
+          {{ buildingProgress }}
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -3046,4 +3187,9 @@ onUnmounted(stopGpsTick)
 /* Highlight-chip — kun fade, så Tailwinds -translate-x-1/2 bevares */
 .chip-fade-enter-active, .chip-fade-leave-active { transition: opacity 0.18s ease; }
 .chip-fade-enter-from, .chip-fade-leave-to       { opacity: 0; }
+/* On-the-fly inaktiv-hint og full-screen loader */
+.hint-fade-enter-active, .hint-fade-leave-active { transition: opacity 0.18s ease; }
+.hint-fade-enter-from, .hint-fade-leave-to       { opacity: 0; }
+.overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.22s ease; }
+.overlay-fade-enter-from, .overlay-fade-leave-to       { opacity: 0; }
 </style>
