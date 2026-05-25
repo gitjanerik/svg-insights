@@ -110,7 +110,13 @@ export async function buildMapFromCenter({
   //   - Overpass, N50 og DEM kjøres parallelt fra start.
   //   - Sjøkart kjøres parallelt så snart DEM-resultatet bekrefter kyst-bbox;
   //     hard 8s timeout så et hengende Geonorge-endpoint aldri blokkerer kartet.
-  const demPromise = fetchDEM(bbox, utmBbox, { resolutionM: 10, useReal: true })
+  // DEM-oppløsning: 20 m som default, 10 m bare når brukeren har valgt
+  // fine konturer (≤ 5 m ekvidistanse). 20 m halverer cellene per akse →
+  // 4× mindre TIFF å laste ned + dekode, typisk 1-3 s besparelse på 4×4 km
+  // kart. Konturer rendres fortsatt fint takket være Chaikin-glatting; tap
+  // av presisjon er umerkelig på print 1:10 000.
+  const resolutionM = equidistanceM <= 5 ? 10 : 20
+  const demPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
   const sjokartPromise = demPromise.then(dem => {
     if (!hasNearSeaLevelPixels(dem)) {
       console.log('[Sjøkart] hopper over — bbox er innlands (ingen DEM-piksler ≤ 0.5 m)')
