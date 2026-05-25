@@ -43,13 +43,13 @@ function labelFor(kind) {
 
 // Kategori-søkeord — eksakt-match (etter folding) på disse listet alle
 // entries med matchende `categories`-tag, slik at brukeren kan få oversikt
-// over alle blå ferskvann-områder uten å vite navnet. Aliases: ø → oe via
-// foldName, så både "innsjø" og "innsjo" treffer canonical 'innsjo'-tag.
+// over alle blå ferskvann-områder uten å vite navnet. «vann», «innsjø» og
+// «tjern» behandles som synonymer og mapper alle til canonical 'vann'-tag.
 const CATEGORY_ALIASES = {
   'vann':    'vann',
-  'innsjoe': 'innsjo',
-  'innsjo':  'innsjo',
-  'tjern':   'tjern',
+  'innsjoe': 'vann',
+  'innsjo':  'vann',
+  'tjern':   'vann',
 }
 
 /**
@@ -166,11 +166,10 @@ function pushRaw(out, name, kind, pos, el, extra = {}) {
 }
 
 // Mapper ISOM-kode til kategori-tags. 301 = Innsjø, 302 = Tjern. Begge
-// regnes som "vann"; spesifikke søk på "innsjo"/"tjern" får sin under-
-// gruppe også.
+// regnes likt som ferskvann («vann»). Søke-keywordsne «innsjø» og «tjern»
+// fungerer som synonymer for «vann» (se CATEGORY_ALIASES).
 function categoriesForIsom(iso) {
-  if (iso === '301') return ['vann', 'innsjo']
-  if (iso === '302') return ['vann', 'tjern']
+  if (iso === '301' || iso === '302') return ['vann']
   return null
 }
 
