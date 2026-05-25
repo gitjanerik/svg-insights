@@ -24,6 +24,50 @@ import { findHighestPoint, packDem } from './demSampling.js'
 import { wgs84ToUtm32 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
 
+const EMPTY_SJOKART = {
+  dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [],
+}
+
+const SJOKART_TIMEOUT_MS = 8000
+
+function hasNearSeaLevelPixels(dem) {
+  if (!dem?.data) return false
+  const { data, noData } = dem
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i]
+    if (v === noData || !Number.isFinite(v)) continue
+    if (v <= 0.5) return true
+  }
+  return false
+}
+
+function withHardTimeout(promise, ms, fallback, label) {
+  return new Promise((resolve) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      console.warn(`[${label}] timeout etter ${ms}ms — bruker fallback`)
+      resolve(fallback)
+    }, ms)
+    promise.then(
+      (v) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        console.warn(`[${label}] feilet: ${e?.message ?? e} — bruker fallback`)
+        resolve(fallback)
+      }
+    )
+  })
+}
+
 /**
  * Bygg, lagre og returnér en kart-entry. Kaster ved feil.
  *
@@ -45,33 +89,44 @@ export async function buildMapFromCenter({
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
 
-  // Vann-strategi (v8.10.16):
-  //   - SJØ: DEM (Kartverket NHM_DTM_25832). 0 m elevasjon = sjø, autoritativt
-  //     og uavhengig av OSM/N50/WMS-dekning. Slås på via skipDemSea: false
-  //     nedenfor. ISOM 001 land-overlay (OSM place=island/islet) dekker
-  //     eventuelle øyer DEM-resolusjonen ikke fanger.
-  //   - INNSJØ: N50 Innsjø + OSM natural=water. Begge er pålitelige
-  //     vektor-kilder for innland-vann i Norge.
-  //   - SJØKART: dybdeareal/dybdekontur fra Kartverket Sjøkart-Dybdedata for
-  //     ekstra detalj nær kysten (når tilgjengelig).
+  // Beregn UTM-bbox tidlig så fetchDEM kan startes parallelt med
+  // Overpass/N50 i stedet for å vente på dem (v8.10.18: sparer 3-10 s).
+  const sw = wgs84ToUtm32(bbox.south, bbox.west)
+  const ne = wgs84ToUtm32(bbox.north, bbox.east)
+  const utmBbox = {
+    minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
+    minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
+  }
+
+  // Vann-strategi:
+  //   - SJØ: DEM (Kartverket NHM_DTM_25832). 0 m elevasjon = sjø.
+  //   - INNSJØ: N50 Innsjø + OSM natural=water.
+  //   - SJØKART: kun kjørt når DEM viser at bbox faktisk har piksler nær
+  //     havflaten (≤ 0.5 m). For innlands-bbox er Sjøkart-WFS overflødig
+  //     og kostet 2-10 s ekstra per kart-bygg. v8.10.18: gating fra DEM
+  //     droppe Sjøkart-fetch helt når den ikke gir verdi.
   //
-  // WMS+WMTS-vannmaske-pipelinene er fjernet fra denne flowen (v8.10.16):
-  //   - WMS-probe-løkken (7 endpoint-kombinasjoner i sekvens, ingen native
-  //     timeout) var hovedårsaken til at kart-generering kunne ta minutter
-  //     når Geonorge var trege eller hadde gått ned.
-  //   - WMTS-HSL-detektoren produserte false-positive små «vann»-flekker fra
-  //     stilisert Norgeskart-shading — synlige som tilfeldige blå prikker
-  //     i sjø-områder (rapportert i Oslo Indre Oslofjord-test).
-  const [osmData, n50Water, sjokart] = await Promise.all([
+  // Perf-strategi:
+  //   - Overpass, N50 og DEM kjøres parallelt fra start.
+  //   - Sjøkart kjøres parallelt så snart DEM-resultatet bekrefter kyst-bbox;
+  //     hard 8s timeout så et hengende Geonorge-endpoint aldri blokkerer kartet.
+  const demPromise = fetchDEM(bbox, utmBbox, { resolutionM: 10, useReal: true })
+  const sjokartPromise = demPromise.then(dem => {
+    if (!hasNearSeaLevelPixels(dem)) {
+      console.log('[Sjøkart] hopper over — bbox er innlands (ingen DEM-piksler ≤ 0.5 m)')
+      return EMPTY_SJOKART
+    }
+    return withHardTimeout(fetchSjokart(bbox), SJOKART_TIMEOUT_MS, EMPTY_SJOKART, 'Sjøkart')
+  }).catch(() => EMPTY_SJOKART)
+
+  const [osmData, n50Water, dem, sjokart] = await Promise.all([
     fetchOverpass(bbox),
     fetchN50Water(bbox).catch(e => {
       console.warn('N50-vann ikke tilgjengelig:', e.message)
       return []
     }),
-    fetchSjokart(bbox).catch(e => {
-      console.warn('Sjøkart-Dybdedata ikke tilgjengelig:', e.message)
-      return { dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [] }
-    }),
+    demPromise,
+    sjokartPromise,
   ])
   const sjokartElements = sjokartToElements(sjokart)
 
@@ -108,16 +163,6 @@ export async function buildMapFromCenter({
   const source = sourceParts.join(' + ')
 
   onProgress(`Bygger SVG fra ${elements.length} elementer …`)
-
-  const sw = wgs84ToUtm32(bbox.south, bbox.west)
-  const ne = wgs84ToUtm32(bbox.north, bbox.east)
-  const utmBbox = {
-    minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
-    minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
-  }
-  onProgress(`Henter høydedata fra Kartverket …`)
-  await new Promise(r => setTimeout(r, 30))
-  const dem = await fetchDEM(bbox, utmBbox, { resolutionM: 10, useReal: true })
 
   const { svg, counts } = buildSvg(elements, bbox, {
     dem,

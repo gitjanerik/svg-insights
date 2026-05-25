@@ -90,29 +90,35 @@ export async function fetchN50Water(bbox, opts = {}) {
 }
 
 async function fetchN50Layers(bbox, layers, opts = {}) {
-  const elements = []
   const lonSpan = Math.abs(bbox.east - bbox.west)
   const latSpan = Math.abs(bbox.north - bbox.south)
   const maxAcceptedSpan = Math.max(lonSpan, latSpan) * 8
+  // Lagene er uavhengige (separate WFS-queries mot Geonorge), så vi fetcher
+  // dem parallelt istedenfor sekvensielt. Sparer typisk 4-6 s pr kart-bygg
+  // når alle tre N50_WATER_LAYERS-spørringer treffer.
+  const results = await Promise.all(
+    Object.entries(layers).map(async ([typeName, mapping]) => {
+      try {
+        const features = await fetchSingleLayer(bbox, typeName, opts)
+        return { typeName, mapping, features, error: null }
+      } catch (e) {
+        console.warn(`[N50] ${typeName} feilet: ${e.message}`)
+        return { typeName, mapping, features: [], error: e }
+      }
+    })
+  )
+  const elements = []
   let totalAccepted = 0
   let totalRejected = 0
-  for (const [typeName, mapping] of Object.entries(layers)) {
-    try {
-      const features = await fetchSingleLayer(bbox, typeName, opts)
-      for (const feat of features) {
-        if (!isFeatureSpanReasonable(feat, maxAcceptedSpan)) {
-          totalRejected++
-          continue
-        }
-        // Flatten til array av separate ways. MultiPolygon → flere ways,
-        // hver med outer ring som geometri. Holes droppes (mindre presisjon
-        // for innsjø-øyer, men eliminerer evenodd-cancellation-risk).
-        const items = geojsonToWays(feat, mapping)
-        for (const item of items) elements.push(item)
-        totalAccepted += items.length
+  for (const { mapping, features } of results) {
+    for (const feat of features) {
+      if (!isFeatureSpanReasonable(feat, maxAcceptedSpan)) {
+        totalRejected++
+        continue
       }
-    } catch (e) {
-      console.warn(`[N50] ${typeName} feilet: ${e.message}`)
+      const items = geojsonToWays(feat, mapping)
+      for (const item of items) elements.push(item)
+      totalAccepted += items.length
     }
   }
   if (totalRejected > 0) {

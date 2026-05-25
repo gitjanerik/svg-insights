@@ -12,30 +12,14 @@
 
 import { syntheticDEM } from './dem.js'
 
-// Endpoints prøves i rekkefølge. Best (1m) først, fallback til 10m.
-// Hvis 1m-tjenestene har andre coverage-navn enn antatt, faller vi
-// pent tilbake til 10m som vi allerede vet fungerer.
+// Endpoints prøves i rekkefølge. Vi har trimmet vekk tre spekulative DTM 1m-
+// coverages (hoyde_dtm_1_utm32 / hoeyde_dtm_1_utm32 / dtm1_utm32) som ble
+// gjettet ut fra Geonorge-navngivnings-konvensjon men aldri har eksistert
+// — hver enkelt feilet med HTTP 4xx etter en round-trip og kostet 3-10 s
+// per kart-bygg uten å returnere data. v8.10.18: trimmet til den faktisk
+// verifiserte primær-endpointen + to fallbacks.
 const WCS_ENDPOINTS = [
-  // ── DTM 1m UTM 32 native ──────────────────────────────────────────────
-  {
-    url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-1-utm32',
-    coverage: 'hoyde_dtm_1_utm32',
-    bboxCrs: 'EPSG:25832',
-    name: 'DTM 1m UTM32 (variant a)',
-  },
-  {
-    url: 'https://wcs.geonorge.no/skwms1/wcs.hoeyde-dtm-1-utm32',
-    coverage: 'hoeyde_dtm_1_utm32',
-    bboxCrs: 'EPSG:25832',
-    name: 'DTM 1m UTM32 (variant b)',
-  },
-  {
-    url: 'https://wcs.geonorge.no/skwms1/wcs.dtm1-utm32',
-    coverage: 'dtm1_utm32',
-    bboxCrs: 'EPSG:25832',
-    name: 'DTM 1m UTM32 (variant c)',
-  },
-  // ── DTM 10m UTM 32 native (verifisert virker) ────────────────────────
+  // ── DTM 10m UTM 32 native (verifisert virker, primær) ────────────────
   {
     url: 'https://wcs.geonorge.no/skwms1/wcs.hoyde-dtm-nhm-25832',
     coverage: 'NHM_DTM_25832',
