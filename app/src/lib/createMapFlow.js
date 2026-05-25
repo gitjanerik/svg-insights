@@ -18,8 +18,6 @@
 import { fetchOverpass, buildSvg, bboxFromCenter } from './mapBuilder.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
-import { buildWaterMaskFromTiles, polygonsToOsmLikeWays } from './waterMaskFromTiles.js'
-import { buildWaterMaskFromWms } from './waterMaskFromWms.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
 import { findHighestPoint, packDem } from './demSampling.js'
@@ -47,13 +45,24 @@ export async function buildMapFromCenter({
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
 
-  // Kjør begge vannmaske-kildene i parallel så sluttiden styres av den
-  // raskeste suksessen — ikke av sekvensielle WMS-probes som henger.
-  // Vi foretrekker WMS når den svarer (mest presis), men aksepterer WMTS-
-  // backup om WMS ikke leverer (typisk Indre Oslofjord / Asker-skjærgården
-  // der enkelte FKB-Vann-lag ikke er publisert). Hvis BEGGE feiler slår vi
-  // på DEM-derivert sjø som siste fallback (skipDemSea: false).
-  const [osmData, n50Water, sjokart, wmsWater, wmtsWater] = await Promise.all([
+  // Vann-strategi (v8.10.16):
+  //   - SJØ: DEM (Kartverket NHM_DTM_25832). 0 m elevasjon = sjø, autoritativt
+  //     og uavhengig av OSM/N50/WMS-dekning. Slås på via skipDemSea: false
+  //     nedenfor. ISOM 001 land-overlay (OSM place=island/islet) dekker
+  //     eventuelle øyer DEM-resolusjonen ikke fanger.
+  //   - INNSJØ: N50 Innsjø + OSM natural=water. Begge er pålitelige
+  //     vektor-kilder for innland-vann i Norge.
+  //   - SJØKART: dybdeareal/dybdekontur fra Kartverket Sjøkart-Dybdedata for
+  //     ekstra detalj nær kysten (når tilgjengelig).
+  //
+  // WMS+WMTS-vannmaske-pipelinene er fjernet fra denne flowen (v8.10.16):
+  //   - WMS-probe-løkken (7 endpoint-kombinasjoner i sekvens, ingen native
+  //     timeout) var hovedårsaken til at kart-generering kunne ta minutter
+  //     når Geonorge var trege eller hadde gått ned.
+  //   - WMTS-HSL-detektoren produserte false-positive små «vann»-flekker fra
+  //     stilisert Norgeskart-shading — synlige som tilfeldige blå prikker
+  //     i sjø-områder (rapportert i Oslo Indre Oslofjord-test).
+  const [osmData, n50Water, sjokart] = await Promise.all([
     fetchOverpass(bbox),
     fetchN50Water(bbox).catch(e => {
       console.warn('N50-vann ikke tilgjengelig:', e.message)
@@ -63,26 +72,8 @@ export async function buildMapFromCenter({
       console.warn('Sjøkart-Dybdedata ikke tilgjengelig:', e.message)
       return { dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [] }
     }),
-    buildWaterMaskFromWms(bbox).catch(e => {
-      console.warn('WMS-vannmaske ikke tilgjengelig:', e.message)
-      return { polygons: [], source: 'failed' }
-    }),
-    buildWaterMaskFromTiles(bbox).catch(e => {
-      console.warn('WMTS-vannmaske ikke tilgjengelig:', e.message)
-      return { polygons: [], source: 'failed' }
-    }),
   ])
   const sjokartElements = sjokartToElements(sjokart)
-
-  let waterMask = wmsWater
-  if (waterMask.source !== 'wms' || waterMask.polygons.length === 0) {
-    if (wmtsWater.polygons.length > 0) {
-      console.info('[Vannmaske] WMS uten data — bruker WMTS-tile-fallback')
-      waterMask = wmtsWater
-    }
-  }
-  const waterMaskElements = polygonsToOsmLikeWays(waterMask.polygons)
-  const waterMaskFailed = waterMask.polygons.length === 0
 
   const n50HasFreshwater = n50Water.some(el =>
     (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
@@ -109,20 +100,11 @@ export async function buildMapFromCenter({
   })
   if (n50Water.length > 0) elements.push(...n50Water)
   if (sjokartElements.length > 0) elements.push(...sjokartElements)
-  if (waterMaskElements.length > 0) elements.push(...waterMaskElements)
 
   const sourceParts = ['OSM']
   if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
   if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
-  if (waterMaskElements.length > 0) {
-    const seaCount = waterMask.polygons.filter(p => p.type === 'sea').length
-    const lakeCount = waterMask.polygons.filter(p => p.type === 'lake').length
-    const label = waterMask.source === 'wmts' ? 'WMTS-vann' : 'WMS-vann'
-    const meta = waterMask.endpoint ?? waterMask.source ?? 'ukjent'
-    sourceParts.push(`${label} (${meta}): ${seaCount} sjø + ${lakeCount} innsjø`)
-  } else if (waterMaskFailed) {
-    sourceParts.push('⚠ vannmaske feilet — bruker DEM-fallback for sjø')
-  }
+  sourceParts.push('DEM-sjø (NHM_DTM_25832)')
   const source = sourceParts.join(' + ')
 
   onProgress(`Bygger SVG fra ${elements.length} elementer …`)
@@ -142,10 +124,9 @@ export async function buildMapFromCenter({
     contourIntervalM: equidistanceM,
     scaleDenom: 10000,
     skipContoursIfSynthetic: true,
-    // Bare slå på DEM-sjø-deteksjon når vannmaske-kildene ikke leverte noe
-    // — den er bråkete (kan smitte på lavtliggende øyer DEM ikke ser) og
-    // skal kun fylle hull, ikke konkurrere med autoritative N50/WMS-data.
-    skipDemSea: !waterMaskFailed,
+    // DEM-sjø ALLTID på når DEM er ekte. Buggy «smitter inn på lavtliggende
+    // øyer»-tilfeller dekkes av ISOM 001 land-overlay (OSM place=island).
+    skipDemSea: false,
   })
 
   onProgress(`Lagrer kart …`)
