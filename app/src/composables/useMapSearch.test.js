@@ -96,16 +96,25 @@ describe('useMapSearch', () => {
       expect(filterIndex(mockIndex, '   ')).toEqual([])
     })
 
-    it('sorts category-mode results by kind rank, then area desc', () => {
-      // Query "vann" treffer 3 entries via categories. Hestesund (omrade,
-      // rank 5) skal komme før vann-omrade-entries (rank 8). Innenfor
-      // vann-omrade sorteres etter areal desc, så innsjø før tjern.
+    it('sorts results alphabetically', () => {
+      // Query "vann" treffer 3 entries via categories. Sorteringen er
+      // ren alfabetisk på navn (norsk collation), ikke etter relevans
+      // eller størrelse.
       const results = filterIndex(mockIndex, 'vann')
       const names = results.map(r => r.name)
-      expect(names[0]).toBe('Hestesund')
-      expect(names.indexOf('Innsjø uten navn (~1 ha)')).toBeLessThan(
-        names.indexOf('Tjern uten navn (~500 m²)')
-      )
+      expect(names).toEqual(['Hestesund', 'Innsjø uten navn (~1 ha)', 'Tjern uten navn (~500 m²)'])
+    })
+
+    it('alphabetical sort works across mixed kinds', () => {
+      const mini = [
+        { id: '1', name: 'Åse', folded: 'aase', kind: 'stedsnavn', x: 0, y: 0 },
+        { id: '2', name: 'Berg', folded: 'berg', kind: 'peak', x: 0, y: 0 },
+        { id: '3', name: 'Almenningen', folded: 'almenningen', kind: 'omrade', x: 0, y: 0 },
+        // Substring-match på "e" treffer alle tre. Alfabetisk: Almenningen,
+        // Berg, Åse (norsk: æøå kommer sist).
+      ]
+      const results = filterIndex(mini, 'e')
+      expect(results.map(r => r.name)).toEqual(['Almenningen', 'Berg', 'Åse'])
     })
 
     it('folding lets ASCII-only input match diakritisk navn', () => {
