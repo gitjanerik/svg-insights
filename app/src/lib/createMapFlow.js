@@ -18,7 +18,7 @@
 import { fetchOverpass, buildSvg, bboxFromCenter } from './mapBuilder.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
-import { polygonsToOsmLikeWays } from './waterMaskFromTiles.js'
+import { buildWaterMaskFromTiles, polygonsToOsmLikeWays } from './waterMaskFromTiles.js'
 import { buildWaterMaskFromWms } from './waterMaskFromWms.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
@@ -47,7 +47,13 @@ export async function buildMapFromCenter({
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
 
-  const [osmData, n50Water, sjokart, wmsWater] = await Promise.all([
+  // Kjør begge vannmaske-kildene i parallel så sluttiden styres av den
+  // raskeste suksessen — ikke av sekvensielle WMS-probes som henger.
+  // Vi foretrekker WMS når den svarer (mest presis), men aksepterer WMTS-
+  // backup om WMS ikke leverer (typisk Indre Oslofjord / Asker-skjærgården
+  // der enkelte FKB-Vann-lag ikke er publisert). Hvis BEGGE feiler slår vi
+  // på DEM-derivert sjø som siste fallback (skipDemSea: false).
+  const [osmData, n50Water, sjokart, wmsWater, wmtsWater] = await Promise.all([
     fetchOverpass(bbox),
     fetchN50Water(bbox).catch(e => {
       console.warn('N50-vann ikke tilgjengelig:', e.message)
@@ -61,11 +67,22 @@ export async function buildMapFromCenter({
       console.warn('WMS-vannmaske ikke tilgjengelig:', e.message)
       return { polygons: [], source: 'failed' }
     }),
+    buildWaterMaskFromTiles(bbox).catch(e => {
+      console.warn('WMTS-vannmaske ikke tilgjengelig:', e.message)
+      return { polygons: [], source: 'failed' }
+    }),
   ])
   const sjokartElements = sjokartToElements(sjokart)
 
-  const waterMask = wmsWater
+  let waterMask = wmsWater
+  if (waterMask.source !== 'wms' || waterMask.polygons.length === 0) {
+    if (wmtsWater.polygons.length > 0) {
+      console.info('[Vannmaske] WMS uten data — bruker WMTS-tile-fallback')
+      waterMask = wmtsWater
+    }
+  }
   const waterMaskElements = polygonsToOsmLikeWays(waterMask.polygons)
+  const waterMaskFailed = waterMask.polygons.length === 0
 
   const n50HasFreshwater = n50Water.some(el =>
     (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
@@ -100,9 +117,11 @@ export async function buildMapFromCenter({
   if (waterMaskElements.length > 0) {
     const seaCount = waterMask.polygons.filter(p => p.type === 'sea').length
     const lakeCount = waterMask.polygons.filter(p => p.type === 'lake').length
-    sourceParts.push(`WMS-vann (${waterMask.endpoint ?? 'ukjent'}): ${seaCount} sjø + ${lakeCount} innsjø`)
-  } else if (waterMask.source === 'failed') {
-    sourceParts.push(`⚠ WMS-vann feilet (${waterMask.reason ?? 'ukjent'}) — sjø kan mangle`)
+    const label = waterMask.source === 'wmts' ? 'WMTS-vann' : 'WMS-vann'
+    const meta = waterMask.endpoint ?? waterMask.source ?? 'ukjent'
+    sourceParts.push(`${label} (${meta}): ${seaCount} sjø + ${lakeCount} innsjø`)
+  } else if (waterMaskFailed) {
+    sourceParts.push('⚠ vannmaske feilet — bruker DEM-fallback for sjø')
   }
   const source = sourceParts.join(' + ')
 
@@ -123,7 +142,10 @@ export async function buildMapFromCenter({
     contourIntervalM: equidistanceM,
     scaleDenom: 10000,
     skipContoursIfSynthetic: true,
-    skipDemSea: true,
+    // Bare slå på DEM-sjø-deteksjon når vannmaske-kildene ikke leverte noe
+    // — den er bråkete (kan smitte på lavtliggende øyer DEM ikke ser) og
+    // skal kun fylle hull, ikke konkurrere med autoritative N50/WMS-data.
+    skipDemSea: !waterMaskFailed,
   })
 
   onProgress(`Lagrer kart …`)

@@ -46,9 +46,14 @@ const WMS_ENDPOINTS = [
 const DEFAULT_M_PER_PX = 5
 const ALPHA_THRESHOLD = 32
 const MIN_PIXELS_FOR_VALID_RESPONSE = 50
+const PROBE_TIMEOUT_MS = 8000
 
 /**
  * Hent vann-rendering fra ett WMS-endpoint med spesifikke lag.
+ * Per-probe timeout via AbortController så døde endepunkter ikke henger
+ * hele kart-genereringen (Geonorge har inkonsistent oppetid på enkelte
+ * dataset-versjoner; sekvensiell probing skal ikke akkumulere flere minutter
+ * med ventetid før vi gir opp og faller tilbake til WMTS).
  */
 async function fetchWmsImage(url, layers, bbox, widthPx, heightPx, signal) {
   const params = new URLSearchParams({
@@ -64,10 +69,19 @@ async function fetchWmsImage(url, layers, bbox, widthPx, heightPx, signal) {
     FORMAT: 'image/png',
     TRANSPARENT: 'true',
   })
-  const res = await fetch(`${url}?${params}`, { mode: 'cors', signal })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const blob = await res.blob()
-  return createImageBitmap(blob)
+  const timeoutCtrl = new AbortController()
+  const timer = setTimeout(() => timeoutCtrl.abort(new Error('probe timeout')), PROBE_TIMEOUT_MS)
+  const composedSignal = signal
+    ? AbortSignal.any?.([signal, timeoutCtrl.signal]) ?? timeoutCtrl.signal
+    : timeoutCtrl.signal
+  try {
+    const res = await fetch(`${url}?${params}`, { mode: 'cors', signal: composedSignal })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const blob = await res.blob()
+    return await createImageBitmap(blob)
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**

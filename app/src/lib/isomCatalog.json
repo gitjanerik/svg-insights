@@ -394,12 +394,13 @@
       },
       "510": {
         "label": "Lysløype",
+        "$comment": "Lysløype rendres som oransje prikker (preparert/oppmerket skiløype-konvensjon, matcher Skiforeningens kart). widthMm gir punkt-diameter og dasharray [0, gap] med linecap=round genererer ekte sirkler — null-lengde-dash blir til en sirkel via round-cap.",
         "stroke": {
-          "color": "#000",
-          "widthMm": 0.14,
+          "color": "#f57000",
+          "widthMm": 0.55,
           "dasharray": [
-            2.5,
-            0.4
+            0,
+            1.4
           ],
           "linecap": "round",
           "linejoin": "round"
@@ -1057,7 +1058,7 @@
       ]
     },
     "parkering": {
-      "$comment": "Utfartsparkering (ISOM 534-derivert): blå firkant med hvit P. Standard universalt parkerings-symbol — gjenkjennelig fra trafikkskilt og turkart.",
+      "$comment": "Utfartsparkering (ISOM 534-derivert): blå firkant med hvit P. Standard universalt parkerings-symbol — gjenkjennelig fra trafikkskilt og turkart. Ingen ramme — flat blå farge gir reneste lesbarhet i print.",
       "viewBox": "-1 -1 2 2",
       "elements": [
         {
@@ -1066,9 +1067,7 @@
           "y": -0.75,
           "width": 1.5,
           "height": 1.5,
-          "fill": "#1f5d8a",
-          "stroke": "#0a2a40",
-          "widthMm": 0.1
+          "fill": "#1f5d8a"
         },
         {
           "type": "path",
