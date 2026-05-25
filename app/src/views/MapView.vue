@@ -1503,6 +1503,19 @@ function onToggleRecording() {
   if (tracker.isRecording.value) tracker.stopRecording()
   else tracker.startRecording()
 }
+
+// Header-shortcut: ett trykk = GPS + sporing av/på.
+// Idle → start GPS + start opptak (sist-brukte stil).
+// GPS på, ikke opptak → start opptak.
+// Opptak → stopp opptak (GPS forblir aktivt så ikonen viser posisjon).
+function onHeaderTrackShortcut() {
+  if (tracker.isRecording.value) {
+    void tracker.stopRecording()
+    return
+  }
+  if (!userPos.isWatching) userPos.start()
+  tracker.startRecording()
+}
 async function onDeleteTrack(id) {
   if (!confirm('Slett dette sporet?')) return
   await tracker.deleteTrack(id)
@@ -2012,17 +2025,38 @@ onUnmounted(stopGpsTick)
     <div v-if="!curveball.active.value"
          class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
                 pointer-events-none">
-      <button @click="router.push('/kart')"
-              class="pointer-events-auto rounded-full w-10 h-10 flex items-center justify-center
-                     bg-zinc-950 text-white shadow-lg active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
-             stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6"/>
-        </svg>
-      </button>
+      <div class="flex items-center gap-2 pointer-events-auto">
+        <button @click="router.push('/kart')"
+                aria-label="Tilbake til kart-lista"
+                class="rounded-full w-10 h-10 flex items-center justify-center
+                       bg-zinc-950 text-white shadow-lg active:scale-95 transition">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.4"
+               stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <button @click="onHeaderTrackShortcut"
+                :aria-label="tracker.isRecording.value ? 'Stopp sporing' : 'Start GPS og sporing'"
+                class="rounded-full w-10 h-10 flex items-center justify-center
+                       shadow-lg active:scale-95 transition relative"
+                :class="tracker.isRecording.value
+                        ? 'bg-pink-500 text-white'
+                        : (userPos.isWatching
+                            ? 'bg-sky-500 text-white'
+                            : 'bg-zinc-950 text-white')">
+          <span v-if="tracker.isRecording.value"
+                class="w-3 h-3 rounded-full bg-white animate-pulse"></span>
+          <svg v-else viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 19 C 8 13 10 15 12 12 C 14 9 16 11 19 5"/>
+            <circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/>
+            <circle cx="19" cy="5" r="1.6" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+      </div>
 
       <div class="pointer-events-none px-3 py-1.5 rounded-full bg-zinc-950
-                  text-[12px] text-white font-medium shadow-lg max-w-[50%] truncate">
+                  text-[12px] text-white font-medium shadow-lg max-w-[42%] truncate">
         {{ mapTitle }}
       </div>
 
@@ -2084,8 +2118,8 @@ onUnmounted(stopGpsTick)
           </div>
           <div v-else-if="!searchQuery"
                class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
-            Søker i alle stedsnavn, vann, topper og navngitte områder som er
-            tegnet i kartet ({{ searchIndex.length }} treffbare).
+            Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
+            Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann i utsnittet.
           </div>
           <button v-for="r in searchResults" :key="r.id"
                   @click="selectSearchResult(r)"
@@ -2639,6 +2673,19 @@ onUnmounted(stopGpsTick)
             <div class="text-[10px] text-white/40 leading-snug">
               Punkter samples ned til hver 5. m. Lave-nøyaktighets-fixer (over
               50 m) ignoreres så støy ikke blir sti. Spor lagres med kartet.
+            </div>
+            <div v-if="tracker.isRecording.value"
+                 class="text-[10px] leading-snug rounded-md px-2 py-1.5 bg-pink-500/10
+                        border border-pink-300/20 text-pink-100/85">
+              <span v-if="tracker.wakeLockActive.value">
+                Skjermen holdes våken så GPS ikke stopper. Hold appen åpen
+                under turen — nettleseren kan ikke spore i bakgrunnen.
+              </span>
+              <span v-else>
+                Hold appen åpen og skjermen våken under turen — nettleseren
+                kan ikke spore i bakgrunnen, og GPS-en stopper når skjermen
+                sovner.
+              </span>
             </div>
           </div>
 
