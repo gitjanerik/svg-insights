@@ -386,11 +386,24 @@ export function filterIndex(index, query, limit = 60) {
     seenIds.add(r.id)
     out.push(r)
   }
-  // Alfabetisk sortering på det viste navnet, med norsk collation
-  // (localeCompare med 'no'). Foldet form bruker æ/ø/å→ae/oe/aa allerede,
-  // men det opprinnelige navnet beholder de norske tegnene, og brukeren
-  // forventer at f.eks. «Åse» kommer etter «Å» etc. — bruk r.name.
-  out.sort((a, b) => a.name.localeCompare(b.name, 'no'))
+  // To-trinns sortering:
+  //   1. Navngitte først, alfabetisk (norsk collation — æøå sist).
+  //   2. Unavngitte vann-polygoner nederst, sortert etter areal desc
+  //      (største vann øverst i den gruppen). De har syntetiske «Innsjø/
+  //      Tjern uten navn (~X ha)»-navn som blander seg i alfabetisk
+  //      rekkefølge på en ulesbar måte — derfor er de skilt ut.
+  out.sort((a, b) => {
+    const aUnnamed = a.kind === 'vann-omrade' ? 1 : 0
+    const bUnnamed = b.kind === 'vann-omrade' ? 1 : 0
+    if (aUnnamed !== bUnnamed) return aUnnamed - bUnnamed
+    if (aUnnamed) {
+      // Begge er unavngitte vann — sorter etter areal desc
+      const aArea = a.areaM2 ?? 0
+      const bArea = b.areaM2 ?? 0
+      if (aArea !== bArea) return bArea - aArea
+    }
+    return a.name.localeCompare(b.name, 'no')
+  })
   return out.slice(0, limit)
 }
 
