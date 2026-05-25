@@ -150,10 +150,13 @@ const TABS = [
         <p class="text-xs text-white/50 leading-relaxed">
           Turkart-sporet bruker <a href="https://rsms.me/inter/" target="_blank" rel="noopener"
              class="text-white/75 underline decoration-white/30 underline-offset-2">Inter</a>
-          — en moderne, variabel webfont av Rasmus Andersson, lastet fra <code>rsms.me/inter</code>.
-          Base-vekt er <code>400</code>. Alle tall (høyder, dybder, lengder, kontur-tall i SVG-en
-          og statistikker i UI-et) bruker <code>font-variant-numeric: tabular-nums</code> så sifrene
-          står på faste posisjoner og er lette å sammenligne.
+          — en moderne, variabel webfont av Rasmus Andersson. Selv-hostet via
+          <code>@fontsource-variable/inter</code>, ingen CDN — Vite bundler woff2-filene inn i
+          appen, og unicode-range subsetting gjør at norsk-tekst kun trenger latin-subsettet
+          (~50 KB roman + ~50 KB italic). Base-vekt er <code>400</code>. Alle tall (høyder, dybder,
+          lengder, kontur-tall i SVG-en og statistikker i UI-et) bruker
+          <code>font-variant-numeric: tabular-nums</code> så sifrene står på faste posisjoner
+          og er lette å sammenligne.
         </p>
       </section>
 

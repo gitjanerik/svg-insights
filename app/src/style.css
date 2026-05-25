@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
-/* Inter variable webfont scope for turkart-sporet. Variable-font når støttet,
-   fallback til ikke-variabel Inter, deretter system-stack. font-weight: 400
-   er base; spesifikke labels og UI-elementer kan overstyre. tabular-nums gir
-   monospasede sifre i hele kart-UI-et (høyder, dybder, lengder, koordinater). */
+/* Inter variable webfont — selv-hostet via @fontsource-variable/inter.
+   Vite bundler woff2-filene til dist/assets og rewriter URL-ene, så ingen
+   eksterne CDN-er. Unicode-range subsets gjør at norsk-tekst (æ/ø/å + base
+   latin) bare laster ned latin-woff2-en (~50 KB pr roman/italic). */
+@import "@fontsource-variable/inter/wght.css";
+@import "@fontsource-variable/inter/wght-italic.css";
+
+/* Inter-scope for turkart-sporet. font-weight: 400 er base; spesifikke labels
+   og UI-elementer overstyrer via Tailwind eller egne CSS-regler. tabular-nums
+   gir monospasede sifre i hele kart-UI-et (høyder, dybder, lengder, kontur-tall). */
 .kart-ui {
-  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'liga' 1, 'calt' 1;
-}
-@supports (font-variation-settings: normal) {
-  .kart-ui {
-    font-family: 'InterVariable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  }
 }
