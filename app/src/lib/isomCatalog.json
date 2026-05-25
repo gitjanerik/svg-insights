@@ -465,6 +465,17 @@
           "pattern": "bebyggelse"
         }
       },
+      "520": {
+        "label": "Naturreservat / verneområde",
+        "$comment": "Norge-spesifikk utvidelse: ISOM 2017-2 har ingen dedikert kode for naturvernområder. Vi bruker 520 (i ISOM = 'Out-of-bounds') for naturreservat, nasjonalpark og landskapsvernområde. Lett grønn semi-transparent overlay + tydelig grønn kant matcher Kartverkets konvensjon på Norgeskart. Renders etter vann men før konturer/veier, så underliggende terreng forblir lesbart gjennom overlayen.",
+        "fill": {
+          "color": "rgba(140, 198, 100, 0.32)"
+        },
+        "stroke": {
+          "color": "#3f7a24",
+          "widthMm": 0.28
+        }
+      },
       "525": {
         "label": "Gjerde",
         "stroke": {
@@ -1392,6 +1403,14 @@
           "color": "#1a1208"
         }
       },
+      "520": {
+        "fill": {
+          "color": "rgba(120, 180, 90, 0.28)"
+        },
+        "stroke": {
+          "color": "#8bc26b"
+        }
+      },
       "525": {
         "stroke": {
           "color": "#c8c8c8"
@@ -1641,6 +1660,14 @@
           },
           "stroke": {
             "color": "#1a1208"
+          }
+        },
+        "520": {
+          "fill": {
+            "color": "rgba(120, 180, 90, 0.28)"
+          },
+          "stroke": {
+            "color": "#8bc26b"
           }
         },
         "525": {

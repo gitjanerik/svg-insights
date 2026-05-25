@@ -223,6 +223,23 @@ export function classifyToIsom(el) {
     }
   }
 
+  // Naturreservat / verneområde (ISOM 520-derivert, Norge-spesifikk
+  // utvidelse). Sjekkes FØR vegetasjon/vann/landuse siden et naturreservat-
+  // polygon kan også ha andre tags (f.eks. natural=wood på samme polygon),
+  // og vernet status skal vinne over generell landbruks-/vegetasjons-
+  // klassifisering. Lett grønn overlay matcher Kartverkets konvensjon.
+  //
+  // OSM tagger Norske naturreservater/nasjonalparker som ENTEN:
+  //   - leisure=nature_reserve (vanlig på way)
+  //   - boundary=protected_area + protect_class=1..7 (vanlig på relation)
+  //   - boundary=national_park (egen kategori men samme rendering)
+  if (el.type !== 'node') {
+    if (t.leisure === 'nature_reserve') return { code: '520', cat: 'manmade' }
+    if (t.boundary === 'national_park') return { code: '520', cat: 'manmade' }
+    if (t.boundary === 'protected_area' && /^[1-7]$/.test(String(t.protect_class ?? ''))) {
+      return { code: '520', cat: 'manmade' }
+    }
+  }
   if (t.building)                                   return { code: '521', cat: 'manmade' }
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
   // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
