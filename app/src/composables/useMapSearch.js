@@ -9,6 +9,11 @@ import { ref, computed, shallowRef } from 'vue'
  *     tekstinnholdet som navn
  *   - <path data-name="..."> (lakes/elver/øyer/relations) — bruker bbox-senter
  *     som anker
+ *   - Unavngitte vann-polygoner i ferskvann-lag (ISOM 301 / 302) ekstrahert
+ *     fra de kombinerte sti-elementene som v8.10.4 emitterer. Disse får
+ *     syntetiske navn ("Innsjø uten navn", "Tjern uten navn") og dukker
+ *     bare opp ved kategori-søk ("vann"/"innsjø"/"tjern"). Saltvann (303)
+ *     og sjøkart-dybdeareal (307) tas ikke med.
  *
  * Posisjonene returneres i user-units (meter, samme som viewBoxen).
  *
@@ -36,6 +41,17 @@ function labelFor(kind) {
   return LABEL_LUT[kind] ?? 'Stedsnavn'
 }
 
+// Kategori-søkeord — eksakt-match (etter folding) på disse listet alle
+// entries med matchende `categories`-tag, slik at brukeren kan få oversikt
+// over alle blå ferskvann-områder uten å vite navnet. Aliases: ø → oe via
+// foldName, så både "innsjø" og "innsjo" treffer canonical 'innsjo'-tag.
+const CATEGORY_ALIASES = {
+  'vann':    'vann',
+  'innsjoe': 'innsjo',
+  'innsjo':  'innsjo',
+  'tjern':   'tjern',
+}
+
 /**
  * Foldec ASCII-substitusjon for fuzzy match: ALT enkel diakritikk
  * normaliseres til ASCII, æ/ø/å → ae/oe/aa. Brukerinput og index normaliseres
@@ -54,11 +70,13 @@ export function foldName(s) {
 }
 
 function bestKindRank(kind) {
-  // Foretrekk stedsnavn > peak > vann-navn > path-name (omrade)
+  // Foretrekk stedsnavn > peak > vann-navn > path-name (omrade) > unavngitt vann
   if (kind === 'stedsnavn') return 0
   if (kind === 'peak') return 1
   if (kind === 'vann-navn') return 2
-  return 5
+  if (kind === 'omrade') return 5
+  if (kind === 'vann-omrade') return 8
+  return 10
 }
 
 // Parsererer `transform="translate(x, y)"` (det eneste mapBuilder skriver
@@ -131,7 +149,7 @@ function elementPosition(svgEl, el) {
   }
 }
 
-function pushRaw(out, name, kind, pos, el) {
+function pushRaw(out, name, kind, pos, el, extra = {}) {
   if (!name || !pos) return
   out.push({
     id: `${kind}-${out.length}`,
@@ -142,8 +160,104 @@ function pushRaw(out, name, kind, pos, el) {
     x: pos.x,
     y: pos.y,
     el,
+    categories: extra.categories ?? null,
+    areaM2: extra.areaM2 ?? null,
   })
 }
+
+// Mapper ISOM-kode til kategori-tags. 301 = Innsjø, 302 = Tjern. Begge
+// regnes som "vann"; spesifikke søk på "innsjo"/"tjern" får sin under-
+// gruppe også.
+function categoriesForIsom(iso) {
+  if (iso === '301') return ['vann', 'innsjo']
+  if (iso === '302') return ['vann', 'tjern']
+  return null
+}
+
+function isomFromAncestor(el) {
+  let p = el
+  while (p && p.nodeType === 1) {
+    if (p.tagName === 'g' && p.hasAttribute('data-iso')) {
+      return p.getAttribute('data-iso')
+    }
+    p = p.parentElement
+  }
+  return null
+}
+
+/**
+ * Parse en kombinert path-d ("M..L..Z M..L..Z ...") til en liste sub-paths,
+ * hver med beregnet sentroid, bbox og polygon-areal (shoelace). Brukes til
+ * å trekke ut individuelle unavngitte vann-polygoner fra v8.10.4-stilen
+ * der mapBuilder slår sammen unnamed features per data-src i én <path>.
+ *
+ * Vi forventer kun M og L kommandoer (+ avsluttende Z) — mapBuilder
+ * skriver ingen andre. Tall er separert med komma og kommando-bokstaver.
+ */
+function parsePathSubpaths(d) {
+  if (!d || typeof d !== 'string') return []
+  const out = []
+  // Lookahead-split bevarer hvert sub-path som starter med 'M'
+  const parts = d.split(/(?=M)/)
+  const numRe = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/g
+  for (const part of parts) {
+    if (!part || part[0] !== 'M') continue
+    const coords = []
+    let m
+    numRe.lastIndex = 0
+    while ((m = numRe.exec(part)) !== null) {
+      const x = parseFloat(m[1])
+      const y = parseFloat(m[2])
+      if (Number.isFinite(x) && Number.isFinite(y)) coords.push([x, y])
+    }
+    if (coords.length < 3) continue
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let cx = 0, cy = 0
+    for (const [x, y] of coords) {
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+      cx += x; cy += y
+    }
+    cx /= coords.length; cy /= coords.length
+    // Shoelace-areal (absolutt). Polygoner i SVG-units = meter, så
+    // areaM2 er ekte kvadratmeter.
+    let a = 0
+    for (let i = 0; i < coords.length; i++) {
+      const [x1, y1] = coords[i]
+      const [x2, y2] = coords[(i + 1) % coords.length]
+      a += x1 * y2 - x2 * y1
+    }
+    const areaM2 = Math.abs(a) / 2
+    out.push({
+      cx, cy,
+      bbox: { minX, minY, maxX, maxY },
+      areaM2,
+    })
+  }
+  return out
+}
+
+function lakeLabelForIsom(iso) {
+  if (iso === '302') return 'Tjern uten navn'
+  return 'Innsjø uten navn'
+}
+
+function formatAreaShort(m2) {
+  if (!Number.isFinite(m2) || m2 <= 0) return ''
+  if (m2 >= 1_000_000) return `~${(m2 / 1_000_000).toFixed(1).replace('.0', '')} km²`
+  if (m2 >= 10_000) return `~${Math.round(m2 / 10_000)} ha`
+  return `~${Math.round(m2)} m²`
+}
+
+// Minimum-areal for å regnes som «et vann». Mindre enn dette er typisk
+// dam/grøft/støy — ikke noe brukeren vil se i en oversikt.
+const MIN_LAKE_AREA_M2 = 300
+
+// Maks antall unavngitte vann vi tar med per kart. Begrenser pollution
+// fra LiDAR-støy eller mange små dammer i myr-områder.
+const MAX_UNNAMED_LAKES = 60
 
 export function buildSearchIndex(svgEl) {
   if (!svgEl) return []
@@ -158,7 +272,11 @@ export function buildSearchIndex(svgEl) {
     if (NUMERIC_RE.test(name)) continue
     const pos = elementPosition(svgEl, t)
     if (!pos) continue
-    pushRaw(out, name, kind, pos, t)
+    // Vann-navn-labels får kategori-tag så de matcher på "vann"-søk
+    // selv om søkeordet ikke står i navnet.
+    let categories = null
+    if (kind === 'vann-navn') categories = ['vann']
+    pushRaw(out, name, kind, pos, t, { categories })
   }
 
   // 2) Navngitte polygoner (data-name) — typisk innsjøer/elver/øyer som er
@@ -169,18 +287,73 @@ export function buildSearchIndex(svgEl) {
     if (!name) continue
     const pos = elementPosition(svgEl, p)
     if (!pos) continue
-    pushRaw(out, name, 'omrade', pos, p)
+    const iso = isomFromAncestor(p)
+    const categories = categoriesForIsom(iso)
+    pushRaw(out, name, 'omrade', pos, p, { categories })
+  }
+
+  // 3) Unavngitte ferskvann-polygoner (ISOM 301 + 302). Mapbuilder slår
+  //    sammen alle unavngitte vann i samme bucket i ÉN kombinert <path>,
+  //    så vi må parse sub-paths fra d-attributtet for å få per-vann
+  //    treff. Saltvann (303) og sjøkart (307) ekskluderes med vilje.
+  const unnamedLakes = []
+  for (const iso of ['301', '302']) {
+    const groups = svgEl.querySelectorAll(`g[data-iso="${iso}"]`)
+    for (const g of groups) {
+      const [dx, dy] = ancestorTranslate(g, svgEl)
+      // Sjekk alle paths i gruppen. Navngitte er allerede plukket i runde 2,
+      // så skip dem her. Tomt data-name="" teller som ikke-navngitt.
+      for (const path of g.querySelectorAll(':scope > path')) {
+        const nameAttr = path.getAttribute('data-name')
+        if (nameAttr && nameAttr.trim()) continue
+        const d = path.getAttribute('d')
+        if (!d) continue
+        const subs = parsePathSubpaths(d)
+        for (const s of subs) {
+          if (s.areaM2 < MIN_LAKE_AREA_M2) continue
+          unnamedLakes.push({
+            x: s.cx + dx,
+            y: s.cy + dy,
+            areaM2: s.areaM2,
+            iso,
+          })
+        }
+      }
+    }
+  }
+  // Sorter desc på areal og cap så vi ikke spammer listen
+  unnamedLakes.sort((a, b) => b.areaM2 - a.areaM2)
+  const capped = unnamedLakes.slice(0, MAX_UNNAMED_LAKES)
+  for (const lake of capped) {
+    const baseName = lakeLabelForIsom(lake.iso)
+    const areaLabel = formatAreaShort(lake.areaM2)
+    const name = areaLabel ? `${baseName} (${areaLabel})` : baseName
+    const categories = categoriesForIsom(lake.iso)
+    pushRaw(out, name, 'vann-omrade', { x: lake.x, y: lake.y }, null, {
+      categories,
+      areaM2: lake.areaM2,
+    })
   }
 
   // Dedupe: samme navn (folded) innen ~50m skal kun gi ett resultat. Behold
-  // den med best kind-rank (helst stedsnavn over polygon).
+  // den med best kind-rank (helst stedsnavn over polygon). Unavngitte
+  // vann har unike syntetiske navn per posisjon, så dedupen treffer dem ikke.
   const seen = new Map()
   for (const r of out) {
     // Bucket-størrelse i meter — to elementer i samme bucket regnes som duplikat
     const bucket = `${r.folded}|${Math.round(r.x / 50)}|${Math.round(r.y / 50)}`
     const existing = seen.get(bucket)
     if (!existing || bestKindRank(r.kind) < bestKindRank(existing.kind)) {
+      // Bevar ev. kategori-tags fra den entryen vi nå overskriver — slik at
+      // f.eks. en stedsnavn-label som vinner over en omrade-entry for samme
+      // vann fortsatt matcher kategori-søk på "vann".
+      if (existing && existing.categories && !r.categories) {
+        r.categories = existing.categories
+      }
       seen.set(bucket, r)
+    } else if (r.categories && !existing.categories) {
+      // r ble droppet av rank, men har kategori-info existing mangler
+      existing.categories = r.categories
     }
   }
   return Array.from(seen.values())
@@ -189,20 +362,40 @@ export function buildSearchIndex(svgEl) {
 /**
  * Filtrer indeksen mot et søk. Returnerer maks `limit` treff,
  * prefix-matcher først, så kortere navn først.
+ *
+ * Kategori-søk: når query er nøyaktig "vann", "innsjo" eller "tjern" (etter
+ * folding), inkluderes alle entries med matchende `categories`-tag, ikke
+ * bare de der søkeordet står i navnet. Slik får brukeren oversikt over
+ * alle blå ferskvann-områder i kartet — inkludert navngitte hvis navn
+ * ikke inneholder ordet "vann".
  */
-export function filterIndex(index, query, limit = 30) {
+export function filterIndex(index, query, limit = 60) {
   const q = foldName(query)
   if (!q) return []
+  const categoryTag = CATEGORY_ALIASES[q] ?? null
   const out = []
+  const seenIds = new Set()
   for (const r of index) {
     const idx = r.folded.indexOf(q)
-    if (idx < 0) continue
-    out.push({ ...r, _matchPos: idx })
+    const nameMatch = idx >= 0
+    const catMatch = categoryTag != null && r.categories && r.categories.includes(categoryTag)
+    if (!nameMatch && !catMatch) continue
+    if (seenIds.has(r.id)) continue
+    seenIds.add(r.id)
+    out.push({
+      ...r,
+      _matchPos: nameMatch ? idx : Number.MAX_SAFE_INTEGER,
+      _byCategory: !nameMatch && catMatch,
+    })
   }
   out.sort((a, b) => {
+    // Navngitte (name-match eller named omrade) før unavngitte
+    const ar = bestKindRank(a.kind)
+    const br = bestKindRank(b.kind)
     if (a._matchPos !== b._matchPos) return a._matchPos - b._matchPos
-    const kr = bestKindRank(a.kind) - bestKindRank(b.kind)
-    if (kr !== 0) return kr
+    if (ar !== br) return ar - br
+    // For samme rank — bruk areal desc hvis det finnes (større vann først)
+    if (a.areaM2 && b.areaM2 && a.areaM2 !== b.areaM2) return b.areaM2 - a.areaM2
     return a.name.length - b.name.length
   })
   return out.slice(0, limit)
@@ -245,7 +438,7 @@ export function useMapSearch() {
     query.value = ''
   }
 
-  const results = computed(() => filterIndex(index.value, query.value, 30))
+  const results = computed(() => filterIndex(index.value, query.value, 60))
 
   return { query, results, index, rebuild, clear }
 }

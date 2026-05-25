@@ -17,6 +17,11 @@
 //  - Auto-lagre hver 10s mens recording (trøtt fil-IO, men IndexedDB er
 //    asynk og raskt for små arrays)
 //  - Lagre også når recording stoppes / komponenten unmountes
+//
+// Wake-lock: Mens opptak pågår, hentes Screen Wake Lock så Chrome/Safari
+// ikke suspenderer fanen + dreper GPS når skjermen sovner. Re-acquires
+// automatisk når dokumentet blir synlig igjen (wake-lock slippes ved
+// fanebytte). Stille no-op om API-en mangler eller request feiler.
 
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { loadMap, saveMap } from '../lib/mapStorage.js'
@@ -26,11 +31,28 @@ const MAX_ACCURACY_M = 50
 const MAX_TIME_GAP_MS = 60_000
 const AUTO_SAVE_INTERVAL_MS = 10_000
 
+// Persistent (across maps) preferanse for sist-brukte stil. Per-map-
+// trackStyle vinner over denne ved load — globalen er bare initialverdi
+// for kart som ennå ikke har en stil lagret.
+const GLOBAL_STYLE_LS_KEY = 'svg-insights:track-style'
+
 export const TRACK_STYLES = [
   { key: 'line',       label: 'Linje',     desc: 'Glatt sti med marsjerende prikker' },
   { key: 'footprints', label: 'Fotspor',   desc: 'Fotavtrykk langs ruten' },
   { key: 'breadcrumbs', label: 'Brødsmuler', desc: 'Diskrete prikker hver ~10 m' },
 ]
+
+function readGlobalStyle() {
+  try {
+    const v = localStorage.getItem(GLOBAL_STYLE_LS_KEY)
+    if (v && TRACK_STYLES.some(s => s.key === v)) return v
+  } catch { /* private mode */ }
+  return 'line'
+}
+
+function writeGlobalStyle(v) {
+  try { localStorage.setItem(GLOBAL_STYLE_LS_KEY, v) } catch { /* private mode */ }
+}
 
 function genId() {
   return 't' + Math.random().toString(36).slice(2, 10)
@@ -45,11 +67,62 @@ function genId() {
 export function useTrackRecorder(mapId, userPos) {
   const tracks = ref([])              // ferdige + pågående; sistnevnte har sluttet=null
   const isRecording = ref(false)
-  const trackStyle = ref('line')      // 'line' | 'footprints' | 'breadcrumbs'
+  const trackStyle = ref(readGlobalStyle())    // 'line' | 'footprints' | 'breadcrumbs'
   const visibleTrackIds = ref(new Set())  // hvilke spor som vises på kartet
+  const wakeLockActive = ref(false)
   let activeTrackId = null
   let autoSaveTimer = null
   let lastSavedAt = 0
+  let wakeLockSentinel = null
+  let visibilityListenerAttached = false
+
+  async function requestWakeLock() {
+    if (typeof navigator === 'undefined' || !navigator.wakeLock) return
+    if (wakeLockSentinel) return
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen')
+      wakeLockActive.value = true
+      wakeLockSentinel.addEventListener?.('release', () => {
+        wakeLockActive.value = false
+        wakeLockSentinel = null
+      })
+    } catch {
+      // NotAllowedError o.l. — bare la være. Vi kan ikke gjøre noe nyttig.
+      wakeLockSentinel = null
+      wakeLockActive.value = false
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (!wakeLockSentinel) {
+      wakeLockActive.value = false
+      return
+    }
+    try { await wakeLockSentinel.release() } catch { /* noop */ }
+    wakeLockSentinel = null
+    wakeLockActive.value = false
+  }
+
+  // Nettleseren slipper wake-lock når brukeren bytter fane. Når fanen
+  // blir synlig igjen og vi fortsatt tar opp, må vi be om en ny lock.
+  function onVisibilityChange() {
+    if (typeof document === 'undefined') return
+    if (document.visibilityState === 'visible' && isRecording.value && !wakeLockSentinel) {
+      void requestWakeLock()
+    }
+  }
+
+  function attachVisibilityListener() {
+    if (visibilityListenerAttached || typeof document === 'undefined') return
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    visibilityListenerAttached = true
+  }
+
+  function detachVisibilityListener() {
+    if (!visibilityListenerAttached || typeof document === 'undefined') return
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    visibilityListenerAttached = false
+  }
 
   async function load() {
     if (!mapId || mapId.startsWith('vardasen')) {
@@ -61,6 +134,7 @@ export function useTrackRecorder(mapId, userPos) {
     // Default: alle synlige
     visibleTrackIds.value = new Set(tracks.value.map(t => t.id))
     if (entry?.trackStyle) trackStyle.value = entry.trackStyle
+    else trackStyle.value = readGlobalStyle()
   }
 
   async function persist() {
@@ -90,6 +164,8 @@ export function useTrackRecorder(mapId, userPos) {
     // Tøm ev. forrige timer (skulle ikke skje, men trygt)
     if (autoSaveTimer) clearInterval(autoSaveTimer)
     autoSaveTimer = setInterval(() => { void persist() }, AUTO_SAVE_INTERVAL_MS)
+    void requestWakeLock()
+    attachVisibilityListener()
     return true
   }
 
@@ -105,6 +181,8 @@ export function useTrackRecorder(mapId, userPos) {
     }
     activeTrackId = null
     if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null }
+    await releaseWakeLock()
+    detachVisibilityListener()
     await persist()
   }
 
@@ -149,6 +227,8 @@ export function useTrackRecorder(mapId, userPos) {
       activeTrackId = null
       isRecording.value = false
       if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null }
+      await releaseWakeLock()
+      detachVisibilityListener()
     }
     await persist()
   }
@@ -171,6 +251,7 @@ export function useTrackRecorder(mapId, userPos) {
 
   async function setStyle(key) {
     trackStyle.value = key
+    writeGlobalStyle(key)
     await persist()
   }
 
@@ -182,10 +263,12 @@ export function useTrackRecorder(mapId, userPos) {
   onUnmounted(() => {
     if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null }
     if (isRecording.value) void stopRecording()
+    void releaseWakeLock()
+    detachVisibilityListener()
   })
 
   return {
-    tracks, isRecording, trackStyle, visibleTrackIds, activeTrack,
+    tracks, isRecording, trackStyle, visibleTrackIds, activeTrack, wakeLockActive,
     load, persist, startRecording, stopRecording, deleteTrack,
     toggleVisibility, renameTrack, setStyle,
   }
