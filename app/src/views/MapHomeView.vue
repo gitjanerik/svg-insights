@@ -96,6 +96,15 @@ async function onCreateHere() {
       navn: `Tur ${stamp}`,
       onProgress: (msg) => { buildingProgress.value = msg },
     })
+    // Be MapView starte GPS automatisk — brukeren har akkurat brukt sin
+    // posisjon til å lage kartet, og forventer at posisjons-prikken er
+    // synlig idet kartet åpnes. (I MapView-FAB-flyten er GPS allerede
+    // aktivt; her er det ikke.)
+    try {
+      sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
+        autoStartGps: true,
+      }))
+    } catch { /* noop */ }
     router.push({ name: 'kart-vis', params: { id } })
   } catch (e) {
     console.error('On-the-fly kart-bygging feilet:', e)
