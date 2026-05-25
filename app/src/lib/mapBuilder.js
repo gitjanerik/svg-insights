@@ -39,6 +39,9 @@ export function buildOverpassQuery(bbox) {
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
   way["building"];
   way["leisure"~"^(park|pitch|playground)$"];
+  way["leisure"="nature_reserve"];
+  way["boundary"="protected_area"]["protect_class"~"^[1-7]$"];
+  way["boundary"="national_park"];
   way["barrier"~"^(fence|wall)$"];
   way["power"="line"];
   way["place"~"^(island|islet)$"];
@@ -66,6 +69,9 @@ export function buildOverpassQuery(bbox) {
   relation["place"~"^(sea|ocean)$"];
   relation["place"~"^(island|islet)$"];
   relation["piste:type"];
+  relation["leisure"="nature_reserve"];
+  relation["boundary"="protected_area"]["protect_class"~"^[1-7]$"];
+  relation["boundary"="national_park"];
 );
 out geom;
 `.trim()
@@ -291,6 +297,10 @@ const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305']
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
+// Naturreservat / verneområde (ISOM 520-derivert): semi-transparent grønn
+// overlay rendret ETTER vann men FØR konturer/veier, slik at underliggende
+// terreng forblir lesbart og konturer/stier tydelig tegnes oppå.
+const PROTECTED_CODES = ['520']
 const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '510', '511']
 const UPPER_CODES  = ['521', '525', '528']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
@@ -299,13 +309,14 @@ const LAYER_ORDER = [
   ...GROUND_CODES,
   ...WATER_CODES,
   ...LAND_OVERLAY_CODES,
+  ...PROTECTED_CODES,
   ...PLACEHOLDER_CODES,
   ...ROAD_CODES,
   ...UPPER_CODES,
   '522',
 ]
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '521', '522'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -434,6 +445,7 @@ export function buildSvg(elements, bbox, options = {}) {
     myr:     { simplifyM: 2.5 * simpScale, minAreaM2: 150 * areaScale },
     vann:    { simplifyM: 2.0 * simpScale, minAreaM2: 50 * areaScale },
     aapen:   { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    naturreservat: { simplifyM: 3.0 * simpScale, minAreaM2: 1000 * areaScale },
   }
   const LINE_SIMPLIFY = {
     'vei-stor':  1.5 * simpScale,
@@ -1415,6 +1427,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const demSeaLayerSvg = demSeaBaseSvg + demSeaBandsSvg
   const waterLayers  = renderCodes(WATER_CODES)
   const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
+  const protectedLayers = renderCodes(PROTECTED_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
   // (casings) først, så ALLE fargefyll (overlays). Det forhindrer at sorte
   // omriss på nabosegmenter ligger oppå fargefyll i kryss ("pølse"-blobsene
@@ -1575,7 +1588,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }
@@ -1592,6 +1605,7 @@ function categoryFor(code) {
     case '308': case '309':                     return 'myr'
     case '301': case '302': case '303': case '307': return 'vann'
     case '304': case '305':                     return 'bekk'
+    case '520':                                  return 'naturreservat'
     case '521': case '522':                     return 'bygning'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'

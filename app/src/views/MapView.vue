@@ -213,6 +213,7 @@ const LAYERS = [
   { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk / dybdekurver' },
   { key: 'kontur',     label: 'Høydekurver' },
+  { key: 'naturreservat', label: 'Naturreservat' },
   { key: 'bygning',    label: 'Bygninger' },
   { key: 'kirke',      label: 'Kirker' },
   { key: 'parkering',  label: 'Parkering' },
