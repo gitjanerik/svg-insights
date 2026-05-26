@@ -2399,6 +2399,16 @@ const showLowAccuracyBanner = computed(() =>
 function dismissLowAccuracy() { lowAccuracyDismissed.value = true }
 watch(() => userPos.isWatching, (on) => { if (on) lowAccuracyDismissed.value = false })
 
+// v9.1.2: «Du er utenfor dette kartet» kan dismisses med en X. Resettes
+// hver gang brukeren går tilbake innenfor kart-bounds — så hvis hen
+// forlater kartet på nytt, dukker meldingen opp igjen.
+const outsideMapDismissed = ref(false)
+const showOutsideMapBanner = computed(() =>
+  userPos.isOutsideMap && !outsideMapDismissed.value
+)
+function dismissOutsideMap() { outsideMapDismissed.value = true }
+watch(() => userPos.isOutsideMap, (out) => { if (!out) outsideMapDismissed.value = false })
+
 // Screen Wake Lock — holder skjermen våken når brukeren bruker kartet til
 // orientering ute. Persisteres i localStorage (default PÅ). Re-requestes
 // automatisk når fanen blir synlig igjen siden browseren alltid slipper
@@ -2711,16 +2721,27 @@ onUnmounted(() => {
 
     <!-- Måleverktøy-indikator (v8.9.4). Live-readout direkte på kartet.
          v8.9.6: flyttet til top-left (under back-knappen) så den ikke ligger
-         bak FAB-stacken. -->
+         bak FAB-stacken. v9.1.2: X-knapp øverst til høyre avslutter målingen
+         direkte fra kartet uten å åpne drawer-en. -->
     <div v-if="measureMode && !curveball.active.value"
-         class="absolute top-16 left-3 z-20 px-3 py-2 rounded-md bg-emerald-600
-                text-white text-[11px] font-medium shadow-lg pointer-events-none
-                tabular-nums max-w-[55%]">
-      <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">Mål</div>
-      <div class="text-[13px] font-semibold">{{ formatDistance(measureStats.distM) }}</div>
-      <div v-if="measureClosed" class="text-[11px] text-emerald-100/95">
-        {{ formatArea(measureStats.areaM2) }}
+         class="absolute top-16 left-3 z-20 rounded-md bg-emerald-600
+                text-white text-[11px] font-medium shadow-lg
+                tabular-nums max-w-[55%] flex items-start gap-1.5 pl-3 pr-1 py-2">
+      <div class="flex-1 min-w-0">
+        <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">Mål</div>
+        <div class="text-[13px] font-semibold">{{ formatDistance(measureStats.distM) }}</div>
+        <div v-if="measureClosed" class="text-[11px] text-emerald-100/95">
+          {{ formatArea(measureStats.areaM2) }}
+        </div>
       </div>
+      <button @click="stopMeasure" aria-label="Avslutt måling"
+              class="-mt-0.5 -mr-0.5 w-6 h-6 flex items-center justify-center rounded-md
+                     text-white/90 active:scale-90 active:bg-white/10 shrink-0">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+             stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+        </svg>
+      </button>
     </div>
 
     <!-- Lasting / feil -->
@@ -2750,10 +2771,19 @@ onUnmounted(() => {
                 bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
       {{ userPos.error }}
     </div>
-    <div v-else-if="!loading && userPos.isOutsideMap"
-         class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
-      Du er utenfor dette kartet.
+    <div v-else-if="!loading && showOutsideMapBanner"
+         class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[90%]
+                rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
+                text-white text-[12px] shadow-lg flex items-center gap-1.5 pl-3 pr-1 py-2">
+      <span>Du er utenfor dette kartet.</span>
+      <button @click="dismissOutsideMap" aria-label="Greit, skjønner"
+              class="w-6 h-6 -my-0.5 flex items-center justify-center rounded-md
+                     text-white/90 active:scale-90 active:bg-white/10 shrink-0">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+             stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+        </svg>
+      </button>
     </div>
 
     <!-- v8.5.6: advarsel ved lav GPS-nøyaktighet — peker bruker mot
