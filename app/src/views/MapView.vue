@@ -20,6 +20,12 @@ import { computeDepthShadeDataUrl } from '../lib/depthShade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
+import { svgToWgs84 } from '../lib/utm.js'
+import { sampleElevation } from '../lib/demSampling.js'
+import {
+  bearingDeg, bearingToCompass, formatDistanceM,
+  findNearestPath, findNearestPlace,
+} from '../lib/mapContext.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
 import CurveBallLayer from '../components/CurveBallLayer.vue'
 import CurveBallHUD from '../components/CurveBallHUD.vue'
@@ -906,6 +912,289 @@ function formatArea(m2) {
   if (m2 < 1_000_000) return `${(m2 / 10_000).toFixed(2)} ha`
   return `${(m2 / 1_000_000).toFixed(2)} km²`
 }
+
+// ── Long-press kontekstmeny ──────────────────────────────────────────────
+// Long-press (~550ms hold uten bevegelse) eller høyreklikk på kartet åpner
+// en bottom-sheet med koordinater, stedsinfo og handlinger (kopier, del,
+// start måling, åpne i Google Maps/Street View, plasser annotering).
+//
+// Implementasjon: vi binder pointer-events på wrapperRef. Pinch-zoom binder
+// touch-events (touchstart/move/end) via egne addEventListener, så de to
+// håndterer-settene konkurrerer ikke. Vi sporer kun primær-pointer'en og
+// avbryter timeren ved bevegelse (>10 px) eller en sekundær pointer (pinch).
+const contextMenuOpen = ref(false)
+const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
+const LONG_PRESS_MS = 550
+const LONG_PRESS_MOVE_PX = 10
+
+let lpTimer = null
+let lpPointerId = null
+let lpStartX = 0
+let lpStartY = 0
+let lpEvent = null      // siste pointerdown-event så vi kan re-projisere ved fire
+
+function clearLongPress() {
+  if (lpTimer) { clearTimeout(lpTimer); lpTimer = null }
+  lpPointerId = null
+  lpEvent = null
+}
+
+function clientToSvgPoint(clientX, clientY) {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return null
+  const pt = svg.createSVGPoint()
+  pt.x = clientX
+  pt.y = clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return null
+  return pt.matrixTransform(ctm.inverse())
+}
+
+function openContextMenuAt(clientX, clientY) {
+  // Long-press skal være no-op mens spillet kjører, eller mens et annet
+  // overlay (søk, on-the-fly) eier UI-en.
+  if (curveball.active.value || buildingOnTheFly.value || searchOpen.value) return
+  const local = clientToSvgPoint(clientX, clientY)
+  if (!local) return
+  contextMenuPoint.value = {
+    svgX: local.x, svgY: local.y,
+    clientX, clientY,
+  }
+  contextMenuOpen.value = true
+  closeDrawer()
+}
+function closeContextMenu() {
+  contextMenuOpen.value = false
+  contextMenuPoint.value = null
+  contextActionState.value = 'idle'
+}
+
+function onPointerDownLongPress(e) {
+  // Kun primær single-pointer. Hvis en annen pointer allerede er aktiv (pinch),
+  // avbryt timeren — det er en gest, ikke en long-press.
+  if (lpPointerId != null) { clearLongPress(); return }
+  // Ignorer høyreklikk her — den håndteres av contextmenu-eventet (som også
+  // gir oss preventDefault på native browsermenyen).
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  // Ignorer tap inne på interaktive UI-elementer (knapper, drawer-håndtak).
+  if (e.target.closest('button, input, textarea, select, a')) return
+  lpPointerId = e.pointerId
+  lpStartX = e.clientX
+  lpStartY = e.clientY
+  lpEvent = { clientX: e.clientX, clientY: e.clientY }
+  lpTimer = setTimeout(() => {
+    if (lpEvent) openContextMenuAt(lpEvent.clientX, lpEvent.clientY)
+    clearLongPress()
+  }, LONG_PRESS_MS)
+}
+function onPointerMoveLongPress(e) {
+  if (lpPointerId == null || e.pointerId !== lpPointerId) return
+  const dx = e.clientX - lpStartX
+  const dy = e.clientY - lpStartY
+  if (Math.hypot(dx, dy) > LONG_PRESS_MOVE_PX) clearLongPress()
+}
+function onPointerUpLongPress(e) {
+  if (lpPointerId != null && e.pointerId === lpPointerId) clearLongPress()
+}
+function onContextMenuEvent(e) {
+  // Høyreklikk på desktop. preventDefault stopper browser-menyen.
+  if (curveball.active.value) return
+  e.preventDefault()
+  openContextMenuAt(e.clientX, e.clientY)
+}
+
+// Info-utregning når menyen er åpen. Cachet via computed slik at en åpen meny
+// ikke re-evaluerer på hver pinch (kun når contextMenuPoint, searchIndex eller
+// DEM endrer seg).
+const contextMenuInfo = computed(() => {
+  const p = contextMenuPoint.value
+  if (!p || !meta.value) return null
+  const m = meta.value
+  // Klamp til kart-bounds — long-press kan treffe utenfor SVG-content
+  // pga letterboxing ved bredt aspekt-ratio.
+  const inside = p.svgX >= 0 && p.svgX <= m.widthM && p.svgY >= 0 && p.svgY <= m.heightM
+  const { lat, lon } = svgToWgs84(p.svgX, p.svgY, m)
+  const ele = (storedDem.value && inside)
+    ? sampleElevation(storedDem.value, p.svgX, p.svgY)
+    : NaN
+
+  const place = inside ? findNearestPlace(mapSearch.index.value, p.svgX, p.svgY) : null
+
+  const PATH_LAYERS = [
+    { key: 'sti',        label: 'Sti' },
+    { key: 'vei-liten',  label: 'Småveg' },
+    { key: 'vei-stor',   label: 'Storveg' },
+    { key: 'lysloype',   label: 'Lysløype' },
+    { key: 'bekk',       label: 'Bekk' },
+  ]
+  const svg = svgHostRef.value?.querySelector('svg')
+  const nearestPath = inside ? findNearestPath(svg, p.svgX, p.svgY, PATH_LAYERS) : null
+  const pathBearing = nearestPath
+    ? bearingDeg(p.svgX, p.svgY, nearestPath.x, nearestPath.y)
+    : null
+
+  // Avstand fra brukerens GPS-posisjon (kun synlig når GPS-en er aktiv
+  // og brukeren er på kartet). Retning fra meg → punktet.
+  let fromUser = null
+  if (userPos.isWatching && userPos.svgX != null && userPos.svgY != null) {
+    const dx = p.svgX - userPos.svgX
+    const dy = p.svgY - userPos.svgY
+    const distM = Math.hypot(dx, dy)
+    const deg = bearingDeg(userPos.svgX, userPos.svgY, p.svgX, p.svgY)
+    fromUser = { distM, deg, compass: bearingToCompass(deg) }
+  }
+
+  return {
+    lat, lon, inside,
+    elevationM: Number.isFinite(ele) ? ele : null,
+    place,
+    nearestPath: nearestPath ? {
+      ...nearestPath,
+      bearingDeg: pathBearing,
+      compass: pathBearing != null ? bearingToCompass(pathBearing) : null,
+    } : null,
+    fromUser,
+  }
+})
+
+const contextActionState = ref('idle')   // 'idle' | 'copied' | 'failed'
+let contextActionTimer = null
+function flashContextAction(state) {
+  contextActionState.value = state
+  if (contextActionTimer) clearTimeout(contextActionTimer)
+  contextActionTimer = setTimeout(() => { contextActionState.value = 'idle' }, 1400)
+}
+
+function gmapsUrl(lat, lon) { return `https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}` }
+function streetViewUrl(lat, lon) {
+  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}`
+}
+
+async function onCopyCoords() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  const text = `${info.lat.toFixed(6)}, ${info.lon.toFixed(6)}`
+  try {
+    await navigator.clipboard.writeText(text)
+    flashContextAction('copied')
+  } catch { flashContextAction('failed') }
+}
+async function onShareCoords() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  const url = gmapsUrl(info.lat, info.lon)
+  const shareData = {
+    title: 'Posisjon',
+    text: `${info.lat.toFixed(6)}, ${info.lon.toFixed(6)}`,
+    url,
+  }
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share(shareData)
+      return
+    } catch (err) {
+      if (err && err.name === 'AbortError') return
+      // Fall gjennom til clipboard-fallback
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url)
+    flashContextAction('copied')
+  } catch { flashContextAction('failed') }
+}
+function onStartMeasureHere() {
+  const p = contextMenuPoint.value
+  if (!p) return
+  // Bytt til Måling-fanen så brukeren ser hva som skjer videre, åpne drawer
+  // og legg første vertex på long-press-punktet.
+  startMeasure()
+  measureVertices.value = [{ x: p.svgX, y: p.svgY }]
+  activeTab.value = 'maaling'
+  closeContextMenu()
+  openDrawer()
+}
+function onOpenGoogleMaps() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  window.open(gmapsUrl(info.lat, info.lon), '_blank', 'noopener')
+}
+function onOpenStreetView() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  window.open(streetViewUrl(info.lat, info.lon), '_blank', 'noopener')
+}
+function onPlaceAnnotationFromContext(symbolKey) {
+  const p = contextMenuPoint.value
+  const sym = ANNOTATION_SYMBOLS.find(s => s.symbolKey === symbolKey)
+  if (!p || !sym) return
+  annot.addPoint(sym.code, p.svgX, p.svgY)
+  annot.persist()
+  closeContextMenu()
+}
+
+// Tilgjengelighet pr handling. Sporing eller måling pågår → noen valg er
+// blokkert (Start måling her, Plasser annotering — disse ville kollidere
+// med den pågående modusen).
+const ctxBusy = computed(() => measureMode.value || tracker.isRecording.value)
+const ctxCanMeasure = computed(() => !ctxBusy.value)
+const ctxCanAnnotate = computed(() => {
+  const isBuiltin = (route.params.id ?? 'vardasen').startsWith('vardasen')
+  return !isBuiltin && !ctxBusy.value
+})
+
+// Pin på long-press-punktet — vises i et eget SVG-lag mens menyen er åpen,
+// så brukeren ser hvor handlingen utføres. Re-rendres ved zoom (skjerm-
+// konstant størrelse) og når punktet endres.
+function renderContextPin() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let layer = svg.querySelector('#contextmenu-pin-layer')
+  const p = contextMenuPoint.value
+  if (!p || !contextMenuOpen.value) {
+    if (layer) layer.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'contextmenu-pin-layer')
+    layer.setAttribute('data-layer', 'contextmenu-pin')
+    layer.setAttribute('pointer-events', 'none')
+    svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  const r1 = pxToUserUnits(8)
+  const r2 = pxToUserUnits(18)
+  const sw = pxToUserUnits(2)
+  // Solid kjerne
+  const core = document.createElementNS(ns, 'circle')
+  core.setAttribute('cx', p.svgX); core.setAttribute('cy', p.svgY)
+  core.setAttribute('r', r1)
+  core.setAttribute('fill', '#0ea5e9')
+  core.setAttribute('stroke', '#fff')
+  core.setAttribute('stroke-width', String(sw))
+  layer.appendChild(core)
+  // Pulserende ring
+  const pulse = document.createElementNS(ns, 'circle')
+  pulse.setAttribute('cx', p.svgX); pulse.setAttribute('cy', p.svgY)
+  pulse.setAttribute('r', String(r1))
+  pulse.setAttribute('fill', 'none')
+  pulse.setAttribute('stroke', '#0ea5e9')
+  pulse.setAttribute('stroke-width', String(sw))
+  const anR = document.createElementNS(ns, 'animate')
+  anR.setAttribute('attributeName', 'r')
+  anR.setAttribute('values', `${r1};${r2}`)
+  anR.setAttribute('dur', '1.4s'); anR.setAttribute('repeatCount', 'indefinite')
+  pulse.appendChild(anR)
+  const anO = document.createElementNS(ns, 'animate')
+  anO.setAttribute('attributeName', 'opacity')
+  anO.setAttribute('values', '0.85;0')
+  anO.setAttribute('dur', '1.4s'); anO.setAttribute('repeatCount', 'indefinite')
+  pulse.appendChild(anO)
+  layer.appendChild(pulse)
+}
+watch([contextMenuOpen, contextMenuPoint, scale], renderContextPin)
+watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // Høydeprofil — sample stripe + gradient-fyll under (v8.9.4).
 // expandedTrackId holder hvilket spor som er "zoomet" i drawer-en (=
@@ -2366,7 +2655,12 @@ onUnmounted(() => {
          enkelt indre div. Lar finger-pivot styre rotasjons-/zoom-senter
          (v8.9.2). -->
     <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
-         :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''">
+         :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''"
+         @pointerdown="onPointerDownLongPress"
+         @pointermove="onPointerMoveLongPress"
+         @pointerup="onPointerUpLongPress"
+         @pointercancel="onPointerUpLongPress"
+         @contextmenu="onContextMenuEvent">
       <div class="w-full h-full relative" :style="mapTransformStyle">
         <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
         <CurveBallLayer
@@ -3107,6 +3401,181 @@ onUnmounted(() => {
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
     <CurveBallFlippers :flipp="curveball" :map-rect="mapRect"/>
+
+    <!-- Long-press kontekstmeny (bottom-sheet). Åpnes ved long-press eller
+         høyreklikk på kartet. Viser koordinater, høyde, nærmeste sted/sti,
+         og handlinger for det valgte punktet. -->
+    <Transition name="overlay-fade">
+      <div v-if="contextMenuOpen && contextMenuInfo"
+           class="absolute inset-0 z-40 bg-black/55 backdrop-blur-sm flex items-end justify-center"
+           @click.self="closeContextMenu">
+        <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
+                    max-h-[80dvh] overflow-y-auto"
+             :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
+          <!-- Header: koordinater + lukk -->
+          <div class="sticky top-0 px-4 pt-3 pb-2.5 bg-zinc-900/95 backdrop-blur
+                      border-b border-white/8 flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="text-[10px] uppercase tracking-wide text-white/45">Punkt</div>
+              <div class="text-white text-[13px] font-mono tabular-nums">
+                {{ contextMenuInfo.lat.toFixed(5) }}, {{ contextMenuInfo.lon.toFixed(5) }}
+              </div>
+              <div v-if="!contextMenuInfo.inside" class="text-[10px] text-amber-300 mt-0.5">
+                Utenfor kart-utsnittet
+              </div>
+            </div>
+            <button @click="closeContextMenu"
+                    aria-label="Lukk"
+                    class="w-8 h-8 -mr-1 -mt-0.5 rounded-full flex items-center justify-center
+                           bg-white/5 border border-white/10 text-white/70 active:scale-90 shrink-0">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
+          <div class="px-4 pt-3 space-y-1.5">
+            <div v-if="contextMenuInfo.elevationM != null"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Høyde</span>
+              <span class="text-white font-medium tabular-nums">
+                {{ Math.round(contextMenuInfo.elevationM) }} moh
+              </span>
+            </div>
+            <div v-if="contextMenuInfo.place"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Nærmest</span>
+              <span class="text-white truncate">
+                {{ contextMenuInfo.place.name }}
+                <span class="text-white/55 tabular-nums">
+                  · {{ formatDistanceM(contextMenuInfo.place.distM) }}
+                </span>
+              </span>
+            </div>
+            <div v-if="contextMenuInfo.nearestPath"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Nærmeste</span>
+              <span class="text-white">
+                {{ contextMenuInfo.nearestPath.layerLabel }}
+                <span class="text-white/55">
+                  {{ contextMenuInfo.nearestPath.compass }}
+                  <span class="tabular-nums">
+                    · {{ formatDistanceM(contextMenuInfo.nearestPath.distM) }}
+                  </span>
+                </span>
+              </span>
+            </div>
+            <div v-if="contextMenuInfo.fromUser"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Fra deg</span>
+              <span class="text-white">
+                {{ contextMenuInfo.fromUser.compass }}
+                <span class="text-white/55 tabular-nums">
+                  · {{ formatDistanceM(contextMenuInfo.fromUser.distM) }}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Handlinger -->
+          <div class="px-4 pt-4 grid grid-cols-2 gap-2">
+            <button @click="onCopyCoords"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 transition"
+                    :class="contextActionState === 'copied'
+                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+                            : contextActionState === 'failed'
+                              ? 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+                              : 'bg-white/5 border-white/10 text-white/80'">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="11" height="11" rx="2"/>
+                <path d="M5 15 V5 a2 2 0 0 1 2 -2 h10"/>
+              </svg>
+              <span>{{ contextActionState === 'copied' ? 'Kopiert ✓' : 'Kopier koordinater' }}</span>
+            </button>
+            <button @click="onShareCoords"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              <span>Del koordinater</span>
+            </button>
+            <button @click="onShareMap"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6 L9 4 L15 6 L21 4 V18 L15 20 L9 18 L3 20 Z"/>
+                <path d="M9 4 V18 M15 6 V20"/>
+              </svg>
+              <span>Del kart</span>
+            </button>
+            <button v-if="ctxCanMeasure" @click="onStartMeasureHere"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 21 9 15 13 19 21 11"/>
+                <path d="M5 19 V21 H7 M19 11 V13 H21"/>
+              </svg>
+              <span>Start måling her</span>
+            </button>
+            <button @click="onOpenGoogleMaps"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="10" r="3"/>
+                <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+              </svg>
+              <span>Google Maps</span>
+            </button>
+            <button @click="onOpenStreetView"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="9" r="3"/>
+                <path d="M12 12 v9"/>
+                <path d="M6 18 c2 -1.5 4 -2 6 -2 s4 0.5 6 2"/>
+              </svg>
+              <span>Street View</span>
+            </button>
+          </div>
+
+          <!-- Plasser annotering — kun for bruker-kart, og ikke mens
+               sporing/måling pågår. -->
+          <template v-if="ctxCanAnnotate">
+            <div class="px-4 pt-4 pb-1 text-white/55 text-[10px] uppercase tracking-wide">
+              Plasser annotering
+            </div>
+            <div class="px-4 pb-4 grid grid-cols-2 gap-2">
+              <button v-for="s in ANNOTATION_SYMBOLS" :key="s.code"
+                      @click="onPlaceAnnotationFromContext(s.symbolKey)"
+                      class="px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]
+                             flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+                <AnnotationIcon :symbol-key="s.symbolKey"/>
+                <span class="truncate">{{ s.label }}</span>
+              </button>
+            </div>
+          </template>
+          <div v-else class="px-4 pt-3 pb-4 text-[10px] text-white/40 leading-snug">
+            <template v-if="ctxBusy">
+              Avslutt pågående {{ measureMode ? 'måling' : 'sporing' }} for flere valg.
+            </template>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Høydeprofil-modal (v8.9.4). Åpnes ved tap på sparkline i drawer-en.
          Viser stor profil + stats. Bottom-sheet stil. -->
