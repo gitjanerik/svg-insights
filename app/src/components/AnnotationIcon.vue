@@ -42,8 +42,7 @@ const SM_DOT_CY = -1.85 * PIN_S
     <template v-else-if="symbolKey === 'stedsmerke'">
       <ellipse cx="8" cy="13.5" rx="2.5" ry="0.7" fill="#000" opacity="0.55"/>
       <g transform="translate(8 12.5)">
-        <path :d="SM_PATH" fill="#dc2626" stroke="#7f1d1d"
-              stroke-width="0.4" stroke-linejoin="round"/>
+        <path :d="SM_PATH" fill="#dc2626"/>
         <circle cx="0" :cy="SM_DOT_CY" r="0.9" fill="#fff"/>
       </g>
     </template>

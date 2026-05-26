@@ -1498,11 +1498,12 @@ function appendStedsmerkeSymbol(parent, s, animated) {
   })
 
   // Pin: outer g (rest-pos er allerede annotasjonspunkt, så ingen translate).
+  // v9.1.1: ingen border — pin-en er en ren rød silhuett (samme stil som
+  // parkering-P). Tidligere mørkerød kontur dempet hodets distinkte form.
   const pinPosG = mk('g', {})
   const pinPathEl = mk('path', {
     d: pinPath(r),
-    fill: '#dc2626', stroke: '#7f1d1d',
-    'stroke-width': String(r * 0.08), 'stroke-linejoin': 'round',
+    fill: '#dc2626',
   })
   const pinDotEl = mk('circle', {
     cx: '0', cy: String(-1.85 * r), r: String(r * 0.38),
@@ -2453,13 +2454,14 @@ onUnmounted(() => {
                         : (userPos.isWatching
                             ? 'bg-sky-500 text-white'
                             : 'bg-zinc-950 text-white')">
-          <span v-if="tracker.isRecording.value"
-                class="w-3 h-3 rounded-full bg-white animate-pulse"></span>
-          <svg v-else viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 19 C 8 13 10 15 12 12 C 14 9 16 11 19 5"/>
-            <circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/>
-            <circle cx="19" cy="5" r="1.6" fill="currentColor" stroke="none"/>
+          <!-- Recording: «stopp»-firkant. Idle: «play»-trekant (peker til høyre)
+               så den klassiske start/stopp-semantikken er åpenbar uansett om
+               GPS er på (blå knapp = GPS aktiv, klar til å starte ny tur). -->
+          <svg v-if="tracker.isRecording.value" viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+          </svg>
+          <svg v-else viewBox="0 0 24 24" class="w-5 h-5" fill="currentColor">
+            <polygon points="8,5 8,19 19,12"/>
           </svg>
         </button>
       </div>
