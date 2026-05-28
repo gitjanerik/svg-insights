@@ -1211,10 +1211,18 @@ export function buildSvg(elements, bbox, options = {}) {
     })
   }
 
-  const knauserSvg = demFeatures.knauser.map(k => {
+  // v9.1.5 — PERF: knauser var den desidert største DOM-bidragsyteren. Hvert
+  // knaus var et eget <use> (på Vardåsen ~410 = >80% av alle noder, og det
+  // skalerer med areal så et 10 km-kart fikk >1500 → merkbar lagging ved
+  // pan/zoom). Symbolet er bare en liten halvmåne-bue, så vi stamper alle inn
+  // i ÉN merged <path> istedenfor N <use>. Symbol-viewBox «-1 -1 2 2» vist som
+  // 1.2 enheter ⇒ skala 0.6 enheter/symbolenhet; buen
+  // «M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4» blir per senter (cx,cy):
+  //   M(cx-0.36, cy+0.24) A0.36 0.24 0 0 0 (cx+0.36, cy+0.24)
+  const knauserD = demFeatures.knauser.map(k => {
     const [x, y] = demProject([k.x, k.y])
-    return `    <use href="#${symbolIds.get('knaus')}" x="${fmt(x - 0.6)}mm" y="${fmt(y - 0.6)}mm" width="1.2mm" height="1.2mm"/>`
-  }).join('\n')
+    return `M${fmt(x - 0.36)} ${fmt(y + 0.24)}A0.36 0.24 0 0 0 ${fmt(x + 0.36)} ${fmt(y + 0.24)}`
+  }).join('')
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
@@ -1508,8 +1516,8 @@ export function buildSvg(elements, bbox, options = {}) {
       }).join('\n')}\n  </g>\n`
     : ''
 
-  const knauserLayerSvg = knauserSvg
-    ? `  <g data-layer="stein" data-iso="213">\n${knauserSvg}\n  </g>\n` : ''
+  const knauserLayerSvg = knauserD
+    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.1mm"/></g>\n` : ''
 
   const cliffsLayerSvg = cliffsSvg
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
