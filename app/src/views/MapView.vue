@@ -209,9 +209,10 @@ const BUILTIN = {
 }
 
 // Lag-kategorier som matcher mapBuilder.js sin categoryFor().
-// 'hillshade' og 'spor' er klient-side syntetiske lag (ikke fra mapBuilder).
+// 'spor' er et klient-side syntetisk lag (ikke fra mapBuilder). Relieff
+// (hillshade) er ikke lenger en lag-toggle her — det styres av relieff-
+// knotten i FAB-stacken (se STROKE_STEPS/RELIEF_STEPS lenger ned).
 const LAYERS = [
-  { key: 'hillshade',  label: 'Reliefskygge' },
   { key: 'dybdeshade', label: 'Dybdeskygge' },
   { key: 'skog',       label: 'Skog' },
   { key: 'aapen',      label: 'Åpen mark' },
@@ -372,6 +373,10 @@ function stopCurveBall() {
 // koordinat — getCurrentPosition med maximumAge=0 gir alltid ny måling.
 function onResetAndRefreshGps() {
   reset()
+  // Nullstill også strek- og relieff-knottene til default (samme «alt
+  // tilbake til utgangspunktet»-gest som zoom-reset).
+  strokeStepIndex.value = STROKE_DEFAULT_IDX
+  reliefStepIndex.value = RELIEF_DEFAULT_IDX
   if (userPos.isWatching) userPos.refresh()
 }
 
@@ -419,7 +424,7 @@ function applyLayerVisibility() {
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
 const pinchEnabled = computed(() => !curveball.active.value)
-const { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating, isGesturing } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
+const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
 
 // v8.10.3: Toggle `.is-zooming` på SVG-host under aktiv gest så CSS-regelen
 // for `vector-effect: non-scaling-stroke` overstyres til `none` — strokene
@@ -444,6 +449,106 @@ watch(scale, (s) => {
   if (s >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
   else svg.classList.remove('zoomed-in')
 }, { immediate: true })
+
+// ── Strek- og relieff-knotter (FAB) ──────────────────────────────────
+// To «volum-knotter» som har overtatt de gamle zoom-inn/ut-knappenes plass
+// (zoom dekkes av pinch + dobbel-tap). Tap = ett hakk opp (wrapper til min
+// etter max), lang-trykk = nullstill. «Sentrer»-knappen nullstiller begge.
+// Verdiene huskes globalt i localStorage (gjelder alle kart).
+//  • Strek-knotten skalerer all kartlinje-tykkelse via CSS-var --stroke-scale
+//    (se symbolizer.js). Senter-glyfen tegnes i faktisk valgt tykkelse.
+//  • Relieff-knotten styrer hillshade-opacity 0 → 0.72 og er nå eneste
+//    kontroll for relieff (lag-toggle fjernet). Blend-modus velges per tema
+//    (multiply på lyse, screen på mørke/art-tema) så relieffet «gløder» i
+//    Curves istedenfor å bli gjørmete.
+const STROKE_STEPS = [0.6, 0.8, 1.0, 1.3, 1.7, 2.2]
+const STROKE_DEFAULT_IDX = 2
+const RELIEF_STEPS = [0, 0.18, 0.30, 0.42, 0.58, 0.72]
+const RELIEF_DEFAULT_IDX = 3
+const STROKE_LS_KEY = 'svg-insights-mapview-stroke-step'
+const RELIEF_LS_KEY = 'svg-insights-mapview-relief-step'
+
+function loadKnobStep(key, def, len) {
+  try {
+    const v = parseInt(localStorage.getItem(key), 10)
+    if (Number.isInteger(v) && v >= 0 && v < len) return v
+  } catch { /* noop */ }
+  return def
+}
+const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
+const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
+const strokeScale = computed(() => STROKE_STEPS[strokeStepIndex.value])
+const reliefOpacity = computed(() => RELIEF_STEPS[reliefStepIndex.value])
+const strokeFrac = computed(() => strokeStepIndex.value / (STROKE_STEPS.length - 1))
+const reliefFrac = computed(() => reliefStepIndex.value / (RELIEF_STEPS.length - 1))
+
+// Gauge-geometri: 270° sveip med gap nederst, i et 24×24 viewBox.
+const KNOB_R = 8.5
+function knobPolar(deg, r) {
+  const a = deg * Math.PI / 180
+  return [12 + r * Math.cos(a), 12 + r * Math.sin(a)]
+}
+function knobArc(frac, r = KNOB_R) {
+  if (frac <= 0) return ''
+  const sweep = 270 * frac
+  const [x0, y0] = knobPolar(135, r)
+  const [x1, y1] = knobPolar(135 + sweep, r)
+  const large = sweep > 180 ? 1 : 0
+  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
+}
+const knobTrackD = knobArc(1)
+const strokeArcD = computed(() => knobArc(strokeFrac.value))
+const reliefArcD = computed(() => knobArc(reliefFrac.value))
+// Senter-strek tegnes i faktisk valgt tykkelse — selv-demonstrerende ikon.
+const strokeGlyphW = computed(() => (0.9 + 3.0 * strokeFrac.value).toFixed(2))
+const reliefGlyphOpacity = computed(() => (0.18 + 0.7 * reliefFrac.value).toFixed(2))
+
+// Transient hint-boble ved justering.
+const knobHint = ref('')
+let knobHintTimer = null
+function flashKnobHint(text) {
+  knobHint.value = text
+  if (knobHintTimer) clearTimeout(knobHintTimer)
+  knobHintTimer = setTimeout(() => { knobHint.value = '' }, 1500)
+}
+
+function applyStrokeScale() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (svg) svg.style.setProperty('--stroke-scale', String(strokeScale.value))
+}
+
+watch(strokeStepIndex, () => {
+  applyStrokeScale()
+  try { localStorage.setItem(STROKE_LS_KEY, String(strokeStepIndex.value)) } catch { /* noop */ }
+  flashKnobHint(`Strek ${strokeScale.value.toFixed(1)}×`)
+})
+watch(reliefStepIndex, () => {
+  applyHillshade()
+  try { localStorage.setItem(RELIEF_LS_KEY, String(reliefStepIndex.value)) } catch { /* noop */ }
+  flashKnobHint(reliefOpacity.value === 0 ? 'Relieff av' : `Relieff ${Math.round(reliefOpacity.value * 100)}%`)
+})
+
+// Tap = step (wrap), lang-trykk (500 ms) = nullstill til default.
+let knobTimer = null
+let knobLongFired = false
+function knobDown(kind) {
+  knobLongFired = false
+  if (knobTimer) clearTimeout(knobTimer)
+  knobTimer = setTimeout(() => {
+    knobLongFired = true
+    if (kind === 'stroke') strokeStepIndex.value = STROKE_DEFAULT_IDX
+    else reliefStepIndex.value = RELIEF_DEFAULT_IDX
+  }, 500)
+}
+function knobUp(kind) {
+  if (knobTimer) { clearTimeout(knobTimer); knobTimer = null }
+  if (knobLongFired) return
+  if (kind === 'stroke') strokeStepIndex.value = (strokeStepIndex.value + 1) % STROKE_STEPS.length
+  else reliefStepIndex.value = (reliefStepIndex.value + 1) % RELIEF_STEPS.length
+}
+function knobCancel() {
+  if (knobTimer) { clearTimeout(knobTimer); knobTimer = null }
+}
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
@@ -745,10 +850,25 @@ function formatDuration(ms) {
 let cachedHillshadeUrl = null   // memoize-key: storedDem-referansen
 let cachedHillshadeDem = null
 
+// Relieff-blend velges per tema: lyse bakgrunner mørkner naturlig med
+// `multiply`, mens mørke/art-tema (Curves) får `screen` så terrenget lyser
+// opp bak konturene istedenfor å drukne i multiply-gjørme.
+function hexLuminance(hex) {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex ?? '')
+  if (!m) return 1
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+}
+function reliefBlendMode() {
+  const bg = isomCatalog.themes?.[currentTheme.value]?.background
+  return hexLuminance(bg) < 0.4 ? 'screen' : 'multiply'
+}
+
 async function applyHillshade() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg || !meta.value) return
-  const wantOn = visibleLayers.value.has('hillshade')
+  const wantOn = reliefOpacity.value > 0
   let img = svg.querySelector('#hillshade-layer')
   if (!wantOn) {
     if (img) img.remove()
@@ -779,12 +899,8 @@ async function applyHillshade() {
     img.setAttribute('id', 'hillshade-layer')
     img.setAttribute('data-layer', 'hillshade')
     img.setAttribute('preserveAspectRatio', 'none')
-    // Opacity 0.42 + multiply gir nok kontrast til at terrenget «vrir» seg
-    // synlig uten at vegetasjons-mønstre og tekst dempes nevneverdig.
-    img.setAttribute('opacity', '0.42')
     img.setAttribute('pointer-events', 'none')
     img.setAttribute('image-rendering', 'auto')
-    img.style.mixBlendMode = 'multiply'
   }
   if (insertBefore) svg.insertBefore(img, insertBefore)
   else svg.appendChild(img)
@@ -793,9 +909,14 @@ async function applyHillshade() {
   img.setAttribute('height', String(meta.value.heightM))
   img.setAttribute('href', cachedHillshadeUrl)
   img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedHillshadeUrl)
+  // Styrt av relieff-knotten: opacity fra valgt nivå, blend per tema.
+  img.setAttribute('opacity', String(reliefOpacity.value))
+  img.style.mixBlendMode = reliefBlendMode()
 }
 
-watch([() => visibleLayers.value, storedDem], () => { applyHillshade() })
+// Re-render relieffet når DEM-en lastes eller temaet byttes (blend-modus
+// avhenger av tema). Selve nivå-endringer håndteres av reliefStepIndex-watch.
+watch([storedDem, currentTheme], () => { applyHillshade() })
 
 // Dybdeskygge (v8.9.24) — raster-fyller Sjøkart-dybde-polygoner (ISOM 307)
 // med gråtoner og embedder som SVG <image> med multiply-blend så sjøen
@@ -2007,6 +2128,7 @@ async function loadMap() {
     await nextTick()
     applyLayerVisibility()
     applyTheme()
+    applyStrokeScale()
     userPos.recompute()
     // Auto-start GPS når init-prefs ber om det (kommer fra on-the-fly-
     // snarveien i MapHomeView, der bruker ikke har annen vei til å slå
@@ -2596,6 +2718,15 @@ onUnmounted(() => {
              ? 'calc(45dvh + 0.75rem)'
              : 'calc(env(safe-area-inset-bottom, 0px) + 5rem)'
          }">
+      <!-- Transient hint-boble når strek-/relieff-knottene justeres. -->
+      <Transition name="hint-fade">
+        <div v-if="knobHint"
+             class="absolute right-14 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg
+                    bg-zinc-950/95 text-white text-[11px] font-medium leading-tight shadow-lg
+                    whitespace-nowrap pointer-events-none border border-white/10">
+          {{ knobHint }}
+        </div>
+      </Transition>
       <!-- On-the-fly snarvei: synlig når GPS er aktivert. Inaktiv (grayet ut)
            hvis brukeren er < 500 m fra kartets sentrum. Tap når inaktiv viser
            kort info-bobbel; tap når aktiv starter bygging av nytt kart
@@ -2628,21 +2759,36 @@ onUnmounted(() => {
           </div>
         </Transition>
       </div>
-      <button @click="zoomIn()" aria-label="Zoom inn"
-              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+      <!-- Strek-knott: tap = tykkere (wrapper til tynnest etter tykkest),
+           lang-trykk = nullstill. Bua viser nivå; senter-streken tegnes i
+           faktisk valgt tykkelse (selv-demonstrerende). -->
+      <button @pointerdown="knobDown('stroke')" @pointerup="knobUp('stroke')"
+              @pointerleave="knobCancel" @pointercancel="knobCancel"
+              aria-label="Strektykkelse — tap for å justere, hold for å nullstille"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
+        <svg viewBox="0 0 24 24" class="w-7 h-7" fill="none">
+          <path :d="knobTrackD" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" opacity="0.22"/>
+          <path :d="strokeArcD" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/>
+          <line x1="7.5" y1="12" x2="16.5" y2="12" stroke="currentColor"
+                :stroke-width="strokeGlyphW" stroke-linecap="round"/>
         </svg>
       </button>
-      <button @click="zoomOut()" aria-label="Zoom ut"
-              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+      <!-- Relieff-knott: tap = mer relieff (wrapper til av etter max),
+           lang-trykk = nullstill. Senter-bumpens skygge følger nivået. -->
+      <button @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
+              @pointerleave="knobCancel" @pointercancel="knobCancel"
+              aria-label="Relieff-styrke — tap for å justere, hold for å nullstille"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="5" y1="12" x2="19" y2="12"/>
+        <svg viewBox="0 0 24 24" class="w-7 h-7" fill="none">
+          <path :d="knobTrackD" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" opacity="0.22"/>
+          <path :d="reliefArcD" stroke="#f59e0b" stroke-width="2" stroke-linecap="round"/>
+          <path d="M6.5 15.5 L9.5 10 L11.8 12.8 L14.3 8.5 L17.5 15.5 Z"
+                fill="currentColor" :fill-opacity="reliefGlyphOpacity"
+                stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
         </svg>
       </button>
       <button @click="onResetAndRefreshGps" :aria-label="userPos.isWatching ? 'Sentrer + oppdater GPS' : 'Sentrer'"
