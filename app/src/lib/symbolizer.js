@@ -412,6 +412,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Halo skal vokse mindre dramatisk (bare ~kvadratrot) så ikke teksten
   // drukner i hvit ramme på store kart.
   const haloMm = (v) => `${Number((v * Math.sqrt(labelScale)).toFixed(3))}mm`
+  // Global strek-skala: FAB-knotten i MapView setter `--stroke-scale` på
+  // `.isom-map`-roten. calc() lar brukeren justere all kartlinje-tykkelse i
+  // sanntid uten re-render. Default 1 = ISOM-spec-bredder. Påvirker kun
+  // kartlinjer (kategori-strokes), ikke tekst-haloer.
+  const sw = (v) => `calc(${v}mm * var(--stroke-scale, 1))`
   // Inter variable webfont (selv-hostet via @fontsource-variable/inter, lastet
   // i appens style.css). font-weight: 400 er base for labels; spesifikke labels
   // (peak, stedsnavn) overstyrer under. tabular-nums sørger for at høyde-,
@@ -463,7 +468,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
       }
       if (def.stroke) {
         if (def.stroke.color) props.push(`stroke: var(--iso-${code}-stroke, ${def.stroke.color})`)
-        if (def.stroke.widthMm) props.push(`stroke-width: ${def.stroke.widthMm}mm`)
+        if (def.stroke.widthMm) props.push(`stroke-width: ${sw(def.stroke.widthMm)}`)
         if (def.stroke.linecap) props.push(`stroke-linecap: ${def.stroke.linecap}`)
         if (def.stroke.linejoin) props.push(`stroke-linejoin: ${def.stroke.linejoin}`)
         if (def.stroke.dasharray) props.push(`stroke-dasharray: ${def.stroke.dasharray.map(d => `${d}mm`).join(' ')}`)
@@ -477,7 +482,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
         const ov = def.overlayStroke
         const ovProps = ['fill: none']
         if (ov.color) ovProps.push(`stroke: var(--iso-${code}-overlay-stroke, ${ov.color})`)
-        if (ov.widthMm) ovProps.push(`stroke-width: ${ov.widthMm}mm`)
+        if (ov.widthMm) ovProps.push(`stroke-width: ${sw(ov.widthMm)}`)
         if (ov.linecap) ovProps.push(`stroke-linecap: ${ov.linecap}`)
         if (ov.linejoin) ovProps.push(`stroke-linejoin: ${ov.linejoin}`)
         if (ov.dasharray) ovProps.push(`stroke-dasharray: ${ov.dasharray.map(d => `${d}mm`).join(' ')}`)
@@ -490,16 +495,16 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Datapath har attributt `data-tunnel="yes"` på både base og overlay.
   // Overlay skjules; base får ny stroke. Tunnel-portal: tverrstrek ved
   // start/slutt av tunnel-way.
-  rules.push(`${root} [data-iso="515"] path[data-tunnel="yes"] { stroke: #555; stroke-width: 0.18mm; stroke-dasharray: 1mm 0.4mm; fill: none; opacity: 0.5 }`)
+  rules.push(`${root} [data-iso="515"] path[data-tunnel="yes"] { stroke: #555; stroke-width: ${sw(0.18)}; stroke-dasharray: 1mm 0.4mm; fill: none; opacity: 0.5 }`)
   rules.push(`${root} [data-iso="515"] path.overlay[data-tunnel="yes"] { display: none }`)
-  rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: 0.3mm; stroke-linecap: square; fill: none }`)
+  rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: ${sw(0.3)}; stroke-linecap: square; fill: none }`)
 
   // ISOM 521 — små bygg (< 70 m²) får Kartverket-style hvit fyll + tynt
   // sort omriss. Skiller hytter/uthus visuelt fra bolig- og forretnings-
   // bygg som beholder den brune default-fargen. v8.9.32: stroke ned til
   // 0.05 mm (var 0.08 mm) så det normaliserte kvadrat-symbolet ikke
   // overdøves av sin egen kant ved små zoom-nivåer.
-  rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: 0.05mm; }`)
+  rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: ${sw(0.05)}; }`)
 
   // Etiketter — fill og halo er CSS-variabler så MapView kan overstyre i mørk modus.
   // Font og halo skaleres med kartstørrelse (se labelScale over) så et 10 km
