@@ -461,8 +461,13 @@ watch(scale, (s) => {
 //    kontroll for relieff (lag-toggle fjernet). Blend-modus velges per tema
 //    (multiply på lyse, screen på mørke/art-tema) så relieffet «gløder» i
 //    Curves istedenfor å bli gjørmete.
-const STROKE_STEPS = [0.6, 0.8, 1.0, 1.3, 1.7, 2.2]
-const STROKE_DEFAULT_IDX = 2
+//  • Strek-hakkene er relative multiplikatorer; den effektive --stroke-scale
+//    ganges i tillegg med en kartstørrelse-basis (strokeSizeBase) fordi store
+//    kart har langt tettere kontur-tetthet — samme mm-strek blir et svart rot
+//    ved zoom. Et 10 km-kart får derfor hele skalaen skjøvet tynnere enn et
+//    1 km-kart, mens hint-boblen viser den faktiske effektive ×-verdien.
+const STROKE_STEPS = [0.4, 0.6, 0.85, 1.2, 1.6, 2.2]
+const STROKE_DEFAULT_IDX = 2  // 0.85× = 85% av tidligere default på små kart
 const RELIEF_STEPS = [0, 0.18, 0.30, 0.42, 0.58, 0.72]
 const RELIEF_DEFAULT_IDX = 3
 const STROKE_LS_KEY = 'svg-insights-mapview-stroke-step'
@@ -475,9 +480,17 @@ function loadKnobStep(key, def, len) {
   } catch { /* noop */ }
   return def
 }
+// Kartstørrelse-basis: 1 km → 1.0, 10 km → 0.4 (lineær mellom). Klam utenfor.
+// Gjør at samme knott-hakk gir tynnere streker på store kart der konturene
+// ligger tett, så maks ikke blir et svart rot og default matcher ~1 km-følelsen.
+function strokeSizeBase(widthM) {
+  if (!Number.isFinite(widthM) || widthM <= 0) return 1
+  const t = Math.min(1, Math.max(0, (widthM - 1000) / 9000))
+  return 1 - 0.6 * t
+}
 const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
-const strokeScale = computed(() => STROKE_STEPS[strokeStepIndex.value])
+const strokeScale = computed(() => STROKE_STEPS[strokeStepIndex.value] * strokeSizeBase(meta.value?.widthM))
 const reliefOpacity = computed(() => RELIEF_STEPS[reliefStepIndex.value])
 const strokeFrac = computed(() => strokeStepIndex.value / (STROKE_STEPS.length - 1))
 const reliefFrac = computed(() => reliefStepIndex.value / (RELIEF_STEPS.length - 1))
@@ -520,7 +533,7 @@ function applyStrokeScale() {
 watch(strokeStepIndex, () => {
   applyStrokeScale()
   try { localStorage.setItem(STROKE_LS_KEY, String(strokeStepIndex.value)) } catch { /* noop */ }
-  flashKnobHint(`Strek ${strokeScale.value.toFixed(1)}×`)
+  flashKnobHint(`Strek ${strokeScale.value.toFixed(2)}×`)
 })
 watch(reliefStepIndex, () => {
   applyHillshade()
