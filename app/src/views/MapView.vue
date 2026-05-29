@@ -366,10 +366,9 @@ function stopCurveBall() {
 // koordinat — getCurrentPosition med maximumAge=0 gir alltid ny måling.
 function onResetAndRefreshGps() {
   reset()
-  // Nullstill også strek- og relieff-knottene til default (samme «alt
-  // tilbake til utgangspunktet»-gest som zoom-reset).
-  strokeStepIndex.value = STROKE_DEFAULT_IDX
-  reliefStepIndex.value = RELIEF_DEFAULT_IDX
+  // v9.1.19: «Nullstill zoom» rører KUN zoom/pan/rotasjon — IKKE strek- og
+  // relieff-knottene. Brukeren vil beholde sine valgte strek-/relieff-nivåer
+  // når de bare vil sentrere/uvri kartet.
   if (userPos.isWatching) userPos.refresh()
 }
 
