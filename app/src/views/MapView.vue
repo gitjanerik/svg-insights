@@ -16,7 +16,6 @@ import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
-import { paintKnausDabs } from '../lib/knausRaster.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
@@ -909,16 +908,11 @@ async function applyHillshade() {
     return
   }
   if (cachedHillshadeDem !== storedDem.value) {
-    // v9.1.13: hillshade + knaus i SAMME canvas → ett blendet <image> i DEM-
-    // oppløsning, i stedet for to teksturer (det gamle knaus-rasteret var
-    // opptil 4096² ≈ 67 MB og en mobil-GPU-flaskehals). paintKnausDabs maler
-    // prikkene rett på skygge-canvaset (1 px = 1 DEM-celle, flukter eksakt).
+    // v9.1.17: ren hillshade. Knaus er flyttet tilbake til en vektor-<path>
+    // i selve kart-SVG-en (mapBuilder, ISOM 213) — knivskarp og billig — så
+    // relieff-bildet skygger nå kun terreng.
     const shade = computeHillshade(storedDem.value)
-    const denom = meta.value.scaleDenom || 10000
-    const widthMm = meta.value.widthM * 1000 / denom
-    cachedHillshadeUrl = hillshadeToDataURL(shade, (ctx) => {
-      paintKnausDabs(ctx, storedDem.value, { widthMm })
-    })
+    cachedHillshadeUrl = hillshadeToDataURL(shade)
     cachedHillshadeDem = storedDem.value
   }
   // Plasser-strategi: hillshade skal blende NED over kart-innholdet
