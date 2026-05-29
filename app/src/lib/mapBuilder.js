@@ -14,7 +14,7 @@ import {
   getIsomDef,
   isomCatalog,
 } from './symbolizer.js'
-import { buildContours, detectCliffs } from './dem.js'
+import { buildContours, detectCliffs, detectKnauser } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
@@ -343,6 +343,7 @@ export function buildSvg(elements, bbox, options = {}) {
     dom = null,                    // Digital overflate-modell for CHM/vegetasjon
     contourIntervalM = 5,
     includeCliffs = true,
+    includeKnauser = true,
     skipContoursIfSynthetic = false,
     skipDemSea = false,
   } = options
@@ -630,11 +631,13 @@ export function buildSvg(elements, bbox, options = {}) {
   if (usableDem) {
     const c = buildContours(usableDem, contourIntervalM, 5)
     const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
-    // v9.1.7 — knauser rendres ikke lenger i SVG. De flyttes til et eget
-    // raster-relieff-lag i MapView (lib/knausRaster.js): 0 DOM-noder, 0
-    // path-bytes, og «embossed» prikker som hører hjemme i relieffet. DEM-en
-    // lagres med kartet, så detekteringen skjer klient-side ved visning.
-    demFeatures = { contours: c, cliffs: cl, equidistanceM: contourIntervalM }
+    // v9.1.17 — knauser tilbake som ÉN merged vektor-<path> (ISOM 213). Etter
+    // raster-eksperimentet (v9.1.7–9.1.16, blurry «vorter» + mobil-GPU-kost):
+    // vektor er 1 DOM-node, knivskarp ved enhver zoom, og solid strek = like
+    // billig å rastere som høydekurvene (ingen dash → ingen gest-lag). TPI-
+    // terskel 2.5m gir et fornuftig antall markante knauser.
+    const k = includeKnauser ? detectKnauser(usableDem, 5, 2.5) : []
+    demFeatures = { contours: c, cliffs: cl, knauser: k, equidistanceM: contourIntervalM }
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
     // WMTS-vannmaske ikke leverte data — heuristikken kan "smitte" inn på
@@ -1218,9 +1221,22 @@ export function buildSvg(elements, bbox, options = {}) {
     })
   }
 
-  // v9.1.7+ — knauser er ikke SVG-elementer. De males inn i hillshade-bildet
-  // klient-side (paintKnausDabs i lib/knausRaster.js, kalt fra applyHillshade
-  // i MapView). Ingen knaus-path her.
+  // v9.1.17 — knaus (ISOM 213) som ÉN merged vektor-<path>. Katalog-symbolet
+  // er en liten halvmåne «M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4» i symbol-viewBox
+  // «-1 -1 2 2», vist i scaleMm=1.2mm. viewBox er i meter, og 1 mm = scaleDenom/
+  // 1000 enheter, så 1 symbol-enhet = (1.2/2)·(scaleDenom/1000) viewBox-enheter.
+  // Vi stamper halvmånen inn pr knaus-senter — 1 node, knivskarp, solid strek.
+  const symUnit = (1.2 / 2) * (scaleDenom / 1000)   // viewBox-enheter pr symbol-enhet
+  const krx = 0.6 * symUnit
+  const kry = 0.4 * symUnit
+  const kdy = 0.4 * symUnit                          // halvmånens y-offset (0.4 i symbolet)
+  const knauserD = (demFeatures.knauser ?? []).map(k => {
+    const [x, y] = demProject([k.x, k.y])
+    return `M${fmt(x - krx)} ${fmt(y + kdy)}A${fmt(krx)} ${fmt(kry)} 0 0 0 ${fmt(x + krx)} ${fmt(y + kdy)}`
+  }).join('')
+  const knauserLayerSvg = knauserD
+    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
+    : ''
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
@@ -1633,7 +1649,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
   // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
   // finnes i kilden (CSS for patterns, body for symboler).
-  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
