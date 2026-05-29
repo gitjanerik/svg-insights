@@ -1497,20 +1497,26 @@ export function buildSvg(elements, bbox, options = {}) {
       `  </g>\n`
     : ''
 
+  // Font-størrelsen på vann-labels skaleres med kartstørrelse i symbolizer
+  // (labelScale = min(3, max(1, widthM/4000))). dy-stablingen mellom navn og
+  // høyde-over-havet må følge SAMME skala — ellers vokser teksten på et 10 km-
+  // kart (×2.5) mens gapet står stille på 1.9 mm, så høyde-tallet kolliderer
+  // med navnet (synlig på 10×10 km, ok på 1×1 og 4×4 der labelScale=1).
+  const labelScale = widthM > 0 ? Math.min(3, Math.max(1, widthM / 4000)) : 1
   const lakeLabelLayer = lakeLabels.length
     ? `  <g data-layer="vann">\n${lakeLabels.map(l => {
         const lines = []
         // Når både navn og elev finnes: stack name over senteret, elev under.
         // Når bare ett finnes: plasser sentrert. dy i mm via SVG-attributt så
         // posisjonen er print-skalert (1 mm = 1 mm på papir, uavhengig av
-        // viewBox-meter).
+        // viewBox-meter). dy × labelScale så gapet vokser i takt med fonten.
         if (l.name) {
-          const dyMm = l.elev != null ? -0.4 : 0.4
-          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${dyMm}mm" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`)
+          const dyMm = (l.elev != null ? -0.4 : 0.4) * labelScale
+          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`)
         }
         if (l.elev != null) {
-          const dyMm = l.name ? 1.5 : 0.4
-          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${dyMm}mm" text-anchor="middle" data-label="vann-tall">${l.elev}</text>`)
+          const dyMm = (l.name ? 1.5 : 0.4) * labelScale
+          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-tall">${l.elev}</text>`)
         }
         return lines.join('\n')
       }).join('\n')}\n  </g>\n`
