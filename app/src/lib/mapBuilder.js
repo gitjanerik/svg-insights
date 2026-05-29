@@ -636,7 +636,10 @@ export function buildSvg(elements, bbox, options = {}) {
     // vektor er 1 DOM-node, knivskarp ved enhver zoom, og solid strek = like
     // billig å rastere som høydekurvene (ingen dash → ingen gest-lag). TPI-
     // terskel 2.5m gir et fornuftig antall markante knauser.
-    const k = includeKnauser ? detectKnauser(usableDem, 5, 2.5) : []
+    // v9.1.18 — knaus vises KUN ved 5 m ekvidistanse (ISOM-detaljnivå). På
+    // grovere ekvidistanse (10/20/25/50/100 m) er kartet oversiktspreget og
+    // knaus-detalj hører ikke hjemme.
+    const k = (includeKnauser && contourIntervalM === 5) ? detectKnauser(usableDem, 5, 2.5) : []
     demFeatures = { contours: c, cliffs: cl, knauser: k, equidistanceM: contourIntervalM }
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
