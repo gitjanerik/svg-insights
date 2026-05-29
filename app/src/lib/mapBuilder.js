@@ -14,7 +14,7 @@ import {
   getIsomDef,
   isomCatalog,
 } from './symbolizer.js'
-import { buildContours, detectKnauser, detectCliffs } from './dem.js'
+import { buildContours, detectCliffs } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
 import { fetchDEM } from './demFetcher.js'
@@ -330,7 +330,6 @@ const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '50
  * @param {boolean} [options.printSize=true]
  * @param {Object} [options.dem]               Pre-prosessert DEM (valgfritt)
  * @param {number} [options.contourIntervalM=5]
- * @param {boolean} [options.includeKnauser=true]
  * @param {boolean} [options.includeCliffs=true]
  * @returns {{ svg: string, counts: object, meta: object }}
  */
@@ -341,7 +340,6 @@ export function buildSvg(elements, bbox, options = {}) {
     dem = null,
     dom = null,                    // Digital overflate-modell for CHM/vegetasjon
     contourIntervalM = 5,
-    includeKnauser = true,
     includeCliffs = true,
     skipContoursIfSynthetic = false,
     skipDemSea = false,
@@ -624,14 +622,17 @@ export function buildSvg(elements, bbox, options = {}) {
   }
 
   // ── DEM-deriverte features (konturer, knauser, stupkanter, sjø) ──────
-  let demFeatures = { contours: { features: [] }, knauser: [], cliffs: [], equidistanceM: null }
+  let demFeatures = { contours: { features: [] }, cliffs: [], equidistanceM: null }
   let demSeaPolygons = []
   let demSeaBands = []
   if (usableDem) {
     const c = buildContours(usableDem, contourIntervalM, 5)
-    const k = includeKnauser ? detectKnauser(usableDem, 5, 1.5) : []
     const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
-    demFeatures = { contours: c, knauser: k, cliffs: cl, equidistanceM: contourIntervalM }
+    // v9.1.7 — knauser rendres ikke lenger i SVG. De flyttes til et eget
+    // raster-relieff-lag i MapView (lib/knausRaster.js): 0 DOM-noder, 0
+    // path-bytes, og «embossed» prikker som hører hjemme i relieffet. DEM-en
+    // lagres med kartet, så detekteringen skjer klient-side ved visning.
+    demFeatures = { contours: c, cliffs: cl, equidistanceM: contourIntervalM }
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
     // WMTS-vannmaske ikke leverte data — heuristikken kan "smitte" inn på
@@ -1211,18 +1212,8 @@ export function buildSvg(elements, bbox, options = {}) {
     })
   }
 
-  // v9.1.5 — PERF: knauser var den desidert største DOM-bidragsyteren. Hvert
-  // knaus var et eget <use> (på Vardåsen ~410 = >80% av alle noder, og det
-  // skalerer med areal så et 10 km-kart fikk >1500 → merkbar lagging ved
-  // pan/zoom). Symbolet er bare en liten halvmåne-bue, så vi stamper alle inn
-  // i ÉN merged <path> istedenfor N <use>. Symbol-viewBox «-1 -1 2 2» vist som
-  // 1.2 enheter ⇒ skala 0.6 enheter/symbolenhet; buen
-  // «M-0.6 0.4 A0.6 0.4 0 0 0 0.6 0.4» blir per senter (cx,cy):
-  //   M(cx-0.36, cy+0.24) A0.36 0.24 0 0 0 (cx+0.36, cy+0.24)
-  const knauserD = demFeatures.knauser.map(k => {
-    const [x, y] = demProject([k.x, k.y])
-    return `M${fmt(x - 0.36)} ${fmt(y + 0.24)}A0.36 0.24 0 0 0 ${fmt(x + 0.36)} ${fmt(y + 0.24)}`
-  }).join('')
+  // v9.1.7 — knauser er flyttet ut av SVG til et raster-relieff-lag (se
+  // lib/knausRaster.js + applyKnausRelief i MapView). Ingen knaus-path her.
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
@@ -1522,9 +1513,6 @@ export function buildSvg(elements, bbox, options = {}) {
       }).join('\n')}\n  </g>\n`
     : ''
 
-  const knauserLayerSvg = knauserD
-    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.1mm"/></g>\n` : ''
-
   const cliffsLayerSvg = cliffsSvg
     ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
@@ -1637,7 +1625,7 @@ export function buildSvg(elements, bbox, options = {}) {
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
+${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
 `
 
   return { svg, counts, meta }

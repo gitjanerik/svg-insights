@@ -225,7 +225,10 @@ export function detectKnauser(dem, tpiRadius = 5, tpiThresholdM = 1.5) {
         }
         if (isPeak) {
           const [wx, wy] = gridToWorld([x, y], transform)
-          features.push({ type: 'point', isomCode: '213', x: wx, y: wy, tpi: v })
+          // gx/gy beholdes så et raster-lag kan plassere prikken som
+          // DEM-grid-fraksjon (flukter med hillshade-bildet) uten å gå
+          // veien om verdens-/viewBox-koordinater.
+          features.push({ type: 'point', isomCode: '213', x: wx, y: wy, gx: x, gy: y, tpi: v })
         }
       }
     }
