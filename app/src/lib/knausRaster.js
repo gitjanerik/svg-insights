@@ -48,6 +48,7 @@ export function buildKnausRaster(dem, options = {}) {
     maxDim = MAX_DIM,
     azimuthDeg = 315,
     dotRadiusMm = 0.6,
+    tpiRef = 1.5,           // referanse-TPI (= detectKnauser-terskel) for størrelsesvariasjon
     knauser = null,
   } = options
   if (!widthMm || !heightMm) return null
@@ -65,8 +66,8 @@ export function buildKnausRaster(dem, options = {}) {
     H = Math.max(1, Math.round(H * s))
   }
   const effPxPerMm = W / widthMm
-  // Minst ~2.5px radius så prikken aldri degenererer til en enslig piksel.
-  const r = Math.max(2.5, dotRadiusMm * effPxPerMm)
+  // Base-radius. Minst ~2.5px så prikken aldri degenererer til én piksel.
+  const rBase = Math.max(2.5, dotRadiusMm * effPxPerMm)
 
   const canvas = document.createElement('canvas')
   canvas.width = W
@@ -85,52 +86,43 @@ export function buildKnausRaster(dem, options = {}) {
     // gx/gy er DEM-grid-indeks; senter av cellen i raster-piksler.
     const cx = ((k.gx + 0.5) / cols) * W
     const cy = ((k.gy + 0.5) / rows) * H
-    drawBevelDot(ctx, cx, cy, r, lx, ly)
+    // Størrelsesvariasjon fra TPI → ikke alle prikker identiske (uniformitet
+    // er en stor del av «stemplet/unaturlig»). 0.78×–1.45× rundt base.
+    const f = Math.max(0.78, Math.min(1.45, (k.tpi ?? tpiRef) / tpiRef))
+    drawKnausRelief(ctx, cx, cy, rBase * f, lx, ly)
   }
 
   return { dataUrl: canvas.toDataURL('image/png'), width: W, height: H, count: feats.length }
 }
 
-// Tegn én knaus som en skarp BEVEL (ikke diffus emboss-glød): en definert
-// liten skive med hard ytre kant + retningsbestemt skygge/høylys på kanten.
-// Tidligere brukte vi to ut-blødende radial-gradienter uten klipping → en
-// myk halo som ble blurry ved innzooming. Her klipper vi alt til skiva, så
-// kanten er skarp og prikken leser som en kul, ikke en sky.
-function drawBevelDot(ctx, cx, cy, r, lx, ly) {
-  ctx.save()
-  // Hard ytre kant: alt under tegnes innenfor skiva.
+// Tegn én knaus som ren, kant-løs relieff-skygging — INGEN bevel, ingen
+// kropp-fyll, ingen klippet kant. Bare to myke, motstående lober: mørk mot
+// SØ + lys mot NV (sol-azimut), lav opacity og generøs falloff. Da smelter
+// prikken inn i hillshade og leser som en liten naturlig kul i terrenget,
+// ikke en stemplet sirkel. Den mørke lobe-en bærer på lyse tema (multiply),
+// den lyse på mørke tema (screen).
+function drawKnausRelief(ctx, cx, cy, r, lx, ly) {
+  const off = r * 0.55
+
+  // Mørk lobe (SØ, le-siden).
+  const sx = cx - lx * off
+  const sy = cy - ly * off
+  let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r)
+  g.addColorStop(0, 'rgba(62,40,22,0.50)')
+  g.addColorStop(1, 'rgba(62,40,22,0)')
+  ctx.fillStyle = g
   ctx.beginPath()
-  ctx.arc(cx, cy, r, 0, Math.PI * 2)
-  ctx.clip()
+  ctx.arc(sx, sy, r, 0, Math.PI * 2)
+  ctx.fill()
 
-  // Definert kropp: jevn brun fyll, holder fargen nesten helt ut til kanten.
-  let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r)
-  g.addColorStop(0, 'rgba(120,82,52,0.34)')
-  g.addColorStop(0.78, 'rgba(120,82,52,0.30)')
-  g.addColorStop(1, 'rgba(120,82,52,0.06)')
+  // Lys lobe (NV, sol-siden).
+  const hx = cx + lx * off
+  const hy = cy + ly * off
+  g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
+  g.addColorStop(0, 'rgba(255,248,232,0.55)')
+  g.addColorStop(1, 'rgba(255,248,232,0)')
   ctx.fillStyle = g
-  ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r)
-
-  // Bevel-skygge på motsatt sol-side (SØ) — skarp brun crescent. Dette er det
-  // som leser under `multiply` på lyse tema og gir 3D-følelsen.
-  const sx = cx - lx * r * 0.55
-  const sy = cy - ly * r * 0.55
-  g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.05)
-  g.addColorStop(0, 'rgba(56,34,17,0.92)')
-  g.addColorStop(0.55, 'rgba(56,34,17,0.42)')
-  g.addColorStop(1, 'rgba(56,34,17,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r)
-
-  // Bevel-høylys på sol-siden (NV) — leser under `screen` (mørke tema).
-  const hx = cx + lx * r * 0.55
-  const hy = cy + ly * r * 0.55
-  g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 1.05)
-  g.addColorStop(0, 'rgba(255,250,236,0.95)')
-  g.addColorStop(0.55, 'rgba(255,250,236,0.40)')
-  g.addColorStop(1, 'rgba(255,250,236,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r)
-
-  ctx.restore()
+  ctx.beginPath()
+  ctx.arc(hx, hy, r, 0, Math.PI * 2)
+  ctx.fill()
 }
