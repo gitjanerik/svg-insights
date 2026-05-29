@@ -340,20 +340,22 @@ export function classifyToIsom(el) {
 export function buildIsomDefs(catalog = isomCatalogDefault) {
   const patternIds = new Map()
   const symbolIds = new Map()
-  const defs = []
+  const patternDefs = new Map()   // name → def-streng (for lazy/filtrert emit)
+  const symbolDefs = new Map()
 
   for (const [name, spec] of Object.entries(catalog.patterns)) {
     const id = `iso-pat-${name}`
     patternIds.set(name, id)
-    defs.push(buildPatternDef(id, spec))
+    patternDefs.set(name, buildPatternDef(id, spec))
   }
   for (const [name, spec] of Object.entries(catalog.pointSymbols)) {
     const id = `iso-sym-${name}`
     symbolIds.set(name, id)
-    defs.push(buildPointSymbolDef(id, spec))
+    symbolDefs.set(name, buildPointSymbolDef(id, spec))
   }
 
-  return { defs: defs.join(''), patternIds, symbolIds }
+  const defs = [...patternDefs.values()].join('') + [...symbolDefs.values()].join('')
+  return { defs, patternIds, symbolIds, patternDefs, symbolDefs }
 }
 
 /** Returnerer ISOM-spec for en kode med valgfri darkMode-overstyring. */
@@ -404,6 +406,13 @@ export function pathAttrsForIsomCode(code, catalog = isomCatalogDefault, pattern
 export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options = {}) {
   const rules = []
   const root = `.isom-map`
+  // v9.1.10 — Lazy CSS: hvis kaller sender et `usedCodes`-sett, emitterer vi
+  // kun kode-spesifikke regler for koder som faktisk forekommer i SVG-en.
+  // Spar konstant ~4-5 KB CSS pr kart. Uten settet (f.eks. Tegnforklaring)
+  // emitteres alt som før. Trygt: en regel for en data-iso som ikke finnes
+  // i dokumentet matcher uansett ingenting.
+  const usedCodes = options.usedCodes instanceof Set ? options.usedCodes : null
+  const codeUsed = (code) => !usedCodes || usedCodes.has(code)
   const widthM = Number(options.widthM)
   const labelScale = Number.isFinite(widthM) && widthM > 0
     ? Math.min(3, Math.max(1, widthM / 4000))
@@ -453,6 +462,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
 
   for (const cat of ['land', 'terrain', 'water', 'rock', 'contour', 'manmade']) {
     for (const [code, def] of Object.entries(catalog.categories[cat])) {
+      if (!codeUsed(code)) continue
       const sel = `${root} [data-iso="${code}"]`
       const props = []
       if (def.fill) {
@@ -495,16 +505,20 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Datapath har attributt `data-tunnel="yes"` på både base og overlay.
   // Overlay skjules; base får ny stroke. Tunnel-portal: tverrstrek ved
   // start/slutt av tunnel-way.
-  rules.push(`${root} [data-iso="515"] path[data-tunnel="yes"] { stroke: #555; stroke-width: ${sw(0.18)}; stroke-dasharray: 1mm 0.4mm; fill: none; opacity: 0.5 }`)
-  rules.push(`${root} [data-iso="515"] path.overlay[data-tunnel="yes"] { display: none }`)
-  rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: ${sw(0.3)}; stroke-linecap: square; fill: none }`)
+  if (codeUsed('515')) {
+    rules.push(`${root} [data-iso="515"] path[data-tunnel="yes"] { stroke: #555; stroke-width: ${sw(0.18)}; stroke-dasharray: 1mm 0.4mm; fill: none; opacity: 0.5 }`)
+    rules.push(`${root} [data-iso="515"] path.overlay[data-tunnel="yes"] { display: none }`)
+    rules.push(`${root} [data-iso="515"] line.tunnel-portal { stroke: #000; stroke-width: ${sw(0.3)}; stroke-linecap: square; fill: none }`)
+  }
 
   // ISOM 521 — små bygg (< 70 m²) får Kartverket-style hvit fyll + tynt
   // sort omriss. Skiller hytter/uthus visuelt fra bolig- og forretnings-
   // bygg som beholder den brune default-fargen. v8.9.32: stroke ned til
   // 0.05 mm (var 0.08 mm) så det normaliserte kvadrat-symbolet ikke
   // overdøves av sin egen kant ved små zoom-nivåer.
-  rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: ${sw(0.05)}; }`)
+  if (codeUsed('521')) {
+    rules.push(`${root} [data-iso="521"] path[data-small="yes"] { fill: var(--iso-521-small-fill, #fff); stroke: var(--iso-521-small-stroke, #000); stroke-width: ${sw(0.05)}; }`)
+  }
 
   // Etiketter — fill og halo er CSS-variabler så MapView kan overstyre i mørk modus.
   // Font og halo skaleres med kartstørrelse (se labelScale over) så et 10 km

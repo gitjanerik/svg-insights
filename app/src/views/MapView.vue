@@ -414,6 +414,10 @@ function applyLayerVisibility() {
   for (const el of labelEls) {
     el.style.display = showLabels ? '' : 'none'
   }
+  // v9.1.10: et lag som nettopp ble slått PÅ kan ha labels med utdatert (eller
+  // manglende) counter-rotation siden applyUprightLabels hopper over skjulte
+  // lag. Re-orienter nå — billig pga koordinat-cache.
+  applyUprightLabels()
 }
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
@@ -1731,9 +1735,22 @@ function applyUprightLabels() {
   // Alle tekst-labels i kart-innholdet
   const texts = svg.querySelectorAll('text')
   for (const el of texts) {
-    const xVal = el.x?.baseVal?.[0]?.value ?? 0
-    const yVal = el.y?.baseVal?.[0]?.value ?? 0
-    el.setAttribute('transform', `rotate(${rot} ${xVal} ${yVal})`)
+    // v9.1.10 — Perf: hopp over labels i skjulte lag. På navn-tette 10 km-
+    // kart kan stedsnavn-laget ha 1000+ <text>; default er det av, og da
+    // skal vi ikke counter-rotere dem hver rotasjons-/kompass-frame. De
+    // re-orienteres når laget slås på (applyLayerVisibility kaller hit).
+    const layerG = el.closest('[data-layer]')
+    if (layerG && layerG.style.display === 'none') continue
+    // v9.1.10 — Perf: cache x/y per element. `el.x.baseVal[0].value` tvinger
+    // layout-resolution; å lese det for hver av 1000+ labels per frame ga
+    // alvorlig jank. Koordinatene er statiske, så vi leser én gang.
+    let xVal = el.__ux
+    if (xVal === undefined) {
+      xVal = el.x?.baseVal?.[0]?.value ?? 0
+      el.__ux = xVal
+      el.__uy = el.y?.baseVal?.[0]?.value ?? 0
+    }
+    el.setAttribute('transform', `rotate(${rot} ${xVal} ${el.__uy})`)
   }
   // Stedsmerke-annoteringer (rød dråpe-pin). G-en har allerede
   // translate(x,y) — counter-rotate rundt (0,0) i lokalt rom holder
