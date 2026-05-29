@@ -1735,15 +1735,19 @@ function applyUprightLabels() {
   // Alle tekst-labels i kart-innholdet
   const texts = svg.querySelectorAll('text')
   for (const el of texts) {
-    // v9.1.10 — Perf: hopp over labels i skjulte lag. På navn-tette 10 km-
-    // kart kan stedsnavn-laget ha 1000+ <text>; default er det av, og da
-    // skal vi ikke counter-rotere dem hver rotasjons-/kompass-frame. De
-    // re-orienteres når laget slås på (applyLayerVisibility kaller hit).
-    const layerG = el.closest('[data-layer]')
+    // v9.1.11 — Perf: cache BÅDE lag-referansen og x/y per element. closest()
+    // og baseVal er dyrt; å kjøre dem for hver av 1000+ labels HVER rotasjons-
+    // /kompass-frame ga jank (v9.1.10-regresjon: closest per frame). Statisk
+    // per element, så vi regner det ut én gang og leser deretter bare den
+    // billige inline `style.display` per frame.
+    let layerG = el.__layer
+    if (layerG === undefined) {
+      layerG = el.closest('[data-layer]')
+      el.__layer = layerG
+    }
+    // Hopp over labels i skjulte lag (stedsnavn default av → 1000+ noder
+    // itereres ikke). Re-orienteres når laget slås på (applyLayerVisibility).
     if (layerG && layerG.style.display === 'none') continue
-    // v9.1.10 — Perf: cache x/y per element. `el.x.baseVal[0].value` tvinger
-    // layout-resolution; å lese det for hver av 1000+ labels per frame ga
-    // alvorlig jank. Koordinatene er statiske, så vi leser én gang.
     let xVal = el.__ux
     if (xVal === undefined) {
       xVal = el.x?.baseVal?.[0]?.value ?? 0
