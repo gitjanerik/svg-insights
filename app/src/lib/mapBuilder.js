@@ -939,16 +939,24 @@ export function buildSvg(elements, bbox, options = {}) {
   // (locality, hamlet, village, town, city, suburb, neighbourhood,
   // quarter, isolated_dwelling, farm).
   const stedsnavnSvg = () => {
-    const parts = []
-    for (const el of places) {
-      if (!el.tags?.name) continue
+    const named = places.filter(el => el.tags?.name)
+    // v9.1.20 — Størrelses-avhengig cap: MINDRE kart → FLERE stedsnavn, større
+    // kart → færre. Slik holdes total-mengden lesbar uansett kartstørrelse
+    // (et 10 km-kart i et navn-tett område hadde ellers 1000+ = uleselig teppe).
+    // Ved capping prioriteres viktighet: alle by/tettsted (major) + landsby
+    // (mid) først, så fylles resten med grend/gård (minor).
+    const widthKm = (widthM || 5000) / 1000
+    const cap = Math.round(Math.max(25, Math.min(250, 220 / widthKm)))
+    const rankOrder = { major: 0, mid: 1, minor: 2 }
+    const kept = named
+      .slice()
+      .sort((a, b) => rankOrder[placeRank(a.tags.place)] - rankOrder[placeRank(b.tags.place)])
+      .slice(0, cap)
+    const parts = kept.map(el => {
       const p = project(el.lat, el.lon)
-      // v9.1.12: rangér etter OSM place-type så de viktigste stedene kan
-      // beholdes ved utzoom (LOD) og få større skrift. major = by/tettsted,
-      // mid = landsby/bydel, minor = grend/gård/locality (det tette teppet).
       const rank = placeRank(el.tags.place)
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
-    }
+      return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`
+    })
     if (!parts.length) return '  <g data-layer="stedsnavn" style="display:none"></g>\n'
     return `  <g data-layer="stedsnavn" style="display:none">\n${parts.join('\n')}\n  </g>\n`
   }
