@@ -939,18 +939,20 @@ export function buildSvg(elements, bbox, options = {}) {
   // (locality, hamlet, village, town, city, suburb, neighbourhood,
   // quarter, isolated_dwelling, farm).
   const stedsnavnSvg = () => {
-    const parts = []
+    // v9.1.20 — Tre viktighets-nivåer, hvert sitt lag (data-layer) så brukeren
+    // kan toggle dem hver for seg (f.eks. landsby av, by på). Tekstene beholder
+    // data-label="stedsnavn" + data-rank for font-størrelse, utzoom-LOD og søk.
+    const byRank = { major: [], mid: [], minor: [] }
     for (const el of places) {
       if (!el.tags?.name) continue
       const p = project(el.lat, el.lon)
-      // v9.1.12: rangér etter OSM place-type så de viktigste stedene kan
-      // beholdes ved utzoom (LOD) og få større skrift. major = by/tettsted,
-      // mid = landsby/bydel, minor = grend/gård/locality (det tette teppet).
       const rank = placeRank(el.tags.place)
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
+      byRank[rank].push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
     }
-    if (!parts.length) return '  <g data-layer="stedsnavn" style="display:none"></g>\n'
-    return `  <g data-layer="stedsnavn" style="display:none">\n${parts.join('\n')}\n  </g>\n`
+    const group = (rank) => byRank[rank].length
+      ? `  <g data-layer="stedsnavn-${rank}" style="display:none">\n${byRank[rank].join('\n')}\n  </g>\n`
+      : `  <g data-layer="stedsnavn-${rank}" style="display:none"></g>\n`
+    return group('major') + group('mid') + group('minor')
   }
 
   // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
