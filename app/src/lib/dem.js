@@ -102,7 +102,11 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
         // kontur-regioner (bratte sider) uten å overdrive antall punkter.
         const simplified = simplifyDP(worldRing, 2.5)
         const smoothed = chaikin(simplified, 2, true)
-        const final = simplifyDP(smoothed, 1.0)
+        // v9.1.7: final DP 1.0 → 1.5 m. Chaikin 4-dobler punkttallet; en
+        // strammere etter-DP kuttet for lite. 1.5 m = 0.15 mm @ 1:10 000 —
+        // usynlig på en allerede glattet kurve, men færre path-punkter ⇒
+        // lavere per-frame rasteriseringskost på de kontur-tunge S22-kartene.
+        const final = simplifyDP(smoothed, 1.5)
         if (final.length < 4) continue
         features.push({
           type: 'contour',

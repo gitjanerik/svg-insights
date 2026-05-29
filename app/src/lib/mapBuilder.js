@@ -107,7 +107,9 @@ export function bboxFromCenter(lat, lon, halfKm) {
   }
 }
 
-function fmt(n) { return Number(n.toFixed(2)) }
+// v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
+// sub-piksel, men sparer ~1 tegn pr koordinat (mindre SVG, raskere parse).
+function fmt(n) { return Number(n.toFixed(1)) }
 
 /**
  * Mutate ring i-place så orienteringen passer polygon-clipping (CCW i
