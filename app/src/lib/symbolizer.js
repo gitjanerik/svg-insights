@@ -579,7 +579,17 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // v8.1.0: stedsnavn-overlay — stor, fet skrift med tydelig hvit halo
   // som overlay over kartet. Toggleable via 'Stedsnavn'-knapp i drawer
   // (default AV). Bruker --label-stedsnavn-* CSS-vars så tema kan tilpasse.
-  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${mm(6.4)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
+  // Base: farge/halo/vekt. Skrift-STØRRELSE settes per rank (v9.1.12) — by/
+  // tettsted større enn grend/gård, etter OSM place-type (placeRank i
+  // mapBuilder). Default-størrelse (mangler data-rank, f.eks. eldre kart) = mid.
+  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${mm(5.8)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
+  rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${mm(7.2)}; }`)
+  rules.push(`${root} [data-label="stedsnavn"][data-rank="minor"] { font-size: ${mm(4.8)}; }`)
+  // LOD (v9.1.12): ved utzoom (ikke .zoomed-in) skjuler vi det tette grend-/
+  // gård-/locality-teppet (rank=minor) og beholder by/tettsted/landsby for
+  // oversikts-orientering. Resten dukker opp ved innzoom. Stor frame-rate-
+  // gevinst på navn-tette 10 km-kart uten å miste planlegging-oversikten.
+  rules.push(`${root}:not(.zoomed-in) [data-label="stedsnavn"][data-rank="minor"] { display: none; }`)
 
   return rules.join(' ')
 }
