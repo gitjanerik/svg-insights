@@ -937,7 +937,11 @@ export function buildSvg(elements, bbox, options = {}) {
     for (const el of places) {
       if (!el.tags?.name) continue
       const p = project(el.lat, el.lon)
-      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn">${xmlEscape(el.tags.name)}</text>`)
+      // v9.1.12: rangér etter OSM place-type så de viktigste stedene kan
+      // beholdes ved utzoom (LOD) og få større skrift. major = by/tettsted,
+      // mid = landsby/bydel, minor = grend/gård/locality (det tette teppet).
+      const rank = placeRank(el.tags.place)
+      parts.push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
     }
     if (!parts.length) return '  <g data-layer="stedsnavn" style="display:none"></g>\n'
     return `  <g data-layer="stedsnavn" style="display:none">\n${parts.join('\n')}\n  </g>\n`
@@ -1651,6 +1655,16 @@ ${body}</svg>
 `
 
   return { svg, counts, meta }
+}
+
+// Rangér et OSM place=* sted etter viktighet for label-LOD og skrift-størrelse.
+// major beholdes ved utzoom; mid/minor skjules til man zoomer inn.
+function placeRank(place) {
+  switch (place) {
+    case 'city': case 'town':                                  return 'major'
+    case 'village': case 'suburb':                             return 'mid'
+    default:                                                    return 'minor'
+  }
 }
 
 function categoryFor(code) {
