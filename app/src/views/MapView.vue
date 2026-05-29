@@ -440,6 +440,14 @@ watch(isGesturing, (g) => {
   // GPU under pan/zoom/rotasjon. Det dukker tilbake straks gesten slipper.
   const hs = svg.querySelector('#hillshade-layer')
   if (hs) hs.style.visibility = g ? 'hidden' : ''
+  // v9.1.15 — Perf: stiplet strek (sti 505-508, gjerde/kraft, jernbane osv)
+  // er den desidert dyreste å rastere på mobil-GPU under gest — på et 10 km-
+  // kart blir den merge-de sti-pathen tusenvis av dash-segmenter som
+  // reberegnes hver frame. Gjør ALLE kart-strekker solide mens gesten varer
+  // (solide er allerede uendret), og bytt tilbake til CSS-dash etterpå.
+  // Inline style overstyrer den katalog-genererte data-iso-CSS-en.
+  const paths = svg.querySelectorAll('[data-layer] path')
+  for (const p of paths) p.style.strokeDasharray = g ? 'none' : ''
 })
 
 // v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine
