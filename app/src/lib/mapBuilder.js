@@ -1218,8 +1218,9 @@ export function buildSvg(elements, bbox, options = {}) {
     })
   }
 
-  // v9.1.7 — knauser er flyttet ut av SVG til et raster-relieff-lag (se
-  // lib/knausRaster.js + applyKnausRelief i MapView). Ingen knaus-path her.
+  // v9.1.7+ — knauser er ikke SVG-elementer. De males inn i hillshade-bildet
+  // klient-side (paintKnausDabs i lib/knausRaster.js, kalt fra applyHillshade
+  // i MapView). Ingen knaus-path her.
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).

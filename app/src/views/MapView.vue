@@ -16,7 +16,7 @@ import { isomCatalog } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
-import { buildKnausRaster } from '../lib/knausRaster.js'
+import { paintKnausDabs } from '../lib/knausRaster.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
@@ -535,7 +535,6 @@ watch(strokeStepIndex, () => {
 })
 watch(reliefStepIndex, () => {
   applyHillshade()
-  applyKnausRelief()
   try { localStorage.setItem(RELIEF_LS_KEY, String(reliefStepIndex.value)) } catch { /* noop */ }
   flashKnobHint(reliefOpacity.value === 0 ? 'Relieff av' : `Relieff ${Math.round(reliefOpacity.value * 100)}%`)
 })
@@ -880,6 +879,9 @@ function reliefBlendMode() {
 async function applyHillshade() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg || !meta.value) return
+  // v9.1.13: knaus er nå malt inn i hillshade-bildet (ett relieff-lag). Rydd
+  // vekk et evt. gammelt separat knaus-lag fra tidligere klient-versjoner.
+  svg.querySelector('#knaus-relief-layer')?.remove()
   const wantOn = reliefOpacity.value > 0
   let img = svg.querySelector('#hillshade-layer')
   if (!wantOn) {
@@ -893,8 +895,16 @@ async function applyHillshade() {
     return
   }
   if (cachedHillshadeDem !== storedDem.value) {
+    // v9.1.13: hillshade + knaus i SAMME canvas → ett blendet <image> i DEM-
+    // oppløsning, i stedet for to teksturer (det gamle knaus-rasteret var
+    // opptil 4096² ≈ 67 MB og en mobil-GPU-flaskehals). paintKnausDabs maler
+    // prikkene rett på skygge-canvaset (1 px = 1 DEM-celle, flukter eksakt).
     const shade = computeHillshade(storedDem.value)
-    cachedHillshadeUrl = hillshadeToDataURL(shade)
+    const denom = meta.value.scaleDenom || 10000
+    const widthMm = meta.value.widthM * 1000 / denom
+    cachedHillshadeUrl = hillshadeToDataURL(shade, (ctx) => {
+      paintKnausDabs(ctx, storedDem.value, { widthMm })
+    })
     cachedHillshadeDem = storedDem.value
   }
   // Plasser-strategi: hillshade skal blende NED over kart-innholdet
@@ -926,76 +936,9 @@ async function applyHillshade() {
   img.style.mixBlendMode = reliefBlendMode()
 }
 
-// Knaus-relieff (v9.1.7): knauser er ikke lenger SVG-elementer, men «embossed»
-// prikker på et eget høyoppløst raster-lag som legges rett over hillshade og
-// blender med samme modus. Koblet til relieff-knotten — er konseptuelt en del
-// av relieffet (samme DEM-/TPI-kilde) og forsvinner når relieffet skrus av.
-let cachedKnausUrl = null
-let cachedKnausDem = null
-
-async function applyKnausRelief() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg || !meta.value) return
-  let img = svg.querySelector('#knaus-relief-layer')
-  if (reliefOpacity.value <= 0) {
-    if (img) img.remove()
-    return
-  }
-  await ensureDem()
-  if (!storedDem.value) {
-    if (img) img.remove()
-    return
-  }
-  if (cachedKnausDem !== storedDem.value) {
-    const denom = meta.value.scaleDenom || 10000
-    const widthMm = meta.value.widthM * 1000 / denom
-    const heightMm = meta.value.heightM * 1000 / denom
-    const raster = buildKnausRaster(storedDem.value, { widthMm, heightMm })
-    cachedKnausUrl = raster?.dataUrl ?? null
-    cachedKnausDem = storedDem.value
-  }
-  if (!cachedKnausUrl) {
-    if (img) img.remove()
-    return
-  }
-  if (!img) {
-    const ns = 'http://www.w3.org/2000/svg'
-    img = document.createElementNS(ns, 'image')
-    img.setAttribute('id', 'knaus-relief-layer')
-    // data-layer="stein" → samme «Stein / skjær»-toggle skjuler knaus som før.
-    img.setAttribute('data-layer', 'stein')
-    img.setAttribute('preserveAspectRatio', 'none')
-    img.setAttribute('pointer-events', 'none')
-    img.setAttribute('image-rendering', 'auto')
-  }
-  // Legges rett over hillshade-laget så prikkene sitter på skyggingen, men
-  // fortsatt under bruker-/annotering-/spor-/måle-overlays.
-  const hill = svg.querySelector('#hillshade-layer')
-  if (hill) {
-    if (hill.nextSibling) svg.insertBefore(img, hill.nextSibling)
-    else svg.appendChild(img)
-  } else {
-    const insertBefore = svg.querySelector('#user-layer')
-                      ?? svg.querySelector('#annotation-layer')
-                      ?? svg.querySelector('#track-layer')
-                      ?? svg.querySelector('#measure-layer')
-    if (insertBefore) svg.insertBefore(img, insertBefore)
-    else svg.appendChild(img)
-  }
-  img.setAttribute('x', '0'); img.setAttribute('y', '0')
-  img.setAttribute('width', String(meta.value.widthM))
-  img.setAttribute('height', String(meta.value.heightM))
-  img.setAttribute('href', cachedKnausUrl)
-  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedKnausUrl)
-  // Litt mer present enn skyggingen så prikkene er lesbare også ved lavt
-  // relieff-nivå, men borte når relieffet er helt av.
-  img.setAttribute('opacity', String(Math.min(1, reliefOpacity.value * 1.4)))
-  img.style.mixBlendMode = reliefBlendMode()
-}
-
 // Re-render relieffet når DEM-en lastes eller temaet byttes (blend-modus
 // avhenger av tema). Selve nivå-endringer håndteres av reliefStepIndex-watch.
-watch([storedDem, currentTheme], () => { applyHillshade(); applyKnausRelief() })
+watch([storedDem, currentTheme], () => { applyHillshade() })
 
 // Måleverktøy — distanse + areal (v8.9.4). Aktiveres via knapp i drawer.
 // Tap-på-kart i denne modusen plasserer vertices. Lukket polygon viser
@@ -2181,10 +2124,9 @@ async function loadMap() {
     renderTracks()
     applyUprightLabels()
     renderMeasure()
-    // Hill-shading er default ON — fire-and-forget. Lazy DEM-load skjer
-    // internt hvis nødvendig (Vardåsen).
+    // Hill-shading (med innbakt knaus-relieff) er default ON — fire-and-forget.
+    // Lazy DEM-load skjer internt hvis nødvendig (Vardåsen).
     applyHillshade()
-    applyKnausRelief()
     // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
     // i host-en (getBBox()+getCTM() krever attached element).
     mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
