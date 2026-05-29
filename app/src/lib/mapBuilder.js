@@ -654,10 +654,10 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // Bygg ISOM-defs (patterns + symbols) og CSS. widthM sendes inn så
-  // label-fonts skaleres proporsjonalt med kartstørrelsen (v8.9.24).
-  const { defs: isomDefs, patternIds, symbolIds } = buildIsomDefs(isomCatalog)
-  const isomCss = buildIsomCss(isomCatalog, patternIds, { widthM })
+  // Bygg ISOM-id-mapene (patterns + symbols) som kroppen trenger. Selve
+  // defs- og CSS-strengene bygges LAZY etter at kroppen er satt sammen, så vi
+  // kun emitterer det som faktisk brukes (se nær return). widthM → label-skala.
+  const { patternIds, symbolIds, patternDefs, symbolDefs } = buildIsomDefs(isomCatalog)
 
   const layerSvg = (code, phase = 'both') => {
     const els = buckets[code]
@@ -1622,12 +1622,32 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const bgFill = isomCatalog.background.color
 
+  // v9.1.10 — Lazy defs/CSS: bygg kart-kroppen først, så skanner vi den for
+  // hvilke ISOM-koder/patterns/symboler som FAKTISK forekommer, og emitterer
+  // kun defs + CSS for de refererte. Sparer konstant ~7-10 KB og ~20-30
+  // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
+  // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
+  // finnes i kilden (CSS for patterns, body for symboler).
+  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+
+  const usedCodes = new Set()
+  for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
+
+  const isomCss = buildIsomCss(isomCatalog, patternIds, { widthM, usedCodes })
+
+  // Patterns refereres fra CSS (url(#iso-pat-X)) og evt inline; symboler fra
+  // body (href="#iso-sym-X"). Behold kun defs med token til stede i kilden.
+  const refSrc = isomCss + body
+  const isomDefs =
+    [...patternDefs].filter(([name]) => refSrc.includes(`#iso-pat-${name})`)).map(([, d]) => d).join('') +
+    [...symbolDefs].filter(([name]) => body.includes(`#iso-sym-${name}"`)).map(([, d]) => d).join('')
+
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}${landMaskSvg}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
-${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}</svg>
+${body}</svg>
 `
 
   return { svg, counts, meta }
