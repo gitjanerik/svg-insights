@@ -434,6 +434,12 @@ watch(isGesturing, (g) => {
   if (!svg) return
   if (g) svg.classList.add('is-zooming')
   else svg.classList.remove('is-zooming')
+  // v9.1.14 — Perf: skjul relieff-bildet under aktiv gest. Et fullkart-
+  // <image> med mix-blend-mode må re-komponeres mot bakgrunnen hver frame
+  // (blend-mode hindrer billig GPU-lag-isolasjon), så det er dyrt på mobil-
+  // GPU under pan/zoom/rotasjon. Det dukker tilbake straks gesten slipper.
+  const hs = svg.querySelector('#hillshade-layer')
+  if (hs) hs.style.visibility = g ? 'hidden' : ''
 })
 
 // v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine

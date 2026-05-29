@@ -35,13 +35,16 @@ export function paintKnausDabs(ctx, dem, options = {}) {
   const {
     widthMm,
     azimuthDeg = 315,
-    dotRadiusMm = 0.6,
-    minRadiusPx = 1.6,
-    tpiRef = 1.5,
+    dotRadiusMm = 0.42,        // v9.1.14: mindre dab — ~1 px/mm-rasteret gjorde
+    minRadiusPx = 1,           //          dem til et «vorte-teppe» ved 0.6mm/1.6px
+    tpiThresholdM = 3,         // v9.1.14: kun reelle knauser (var 1.5m) — Kjekstad-
+    tpiRef = 3,                //          marka hadde tusenvis av 1.5m-bumper
     knauser = null,
   } = options
 
-  const feats = knauser ?? detectKnauser(dem)
+  // Høyere TPI-terskel → langt færre, kun markante knauser (ikke hver
+  // mikro-ujevnhet hillshade allerede viser).
+  const feats = knauser ?? detectKnauser(dem, 5, tpiThresholdM)
   if (!feats.length) return 0
 
   const { cols, rows } = dem
@@ -74,11 +77,12 @@ export function paintKnausDabs(ctx, dem, options = {}) {
 function drawKnausRelief(ctx, cx, cy, r, lx, ly) {
   const off = r * 0.55
 
-  // Mørk lobe (SØ, le-siden).
+  // Mørk lobe (SØ, le-siden). v9.1.14: lavere opacity → diskré relieff-hint,
+  // ikke harde brune prikker.
   const sx = cx - lx * off
   const sy = cy - ly * off
   let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r)
-  g.addColorStop(0, 'rgba(62,40,22,0.50)')
+  g.addColorStop(0, 'rgba(62,40,22,0.34)')
   g.addColorStop(1, 'rgba(62,40,22,0)')
   ctx.fillStyle = g
   ctx.beginPath()
@@ -89,7 +93,7 @@ function drawKnausRelief(ctx, cx, cy, r, lx, ly) {
   const hx = cx + lx * off
   const hy = cy + ly * off
   g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r)
-  g.addColorStop(0, 'rgba(255,248,232,0.55)')
+  g.addColorStop(0, 'rgba(255,248,232,0.38)')
   g.addColorStop(1, 'rgba(255,248,232,0)')
   ctx.fillStyle = g
   ctx.beginPath()
