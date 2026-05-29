@@ -39,7 +39,11 @@ export function usePinchZoom(elementRef, options = {}) {
   let wheelEndTimer = null
 
   const MIN_SCALE = 0.5
-  const MAX_SCALE = 20
+  // v9.1.19: hevet maks-zoom fra 20 → 60 så man kan zoome helt inn på
+  // detaljer (stedsnavn, dybdetall, kompliserte stikryss). Dobbel-tapp
+  // dobler (×2) til man passerer DOUBLE_TAP_RESET, da nullstilles zoom.
+  const MAX_SCALE = 60
+  const DOUBLE_TAP_RESET = 45
 
   let lastDist = 0
   let lastAngle = 0
@@ -134,7 +138,7 @@ export function usePinchZoom(elementRef, options = {}) {
       const dy = t.clientY - lastTapY
       const within = Math.hypot(dx, dy) < 40
       if (now - lastTapAt < 300 && within) {
-        if (scale.value >= 15.9) {
+        if (scale.value >= DOUBLE_TAP_RESET) {
           // Allerede zoomet inn → full reset (også rotasjon, så bruker
           // får et rent uvridd kart som referansepunkt)
           animate()
@@ -213,7 +217,7 @@ export function usePinchZoom(elementRef, options = {}) {
   function onDblClick(e) {
     if (!isEnabled()) return
     e.preventDefault()
-    if (scale.value >= 15.9) {
+    if (scale.value >= DOUBLE_TAP_RESET) {
       animate()
       scale.value = 1
       translateX.value = 0
