@@ -102,7 +102,11 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
         // kontur-regioner (bratte sider) uten å overdrive antall punkter.
         const simplified = simplifyDP(worldRing, 2.5)
         const smoothed = chaikin(simplified, 2, true)
-        const final = simplifyDP(smoothed, 1.0)
+        // v9.1.7: final DP 1.0 → 1.5 m. Chaikin 4-dobler punkttallet; en
+        // strammere etter-DP kuttet for lite. 1.5 m = 0.15 mm @ 1:10 000 —
+        // usynlig på en allerede glattet kurve, men færre path-punkter ⇒
+        // lavere per-frame rasteriseringskost på de kontur-tunge S22-kartene.
+        const final = simplifyDP(smoothed, 1.5)
         if (final.length < 4) continue
         features.push({
           type: 'contour',
@@ -225,7 +229,10 @@ export function detectKnauser(dem, tpiRadius = 5, tpiThresholdM = 1.5) {
         }
         if (isPeak) {
           const [wx, wy] = gridToWorld([x, y], transform)
-          features.push({ type: 'point', isomCode: '213', x: wx, y: wy, tpi: v })
+          // gx/gy beholdes så et raster-lag kan plassere prikken som
+          // DEM-grid-fraksjon (flukter med hillshade-bildet) uten å gå
+          // veien om verdens-/viewBox-koordinater.
+          features.push({ type: 'point', isomCode: '213', x: wx, y: wy, gx: x, gy: y, tpi: v })
         }
       }
     }

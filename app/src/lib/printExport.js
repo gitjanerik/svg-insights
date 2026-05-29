@@ -45,6 +45,10 @@ function stripRuntimeOverlays(svgString) {
     const re = new RegExp(`<g[^>]*id="${id}"[^]*?</g>`, 'g')
     s = s.replace(re, '')
   }
+  // v9.1.7: knaus-relieffet er et skjerm-only raster (embossed prikker). Det
+  // skal IKKE inn i eksport/print — print bygger på vektor-lagene. <image> kan
+  // være self-closing (`/>`) eller ha eget end-tag.
+  s = s.replace(/<image[^>]*id="knaus-relief-layer"[^>]*>(<\/image>)?/g, '')
   if (!s.includes('xmlns:xlink')) {
     s = s.replace(/<svg\b([^>]*)>/, '<svg$1 xmlns:xlink="http://www.w3.org/1999/xlink">')
   }

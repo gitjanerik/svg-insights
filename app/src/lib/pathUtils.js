@@ -124,4 +124,6 @@ export function generalize(geom, zoom = 14, opts = {}) {
   return geom
 }
 
-function fmt(n) { return Number(n.toFixed(2)) }
+// v9.1.7: konturer/cliffs er i meter-rom (viewBox). 1 desimal = 0.1 m ≈
+// 0.01 mm @ 1:10 000 — usynlig, men kutter bytes på path-tunge konturlag.
+function fmt(n) { return Number(n.toFixed(1)) }
