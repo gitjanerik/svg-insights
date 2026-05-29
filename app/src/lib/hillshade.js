@@ -76,13 +76,20 @@ export function computeHillshade(dem, options = {}) {
 /**
  * Render hillshade RGBA til en data-URL (PNG). Brukes for å embedde resultatet
  * som SVG <image href="data:image/png;base64,..."/>.
+ *
+ * v9.1.13: valgfri `decorate(ctx, cols, rows)`-callback kjøres etter at
+ * skyggingen er tegnet, men før toDataURL — slik at f.eks. knaus-relieff kan
+ * males inn på SAMME canvas. Da blir hele relieffet ÉN blendet <image>-tekstur
+ * (i DEM-oppløsning) i stedet for to (hillshade + et stort eget knaus-raster
+ * på opptil 4096² = ~67 MB), som var en alvorlig mobil-GPU-flaskehals.
  */
-export function hillshadeToDataURL(shade) {
+export function hillshadeToDataURL(shade, decorate) {
   const canvas = document.createElement('canvas')
   canvas.width = shade.cols
   canvas.height = shade.rows
   const ctx = canvas.getContext('2d')
   const imgData = new ImageData(new Uint8ClampedArray(shade.rgba), shade.cols, shade.rows)
   ctx.putImageData(imgData, 0, 0)
+  if (typeof decorate === 'function') decorate(ctx, shade.cols, shade.rows)
   return canvas.toDataURL('image/png')
 }
