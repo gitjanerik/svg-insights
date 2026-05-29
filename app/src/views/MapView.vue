@@ -237,7 +237,11 @@ const LAYERS = [
   { key: 'stupkant',   label: 'Stupkant' },
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'navn',       label: 'Navn' },
-  { key: 'stedsnavn',  label: 'Stedsnavn' },
+  // Stedsnavn delt i tre viktighets-nivåer (v9.1.20) — egne lag så de kan
+  // toggles hver for seg (f.eks. landsby av, by på).
+  { key: 'stedsnavn-major', label: 'By / tettsted' },
+  { key: 'stedsnavn-mid',   label: 'Landsby / bydel' },
+  { key: 'stedsnavn-minor', label: 'Grend / gård' },
   { key: 'spor',       label: 'GPS-spor' },
 ]
 
