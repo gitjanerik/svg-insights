@@ -55,14 +55,31 @@ function pointToSegment(px, py, ax, ay, bx, by) {
 // for å håndtere både rette og buete subpaths korrekt.
 //
 // Returnerer { distM, layerKey, layerLabel, x, y } eller null hvis ingen
-// passende lag finnes.
-export function findNearestPath(svgEl, x, y, layerSpecs) {
+// passende lag finnes innenfor maxRadiusM.
+//
+// VIKTIG (frys-fix): getPointAtLength-sampling er dyrt. På store kart med
+// tusenvis av paths blokkerer en naiv full-sampling hovedtråden i sekunder
+// (long-press-menyen «fryser» appen). Derfor pruner vi hver path med en
+// billig getBBox FØR vi sampler: er bounding-boksen lenger unna enn beste
+// treff så langt (eller maks-radiusen), hopper vi over samplingen helt.
+// På et stort kart betyr det at bare de få stiene nær fingeren faktisk
+// samples — uavhengig av total kartstørrelse.
+export function findNearestPath(svgEl, x, y, layerSpecs, opts = {}) {
   if (!svgEl) return null
+  const maxRadiusM = Number.isFinite(opts.maxRadiusM) ? opts.maxRadiusM : 300
   let best = null
+  let bestDist = maxRadiusM   // ignorer paths lenger unna enn dette
   for (const spec of layerSpecs) {
     const groups = svgEl.querySelectorAll(`g[data-layer="${spec.key}"]`)
     for (const g of groups) {
       for (const path of g.querySelectorAll('path')) {
+        // Grov-prune: avstand fra punktet til path-ens bounding-boks. Er
+        // boksen alt lenger unna enn beste treff, kan ingen del av path-en
+        // være nærmere — dropp den uten å sample. getBBox er billig (cachet
+        // geometri); getPointAtLength er det ikke.
+        const bb = safeBBox(path)
+        if (!bb) continue
+        if (bboxDistance(x, y, bb) >= bestDist) continue
         const len = safeTotalLength(path)
         if (!len) continue
         // Sampling-steg: ~8 m for korte paths, opp til ~25 m for veldig
@@ -78,7 +95,7 @@ export function findNearestPath(svgEl, x, y, layerSpecs) {
           catch { continue }
           if (prev) {
             const seg = pointToSegment(x, y, prev.x, prev.y, pt.x, pt.y)
-            if (!best || seg.distM < best.distM) {
+            if (seg.distM < bestDist) {
               best = {
                 distM: seg.distM,
                 layerKey: spec.key,
@@ -86,6 +103,7 @@ export function findNearestPath(svgEl, x, y, layerSpecs) {
                 x: seg.x,
                 y: seg.y,
               }
+              bestDist = seg.distM
             }
           }
           prev = pt
@@ -94,6 +112,18 @@ export function findNearestPath(svgEl, x, y, layerSpecs) {
     }
   }
   return best
+}
+
+// Avstand fra punkt (x, y) til en akse-justert boks. 0 hvis punktet er inni.
+function bboxDistance(x, y, bb) {
+  const dx = x < bb.x ? bb.x - x : (x > bb.x + bb.width ? x - (bb.x + bb.width) : 0)
+  const dy = y < bb.y ? bb.y - y : (y > bb.y + bb.height ? y - (bb.y + bb.height) : 0)
+  return Math.hypot(dx, dy)
+}
+
+function safeBBox(path) {
+  try { return path.getBBox() }
+  catch { return null }
 }
 
 function safeTotalLength(path) {

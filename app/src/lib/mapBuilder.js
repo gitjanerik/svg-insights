@@ -903,7 +903,8 @@ export function buildSvg(elements, bbox, options = {}) {
     const parts = []
     for (const el of peaks) {
       const p = project(el.lat, el.lon)
-      const name = xmlEscape(el.tags?.name ?? '')
+      const rawName = (el.tags?.name ?? '').trim()
+      const name = xmlEscape(rawName)
       const ele = el.tags?.ele ?? ''
       const eleNum = parseFloat(ele)
       // Vis navn over og høyde under separat når begge finnes; ellers
@@ -919,7 +920,10 @@ export function buildSvg(elements, bbox, options = {}) {
         ? `<use href="#${symbolIds.get('trigpunkt')}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/>`
         : `<use href="#${symbolIds.get('peak')}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/>`
       const lines = []
-      if (name) {
+      // claimLabelName: navn rendres kun én gang på hele kartet (global
+      // dedup). Er navnet allerede brukt, faller vi tilbake til høyde-only
+      // for toppen (symbol + tall beholdes — det er bare navnet vi dropper).
+      if (name && claimLabelName(rawName)) {
         lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}</text>`)
         if (Number.isFinite(eleNum)) {
           lines.push(`<text x="2mm" y="3.6mm" data-label="peak-ele">${Math.round(eleNum)}</text>`)
@@ -945,6 +949,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const byRank = { major: [], mid: [], minor: [] }
     for (const el of places) {
       if (!el.tags?.name) continue
+      if (!claimLabelName(el.tags.name)) continue   // global navn-dedup
       const p = project(el.lat, el.lon)
       const rank = placeRank(el.tags.place)
       byRank[rank].push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
@@ -1502,8 +1507,28 @@ export function buildSvg(elements, bbox, options = {}) {
     roadOtherCodes.map(c => layerSvg(c)).join('')
   const upperLayers  = renderCodes(UPPER_CODES)
   const placeholderLayers = renderCodes(PLACEHOLDER_CODES)
+  // ── Global navn-deduplisering ────────────────────────────────────────
+  // Hvert unikt navn rendres som tekst-label kun ÉN gang på hele kartet.
+  // OSM splitter lange elver/veier i mange ways, og vi gjentar elve-/bekke-
+  // navn ~hver 2 km — uten dedup får f.eks. «Akerselva» titalls labels.
+  // Dette kollapser alle til første treff. Bevisst avveining (bekreftet med
+  // bruker): to genuint ulike features med samme navn (to «Langvatnet», en
+  // vei og et tjern som heter det samme) mister navnet på nr. 2. Tomme navn
+  // (høyde-tall, dybde-soundings) berøres ikke.
+  //
+  // Krav-rekkefølge = evaluerings-rekkefølge under (hvem «vinner» navnet):
+  // topp → vann → elv/bekk → område/hytte → stedsnavn-overlay. Viktigst
+  // først, så et navngitt tjern ikke stjeler navnet fra toppen over det.
+  const _seenLabelNames = new Set()
+  const claimLabelName = (raw) => {
+    const key = (raw ?? '').trim().toLowerCase()
+    if (!key) return true                  // navnløst (kun symbol/tall) — alltid ok
+    if (_seenLabelNames.has(key)) return false
+    _seenLabelNames.add(key)
+    return true
+  }
+
   const labelLayer = labelSvg()
-  const stedsnavnLayer = stedsnavnSvg()
 
   const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
     ? `  <g data-layer="kontur"${contourMaskAttr}>\n` +
@@ -1529,7 +1554,7 @@ export function buildSvg(elements, bbox, options = {}) {
         // Når bare ett finnes: plasser sentrert. dy i mm via SVG-attributt så
         // posisjonen er print-skalert (1 mm = 1 mm på papir, uavhengig av
         // viewBox-meter). dy × labelScale så gapet vokser i takt med fonten.
-        if (l.name) {
+        if (l.name && claimLabelName(l.name)) {
           const dyMm = (l.elev != null ? -0.4 : 0.4) * labelScale
           lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`)
         }
@@ -1607,17 +1632,24 @@ export function buildSvg(elements, bbox, options = {}) {
       }
     }
   }
-  const waterwayLabelLayer = waterwayLabels.length
-    ? `  <g data-layer="bekk">\n${waterwayLabels.map(l =>
-        `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn">${xmlEscape(l.name)}</text>`
-      ).join('\n')}\n  </g>\n`
+  // filter før map: global navn-dedup kollapser de gjentatte ~2 km-labels
+  // (og multi-way-elver) til ett label per unikt elv-/bekkenavn.
+  const waterwayLabelRows = waterwayLabels
+    .filter(l => claimLabelName(l.name))
+    .map(l =>
+      `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn">${xmlEscape(l.name)}</text>`
+    )
+  const waterwayLabelLayer = waterwayLabelRows.length
+    ? `  <g data-layer="bekk">\n${waterwayLabelRows.join('\n')}\n  </g>\n`
     : ''
 
   // v8.10.9: Områdenavn — hytter med navn (offset til høyre for symbolet)
   // og navngitte arealer (myr, heath, grassland, locality-polygoner osv).
   // Toggle-bar via 'navn'-laget i MapView (default på).
-  const omradenavnLayer = omradenavnLabels.length
-    ? `  <g data-layer="navn">\n${omradenavnLabels.map(l => {
+  // filter før map: global navn-dedup (hytter/naturreservat/områder).
+  const omradenavnRows = omradenavnLabels.filter(l => claimLabelName(l.name))
+  const omradenavnLayer = omradenavnRows.length
+    ? `  <g data-layer="navn">\n${omradenavnRows.map(l => {
         if (l.isBuilding) {
           // Hytte-navn: 1.2 mm til høyre for symbolet, vertikalt midt-ish
           return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dx="1.2mm" dy="0.4mm" text-anchor="start" data-label="hytte-navn">${xmlEscape(l.name)}</text>`
@@ -1630,6 +1662,11 @@ export function buildSvg(elements, bbox, options = {}) {
         return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="omrade-navn">${xmlEscape(l.name)}</text>`
       }).join('\n')}\n  </g>\n`
     : ''
+
+  // Stedsnavn-overlay bygges SIST så de andre (topp/vann/elv/område) får
+  // claime navnene sine først — overlayet supplerer med navn som ikke
+  // allerede vises på kartet.
+  const stedsnavnLayer = stedsnavnSvg()
 
   // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
   // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
