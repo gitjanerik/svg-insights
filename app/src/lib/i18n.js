@@ -119,6 +119,15 @@ const no = {
   'challenge.locked': 'Sentrum, kartstørrelse og ekvidistanse er låst til utfordrerens oppsett. Trykk ✕ øverst for å avbryte og lage et eget kart.',
   'challenge.cancel': 'Avbryt utfordring',
 
+  // ── Del-kart-banner (shareInvite — mottaker av et delt kart) ───────
+  'share.invite.title': 'Noen har delt et kart med deg!',
+  'share.invite.body': 'Trykk «Lag turkart», så får du en nøyaktig kopi. God tur!',
+  'share.invite.marking': 'Markering: {name}',
+  'share.invite.cancel': 'Avbryt delt kart',
+  'share.invite.installCheckbox': 'Installer kartappen for en bedre opplevelse',
+  'share.invite.installInfoLabel': 'Hva betyr det?',
+  'share.invite.installInfo': 'Installasjon legger kartappen på hjemskjermen din, så den åpner i fullskjerm og fungerer offline. Du kan også gjøre dette senere fra forsiden.',
+
   // ── MapView drawer-knapper og referanser til spillet ───────────────
   'mapview.gameButton': '{emoji} {gameName}',
   'mapview.gameLoading': 'Laster høydedata …',
@@ -126,8 +135,11 @@ const no = {
 
   // ── MapPickerView ───────────────────────────────────────────────────
   'picker.previewLockedHint': 'Forhåndsvisning — låst til utfordrerens kartutsnitt',
+  'picker.previewLockedHintShared': 'Forhåndsvisning — låst til det delte kartutsnittet',
   'picker.searchLockedPlaceholder': 'Søk låst i utfordringsmodus',
+  'picker.searchLockedPlaceholderShared': 'Søk låst — du åpner et delt kart',
   'picker.makeMap': 'Lag turkart',
+  'picker.makeMapInstall': 'Installer som app og lag kart',
 }
 
 /**
@@ -201,13 +213,24 @@ const en = {
   'challenge.locked': 'Center, map size and contour interval are locked to the challenger\'s setup. Tap ✕ at the top to cancel and build your own map.',
   'challenge.cancel': 'Cancel challenge',
 
+  'share.invite.title': 'Someone shared a map with you!',
+  'share.invite.body': 'Tap «Generate map» to get an exact copy. Enjoy the trip!',
+  'share.invite.marking': 'Marking: {name}',
+  'share.invite.cancel': 'Dismiss shared map',
+  'share.invite.installCheckbox': 'Install the map app for a better experience',
+  'share.invite.installInfoLabel': 'What does that mean?',
+  'share.invite.installInfo': 'Installing adds the map app to your home screen so it opens full-screen and works offline. You can also do this later from the home page.',
+
   'mapview.gameButton': '{emoji} {gameName}',
   'mapview.gameLoading': 'Loading elevation data …',
   'mapview.gameError': 'Could not fetch elevation data',
 
   'picker.previewLockedHint': 'Preview — locked to the challenger\'s map area',
+  'picker.previewLockedHintShared': 'Preview — locked to the shared map area',
   'picker.searchLockedPlaceholder': 'Search disabled in challenge mode',
+  'picker.searchLockedPlaceholderShared': 'Search disabled — opening a shared map',
   'picker.makeMap': 'Generate map',
+  'picker.makeMapInstall': 'Install as app and generate map',
 }
 
 const dictionaries = { no, en }

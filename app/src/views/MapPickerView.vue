@@ -5,10 +5,18 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { bboxFromCenter } from '../lib/mapBuilder.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
+import { usePwaInstall } from '../composables/usePwaInstall.js'
 import { t } from '../lib/i18n.js'
 
 const router = useRouter()
 const route = useRoute()
+
+// v9.1.x: PWA-install fra del-kart-banneret. Hvis mottakeren ikke alt
+// kjører appen i standalone-modus tilbyr vi å installere den når de
+// genererer det delte kartet — gir fullskjerm + offline.
+const { canInstall, isStandalone, promptInstall } = usePwaInstall()
+const installRequested = ref(false)   // checkbox i del-kart-banneret
+const showInstallInfo = ref(false)    // info-tooltip toggle
 
 // Standard utgangspunkt: Oslo
 const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
@@ -25,7 +33,7 @@ const customName = ref('')
 const gpsState = ref({ status: 'idle', error: null })  // idle | locating | ok | error
 
 function onCenterOnMe() {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   if (!navigator.geolocation) {
     gpsState.value = { status: 'error', error: 'Nettleseren støtter ikke GPS' }
     return
@@ -57,10 +65,22 @@ const challenge = ref(null)   // { name, score, level } eller null
 const shareInvite = ref(null) // { hl } — del-flyt uten utfordring
 
 // v7.4.2: i utfordringsmodus skal alle valg (sted, navn, størrelse, ekvi-
-// distanse, preview drag/pinch) være read-only. Brukeren skal akkurat det
-// kartet som ble delt — ikke noe annet. Bruk én computed-flag overalt.
-// shareInvite låser IKKE — mottaker kan justere bbox/eq før kartet genereres.
+// distanse, preview drag/pinch) være read-only. `isLocked` styrer den
+// utfordrings-spesifikke CTA-en (amber «Start Curve Invaders»).
 const isLocked = computed(() => challenge.value !== null)
+
+// v9.1.x: Også et delt kart (shareInvite) skal låse alle utsnitt-valg.
+// Poenget med deling er at mottakeren ser nøyaktig det samme som senderen
+// — «se det jeg ser» — så bbox, størrelse og ekvidistanse skal ikke kunne
+// endres. Egen flag fra `isLocked` fordi shareInvite beholder den vanlige
+// «Lag turkart»-CTA-en (ikke spill-CTA-en).
+const controlsLocked = computed(() => challenge.value !== null || shareInvite.value !== null)
+
+// Låst-tekster varierer mellom utfordring og delt kart.
+const lockedSearchPlaceholder = computed(() =>
+  challenge.value ? t('picker.searchLockedPlaceholder') : t('picker.searchLockedPlaceholderShared'))
+const lockedPreviewHint = computed(() =>
+  challenge.value ? t('picker.previewLockedHint') : t('picker.previewLockedHintShared'))
 
 function cancelChallenge() {
   // Fjerner banneret + lås, og clearer URL-query så f.eks. F5 ikke gir
@@ -72,6 +92,8 @@ function cancelChallenge() {
 
 function dismissShareInvite() {
   shareInvite.value = null
+  installRequested.value = false
+  showInstallInfo.value = false
   router.replace({ name: 'kart-nytt', query: {} })
 }
 
@@ -195,6 +217,14 @@ const buildError = ref(null)
 const buildProgress = ref('')
 
 async function generateMap() {
+  // v9.1.x: Hvis mottakeren har huket av «Installer kartappen» i del-kart-
+  // banneret, trigg install-prompten først (best-effort). Vi venter på
+  // brukerens valg og bygger kartet uansett utfall — på iOS/uten støtte er
+  // canInstall false og vi går rett videre.
+  if (installRequested.value && canInstall.value) {
+    try { await promptInstall() } catch { /* avvist / utilgjengelig — bygg likevel */ }
+  }
+
   buildState.value = 'fetching'
   buildError.value = null
   buildProgress.value = `Henter kartdata for ${sizeKm.value} × ${sizeKm.value} km …`
@@ -280,7 +310,7 @@ function panShiftToCenter(dxPx, dyPx) {
 }
 
 function onPreviewTouchStart(e) {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   if (e.touches.length === 2) {
     pinching = true
     panning = false
@@ -298,7 +328,7 @@ function onPreviewTouchStart(e) {
   }
 }
 function onPreviewTouchMove(e) {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   if (pinching && e.touches.length === 2) {
     e.preventDefault()
     const d = touchDist(e)
@@ -326,7 +356,7 @@ function touchDist(e) {
 
 // Desktop: musedrag = pan
 function onPreviewMouseDown(e) {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   if (e.button !== 0) return
   panning = true
   panStart = {
@@ -336,7 +366,7 @@ function onPreviewMouseDown(e) {
   e.preventDefault()
 }
 function onPreviewMouseMove(e) {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   if (!panning || !panStart) return
   e.preventDefault()
   const dxPx = e.clientX - panStart.x
@@ -350,7 +380,7 @@ function onPreviewMouseUp() {
 }
 // Desktop: scroll-hjul = zoom (pinch-ekvivalent)
 function onPreviewWheel(e) {
-  if (isLocked.value) return
+  if (controlsLocked.value) return
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
@@ -383,14 +413,15 @@ onMounted(() => {
       <div class="w-10 h-10"/>
     </div>
 
-    <!-- v8.10.0: Banner ved «Del kart»-lenke (uten utfordring). Mottaker
-         kan justere bbox/eq før kartet genereres — banneret er bare et hint
-         om hva senderen pekte på. ?hl=<navn> forwardes til MapView etter
-         generering. -->
+    <!-- v8.10.0: Banner ved «Del kart»-lenke (uten utfordring). v9.1.x:
+         utsnitt/størrelse/ekvidistanse er nå låst (controlsLocked) slik at
+         mottakeren får en nøyaktig kopi — «se det jeg ser». ?hl=<navn>
+         forwardes til MapView etter generering. Hvis appen ikke kjører i
+         standalone-modus tilbys installasjon via checkbox under teksten. -->
     <div v-if="shareInvite"
          class="relative mx-4 mt-4 rounded-xl border border-sky-300/40 bg-sky-500/10 px-4 py-3">
       <button @click="dismissShareInvite"
-              aria-label="Avbryt delt kart"
+              :aria-label="t('share.invite.cancel')"
               class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
                      text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15
                      active:scale-95 transition">
@@ -412,18 +443,41 @@ onMounted(() => {
           </svg>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-semibold text-sky-100">Delt kart-utsnitt</div>
-          <div v-if="shareInvite.hl" class="text-[11px] text-sky-100/75">
-            Markering: <span class="text-white font-medium">{{ shareInvite.hl }}</span>
-          </div>
-          <div v-else class="text-[11px] text-sky-100/75">
-            Senderen pekte på dette området.
+          <div class="text-[13px] font-semibold text-sky-100">{{ t('share.invite.title') }}</div>
+          <div v-if="shareInvite.hl" class="text-[11px] text-sky-100/75 truncate">
+            {{ t('share.invite.marking', { name: shareInvite.hl }) }}
           </div>
         </div>
       </div>
       <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-        Vi har satt området senderen pekte på. Trykk «Lag turkart» for å lage
-        det — eller juster utsnittet og høydekurvene først.
+        {{ t('share.invite.body') }}
+      </div>
+
+      <!-- v9.1.x: Install-hint. Vises kun når appen IKKE alt kjører som PWA
+           (standalone). Checkbox endrer CTA til «Installer som app og lag
+           kart»; info-knappen forklarer kort hva installasjon innebærer. -->
+      <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
+        <label class="flex items-start gap-2.5 cursor-pointer">
+          <input type="checkbox" v-model="installRequested"
+                 class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
+          <span class="flex-1 text-[11px] text-sky-100/85 leading-relaxed">
+            {{ t('share.invite.installCheckbox') }}
+            <button type="button" @click.prevent="showInstallInfo = !showInstallInfo"
+                    :aria-label="t('share.invite.installInfoLabel')"
+                    :aria-expanded="showInstallInfo"
+                    class="inline-flex items-center justify-center align-middle ml-1
+                           w-4 h-4 rounded-full border border-sky-300/50 text-sky-200/90
+                           text-[9px] font-bold leading-none active:scale-90 transition">
+              i
+            </button>
+          </span>
+        </label>
+        <Transition name="fade">
+          <div v-if="showInstallInfo"
+               class="mt-2 ml-[26px] text-[10px] text-sky-100/60 leading-relaxed">
+            {{ t('share.invite.installInfo') }}
+          </div>
+        </Transition>
       </div>
     </div>
 
@@ -482,8 +536,8 @@ onMounted(() => {
           <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
         </svg>
         <input v-model="query" type="search" autocomplete="off" autocorrect="off"
-               :readonly="isLocked" :disabled="isLocked"
-               :placeholder="isLocked ? t('picker.searchLockedPlaceholder') : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
+               :readonly="controlsLocked" :disabled="controlsLocked"
+               :placeholder="controlsLocked ? lockedSearchPlaceholder : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
                class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
                       focus:border-slate-300/50 transition disabled:opacity-50 disabled:cursor-not-allowed" />
@@ -514,7 +568,7 @@ onMounted(() => {
       <!-- v8.5.1: GPS-snarvei. Sentrer kartet på din n&aring;v&aelig;rende posisjon i
            stedet for &aring; m&aring;tte s&oslash;ke etter stedsnavn (som ofte ligger annen-
            hvor i bygda enn der du faktisk st&aring;r). -->
-      <button v-if="!isLocked"
+      <button v-if="!controlsLocked"
               @click="onCenterOnMe"
               :disabled="gpsState.status === 'locating'"
               class="mt-2 w-full px-3 py-2 rounded-lg border border-white/15
@@ -548,7 +602,7 @@ onMounted(() => {
         <div class="text-[11px] text-white/50 uppercase tracking-wide mb-1">Sentrum av kart</div>
         <input v-model="customName"
                type="text" placeholder="Navn på kart"
-               :readonly="isLocked"
+               :readonly="controlsLocked"
                class="w-full bg-transparent text-[15px] font-semibold focus:outline-none
                       placeholder-white/25 read-only:opacity-70" />
         <div class="mt-1 text-[11px] text-white/45 tabular-nums">
@@ -560,7 +614,7 @@ onMounted(() => {
     <!-- Mini-preview + bbox -->
     <div class="px-4 pb-3 flex flex-col gap-3">
       <div class="text-white/65 text-[11px] uppercase tracking-wide">
-        <template v-if="isLocked">{{ t('picker.previewLockedHint') }}</template>
+        <template v-if="controlsLocked">{{ lockedPreviewHint }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
       <!-- v8.2.2: preview er nå et kvadrat slik at brukeren tydelig ser at
@@ -571,7 +625,7 @@ onMounted(() => {
       <div ref="previewRef"
            class="aspect-square w-full rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
                   relative touch-none"
-           :class="isLocked ? 'cursor-not-allowed opacity-90' : 'cursor-move'"
+           :class="controlsLocked ? 'cursor-not-allowed opacity-90' : 'cursor-move'"
            @touchstart="onPreviewTouchStart"
            @touchmove="onPreviewTouchMove"
            @touchend="onPreviewTouchEnd"
@@ -625,7 +679,7 @@ onMounted(() => {
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
         <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
-               :disabled="isLocked"
+               :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
           <span>1 km</span><span>4 km</span><span>10 km</span>
@@ -640,7 +694,7 @@ onMounted(() => {
         </div>
         <div class="grid grid-cols-5 gap-1.5">
           <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
-                  :disabled="isLocked || opt.value < minEquidistance"
+                  :disabled="controlsLocked || opt.value < minEquidistance"
                   :title="opt.value < minEquidistance
                           ? `Krever bredde < ${opt.value === 5 ? 4 : opt.value === 10 ? 8 : 10} km`
                           : opt.desc"
@@ -677,7 +731,14 @@ onMounted(() => {
           <svg v-if="isLocked" viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor">
             <polygon points="5,3 19,12 5,21"/>
           </svg>
-          <span>{{ isLocked ? t('button.startGame') : t('picker.makeMap') }}</span>
+          <!-- v9.1.x: når mottakeren har huket av install i del-kart-banneret
+               bytter CTA-en til «Installer som app og lag kart» med last-ned-ikon. -->
+          <svg v-else-if="installRequested" viewBox="0 0 24 24" class="w-4 h-4" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/>
+            <rect x="3" y="17" width="18" height="4" rx="1"/>
+          </svg>
+          <span>{{ isLocked ? t('button.startGame') : (installRequested ? t('picker.makeMapInstall') : t('picker.makeMap')) }}</span>
         </template>
       </button>
       <div v-if="buildError"
