@@ -422,8 +422,8 @@ onMounted(() => {
         </div>
       </div>
       <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-        Bbox og ekvidistanse er pre-fylt fra lenken. Du kan justere før du
-        trykker «Lag turkart» — kartet bygges lokalt i din egen nettleser.
+        Vi har satt området senderen pekte på. Trykk «Lag turkart» for å lage
+        det — eller juster utsnittet og høydekurvene først.
       </div>
     </div>
 
@@ -546,15 +546,13 @@ onMounted(() => {
     <div class="px-4 pb-2">
       <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
         <div class="text-[11px] text-white/50 uppercase tracking-wide mb-1">Sentrum av kart</div>
-        <div class="flex items-baseline justify-between gap-3">
-          <input v-model="customName"
-                 type="text" placeholder="Navn på kart"
-                 :readonly="isLocked"
-                 class="flex-1 bg-transparent text-[15px] font-semibold focus:outline-none
-                        placeholder-white/25 read-only:opacity-70" />
-          <div class="text-[10px] text-white/50 tabular-nums shrink-0">
-            {{ center.lat.toFixed(4) }}°N, {{ center.lon.toFixed(4) }}°E
-          </div>
+        <input v-model="customName"
+               type="text" placeholder="Navn på kart"
+               :readonly="isLocked"
+               class="w-full bg-transparent text-[15px] font-semibold focus:outline-none
+                      placeholder-white/25 read-only:opacity-70" />
+        <div class="mt-1 text-[11px] text-white/45 tabular-nums">
+          {{ center.lat.toFixed(4) }}°N, {{ center.lon.toFixed(4) }}°E
         </div>
       </div>
     </div>
@@ -665,7 +663,7 @@ onMounted(() => {
          samme handler kjører bygg + auto-start-flagg, så MapView lander direkte
          i spillet med Curves-tema aktivert. v8.0.0: tekst kommer fra i18n.
          v8.0.1: brand-skrivemåte endret til «Curve Invaders» (med mellomrom). -->
-    <div class="shrink-0 p-4 pb-6 bg-zinc-900/95 border-t border-white/10">
+    <div class="sticky bottom-0 z-30 shrink-0 p-4 pb-6 bg-zinc-900/95 backdrop-blur border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
               class="w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2
                      active:scale-[0.99] transition disabled:opacity-60"
