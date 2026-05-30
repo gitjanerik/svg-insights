@@ -220,7 +220,8 @@ const LAYERS = [
   { key: 'bekk',       label: 'Bekk' },
   { key: 'kontur',     label: 'Høydekurver' },
   { key: 'naturreservat', label: 'Naturreservat' },
-  { key: 'bygning',    label: 'Bygninger' },
+  { key: 'bygning',    label: 'Hus og hytter' },
+  { key: 'bymasse',    label: 'Tett bebyggelse' },
   { key: 'kirke',      label: 'Kirker' },
   { key: 'parkering',  label: 'Parkering' },
   { key: 'bro',        label: 'Bro / bru' },
@@ -251,11 +252,12 @@ const LAYERS = [
 // v8.2.0: lysloype skjules som default (lite relevant for de fleste
 // turkart-bbox), og stedsnavn vises som default (større områdenavn er
 // nyttig kontekst).
-// v8.9.28: ISOM 521 (frittstående bygg) og 522 (tett bebyggelse pattern-
-// fyll) deler samme «Bygninger»-bryter. 522 beholdes som eget render-pass
-// for å holde SVG-størrelsen i sjakk i tettbygde områder, men brukeren
-// forholder seg til ett lag i UI-et.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
+// v9.1.31: ISOM 521 (frittstående bygg) er «Hus og hytter» (data-layer
+// 'bygning'), ISOM 522 (tett bebyggelse pattern-fyll) er «Tett bebyggelse»
+// (data-layer 'bymasse'). Bymasse er AV som default i alle kartstørrelser —
+// pattern-fyllet dekker mye og er sjelden ønsket i en oversikt, mens
+// frittstående hus/hytter er nyttig kontekst.
+const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
 const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
@@ -420,6 +422,9 @@ function applyLayerVisibility() {
   // manglende) counter-rotation siden applyUprightLabels hopper over skjulte
   // lag. Re-orienter nå — billig pga koordinat-cache.
   applyUprightLabels()
+  // Et lag (f.eks. et stedsnavn-nivå) kan nettopp ha blitt slått på/av — la
+  // navn-LOD-en revurdere hvilke navn som er overflødige i utsnittet.
+  scheduleNameLOD()
 }
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
@@ -651,6 +656,12 @@ function clearHighlight() {
 }
 function selectSearchResult(r) {
   highlightedFeature.value = { name: r.name, x: r.x, y: r.y, kind: r.kind }
+  // Et navn som velges i søk skal alltid være synlig, selv om navn-LOD-en
+  // hadde skjult det i oversikten. Lås det til synlig (til neste rebuild).
+  if (r.el) {
+    forcedVisibleNameEls.add(r.el)
+    r.el.classList.remove('name-lod-off')
+  }
   if (meta.value) {
     panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
   }
@@ -658,6 +669,88 @@ function selectSearchResult(r) {
   mapSearch.clear()
   renderHighlight()
 }
+
+// ── Navn-LOD: skjul overflødige stedsnavn i tett-befolkede utsnitt ─────────
+// Når et synlig kartutsnitt inneholder mer enn NAME_LOD_BUDGET søkbare navn,
+// skjules de minst prioriterte. Vann/elver/bekker og «store» stedsnavn (by/
+// tettsted) prioriteres og skjules aldri av denne mekanismen. Alle navn
+// forblir søkbare — et treff som velges i søk tvinges synlig (over).
+//
+// Hensikten er ren ytelse/lesbarhet: ved innzooming krymper det synlige
+// utsnittet, færre navn faller innenfor, og flere vises automatisk.
+const NAME_LOD_BUDGET = 200
+const forcedVisibleNameEls = new Set()
+let nameLodTimer = null
+
+// Prioritet: 0 = vises alltid (vann + store stedsnavn), høyere = skjules først.
+function namePriority(entry) {
+  if (entry.kind === 'vann-navn') return 0
+  if (entry.categories && entry.categories.includes('vann')) return 0
+  if (entry.kind === 'stedsnavn') {
+    const rank = entry.el?.getAttribute('data-rank')
+    if (rank === 'major') return 0
+    if (rank === 'mid') return 1
+    return 4              // grend/gård — minst viktig
+  }
+  if (entry.kind === 'peak') return 2
+  return 3                // omrade-navn, hytte-navn, naturreservat-navn
+}
+
+function applyNameLOD() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  const m = meta.value
+  const idx = mapSearch.index.value
+  if (!svg || !m || !idx || !idx.length) return
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!wrap || !wrap.width || !wrap.height) return
+
+  // Forward-transform viewBox-koordinat → wrapper-lokal skjermpiksel, samme
+  // matte som usePinchZoom.panTo: SVG-en fyller wrapperen med
+  // preserveAspectRatio="xMidYMid meet", deretter T(tx,ty)∘R(rot)∘S(s).
+  const w = wrap.width, h = wrap.height
+  const fit = Math.min(w / m.widthM, h / m.heightM)
+  const offX = (w - m.widthM * fit) / 2
+  const offY = (h - m.heightM * fit) / 2
+  const s = scale.value || 1
+  const rot = (rotation.value || 0) * Math.PI / 180
+  const cos = Math.cos(rot), sin = Math.sin(rot)
+  const tx = translateX.value, ty = translateY.value
+  const MARGIN = 80   // px slingringsmonn så navn rett utenfor kanten teller med
+
+  const priority = []
+  const reducible = []
+  for (const e of idx) {
+    if (!e.el) continue   // unavngitte vann-polygoner har ingen tekst å toggle
+    const px = offX + e.x * fit
+    const py = offY + e.y * fit
+    const sx = tx + s * (px * cos - py * sin)
+    const sy = ty + s * (px * sin + py * cos)
+    if (sx < -MARGIN || sx > w + MARGIN || sy < -MARGIN || sy > h + MARGIN) {
+      continue   // utenfor synlig utsnitt — teller ikke, rør ikke klassen
+    }
+    if (namePriority(e) === 0) priority.push(e)
+    else reducible.push(e)
+  }
+
+  // Prioriterte vises alltid. Resten fyller opp til budsjettet, sortert etter
+  // viktighet (så samme navn holder seg synlig mellom re-beregninger).
+  reducible.sort((a, b) => namePriority(a) - namePriority(b) || a.name.localeCompare(b.name, 'no'))
+  const budget = Math.max(0, NAME_LOD_BUDGET - priority.length)
+  for (const e of priority) e.el.classList.remove('name-lod-off')
+  reducible.forEach((e, i) => {
+    const show = i < budget || forcedVisibleNameEls.has(e.el)
+    e.el.classList.toggle('name-lod-off', !show)
+  })
+}
+
+function scheduleNameLOD() {
+  if (nameLodTimer) clearTimeout(nameLodTimer)
+  nameLodTimer = setTimeout(applyNameLOD, 120)
+}
+
+// Re-beregn LOD når utsnittet endrer seg (zoom/pan/rotasjon, gest eller
+// programmatisk). Debouncet så en pågående gest ikke beregner per frame.
+watch([scale, translateX, translateY, rotation], scheduleNameLOD)
 
 // Pulsering tegnes som SVG-circle i et eget overlay-lag, lik annoteringer.
 // Holder konstant skjerm-størrelse ved å konvertere CSS-px til user-units via
@@ -2164,6 +2257,11 @@ async function loadMap() {
     // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
     // i host-en (getBBox()+getCTM() krever attached element).
     mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
+    // Indeksen er ny → gamle el-referanser i forced-settet er foreldede.
+    forcedVisibleNameEls.clear()
+    // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
+    // utsnitt). Kjøres synkront her; videre på zoom/pan via watch.
+    applyNameLOD()
     // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
     maybeHighlightFromQuery()
   } catch (e) {
@@ -2581,6 +2679,7 @@ onMounted(() => {
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
+  window.addEventListener('resize', scheduleNameLOD)
   window.addEventListener('orientationchange', updateMapRect)
   loadMap()
   loadUserMapsForTournament()
@@ -2593,6 +2692,8 @@ onUnmounted(() => {
   unlockBodyScroll()
   stopGpsTick()
   screenWake.stop()
+  window.removeEventListener('resize', scheduleNameLOD)
+  if (nameLodTimer) clearTimeout(nameLodTimer)
 })
 </script>
 
@@ -3926,4 +4027,13 @@ onUnmounted(() => {
 .hint-fade-enter-from, .hint-fade-leave-to       { opacity: 0; }
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.22s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to       { opacity: 0; }
+</style>
+
+<!-- Ikke-scoped: kart-SVG-en injiseres via createElementNS (utenfor template-
+      scope), så scoped-regler treffer den ikke. Navn-LOD-en (applyNameLOD)
+     setter .name-lod-off på overflødige stedsnavn-tekster i tette utsnitt.
+     Regelen lever her — ikke i symbolizer-CSS-en inni SVG-en — så den IKKE
+     følger med ved SVG-eksport/print (der vil vi ha alle navn). -->
+<style>
+.isom-map .name-lod-off { display: none !important; }
 </style>
