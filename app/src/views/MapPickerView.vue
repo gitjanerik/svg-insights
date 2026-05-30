@@ -131,7 +131,7 @@ function parseShareQuery() {
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 14) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   const name = String(q.n).slice(0, 3).toUpperCase()
   customName.value = t('challenge.from', { name })
@@ -157,7 +157,7 @@ function parseShareInvite() {
   const eq = parseInt(q.eq, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 14) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
   return { hl: q.hl ? String(q.hl).slice(0, 60) : null }
@@ -177,10 +177,10 @@ const EQUIDISTANCE_OPTIONS = [
 //   bredde <  4 km  → alle valg (5/10/20/25/50)
 //   4 ≤ bredde < 8  → min 10 m (5 m utelukket)
 //   8 ≤ bredde < 10 → min 20 m (5/10 m utelukket)
-//   10 ≤ bredde ≤ 10 → min 25 m (5/10/20 m utelukket)
+//   bredde = 10 km  → min 25 m (5/10/20 m utelukket)
 //   bredde > 10 km  → kun 50 m (alt annet utelukket — store oversiktskart
-//     ville fått uleselig tett kontur-rendering, og DEM-sampling på 20×20 km
-//     blir tungt nok uten å også tegne tette kurver)
+//     ville fått uleselig tett kontur-rendering, og DEM-sampling nær maks-
+//     bredden (14×14 km) blir tungt nok uten å også tegne tette kurver)
 const minEquidistance = computed(() => {
   const km = halfKm.value * 2
   if (km > 10) return 50
@@ -636,11 +636,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="10" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="7" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>10 km</span><span>20 km</span>
+          <span>1 km</span><span>7 km</span><span>14 km</span>
         </div>
       </div>
 
