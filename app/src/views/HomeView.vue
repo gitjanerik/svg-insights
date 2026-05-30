@@ -2,11 +2,17 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
+import { useHomePreference, HOME_APPS } from '../composables/useHomePreference.js'
 
 const router = useRouter()
 const show = ref(false)
 const { canInstall, isInstalled, isIOS, promptInstall } = usePwaInstall()
 const showIosHint = ref(false)
+
+// «Hjem-app»: hvilken funksjon appen åpner på ved oppstart. Chip-velger
+// nederst på forsiden. 'portal' = denne forsiden (velg hver gang).
+const { homeApp, setHomeApp } = useHomePreference()
+const HOME_CHOICES = Object.entries(HOME_APPS).map(([key, v]) => ({ key, label: v.label }))
 
 onMounted(() => {
   requestAnimationFrame(() => (show.value = true))
@@ -110,6 +116,32 @@ async function onInstallClick() {
               <polyline points="9 18 15 12 9 6"/>
             </svg>
           </button>
+        </div>
+
+        <!-- «Hjem-app»-velger: hva appen åpner på ved oppstart -->
+        <div class="mt-8 w-full">
+          <div class="text-[11px] uppercase tracking-wide text-white/40 mb-2">Åpne appen på</div>
+          <div class="flex flex-wrap gap-1.5">
+            <button v-for="c in HOME_CHOICES" :key="c.key"
+                    @click="setHomeApp(c.key)"
+                    :aria-pressed="homeApp === c.key"
+                    class="px-3 py-1.5 rounded-full border text-[12px] font-medium
+                           active:scale-95 transition"
+                    :class="homeApp === c.key
+                            ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
+                            : 'bg-white/[0.04] border-white/10 text-white/60'">
+              {{ c.label }}
+            </button>
+          </div>
+          <div class="mt-2 text-[11px] text-white/35 leading-relaxed">
+            <template v-if="homeApp === 'portal'">
+              Appen åpner på denne forsiden. Velg en funksjon for å hoppe rett dit ved oppstart.
+            </template>
+            <template v-else>
+              Appen åpner på «{{ HOME_APPS[homeApp].label }}» ved neste oppstart. Du finner alltid
+              forsiden igjen via tilbake-knappen.
+            </template>
+          </div>
         </div>
 
         <!-- Install CTA -->
