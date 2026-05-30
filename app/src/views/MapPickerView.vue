@@ -613,8 +613,50 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Mini-preview + bbox -->
+    <!-- Mini-preview + bbox. v9.x: Bredde + Høydekurver er flyttet OVER
+         forhåndsvisningen slik at brukeren ser (og kan justere) valgene før
+         hen ruller ned til CTA-knappen nederst. -->
     <div class="px-4 pb-3 flex flex-col gap-3">
+      <!-- Slider for størrelse -->
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
+          <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
+        </div>
+        <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
+               :disabled="controlsLocked"
+               class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
+        <div class="flex justify-between text-[10px] text-white/40 mt-1">
+          <span>1 km</span><span>4 km</span><span>10 km</span>
+        </div>
+      </div>
+
+      <!-- Ekvidistanse-velger -->
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-[11px] text-white/50 uppercase tracking-wide">Høydekurver</div>
+          <div class="text-[13px] font-medium tabular-nums">hver {{ equidistanceM }} m</div>
+        </div>
+        <div class="grid grid-cols-5 gap-1.5">
+          <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
+                  :disabled="controlsLocked || opt.value < minEquidistance"
+                  :title="opt.value < minEquidistance
+                          ? `Krever bredde < ${opt.value === 5 ? 4 : opt.value === 10 ? 8 : 10} km`
+                          : opt.desc"
+                  @click="equidistanceM = opt.value"
+                  class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition
+                         disabled:cursor-not-allowed disabled:opacity-40"
+                  :class="equidistanceM === opt.value
+                          ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
+                          : 'bg-white/5 border-white/10 text-white/65'">
+            {{ opt.label }}
+          </button>
+        </div>
+        <div class="text-[10px] text-white/40 mt-1.5">
+          {{ EQUIDISTANCE_OPTIONS.find(o => o.value === equidistanceM)?.desc }}
+        </div>
+      </div>
+
       <div v-if="!shareInvite" class="text-white/65 text-[11px] uppercase tracking-wide">
         <template v-if="controlsLocked">{{ lockedPreviewHint }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
@@ -675,46 +717,6 @@ onMounted(() => {
         <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/70 text-[8px]
                     text-white/75 border border-white/15 leading-tight pointer-events-none">
           © Kartverket
-        </div>
-      </div>
-
-      <!-- Slider for størrelse -->
-      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
-          <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
-        </div>
-        <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
-               :disabled="controlsLocked"
-               class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
-        <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>4 km</span><span>10 km</span>
-        </div>
-      </div>
-
-      <!-- Ekvidistanse-velger -->
-      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
-        <div class="flex items-center justify-between mb-2">
-          <div class="text-[11px] text-white/50 uppercase tracking-wide">Høydekurver</div>
-          <div class="text-[13px] font-medium tabular-nums">hver {{ equidistanceM }} m</div>
-        </div>
-        <div class="grid grid-cols-5 gap-1.5">
-          <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
-                  :disabled="controlsLocked || opt.value < minEquidistance"
-                  :title="opt.value < minEquidistance
-                          ? `Krever bredde < ${opt.value === 5 ? 4 : opt.value === 10 ? 8 : 10} km`
-                          : opt.desc"
-                  @click="equidistanceM = opt.value"
-                  class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition
-                         disabled:cursor-not-allowed disabled:opacity-40"
-                  :class="equidistanceM === opt.value
-                          ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
-                          : 'bg-white/5 border-white/10 text-white/65'">
-            {{ opt.label }}
-          </button>
-        </div>
-        <div class="text-[10px] text-white/40 mt-1.5">
-          {{ EQUIDISTANCE_OPTIONS.find(o => o.value === equidistanceM)?.desc }}
         </div>
       </div>
     </div>
