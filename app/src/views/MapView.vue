@@ -1023,6 +1023,7 @@ function formatArea(m2) {
 // avbryter timeren ved bevegelse (>10 px) eller en sekundær pointer (pinch).
 const contextMenuOpen = ref(false)
 const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
+const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -1061,6 +1062,40 @@ function openContextMenuAt(clientX, clientY) {
   }
   contextMenuOpen.value = true
   closeDrawer()
+  centerContextPoint()
+}
+
+// Into-focus: panorer kartet så det valgte punktet havner midt i det synlige
+// kart-arealet OVER bottom-sheeten (ikke skjult bak den). Bevarer gjeldende
+// zoom og rotasjon — dette er en ren autoscroll, ikke en reorientering.
+// Sheeten er ferdig layet ut etter nextTick (overlay-fade er ren opacity, så
+// geometrien er endelig med én gang elementet er i DOM-en).
+async function centerContextPoint() {
+  await nextTick()
+  if (!contextMenuOpen.value || !meta.value) return
+  const wrap = wrapperRef.value
+  const p = contextMenuPoint.value
+  if (!wrap || !p) return
+  const wr = wrap.getBoundingClientRect()
+  if (!wr.width || !wr.height) return
+  // Topp av bottom-sheeten i client-px → bunn av det synlige kart-arealet.
+  // Faller tilbake til wrapper-bunn hvis sheeten ennå ikke er målbar.
+  const sheetTop = contextSheetRef.value
+    ? contextSheetRef.value.getBoundingClientRect().top
+    : wr.bottom
+  const visibleBottom = Math.min(Math.max(sheetTop, wr.top), wr.bottom)
+  // Fokuspunkt i wrapper-lokale px: horisontalt midtstilt, vertikalt midt i
+  // den synlige stripa mellom toppen og sheeten.
+  const focusX = wr.width / 2
+  const focusY = ((wr.top + visibleBottom) / 2) - wr.top
+  panTo(p.svgX, p.svgY, {
+    vbWidth: meta.value.widthM,
+    vbHeight: meta.value.heightM,
+    targetScale: scale.value,
+    focusX,
+    focusY,
+    keepRotation: true,
+  })
 }
 function closeContextMenu() {
   contextMenuOpen.value = false
@@ -3574,7 +3609,8 @@ onUnmounted(() => {
       <div v-if="contextMenuOpen && contextMenuInfo"
            class="absolute inset-0 z-40 bg-black/60 flex items-end justify-center"
            @click.self="closeContextMenu">
-        <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
+        <div ref="contextSheetRef"
+             class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
                     max-h-[80dvh] overflow-y-auto"
              :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
           <!-- Header: koordinater + lukk -->
