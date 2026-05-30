@@ -2553,7 +2553,31 @@ watch(() => userPos.isOutsideMap, (out) => { if (!out) outsideMapDismissed.value
 // wake-locks ved fane-bytte.
 const screenWake = useScreenWakeLock()
 
+// Lås dokument-scroll mens kartet er åpent. Roten er h-[100dvh]
+// overflow-hidden, men på mobil kan body likevel få en scroll-offset:
+// når nettleserens adresselinje kollapser/utvides endrer 100dvh seg, og en
+// residual body-scroll skyver hele kart-containeren (toppbar + kompass) opp
+// og ut av synsfeltet. router.scrollBehavior nullstiller kun ved navigasjon,
+// ikke under interaksjon inne i viewet (f.eks. ved long-press), så vi låser
+// body-scroll eksplisitt her og frigjør den igjen ved unmount.
+let prevHtmlOverflow = ''
+let prevBodyOverflow = ''
+function lockBodyScroll() {
+  const html = document.documentElement
+  prevHtmlOverflow = html.style.overflow
+  prevBodyOverflow = document.body.style.overflow
+  html.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
+  // Nullstill enhver residual offset så toppbaren garantert er synlig.
+  window.scrollTo(0, 0)
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = prevHtmlOverflow
+  document.body.style.overflow = prevBodyOverflow
+}
+
 onMounted(() => {
+  lockBodyScroll()
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
@@ -2566,6 +2590,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  unlockBodyScroll()
   stopGpsTick()
   screenWake.stop()
 })
