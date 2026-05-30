@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
+import { defaultHomeRoute } from './composables/useHomePreference.js'
 
 const routes = [
   { path: '/',              name: 'home',         component: HomeView },
@@ -15,7 +16,7 @@ const routes = [
   { path: '/tegnforklaring', name: 'tegnforklaring', component: () => import('./views/LegendView.vue') },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
   // v8.2.1: scroll til topp på hver navigasjon. Uten dette beholdt
@@ -31,3 +32,16 @@ export default createRouter({
     return { top: 0, left: 0 }
   },
 })
+
+// «Hjem-app» (Fase 0). Ved KALD oppstart (PWA-launch / cold load — da er
+// `from` START_LOCATION med navn=null) til forsiden, send brukeren rett til
+// funksjonen de har valgt som hjem. In-app-navigasjon til '/' har et satt
+// `from.name`, så portalen vises fortsatt da — brukeren låses aldri inne.
+router.beforeEach((to, from) => {
+  if (to.name === 'home' && from.name == null) {
+    const dest = defaultHomeRoute()
+    if (dest && dest !== 'home') return { name: dest }
+  }
+})
+
+export default router
