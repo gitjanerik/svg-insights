@@ -270,10 +270,19 @@ export function usePinchZoom(elementRef, options = {}) {
   function zoomOut() { zoomBy(1 / 1.5) }
 
   /**
-   * Panorer + skaler så viewBox-punktet (vbX, vbY) ender midt i wrapperen.
-   * Brukes av søke-flowen for å sentrere på et stedsnavn-treff. Resetter
-   * rotasjon til 0 (enklere matte, og brukeren forventer at «kart-nord opp»
-   * etter et søk).
+   * Panorer + skaler så viewBox-punktet (vbX, vbY) ender på et fokuspunkt i
+   * wrapperen. Brukes av søke-flowen for å sentrere på et stedsnavn-treff, og
+   * av long-press-menyen for å «into-focuse» punktet inn i det synlige kart-
+   * arealet over bottom-sheeten.
+   *
+   * Standard: fokus = wrapper-senter, rotasjon nullstilles til 0 (enklere
+   * matte, og brukeren forventer «kart-nord opp» etter et søk).
+   *
+   * Options:
+   *   - focusX / focusY (wrapper-lokale px) — hvor punktet skal lande.
+   *     Default wrapper-senter (w/2, h/2).
+   *   - keepRotation (bool) — behold gjeldende rotasjon i stedet for å
+   *     nullstille. Da brukes full rotasjons-matte for å plassere punktet.
    *
    * Forutsetninger:
    *   - SVG-en inne i wrapperen bruker preserveAspectRatio="xMidYMid meet"
@@ -281,7 +290,7 @@ export function usePinchZoom(elementRef, options = {}) {
    *   - Unified transform M = T(tx,ty) ∘ R(rot) ∘ S(s) påføres ÉN node inni
    *     wrapperen (slik som i MapView)
    */
-  function panTo(vbX, vbY, { vbWidth, vbHeight, targetScale = scale.value } = {}) {
+  function panTo(vbX, vbY, { vbWidth, vbHeight, targetScale = scale.value, focusX, focusY, keepRotation = false } = {}) {
     const el = elementRef.value
     if (!el || !vbWidth || !vbHeight) return
     const r = el.getBoundingClientRect()
@@ -294,11 +303,19 @@ export function usePinchZoom(elementRef, options = {}) {
     const px = offsetX + vbX * fit
     const py = offsetY + vbY * fit
     const s = clampScale(targetScale)
+    const fx = focusX != null ? focusX : w / 2
+    const fy = focusY != null ? focusY : h / 2
     animate()
     scale.value = s
-    rotation.value = 0
-    translateX.value = w / 2 - s * px
-    translateY.value = h / 2 - s * py
+    if (!keepRotation) rotation.value = 0
+    // M(px,py) = T(tx,ty) + R(rot)·S(s)·(px,py). Løs for tx,ty så punktet
+    // lander på (fx,fy). Ved keepRotation=false er rot=0 → cos=1,sin=0 og
+    // dette degenererer til den enkle translate-formelen (bakoverkompatibelt).
+    const rot = rotation.value * Math.PI / 180
+    const cos = Math.cos(rot)
+    const sin = Math.sin(rot)
+    translateX.value = fx - s * (px * cos - py * sin)
+    translateY.value = fy - s * (px * sin + py * cos)
   }
 
   return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating, isGesturing }
