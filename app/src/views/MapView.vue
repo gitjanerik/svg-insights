@@ -3577,8 +3577,14 @@ onUnmounted(() => {
          høyreklikk på kartet. Viser koordinater, høyde, nærmeste sted/sti,
          og handlinger for det valgte punktet. -->
     <Transition name="overlay-fade">
+      <!-- Ingen backdrop-blur her: kontekstmenyen legger en evig-pulserende
+           SMIL-pin (renderContextPin) i kart-SVG-en BAK dette overlayet.
+           backdrop-filter:blur tvinger re-blurring av hele den komplekse
+           kart-SVG-en på HVER animasjons-frame → mobil-kompositoren låser seg
+           (frys på store/innebygde kart, men ikke på små 1×1). Vanlig
+           halv-opak dimming er billig og fryser ikke. -->
       <div v-if="contextMenuOpen && contextMenuInfo"
-           class="absolute inset-0 z-40 bg-black/55 backdrop-blur-sm flex items-end justify-center"
+           class="absolute inset-0 z-40 bg-black/60 flex items-end justify-center"
            @click.self="closeContextMenu">
         <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
                     max-h-[80dvh] overflow-y-auto"
