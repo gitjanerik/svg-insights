@@ -131,7 +131,7 @@ function parseShareQuery() {
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   const name = String(q.n).slice(0, 3).toUpperCase()
   customName.value = t('challenge.from', { name })
@@ -157,7 +157,7 @@ function parseShareInvite() {
   const eq = parseInt(q.eq, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 10) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
   return { hl: q.hl ? String(q.hl).slice(0, 60) : null }
@@ -177,14 +177,27 @@ const EQUIDISTANCE_OPTIONS = [
 //   bredde <  4 km  → alle valg (5/10/20/25/50)
 //   4 ≤ bredde < 8  → min 10 m (5 m utelukket)
 //   8 ≤ bredde < 10 → min 20 m (5/10 m utelukket)
-//   bredde ≥ 10 km  → min 25 m (5/10/20 m utelukket)
+//   10 ≤ bredde ≤ 10 → min 25 m (5/10/20 m utelukket)
+//   bredde > 10 km  → kun 50 m (alt annet utelukket — store oversiktskart
+//     ville fått uleselig tett kontur-rendering, og DEM-sampling på 20×20 km
+//     blir tungt nok uten å også tegne tette kurver)
 const minEquidistance = computed(() => {
   const km = halfKm.value * 2
+  if (km > 10) return 50
   if (km >= 10) return 25
   if (km >= 8) return 20
   if (km >= 4) return 10
   return 5
 })
+
+// Forklarende tooltip når et ekvidistanse-valg er utelukket av gjeldende bredde.
+function widthHintFor(value) {
+  if (value === 5)  return 'Krever bredde < 4 km'
+  if (value === 10) return 'Krever bredde < 8 km'
+  if (value === 20) return 'Krever bredde < 10 km'
+  if (value === 25) return 'Krever bredde ≤ 10 km'
+  return ''
+}
 
 // Auto-bump ekvidistanse n&aring;r bredde &oslash;kes forbi en grense og
 // gjeldende valg blir ulovlig.
@@ -623,11 +636,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="5" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="10" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>4 km</span><span>10 km</span>
+          <span>1 km</span><span>10 km</span><span>20 km</span>
         </div>
       </div>
 
@@ -640,9 +653,7 @@ onMounted(() => {
         <div class="grid grid-cols-5 gap-1.5">
           <button v-for="opt in EQUIDISTANCE_OPTIONS" :key="opt.value"
                   :disabled="controlsLocked || opt.value < minEquidistance"
-                  :title="opt.value < minEquidistance
-                          ? `Krever bredde < ${opt.value === 5 ? 4 : opt.value === 10 ? 8 : 10} km`
-                          : opt.desc"
+                  :title="opt.value < minEquidistance ? widthHintFor(opt.value) : opt.desc"
                   @click="equidistanceM = opt.value"
                   class="px-2 py-1.5 rounded-md border text-[11px] font-medium active:scale-95 transition
                          disabled:cursor-not-allowed disabled:opacity-40"
