@@ -1680,14 +1680,15 @@ export function buildSvg(elements, bbox, options = {}) {
   // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
   // forblir lesbare over bymassen i tett bebygde områder.
   //
-  // v8.9.28: data-layer="bygning" (samme som ISOM 521) så «Bygninger»-
-  // toggle slår begge av/på samtidig — visuelt sett er det fortsatt to
-  // ulike strålingsstiler, men brukeren forholder seg til ett lag.
+  // v9.1.31: ISOM 522 har eget lag data-layer="bymasse" («Tett bebyggelse»)
+  // adskilt fra 521 data-layer="bygning" («Hus og hytter»). Bymasse-laget er
+  // AV som default i MapView (DEFAULT_OFF_LAYERS) — pattern-fyllet dekker mye
+  // og er sjelden ønsket i en oversikt, mens frittstående bygg/hytter er det.
   const urbanMassPath = urbanMassMultiPoly.length
     ? multiPolyToPath(urbanMassMultiPoly, fmt)
     : ''
   const urbanMassLayerSvg = urbanMassPath
-    ? `  <g data-layer="bygning" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
+    ? `  <g data-layer="bymasse" data-iso="522"><path d="${urbanMassPath}" fill-rule="evenodd"/></g>\n`
     : ''
 
   const bgFill = isomCatalog.background.color
@@ -1745,7 +1746,8 @@ function categoryFor(code) {
     case '301': case '302': case '303': case '307': return 'vann'
     case '304': case '305':                     return 'bekk'
     case '520':                                  return 'naturreservat'
-    case '521': case '522':                     return 'bygning'
+    case '521':                                  return 'bygning'
+    case '522':                                  return 'bymasse'
     case '501': case '502':                     return 'vei-stor'
     case '503': case '504':                     return 'vei-liten'
     case '505': case '506': case '507':         return 'sti'
