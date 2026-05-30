@@ -23,7 +23,7 @@ import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
-  findNearestPath, findNearestPlace,
+  findNearestPlace,
 } from '../lib/mapContext.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
 import CurveBallLayer from '../components/CurveBallLayer.vue'
@@ -1119,18 +1119,11 @@ const contextMenuInfo = computed(() => {
 
   const place = inside ? findNearestPlace(mapSearch.index.value, p.svgX, p.svgY) : null
 
-  const PATH_LAYERS = [
-    { key: 'sti',        label: 'Sti' },
-    { key: 'vei-liten',  label: 'Småveg' },
-    { key: 'vei-stor',   label: 'Storveg' },
-    { key: 'lysloype',   label: 'Lysløype' },
-    { key: 'bekk',       label: 'Bekk' },
-  ]
-  const svg = svgHostRef.value?.querySelector('svg')
-  const nearestPath = inside ? findNearestPath(svg, p.svgX, p.svgY, PATH_LAYERS) : null
-  const pathBearing = nearestPath
-    ? bearingDeg(p.svgX, p.svgY, nearestPath.x, nearestPath.y)
-    : null
+  // NB: «nærmeste sti/vei»-utregningen er bevisst fjernet (v9.1.22).
+  // findNearestPath sampler hver path i sti/vei/bekk-lagene med
+  // getPointAtLength — en synkron, layout-tvingende operasjon som blokkerte
+  // hovedtråden i sekunder på den ekte (CI-bygde) Vardåsen og frøs store
+  // bruker-kart helt. Informasjonen er uansett synlig direkte på kartet.
 
   // Avstand fra brukerens GPS-posisjon (kun synlig når GPS-en er aktiv
   // og brukeren er på kartet). Retning fra meg → punktet.
@@ -1147,11 +1140,6 @@ const contextMenuInfo = computed(() => {
     lat, lon, inside,
     elevationM: Number.isFinite(ele) ? ele : null,
     place,
-    nearestPath: nearestPath ? {
-      ...nearestPath,
-      bearingDeg: pathBearing,
-      compass: pathBearing != null ? bearingToCompass(pathBearing) : null,
-    } : null,
     fromUser,
   }
 })
@@ -3628,19 +3616,6 @@ onUnmounted(() => {
                 {{ contextMenuInfo.place.name }}
                 <span class="text-white/55 tabular-nums">
                   · {{ formatDistanceM(contextMenuInfo.place.distM) }}
-                </span>
-              </span>
-            </div>
-            <div v-if="contextMenuInfo.nearestPath"
-                 class="flex items-baseline gap-2 text-[12px]">
-              <span class="text-white/45 w-20 shrink-0">Nærmeste</span>
-              <span class="text-white">
-                {{ contextMenuInfo.nearestPath.layerLabel }}
-                <span class="text-white/55">
-                  {{ contextMenuInfo.nearestPath.compass }}
-                  <span class="tabular-nums">
-                    · {{ formatDistanceM(contextMenuInfo.nearestPath.distM) }}
-                  </span>
                 </span>
               </span>
             </div>
