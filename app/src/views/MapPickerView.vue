@@ -527,8 +527,9 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Søkefelt -->
-    <div class="px-4 pt-4 pb-3 relative z-20">
+    <!-- Søkefelt. v9.1.x: skjult i delingsmodus — mottakeren skal bare se og
+         lage det delte kartet, ikke søke/velge sted. -->
+    <div v-if="!shareInvite" class="px-4 pt-4 pb-3 relative z-20">
       <label class="text-white/65 text-[11px] uppercase tracking-wide block mb-2">Sted, postnummer eller adresse</label>
       <div class="relative">
         <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
@@ -596,8 +597,9 @@ onMounted(() => {
            class="mt-2 text-[11px] text-amber-300">{{ gpsState.error }}</div>
     </div>
 
-    <!-- Valgt sted -->
-    <div class="px-4 pb-2">
+    <!-- Valgt sted. v9.1.x: skjult i delingsmodus — navn/koordinater er låst
+         til det delte kartet, ingen grunn til å vise redigerings-feltet. -->
+    <div v-if="!shareInvite" class="px-4 pb-2">
       <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
         <div class="text-[11px] text-white/50 uppercase tracking-wide mb-1">Sentrum av kart</div>
         <input v-model="customName"
@@ -613,7 +615,7 @@ onMounted(() => {
 
     <!-- Mini-preview + bbox -->
     <div class="px-4 pb-3 flex flex-col gap-3">
-      <div class="text-white/65 text-[11px] uppercase tracking-wide">
+      <div v-if="!shareInvite" class="text-white/65 text-[11px] uppercase tracking-wide">
         <template v-if="controlsLocked">{{ lockedPreviewHint }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
@@ -622,10 +624,14 @@ onMounted(() => {
            hele kvadratet på 100% opacity — ingen lysegrå semitransparent
            maskering rundt netto-rammen. Netto-rammen er bare en stiplet
            kontur med subtilt fokus (drop-shadow + indre kant). -->
+      <!-- v9.1.x: når utsnittet er låst (delt kart / utfordring) skal touch/scroll
+           OVER kartet rulle siden — ikke pan/pinch/rotere forhåndsvisningen.
+           Derfor `touch-auto` ved lås, `touch-none` (fang gesten) ellers.
+           Touch-/wheel-handlerne early-returner alt på controlsLocked. -->
       <div ref="previewRef"
            class="aspect-square w-full rounded-xl bg-zinc-800 border border-white/10 overflow-hidden
-                  relative touch-none"
-           :class="controlsLocked ? 'cursor-not-allowed opacity-90' : 'cursor-move'"
+                  relative"
+           :class="controlsLocked ? 'cursor-not-allowed opacity-90 touch-auto' : 'cursor-move touch-none'"
            @touchstart="onPreviewTouchStart"
            @touchmove="onPreviewTouchMove"
            @touchend="onPreviewTouchEnd"
