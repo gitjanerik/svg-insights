@@ -1244,8 +1244,10 @@ export function buildSvg(elements, bbox, options = {}) {
     const [x, y] = demProject([k.x, k.y])
     return `M${fmt(x - krx)} ${fmt(y + kdy)}A${fmt(krx)} ${fmt(kry)} 0 0 0 ${fmt(x + krx)} ${fmt(y + kdy)}`
   }).join('')
+  // Knauser maskeres også av vann — DEM-deriverte punkt-symboler skal ikke
+  // ligge oppå en innsjø (samme begrunnelse som stupkanter/konturer).
   const knauserLayerSvg = knauserD
-    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
+    ? `  <g data-layer="stein" data-iso="213"${contourMaskAttr}><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
     : ''
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
@@ -1566,8 +1568,13 @@ export function buildSvg(elements, bbox, options = {}) {
       }).join('\n')}\n  </g>\n`
     : ''
 
+  // Stupkanter maskeres av vann (samme land-mask som konturer). DTM under
+  // innsjøer har ofte bratte artefakter (registrert vannflate-nivå, LiDAR-
+  // tile-skjøter) som slår ut som falske stupkanter midt i vannet — like
+  // meningsløst som en høydekurve gjennom en innsjø. (Rapportert Otersjøen,
+  // Lierne.)
   const cliffsLayerSvg = cliffsSvg
-    ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
+    ? `  <g data-layer="stupkant" data-iso="203"${contourMaskAttr}>\n${cliffsSvg}\n  </g>\n` : ''
 
   const huleLayerSvg = huleSvg
     ? `  <g data-layer="stein" data-iso="215">\n${huleSvg}\n  </g>\n` : ''
