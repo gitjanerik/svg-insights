@@ -87,9 +87,10 @@ export function buildPointSymbolDef(symId, spec) {
   // korrigerte symboler; `widthMm` beholdes for bakoverkompat på de øvrige
   // strek-symbolene (knaus/brønn/bro/skjaer/…) til de evt. migreres.
   const strokeW = el => el.strokeW != null ? `${el.strokeW}` : `${el.widthMm}mm`
+  const cap = el => el.linecap ? ` stroke-linecap="${el.linecap}"` : ''
   const elements = (spec.elements ?? []).map(el => {
     if (el.type === 'line') {
-      return `<line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${el.stroke}" stroke-width="${strokeW(el)}" ${el.fill === 'none' ? 'fill="none"' : ''}/>`
+      return `<line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${el.stroke}" stroke-width="${strokeW(el)}"${cap(el)} ${el.fill === 'none' ? 'fill="none"' : ''}/>`
     }
     if (el.type === 'circle') {
       const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"` : ''
@@ -97,7 +98,7 @@ export function buildPointSymbolDef(symId, spec) {
       return `<circle cx="${el.cx}" cy="${el.cy}" r="${el.r}" fill="${fill}" ${stroke}/>`
     }
     if (el.type === 'path') {
-      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"` : ''
+      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"${cap(el)}` : ''
       const fill = el.fill ?? 'none'
       return `<path d="${el.d}" fill="${fill}" ${stroke}/>`
     }
@@ -227,7 +228,7 @@ export function classifyToIsom(el) {
   }
   if (t.leisure === 'marina')          return { code: '553', cat: 'point' }  // småbåthavn
   if (t.leisure === 'slipway')         return { code: '550', cat: 'point' }  // landingssted
-  if (t.natural === 'beach')           return { code: '550', cat: 'point' }  // landingssted (strand)
+  if (t.natural === 'beach')           return { code: '556', cat: 'point' }  // strand / badeplass
   if (t.amenity === 'toilets')         return { code: '554', cat: 'point' }
   if (t.amenity === 'drinking_water')  return { code: '555', cat: 'point' }
 

@@ -22,7 +22,7 @@ describe('classifyToIsom — marine/padle-POI', () => {
     [{ 'seamark:type': 'beacon_isolated_danger' }, '543'],
     [{ leisure: 'marina' }, '553'],
     [{ leisure: 'slipway' }, '550'],
-    [{ natural: 'beach' }, '550'],
+    [{ natural: 'beach' }, '556'],
     [{ amenity: 'toilets' }, '554'],
     [{ amenity: 'drinking_water' }, '555'],
     [{ sjokart: 'slipp' }, '550'],

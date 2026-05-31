@@ -403,6 +403,7 @@ const MARINE_POINT_CODES = {
   '553': { requireWater: false },  // småbåthavn / marina
   '554': { requireWater: false },  // toalett
   '555': { requireWater: false },  // drikkevann
+  '556': { requireWater: false },  // strand / badeplass
 }
 
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552'])

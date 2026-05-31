@@ -620,6 +620,14 @@
           "scaleMm": 1.8
         }
       },
+      "556": {
+        "label": "Strand / badeplass",
+        "$comment": "Padle-/tur-POI: OSM natural=beach (tidligere lumpet inn i 550 slipp). Eget symbol — sol over to bølgelinjer (badeplass). Nyttig for padlere som vil vite hvor strendene er. Ikke requireWater (strand er land/strand-side).",
+        "point": {
+          "symbol": "strand",
+          "scaleMm": 2.4
+        }
+      },
       "560": {
         "label": "Holdeplass (buss/tog)",
         "$comment": "Tur-POI: OSM highway=bus_stop / railway=station|halt|tram_stop / public_transport=station. Blå firkant med hvit buss-/tog-piktogram. Brukes av «nærmeste holdeplass»-snarveien.",
@@ -1280,6 +1288,35 @@
           "cy": 0.18,
           "r": 0.1,
           "fill": "#bfe3f2"
+        }
+      ]
+    },
+    "strand": {
+      "$comment": "Strand / badeplass (ISOM-derivert 556): sol-gul skive over to marineblå bølgelinjer. Strekbredde i SYMBOL-ENHETER (strokeW) — se GOTCHA i buildPointSymbolDef. linecap=round gir rene bølge-ender.",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": -0.34,
+          "r": 0.3,
+          "fill": "#f2b01e"
+        },
+        {
+          "type": "path",
+          "d": "M-0.85 0.36 Q-0.55 0.12 -0.25 0.36 Q0.05 0.6 0.35 0.36 Q0.65 0.12 0.95 0.36",
+          "stroke": "#1f5d8a",
+          "strokeW": 0.14,
+          "linecap": "round",
+          "fill": "none"
+        },
+        {
+          "type": "path",
+          "d": "M-0.85 0.7 Q-0.55 0.46 -0.25 0.7 Q0.05 0.94 0.35 0.7 Q0.65 0.46 0.95 0.7",
+          "stroke": "#1f5d8a",
+          "strokeW": 0.14,
+          "linecap": "round",
+          "fill": "none"
         }
       ]
     }
