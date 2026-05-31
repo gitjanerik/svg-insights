@@ -728,10 +728,11 @@ function nearestPoi(kind, ox, oy) {
 
   const name = best.el.getAttribute('data-name')
   const distLabel = fmtDist(Math.sqrt(bestD2))
-  highlightedFeature.value = {
-    name: `${cfg.label}${name ? ` – ${name}` : ''} · ${distLabel}`,
-    x: best.x, y: best.y, kind,
-  }
+  // To-linjers chip: stedsnavnet (om det finnes) på linje 1, type + avstand
+  // fra markert punkt på linje 2. Uten navn løftes typen til linje 1.
+  highlightedFeature.value = name
+    ? { name, sub: `${cfg.label} · ${distLabel}`, x: best.x, y: best.y, kind }
+    : { name: cfg.label, sub: `${distLabel} fra punktet`, x: best.x, y: best.y, kind }
   panTo(best.x, best.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
   renderHighlight()
 }
@@ -3256,15 +3257,19 @@ onUnmounted(() => {
          Curve Invaders så den ikke kolliderer med game-HUD-en. -->
     <Transition name="chip-fade">
       <div v-if="highlightedFeature && !curveball.active.value && !searchOpen"
-           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full
+           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-2xl
                   bg-pink-500/95 text-white text-[12px] font-medium shadow-lg
-                  flex items-center gap-2 max-w-[80%] pointer-events-auto">
+                  flex items-center gap-2 max-w-[85%] pointer-events-auto">
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor"
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="10" r="3"/>
           <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
         </svg>
-        <span class="truncate">{{ highlightedFeature.name }}</span>
+        <span class="min-w-0 flex flex-col leading-tight">
+          <span class="truncate font-semibold">{{ highlightedFeature.name }}</span>
+          <span v-if="highlightedFeature.sub"
+                class="truncate text-[11px] font-normal text-white/85">{{ highlightedFeature.sub }}</span>
+        </span>
         <button @click="clearHighlight" aria-label="Fjern markering"
                 class="w-5 h-5 -mr-1 rounded-full flex items-center justify-center
                        text-white/90 active:bg-white/20 shrink-0">
