@@ -51,55 +51,62 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versjons-omtale roter når master beveger seg fortere enn dokumentet. Per 9. mai 2026 er prosjektet på **v7.1.18**.
+Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versjons-omtale roter når master beveger seg fortere enn dokumentet. Per 31. mai 2026 er prosjektet på **v9.1.31**.
 
 ## Sesjons-overlevering — hva som er status nå
 
-**Endringslogg er git-historikk.** AboutView.vue har ikke lenger en synlig endringslogg-tidslinje — commit-meldinger og PR-titler er den autoritative kilden. Korte sammendrag av siste releases:
+**Endringslogg er git-historikk.** AboutView.vue har ikke lenger en synlig endringslogg-tidslinje — commit-meldinger og PR-titler er den autoritative kilden. Eldre v6-kyst-saga (sjøkart-integrasjon, wedge-rotårsak, coastline-fjerning) er flyttet ned til «Historikk»-seksjonen. Status per v9.2.0:
 
-- **v6.10.0** — Kystkart: ny `lib/sjokartFetcher.js` med Kartverket Sjøkart-Dybdedata WFS som autoritativ kyst-kilde. Tre-trinns vann-fallback (N50 → Sjøkart → OSM). Land-overlay (ISOM 001) fra OSM `place=island/islet` rendres ETTER vann og fikser «Landøya-typetilfellet» der OSM-vann smitter inn på land. Nye ISOM-koder: 306 dybdekontur, 307 dybdeareal, 211 skjær/grunne, 533 lanterne. Dybdetall-soundings som blå tekst-labels.
-- **v6.9.0** — ISOM-polish: sykkel-sti egen styling (ISOM 508), navn-toggle skjuler all tekst, dedikert Tegnforklaring-side (`/tegnforklaring`), zoom-polish (pinch rundt finger, dobbel-tap-zoom)
-- **v6.8.4** — **ROTÅRSAK funnet for wedger.** OSM multipolygon-relations har outer-rings splittet over flere ways. Vi rendret hver way som lukket polygon (path med Z) → segment-trekanter = wedger. Ny `assembleRelationRings(members, role)` i `mapBuilder.js` syr sammen segmenter via matchende endepunkter. **Verifisert: Hestesund og Mjøsa er nå wedge-frie.**
-- **v6.8.3** — Visuell diagnose-modus i MapView drawer (knapp under Visning-seksjon). Fargelegger polygoner etter `data-src`: cyan = N50, blå = OSM way, lilla = OSM relation, gul = polygon-clipping merged. Avgjørende verktøy som avslørte v6.8.4-rotårsaken
-- **v6.8.0–v6.8.2** — Mislykkede forsøk: fjerning av coastline-pipeline, polygon-clipping CCW-orientering, per-feature path. Adresserte ikke rotårsaken
-- **v6.5.6–v6.7.1** — Tidligere mislykkede coastline-fix-forsøk
+- **Kart-pipelinen orkestreres fra `lib/createMapFlow.js`**, ikke fra view-ene. `buildMapFromCenter()` kjører Overpass + N50 + DEM parallelt, gater Sjøkart-WFS på DEM-resultat (hopper over for innlands-bbox), og kaller `buildSvg`. Både MapPickerView, MapHomeView-FAB og MapView-FAB går via denne. **Endringer i hvordan kartet bygges skal komme her.**
+- **Sjø er DEM-derivert som primær kilde** (`lib/seaFromDem.js`): Kartverket NHM_DTM_25832 gir havflate ≈ 0 m, og områder ≤ 0,5 m blir én ren sjø-polygon med øyer som hull. CORS-trygg (virker både i CI og klient — i motsetning til N50/Sjøkart-WFS). N50/Sjøkart/OSM-vann supplerer.
+- **«Single coastline» — Fase 1 implementert (v9.2.0).** `lib/marineTopology.js` bygger én autoritativ sjø-geometri (DEM-0m primær pga ekte øy-hull, N50 Havflate fallback) og `buildSvg` klipper ISOM 307 dybdeareal mot den (`DepthArea ∩ Land = 0`). Gated på `hasAuthoritativeSea` → innlands-kart upåvirket. **Gjenstår (Fase 1b):** land-mask bygges fortsatt fra union av alle vann-kilder (ikke den autoritative sjøen), og øy-overlay-lappen lever fortsatt. Disse er ufarlige men kandidater for å rydde når kysten er visuelt verifisert.
+- **Dybde-farger — Fase 2 (v9.2.0): kystnær 5-bånds dempet skala** via `depthToColor` i `sjokartFetcher.js` (`0–2` #d8eaf2, `2–5` #c5e0ec, `5–10` #aed3e4, `10–20` #93c3da, `20+` #79b3d2). Tett i grunt vann der padleren trenger det, lav-kontrast så den ikke konkurrerer med ISOM-terreng. Brukes på Sjøkart 307. ISOM 306 dybdekontur-LINJER er fjernet. DEM-grunn-bånd (`buildSeaShallowBands`) er avstand-fra-land-proxy, dempet til samme grunn-toner.
+- **Padle-POI — Fase 3 implementert (v9.2.0).** Overpass henter nå `man_made=lighthouse`, `seamark:type=*`, `leisure=marina/slipway`, `natural=beach`, `amenity=toilets/drinking_water`. `classifyToIsom` mapper disse + Sjøkart-tags til punkt-koder, og `buildSvg` rendrer dem i et eget pass (`marinePoints` → `<g data-layer="sjo-poi">`, ikke via LAYER_ORDER). `MARINE_POINT_CODES` i `mapBuilder.js` styrer z-order-passet og `requireWater`-flagget: skjær (211) og flytende sjømerker (540–543) droppes hvis de faller på land (topologisk `Marker ∈ Water` via `pointFeatureKept` mot den autoritative kysten); fyr (533), landingssted (550), marina (553), toalett (554), drikkevann (555) beholdes uansett. Symbol + størrelse hentes fra `isomCatalog` pr kode via `getIsomDef`. Nye symboler: `anker` (553), `wc` (554, bruker ny `text`-element-handler i `buildPointSymbolDef`), `drikkevann` (555). De fleste andre marine-koder gjenbruker eksisterende katalog-symboler som tidligere var døde. **Ikke gjort ennå:** drawer-toggle for «sjo-poi» (rendres alltid nå — toaletter/drikkevann er nyttige også på land); dybdepunkt-soundings (tekst-labels); 551/552 areal-koder (kai/fareområde) er fortsatt ikke i render-pass.
 
-## Viktig arkitektur-merknad (v6.10.0)
+## Viktig arkitektur-merknad — vann/sjø-stack (v9.x)
 
-**Tre-trinns vann-fallback i `MapPickerView.vue`:**
-1. **N50 Havflate / Innsjø / ElvBekk** (autoritativt for innland) — `fetchN50Water`
-2. **Sjøkart Dybdeareal** (autoritativt for kyst, fyller hull der N50 svikter) — `fetchSjokart` + `sjokartToElements` med tag `sjokart=dybdeareal`
-3. **OSM `natural=water`** (siste fallback)
+**Bakgrunnen ER land** (ISOM 001 kremgul, `isomCatalog.background.color`). Alt er land som default; vann males oppå.
 
-Sjøkart-fetcher prøver multi-endpoint (`wfs.sjokart_dybdedata` → `wfs.dybdedata2`) og multi-typename (`app:Dybdeareal`, `dybdedata:Dybdeareal` osv) per kategori siden navngivningen varierer.
+**Vann-kilder (males i lag, hver med sin egen strandlinje):**
+1. **DEM-sjø** (`seaFromDem.js`) — primær for sjø, CORS-trygg. ISOM 303 + grunn-bånd.
+2. **Sjøkart Dybdeareal** (307) — ekte dybde, per-polygon fyll via `depthToColor`. Fragil WFS klient-side.
+3. **N50 Havflate / Innsjø / ElvBekk** (`fetchN50Water`) — autoritativt for innland.
+4. **OSM `natural=water`** — siste fallback.
 
-**Land-overlay (ISOM 001):** OSM `place=island/islet`-polygoner rendres som kremgul polygon-overlay ETTER vann-laget. Dekker over feilplassert OSM-vann i kyst-arkipel uten å bruke SVG `<mask>` (som tidligere var bug-utsatt). Toggleable via «Land-overlay (øyer)» i drawer.
+**Land-overlay (ISOM 001):** OSM `place=island/islet`-polygoner males kremgul OPPÅ vann-laget igjen for å dekke feilplassert OSM-vann i kyst-arkipel («Landøya-tilfellet»). En lapp, ikke en strandlinje.
 
-**Sjøkart-spesifikke ISOM-koder:**
-- 306 — Dybdekontur (tynn blå linje, ~0.12mm)
-- 307 — Dybdeareal (lys-blå polygon-fyll, lyseste i vann-stack)
-- 211 — Skjær / grunne (blå ring med kryss, point-symbol)
-- 533 — Lanterne / fyr (lilla 8-takket stjerne)
-- `data-label="dybde-tall"` — soundings (blå tekst-tall over vann)
+**Land-mask:** unionen av ALLE vann-polygoner blir svart i `<mask id="land-mask">` så konturer/vegetasjon/stupkanter ikke renderes over vann.
 
-`lib/sjokartFetcher.js` eksporterer også `depthToColor(dybde)`-helper som gradierer fra `#b6daee` ved 0m til `#1f5d8a` ved 100m+ (ISOM 304-basis).
+> **Single coastline (Fase 1, v9.2.0):** `lib/marineTopology.js` bygger ÉN autoritativ sjø-geometri (DEM-0m primær, N50 Havflate fallback) i SVG-meter-rom. ISOM 307 dybdeareal klippes mot den (`clipPolygonToSea`) så dybde ikke flyter forbi strandlinjen eller over øyer. Modulen har rene primitiver (`pointInMultiPolygon`, `unionRingsToSea`, `clipPolygonToSea`, `pointFeatureKept`) — fullt enhetstestet, brukes videre i Fase 3 for `Marker ∈ Water`. **Gjenstår (Fase 1b):** land-mask + øy-overlay bruker fortsatt den gamle union-modellen; rydd dem til å derive fra den autoritative sjøen når kysten er visuelt verifisert (WFS+nettleser virker ikke i sandkassen — må testes på enhet, f.eks. Landøya/Hvaler).
+
+**Marine ISOM-koder (rendres f.o.m. v9.2.0 Fase 3):**
+- 307 — Dybdeareal (diskret dempet blå-bånd-fyll via `depthToColor`) — rendres, **klippes til kyst**
+- 211 — Skjær / grunne (blå ring med kryss) — punkt, `requireWater` (filtreres på land)
+- 533 — Fyr / lykt / lanterne (violet stjerne) — punkt
+- 540/541/542/543 — Sjømerker (babord/styrbord/cardinal/generisk) — punkt, `requireWater`
+- 550 — Slipp / landingssted (slipway/beach) — punkt
+- 553 — Småbåthavn / marina (anker) — punkt **(ny v9.2.0)**
+- 554 — Toalett (blå firkant, hvit WC) — punkt **(ny v9.2.0)**
+- 555 — Drikkevann (blå dråpe) — punkt **(ny v9.2.0)**
+- 214 — Skjær areal (lys-blå outline) — `cat='rock'`, ikke i render-pass ennå
+- `data-label="dybde-tall"` — soundings (blå tekst-tall) — planlagt
 
 ## Kjente issues
 
 - **WFS-kilder leverer ikke alltid i nettleser** (CORS / nett-tilgang). Sjøkart, N50 og DEM-fetchere har graceful fallback. CI-build (Vardåsen-workflow) har full nettverkstilgang og fungerer
 - **Diagnose-modus** finnes for å verifisere visuelt: regenerer kart, tap "Diagnose-modus" i drawer (Visning-seksjon), polygoner farges etter kilde
-- **Test-suite**: 143 tester passerer (`npm run test` i app/)
+- **Test-suite**: 252 tester passerer (14 filer, `npm run test` i app/)
 - **CurveBall på MS Edge Android (v7.4.1, rapportert 10. mai 2026):** spillet fungerer, men kart-bakgrunnen rendres lys (default-tema istedenfor mørkt) og kula vises som helt sort sirkel uten chrome-gradient. Sannsynlig årsak: Edge har problemer med å resolve `<radialGradient id="...">`-fill-referanser i SVG-elementer som er flyttet/klonet via DOM, eller `fill="url(#...)"` faller tilbake til sort når gradient-noden ikke finnes i scope. Sjekk `CurveBallLayer.vue` ball-rendering — vurder eksplisitt `xlink:href`-fallback eller flat circle-fill ved degradering. Opera Android og Chrome Android fungerer som forventet
 
-## Viktig arkitektur-merknad (v6.8.0+)
+## Historikk — kyst-sagaen (v6.5–v6.10)
 
-**Coastline-polygonisering er fjernet.** Etter fire forsøk på å gjøre den robust mot OSM-mistags (lukkede ringer for store innsjøer, wedger og land/vann-inversjon for Mjøsa, Setten, Hestesund osv.) ble hele pipelinen fjernet i v6.8.0. `lib/coastline.js` ligger fortsatt på disk men er IKKE importert lenger.
+Bevart fordi rotårsakene fortsatt forklarer hvorfor vann-stacken ser ut som den gjør.
 
-Vann tegnes utelukkende som eksplisitte polygoner:
-- **N50 Havflate / Innsjø / ElvBekk** (autoritativt, via Geonorge WFS) når tilgjengelig
-- **OSM `natural=water`** som fallback når N50 feiler
-
-Hvis N50 feiler i åpne kyst-områder uten `natural=water`-polygon i OSM, blir sjøen rett og slett IKKE tegnet (kremgul der det skulle vært vann). Det er en synlig, dokumentert degradering — vesentlig bedre enn wedger som ser ut som ekte vann men er feilplassert.
+- **Coastline-polygonisering ble fjernet i v6.8.0.** Etter fire forsøk på å gjøre den robust mot OSM-mistags (lukkede ringer for store innsjøer, wedger og land/vann-inversjon for Mjøsa, Setten, Hestesund) ble hele pipelinen revet ut. `lib/coastline.js` ligger fortsatt på disk men er IKKE importert. Vann ble deretter tegnet utelukkende som eksplisitte polygoner (N50 + OSM), senere supplert med DEM-sjø (v8.x) som nå er primær sjø-kilde — se vann/sjø-stack-merknaden over.
+- **v6.10.0** — Sjøkart-integrasjon: `lib/sjokartFetcher.js` mot Kartverket Sjøkart-Dybdedata WFS, land-overlay (ISOM 001) fra OSM `place=island/islet`, nye ISOM-koder 306/307/211/533, dybdetall-soundings.
+- **v6.9.0** — ISOM-polish: sykkel-sti (508), navn-toggle, Tegnforklaring-side (`/tegnforklaring`), zoom-polish.
+- **v6.8.4** — **ROTÅRSAK for wedger:** OSM multipolygon-relations har outer-rings splittet over flere ways; vi rendret hver way som lukket polygon → segment-trekanter. `assembleRelationRings` syr sammen segmenter. Verifisert wedge-fritt på Hestesund/Mjøsa.
+- **v6.8.3** — Visuell diagnose-modus i drawer (farger polygoner etter `data-src`). Verktøyet som avslørte v6.8.4-rotårsaken.
 
 ## Viktig arkitektur-merknad (v6.8.4)
 
