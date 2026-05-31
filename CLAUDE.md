@@ -51,7 +51,7 @@ SVG Insights er en Vue 3-mobilapp med tre hovedfunksjoner:
 2. **Lag webfont** — genererer en egen `.otf`-font basert på en valgt inspirasjons-Google-font, med glyf-for-glyf-editor og mulighet for å ta bilde av enkeltbokstaver
 3. **Vis turkart** — ISOM-inspirert sportskart-pipeline som henter ekte data fra Kartverket WCS (DTM + DOM) og OSM Overpass, gjør LiDAR-derivert vegetasjons-klassifisering, og rendrer print-kvalitets SVG
 
-Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versjons-omtale roter når master beveger seg fortere enn dokumentet. Per 31. mai 2026 er prosjektet på **v9.1.31**.
+Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versjons-omtale roter når master beveger seg fortere enn dokumentet. Per 31. mai 2026 er prosjektet på **v9.3.0**.
 
 ## Sesjons-overlevering — hva som er status nå
 
@@ -59,9 +59,10 @@ Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versj
 
 - **Kart-pipelinen orkestreres fra `lib/createMapFlow.js`**, ikke fra view-ene. `buildMapFromCenter()` kjører Overpass + N50 + DEM parallelt, gater Sjøkart-WFS på DEM-resultat (hopper over for innlands-bbox), og kaller `buildSvg`. Både MapPickerView, MapHomeView-FAB og MapView-FAB går via denne. **Endringer i hvordan kartet bygges skal komme her.**
 - **Sjø er DEM-derivert som primær kilde** (`lib/seaFromDem.js`): Kartverket NHM_DTM_25832 gir havflate ≈ 0 m, og områder ≤ 0,5 m blir én ren sjø-polygon med øyer som hull. CORS-trygg (virker både i CI og klient — i motsetning til N50/Sjøkart-WFS). N50/Sjøkart/OSM-vann supplerer.
-- **«Single coastline» — Fase 1 implementert (v9.2.0).** `lib/marineTopology.js` bygger én autoritativ sjø-geometri (DEM-0m primær pga ekte øy-hull, N50 Havflate fallback) og `buildSvg` klipper ISOM 307 dybdeareal mot den (`DepthArea ∩ Land = 0`). Gated på `hasAuthoritativeSea` → innlands-kart upåvirket. **Gjenstår (Fase 1b):** land-mask bygges fortsatt fra union av alle vann-kilder (ikke den autoritative sjøen), og øy-overlay-lappen lever fortsatt. Disse er ufarlige men kandidater for å rydde når kysten er visuelt verifisert.
+- **«Single coastline» — Fase 1 + 1b implementert (v9.2.0 / v9.3.0).** `lib/marineTopology.js` bygger én autoritativ sjø-geometri (DEM-0m primær pga ekte øy-hull, N50 Havflate fallback) og `buildSvg` klipper ISOM 307 dybdeareal mot den (`DepthArea ∩ Land = 0`). **Fase 1b (v9.3.0):** land-maskens MARINE del kommer nå fra den autoritative sjøen (ferskvann 301/302/308/309 maskeres som før); øy-overlay (001) droppes når sjøen er DEM-derivert (`authoritativeSeaSource === 'dem'`) siden DEM har ekte øy-hull — N50/ingen kyst-modell beholder overlayen som sikkerhet. Alt gated → innlands-kart byte-identisk.
 - **Dybde-farger — Fase 2 (v9.2.0): kystnær 5-bånds dempet skala** via `depthToColor` i `sjokartFetcher.js` (`0–2` #d8eaf2, `2–5` #c5e0ec, `5–10` #aed3e4, `10–20` #93c3da, `20+` #79b3d2). Tett i grunt vann der padleren trenger det, lav-kontrast så den ikke konkurrerer med ISOM-terreng. Brukes på Sjøkart 307. ISOM 306 dybdekontur-LINJER er fjernet. DEM-grunn-bånd (`buildSeaShallowBands`) er avstand-fra-land-proxy, dempet til samme grunn-toner.
-- **Padle-POI — Fase 3 implementert (v9.2.0).** Overpass henter nå `man_made=lighthouse`, `seamark:type=*`, `leisure=marina/slipway`, `natural=beach`, `amenity=toilets/drinking_water`. `classifyToIsom` mapper disse + Sjøkart-tags til punkt-koder, og `buildSvg` rendrer dem i et eget pass (`marinePoints` → `<g data-layer="sjo-poi">`, ikke via LAYER_ORDER). `MARINE_POINT_CODES` i `mapBuilder.js` styrer z-order-passet og `requireWater`-flagget: skjær (211) og flytende sjømerker (540–543) droppes hvis de faller på land (topologisk `Marker ∈ Water` via `pointFeatureKept` mot den autoritative kysten); fyr (533), landingssted (550), marina (553), toalett (554), drikkevann (555) beholdes uansett. Symbol + størrelse hentes fra `isomCatalog` pr kode via `getIsomDef`. Nye symboler: `anker` (553), `wc` (554, bruker ny `text`-element-handler i `buildPointSymbolDef`), `drikkevann` (555). De fleste andre marine-koder gjenbruker eksisterende katalog-symboler som tidligere var døde. **Ikke gjort ennå:** drawer-toggle for «sjo-poi» (rendres alltid nå — toaletter/drikkevann er nyttige også på land); dybdepunkt-soundings (tekst-labels); 551/552 areal-koder (kai/fareområde) er fortsatt ikke i render-pass.
+- **Padle-POI — Fase 3 implementert (v9.2.0).** Overpass henter nå `man_made=lighthouse`, `seamark:type=*`, `leisure=marina/slipway`, `natural=beach`, `amenity=toilets/drinking_water`. `classifyToIsom` mapper disse + Sjøkart-tags til punkt-koder, og `buildSvg` rendrer dem i et eget pass (`marinePoints` → `<g data-layer="sjo-poi">`, ikke via LAYER_ORDER). `MARINE_POINT_CODES` i `mapBuilder.js` styrer z-order-passet og `requireWater`-flagget: skjær (211) og flytende sjømerker (540–543) droppes hvis de faller på land (topologisk `Marker ∈ Water` via `pointFeatureKept` mot den autoritative kysten); fyr (533), landingssted (550), marina (553), toalett (554), drikkevann (555) beholdes uansett. Symbol + størrelse hentes fra `isomCatalog` pr kode via `getIsomDef`. Nye symboler: `anker` (553), `wc` (554, bruker ny `text`-element-handler i `buildPointSymbolDef`), `drikkevann` (555). De fleste andre marine-koder gjenbruker eksisterende katalog-symboler som tidligere var døde.
+- **Sjø-detaljer + drawer + inset — v9.3.0.** (1) `551` (kai/brygge/molo) og `552` (fareområde) rendres nå (UPPER_CODES + POLYGON_CODES, `categoryFor → 'sjo-poi'`). (2) Drawer: «Lag»-fanen har en gruppert **«Sjø & padling»**-seksjon med én toggle (`data-layer="sjo-poi"`) som styrer alle marine POI + 551/552. (3) **Dybdepunkt-soundings + dybdekurver (306)** emitteres som SKJULTE detalj-lag (`<g data-layer="dybdepunkt|dybdekurve" data-detail="1" style="display:none">`) — de var «for voldsomt» på hovedkartet. (4) **Long-press detalj-inset:** `buildDetailInset()` i `MapView.vue` kloner kart-innholdet i et 150×150 m vindu (`DETAIL_INSET_M`) rundt long-press-punktet inn i bottom-sheeten, og skrur PÅ `data-detail`-lagene + sjø-POI. Fungerer uten GPS og uten manuell toggle (KISS — erstattet den foreslåtte GPS-«depth-lens»). Dybdetall avhenger av at Sjøkart-WFS leverte ved bygging.
 
 ## Viktig arkitektur-merknad — vann/sjø-stack (v9.x)
 
@@ -77,7 +78,7 @@ Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versj
 
 **Land-mask:** unionen av ALLE vann-polygoner blir svart i `<mask id="land-mask">` så konturer/vegetasjon/stupkanter ikke renderes over vann.
 
-> **Single coastline (Fase 1, v9.2.0):** `lib/marineTopology.js` bygger ÉN autoritativ sjø-geometri (DEM-0m primær, N50 Havflate fallback) i SVG-meter-rom. ISOM 307 dybdeareal klippes mot den (`clipPolygonToSea`) så dybde ikke flyter forbi strandlinjen eller over øyer. Modulen har rene primitiver (`pointInMultiPolygon`, `unionRingsToSea`, `clipPolygonToSea`, `pointFeatureKept`) — fullt enhetstestet, brukes videre i Fase 3 for `Marker ∈ Water`. **Gjenstår (Fase 1b):** land-mask + øy-overlay bruker fortsatt den gamle union-modellen; rydd dem til å derive fra den autoritative sjøen når kysten er visuelt verifisert (WFS+nettleser virker ikke i sandkassen — må testes på enhet, f.eks. Landøya/Hvaler).
+> **Single coastline (Fase 1+1b, v9.2.0/v9.3.0):** `lib/marineTopology.js` bygger ÉN autoritativ sjø-geometri (DEM-0m primær, N50 Havflate fallback) i SVG-meter-rom. ISOM 307 dybdeareal klippes mot den (`clipPolygonToSea`). Fase 1b: land-maskens marine del + øy-overlay-dropp deriverer fra denne sjøen (se status-seksjon). Rene primitiver (`pointInMultiPolygon`, `unionRingsToSea`, `clipPolygonToSea`, `pointFeatureKept`) er fullt enhetstestet. **Restanse:** N50-fallback-sjøen mangler øy-hull (N50-fetcheren dropper indre ringer) → øy-overlay beholdes der; en N50-fetcher som bevarer hull ville fullføre single-coastline også for N50-kyst.
 
 **Marine ISOM-koder (rendres f.o.m. v9.2.0 Fase 3):**
 - 307 — Dybdeareal (diskret dempet blå-bånd-fyll via `depthToColor`) — rendres, **klippes til kyst**
@@ -88,14 +89,17 @@ Gjeldende versjon: se `app/src/version.js` (autoritativ) — CLAUDE.md sin versj
 - 553 — Småbåthavn / marina (anker) — punkt **(ny v9.2.0)**
 - 554 — Toalett (blå firkant, hvit WC) — punkt **(ny v9.2.0)**
 - 555 — Drikkevann (blå dråpe) — punkt **(ny v9.2.0)**
+- 551 — Kai / brygge / molo (grå areal) — areal **(rendret f.o.m. v9.3.0)**
+- 552 — Fareområde (rødt mønster) — areal **(rendret f.o.m. v9.3.0)**
+- 306 — Dybdekurve (lys-blå isobath-linje) — **skjult detalj-lag, kun i inset (v9.3.0)**
+- `data-label="dybde-tall"` — dybdepunkt-soundings — **skjult detalj-lag, kun i inset (v9.3.0)**
 - 214 — Skjær areal (lys-blå outline) — `cat='rock'`, ikke i render-pass ennå
-- `data-label="dybde-tall"` — soundings (blå tekst-tall) — planlagt
 
 ## Kjente issues
 
 - **WFS-kilder leverer ikke alltid i nettleser** (CORS / nett-tilgang). Sjøkart, N50 og DEM-fetchere har graceful fallback. CI-build (Vardåsen-workflow) har full nettverkstilgang og fungerer
 - **Diagnose-modus** finnes for å verifisere visuelt: regenerer kart, tap "Diagnose-modus" i drawer (Visning-seksjon), polygoner farges etter kilde
-- **Test-suite**: 252 tester passerer (14 filer, `npm run test` i app/)
+- **Test-suite**: 260 tester passerer (15 filer, `npm run test` i app/)
 - **CurveBall på MS Edge Android (v7.4.1, rapportert 10. mai 2026):** spillet fungerer, men kart-bakgrunnen rendres lys (default-tema istedenfor mørkt) og kula vises som helt sort sirkel uten chrome-gradient. Sannsynlig årsak: Edge har problemer med å resolve `<radialGradient id="...">`-fill-referanser i SVG-elementer som er flyttet/klonet via DOM, eller `fill="url(#...)"` faller tilbake til sort når gradient-noden ikke finnes i scope. Sjekk `CurveBallLayer.vue` ball-rendering — vurder eksplisitt `xlink:href`-fallback eller flat circle-fill ved degradering. Opera Android og Chrome Android fungerer som forventet
 
 ## Historikk — kyst-sagaen (v6.5–v6.10)

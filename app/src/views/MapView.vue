@@ -244,7 +244,17 @@ const LAYERS = [
   { key: 'stedsnavn-mid',   label: 'Landsby / bydel' },
   { key: 'stedsnavn-minor', label: 'Grend / gård' },
   { key: 'spor',       label: 'GPS-spor' },
+  // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
+  // drikkevann) + kai/molo/fareområde (data-layer 'sjo-poi'). Rendres i en
+  // egen gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —
+  // de er skjulte detalj-lag som kun vises i long-press-inset-en.
+  { key: 'sjo-poi',    label: 'Sjø & padling' },
 ]
+// Lag som hører til den marine «Sjø & padling»-seksjonen i drawer-en
+// (skilles ut fra terreng-grid-en for ryddigere gruppering).
+const MARINE_LAYER_KEYS = new Set(['sjo-poi'])
+const landLayerButtons = LAYERS.filter(l => !MARINE_LAYER_KEYS.has(l.key))
+const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 
 // v8.1.0: Stedsnavn-overlay er AV som default — det er et stort tekst-
 // overlegg over kartet som brukeren slår på når de trenger områdenavn
@@ -1117,6 +1127,8 @@ function formatArea(m2) {
 const contextMenuOpen = ref(false)
 const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
+const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
+const DETAIL_INSET_M = 150             // 150×150 m vindu rundt long-press-punktet
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -1410,6 +1422,81 @@ function renderContextPin() {
 }
 watch([contextMenuOpen, contextMenuPoint, scale], renderContextPin)
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
+
+// ── Long-press detalj-inset ──────────────────────────────────────────────
+// Et 150×150 m utsnitt rundt long-press-punktet, rendret som et eget lite
+// SVG i bottom-sheeten. Her skrur vi PÅ de skjulte detalj-lagene
+// (data-detail="1": dybdepunkt-soundings + dybdekurver) som er for tette på
+// hovedkartet. Fungerer uten GPS og uten manuell toggle — KISS. Bygges når
+// sheeten åpnes; kloner kart-innholdet og setter viewBox til utsnittet.
+function buildDetailInset() {
+  const host = detailInsetRef.value
+  if (!host) return
+  host.replaceChildren()
+  const src = svgHostRef.value?.querySelector('svg')
+  const p = contextMenuPoint.value
+  if (!src || !p) return
+  const ns = 'http://www.w3.org/2000/svg'
+  const half = DETAIL_INSET_M / 2
+  const x0 = p.svgX - half
+  const y0 = p.svgY - half
+
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', `${x0} ${y0} ${DETAIL_INSET_M} ${DETAIL_INSET_M}`)
+  svg.setAttribute('xmlns', ns)
+  svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  svg.setAttribute('class', 'isom-map')
+  svg.setAttribute('width', '100%')
+  svg.setAttribute('height', '100%')
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+
+  // Klon kart-innholdet (hopp over GPS-/pin-overlays).
+  for (const child of Array.from(src.childNodes)) {
+    if (child.nodeType === 1) {
+      const id = child.getAttribute && child.getAttribute('id')
+      if (id === 'user-layer' || id === 'contextmenu-pin-layer') continue
+    }
+    svg.appendChild(child.cloneNode(true))
+  }
+
+  // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
+  // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
+  for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"]')) {
+    g.style.display = ''
+    for (const el of g.querySelectorAll('*')) el.style.display = ''
+  }
+
+  // Fadenkreuz på senterpunktet (samme posisjon som long-press-pin-en).
+  const cross = document.createElementNS(ns, 'g')
+  cross.setAttribute('pointer-events', 'none')
+  const r = 6  // meter
+  const mk = (d) => {
+    const ln = document.createElementNS(ns, 'path')
+    ln.setAttribute('d', d)
+    ln.setAttribute('stroke', '#e11d48')
+    ln.setAttribute('stroke-width', '1.4')
+    ln.setAttribute('fill', 'none')
+    ln.setAttribute('stroke-linecap', 'round')
+    return ln
+  }
+  cross.appendChild(mk(`M${p.svgX - r},${p.svgY} L${p.svgX + r},${p.svgY}`))
+  cross.appendChild(mk(`M${p.svgX},${p.svgY - r} L${p.svgX},${p.svgY + r}`))
+  const ring = document.createElementNS(ns, 'circle')
+  ring.setAttribute('cx', p.svgX); ring.setAttribute('cy', p.svgY)
+  ring.setAttribute('r', 3.2)
+  ring.setAttribute('fill', 'none')
+  ring.setAttribute('stroke', '#e11d48')
+  ring.setAttribute('stroke-width', '1.2')
+  cross.appendChild(ring)
+  svg.appendChild(cross)
+
+  host.appendChild(svg)
+}
+watch([contextMenuOpen, contextMenuPoint], async () => {
+  if (!contextMenuOpen.value) return
+  await nextTick()
+  buildDetailInset()
+})
 
 // Høydeprofil — sample stripe + gradient-fyll under (v8.9.4).
 // expandedTrackId holder hvilket spor som er "zoomet" i drawer-en (=
@@ -3223,7 +3310,7 @@ onUnmounted(() => {
           <!-- ── Tab: Lag ─────────────────────────────────────────── -->
           <div v-show="activeTab === 'lag'">
             <div class="grid grid-cols-2 gap-2 mb-2">
-              <button v-for="lay in LAYERS" :key="lay.key"
+              <button v-for="lay in landLayerButtons" :key="lay.key"
                       @click="toggleLayer(lay.key)"
                       class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
                       :class="visibleLayers.has(lay.key)
@@ -3231,6 +3318,24 @@ onUnmounted(() => {
                               : 'bg-white/5 border-white/10 text-white/45'">
                 <span class="text-[12px]">{{ lay.label }}</span>
               </button>
+            </div>
+            <!-- Gruppert seksjon: Sjø & padling -->
+            <div class="mt-3 mb-1 text-[11px] font-semibold text-sky-300/80 uppercase tracking-wide">
+              Sjø &amp; padling
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-1">
+              <button v-for="lay in marineLayerButtons" :key="lay.key"
+                      @click="toggleLayer(lay.key)"
+                      class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
+                      :class="visibleLayers.has(lay.key)
+                              ? 'bg-sky-400/25 border-sky-300/50 text-white'
+                              : 'bg-white/5 border-white/10 text-white/45'">
+                <span class="text-[12px]">{{ lay.label }}</span>
+              </button>
+            </div>
+            <div class="text-[10px] text-white/40 leading-snug mb-2">
+              Fyr, sjømerker, skjær, småbåthavner, landingssteder, toalett og
+              drikkevann. Dybdetall vises ved å holde inne et punkt på kartet.
             </div>
             <div class="text-[10px] text-white/40 leading-snug mt-2">
               Reliefskygge er DEM-derivert hill-shading rendret som grayscale-
@@ -3760,6 +3865,17 @@ onUnmounted(() => {
                 <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
               </svg>
             </button>
+          </div>
+
+          <!-- Detalj-inset: 150×150 m utsnitt med alle detaljer (dybdetall,
+               dybdekurver, sjø-POI) avslørt. Fungerer uten GPS. -->
+          <div class="px-4 pt-3">
+            <div class="text-[10px] uppercase tracking-wide text-white/45 mb-1">
+              Detaljer · {{ DETAIL_INSET_M }} × {{ DETAIL_INSET_M }} m
+            </div>
+            <div ref="detailInsetRef"
+                 class="w-full aspect-square max-w-[240px] mx-auto rounded-lg overflow-hidden
+                        border border-white/10 bg-[#fefae0]"></div>
           </div>
 
           <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
