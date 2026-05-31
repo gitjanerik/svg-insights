@@ -76,17 +76,29 @@ export function buildPatternDef(patternId, spec) {
 
 /** Lag en <symbol>-streng fra pointSymbols-katalogen */
 export function buildPointSymbolDef(symId, spec) {
+  // GOTCHA (anker-buggen, v9.3.10): point-symbolene har viewBox="-1 -1 2 2"
+  // (2 bruker-enheter brede) og plasseres via <use width="{scaleMm}mm">. En
+  // stroke-width oppgitt i "mm" konverteres til bruker-enheter i symbolets
+  // EGET koordinatrom (~3.78 enheter/mm), så f.eks. "0.14mm" → ~0.53 enheter
+  // = ~26 % av symbolbredden → tykk klump (ankeret ble en solid blob fordi
+  // dens lille ring r=0.16 + bue ble fylt av streken). Riktig strekbredde i
+  // dette rommet er i SYMBOL-ENHETER, ikke mm: med scaleMm=2 er 1 enhet ≈ 1 mm
+  // på kartet, så strokeW=0.12 ≈ 0.12 mm trykk-strek. Bruk `strokeW` for nye/
+  // korrigerte symboler; `widthMm` beholdes for bakoverkompat på de øvrige
+  // strek-symbolene (knaus/brønn/bro/skjaer/…) til de evt. migreres.
+  const strokeW = el => el.strokeW != null ? `${el.strokeW}` : `${el.widthMm}mm`
+  const cap = el => el.linecap ? ` stroke-linecap="${el.linecap}"` : ''
   const elements = (spec.elements ?? []).map(el => {
     if (el.type === 'line') {
-      return `<line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${el.stroke}" stroke-width="${el.widthMm}mm" ${el.fill === 'none' ? 'fill="none"' : ''}/>`
+      return `<line x1="${el.x1}" y1="${el.y1}" x2="${el.x2}" y2="${el.y2}" stroke="${el.stroke}" stroke-width="${strokeW(el)}"${cap(el)} ${el.fill === 'none' ? 'fill="none"' : ''}/>`
     }
     if (el.type === 'circle') {
-      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${el.widthMm}mm"` : ''
+      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"` : ''
       const fill = el.fill ?? 'none'
       return `<circle cx="${el.cx}" cy="${el.cy}" r="${el.r}" fill="${fill}" ${stroke}/>`
     }
     if (el.type === 'path') {
-      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${el.widthMm}mm"` : ''
+      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"${cap(el)}` : ''
       const fill = el.fill ?? 'none'
       return `<path d="${el.d}" fill="${fill}" ${stroke}/>`
     }
@@ -101,7 +113,7 @@ export function buildPointSymbolDef(symId, spec) {
       // ISOM 540 (stake-port) og 542 (stake-cardinal) bruker rect-elementer
       // — uten denne handleren ble de silent dropped → tomme symboler
       // (usynlig på kart og i Tegnforklaring).
-      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${el.widthMm}mm"` : ''
+      const stroke = el.stroke ? `stroke="${el.stroke}" stroke-width="${strokeW(el)}"` : ''
       const fill = el.fill ?? 'none'
       return `<rect x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}" fill="${fill}" ${stroke}/>`
     }
@@ -216,7 +228,7 @@ export function classifyToIsom(el) {
   }
   if (t.leisure === 'marina')          return { code: '553', cat: 'point' }  // småbåthavn
   if (t.leisure === 'slipway')         return { code: '550', cat: 'point' }  // landingssted
-  if (t.natural === 'beach')           return { code: '550', cat: 'point' }  // landingssted (strand)
+  if (t.natural === 'beach')           return { code: '556', cat: 'point' }  // strand / badeplass
   if (t.amenity === 'toilets')         return { code: '554', cat: 'point' }
   if (t.amenity === 'drinking_water')  return { code: '555', cat: 'point' }
 

@@ -403,6 +403,7 @@ const MARINE_POINT_CODES = {
   '553': { requireWater: false },  // småbåthavn / marina
   '554': { requireWater: false },  // toalett
   '555': { requireWater: false },  // drikkevann
+  '556': { requireWater: false },  // strand / badeplass
 }
 
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552'])
@@ -589,10 +590,10 @@ export function buildSvg(elements, bbox, options = {}) {
       counts.parkering++
     }
     // Bro-deteksjon: way med bridge=yes (eller annen truthy bridge-verdi)
-    // langs en høyveg-, sti-, fot-, eller togtrasé. Vi plasserer ett bru-
-    // symbol på midten av way-en og roterer det langs sti-tangenten. OSM-
-    // verdien `no` regnes som ikke-bro; alt annet (yes, viaduct, aqueduct,
-    // boardwalk, movable osv.) regnes som bro.
+    // langs en høyveg-, sti-, fot-, eller togtrasé. Hele way-ens geometri er
+    // selve bro-spennet — den rendres som to parallelle parapet-linjer langs
+    // full lengde (se broSvg). OSM-verdien `no` regnes som ikke-bro; alt
+    // annet (yes, viaduct, aqueduct, boardwalk, movable osv.) regnes som bro.
     if (el.type === 'way' && el.geometry && el.geometry.length >= 2) {
       const b = el.tags?.bridge
       if (b && b !== 'no') {
@@ -1546,47 +1547,37 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g data-upright="1" data-iso="${code}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
-  // Bro / bru (ISOM 509-derivert): to korte parallelle ticks på midten av
-  // bridge=yes-way-en, rotert langs sti-tangenten så de ligger langs sti-
-  // retningen. Wrapped i <g transform="translate(...) rotate(...)"> siden
-  // SVG <use> ikke selv kan både posisjoneres OG roteres mot et lokalt
-  // senter via attributter alene. translate uses user units (meters) som
-  // matcher project()-output, mens use-offsets fortsatt er i mm.
-  const broSize = 1.8
+  // Bro (ISOM 512-derivert): to parallelle sorte parapet-linjer langs HELE
+  // bro-veiens lengde. Tidligere ble broen tegnet som ETT fast 1.8 mm symbol
+  // på midtpunktet → en liten firkant midt i vannet uansett brolengde. Nå
+  // forskyves bro-way-ens geometri perpendikulært ±broOffsetM til hver side
+  // og rendres som to streker, så broen dekker korrekt fra ende til ende.
+  // mm→meter: root-viewBox er i meter, og 1 mm = scaleDenom/1000 meter — så
+  // strek-bredde i "mm" og en mm-basert offset er trygt på root-nivå (i
+  // motsetning til den nestede symbol-viewBox-en, jf. anker-fiksen).
+  const broOffsetM = 0.42 * (scaleDenom / 1000)   // halv avstand mellom parapet-linjene (mm→m)
   const broSvg = broer.map(el => {
     if (!el.geometry || el.geometry.length < 2) return ''
     const pts = el.geometry.map(g => project(g.lat, g.lon))
-    let totalLen = 0
-    const segLens = []
-    for (let i = 1; i < pts.length; i++) {
-      const dx = pts[i].x - pts[i - 1].x
-      const dy = pts[i].y - pts[i - 1].y
-      const len = Math.hypot(dx, dy)
-      segLens.push(len)
-      totalLen += len
-    }
-    if (totalLen < 1) return ''
-    const target = totalLen / 2
-    let acc = 0
-    let midX = null, midY = null, midDeg = 0
-    for (let i = 1; i < pts.length; i++) {
-      const segLen = segLens[i - 1]
-      if (acc + segLen >= target) {
-        const t = segLen > 1e-6 ? (target - acc) / segLen : 0
-        const dx = pts[i].x - pts[i - 1].x
-        const dy = pts[i].y - pts[i - 1].y
-        midX = pts[i - 1].x + dx * t
-        midY = pts[i - 1].y + dy * t
-        midDeg = Math.atan2(dy, dx) * 180 / Math.PI
-        break
+    // Perpendikulær enhetsnormal pr punkt (snitt av tilstøtende segmenter gir
+    // jevne hjørner); forskyv ±offset for venstre/høyre parapet-linje.
+    const left = [], right = []
+    for (let i = 0; i < pts.length; i++) {
+      let nx = 0, ny = 0
+      if (i > 0) {
+        const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y
+        const l = Math.hypot(dx, dy) || 1; nx += -dy / l; ny += dx / l
       }
-      acc += segLen
+      if (i < pts.length - 1) {
+        const dx = pts[i + 1].x - pts[i].x, dy = pts[i + 1].y - pts[i].y
+        const l = Math.hypot(dx, dy) || 1; nx += -dy / l; ny += dx / l
+      }
+      const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl
+      left.push({ x: pts[i].x + nx * broOffsetM, y: pts[i].y + ny * broOffsetM })
+      right.push({ x: pts[i].x - nx * broOffsetM, y: pts[i].y - ny * broOffsetM })
     }
-    if (midX == null) return ''
-    const sid = symbolIds.get('bru')
-    if (!sid) return ''
-    const half = broSize / 2
-    return `    <g transform="translate(${fmt(midX)},${fmt(midY)}) rotate(${fmt(midDeg)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${broSize}mm" height="${broSize}mm"/></g>`
+    const toPath = poly => 'M' + poly.map(p => `${fmt(p.x)} ${fmt(p.y)}`).join(' L')
+    return `    <path d="${toPath(left)}" fill="none" stroke="#1a1a1a" stroke-width="0.18mm" stroke-linecap="round" stroke-linejoin="round"/>\n    <path d="${toPath(right)}" fill="none" stroke="#1a1a1a" stroke-width="0.18mm" stroke-linecap="round" stroke-linejoin="round"/>`
   }).filter(Boolean).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har

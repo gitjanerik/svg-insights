@@ -225,7 +225,7 @@ const LAYERS = [
   { key: 'kirke',      label: 'Kirker' },
   { key: 'parkering',  label: 'Parkering' },
   { key: 'holdeplass', label: 'Holdeplass' },
-  { key: 'bro',        label: 'Bro / bru' },
+  { key: 'bro',        label: 'Bro' },
   { key: 'bom',        label: 'Bom / barriere' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
@@ -3979,7 +3979,7 @@ onUnmounted(() => {
               <div class="flex-1 min-w-0">
                 <div class="text-[13px] text-white font-medium">Hold skjerm våken</div>
                 <div class="text-[11px] text-white/55 leading-snug">
-                  Hindrer at telefonen låser skjermen mens kartet er åpent. Slå av for å spare batteri.
+                  Hindrer at telefonen låser skjermen mens du bruker kartet. Slipper automatisk etter 2 min uten berøring så batteriet spares — tar seg igjen straks du tar på kartet. Slå av helt om du vil.
                 </div>
               </div>
               <button @click="screenWake.setEnabled(!screenWake.enabled.value)"
