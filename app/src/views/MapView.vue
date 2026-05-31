@@ -1465,6 +1465,17 @@ function buildDetailInset() {
     for (const el of g.querySelectorAll('*')) el.style.display = ''
   }
 
+  // Vis ALLE navn i inset-en (på land er det rikelig plass ved denne zoomen):
+  // overstyr både 'navn'-toggelen, stedsnavn-lagene og navn-LOD-en som ellers
+  // skjuler overlappende stedsnavn på hovedkartet. Inset-en er en detalj-lupe
+  // — her vil brukeren se alt som finnes.
+  for (const g of svg.querySelectorAll('[data-layer="navn"], [data-layer^="stedsnavn"]')) {
+    g.style.display = ''
+  }
+  for (const el of svg.querySelectorAll('[data-label]')) {
+    el.style.display = ''
+  }
+
   // Fadenkreuz på senterpunktet (samme posisjon som long-press-pin-en).
   const cross = document.createElementNS(ns, 'g')
   cross.setAttribute('pointer-events', 'none')
@@ -3931,7 +3942,7 @@ onUnmounted(() => {
            @click.self="closeContextMenu">
         <div ref="contextSheetRef"
              class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
-                    max-h-[50dvh] overflow-y-auto"
+                    max-h-[65dvh] overflow-y-auto"
              :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
           <!-- Header: koordinater + lukk -->
           <div class="sticky top-0 px-4 pt-3 pb-2.5 bg-zinc-900/95 backdrop-blur
