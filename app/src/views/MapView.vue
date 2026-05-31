@@ -659,7 +659,6 @@ function openSearch() {
 }
 function closeSearch() {
   searchOpen.value = false
-  poiMsg.value = ''
   mapSearch.clear()
 }
 function clearHighlight() {
@@ -684,56 +683,38 @@ function selectSearchResult(r) {
 
 // ── «Nærmeste …»-snarveier (parkering / toalett / holdeplass) ─────────────
 // Highlighter samme rosa puls-ring som et fritekstsøk-treff, men finner
-// nærmeste POI av en gitt type i stedet for å matche på navn. Referansepunkt
-// er brukerens GPS-posisjon når den er aktiv og innenfor kartet, ellers
-// sentrum av det synlige utsnittet (så «nærmeste» gjelder det du ser på).
-const poiMsg = ref('')   // tilbakemelding når ingen POI finnes i kartet
-
-// Sentrum av synlig utsnitt i viewBox-koordinater (invers av panTo/LOD-matten).
-function viewportCenterVb() {
-  const m = meta.value
-  if (!m) return null
-  const wrap = wrapperRef.value?.getBoundingClientRect()
-  if (!wrap || !wrap.width || !wrap.height) return { x: m.widthM / 2, y: m.heightM / 2 }
-  const w = wrap.width, h = wrap.height
-  const fit = Math.min(w / m.widthM, h / m.heightM)
-  const offX = (w - m.widthM * fit) / 2
-  const offY = (h - m.heightM * fit) / 2
-  const s = scale.value || 1
-  const rot = (rotation.value || 0) * Math.PI / 180
-  const cos = Math.cos(rot), sin = Math.sin(rot)
-  const dx = (w / 2 - translateX.value) / s
-  const dy = (h / 2 - translateY.value) / s
-  const px = dx * cos + dy * sin
-  const py = -dx * sin + dy * cos
-  return { x: (px - offX) / fit, y: (py - offY) / fit }
+// nærmeste POI av en gitt type RELATIVT til long-press-punktet (PUNKT-arket).
+// Et generelt søk gir ikke mening her — «nærmeste» må ha et referansepunkt.
+const POI_KINDS = {
+  parkering:  { label: 'Nærmeste parkering',  selector: '[data-layer="parkering"] g[transform]' },
+  toalett:    { label: 'Nærmeste toalett',    selector: '[data-layer="sjo-poi"] g[data-iso="554"]' },
+  holdeplass: { label: 'Nærmeste holdeplass', selector: '[data-layer="holdeplass"] g[transform]' },
 }
 
-const POI_KINDS = {
-  parkering:  { label: 'Nærmeste parkering',  selector: '[data-layer="parkering"] g[transform]', none: 'Ingen parkering i dette kartet' },
-  toalett:    { label: 'Nærmeste toalett',    selector: '[data-layer="sjo-poi"] g[data-iso="554"]', none: 'Ingen toalett i dette kartet' },
-  holdeplass: { label: 'Nærmeste holdeplass', selector: '[data-layer="holdeplass"] g[transform]', none: 'Ingen buss-/togholdeplass i dette kartet' },
+// Antall POI pr type i det lastede kartet — styrer om snarvei-knappen er
+// aktiv eller grået ut. Beregnes når SVG-en er lastet (kartet endrer seg ikke
+// etterpå utenom highlight/spor-overlays).
+const poiCounts = ref({ parkering: 0, toalett: 0, holdeplass: 0 })
+function computePoiAvailability() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  const next = { parkering: 0, toalett: 0, holdeplass: 0 }
+  if (svg) {
+    for (const kind of Object.keys(POI_KINDS)) {
+      next[kind] = svg.querySelectorAll(POI_KINDS[kind].selector).length
+    }
+  }
+  poiCounts.value = next
 }
 
 function fmtDist(m) {
   return m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`
 }
 
-function nearestPoi(kind) {
-  poiMsg.value = ''
+// Finn + highlight nærmeste POI av `kind` relativt til (ox, oy) i viewBox-meter.
+function nearestPoi(kind, ox, oy) {
   const cfg = POI_KINDS[kind]
   const svg = svgHostRef.value?.querySelector('svg')
-  if (!cfg || !svg || !meta.value) return
-
-  // Referansepunkt: GPS hvis aktiv og innenfor kartet, ellers utsnitt-sentrum.
-  let ox, oy
-  if (userPos.isWatching && !userPos.isOutsideMap && userPos.svgX != null && userPos.svgY != null) {
-    ox = userPos.svgX; oy = userPos.svgY
-  } else {
-    const c = viewportCenterVb()
-    if (!c) return
-    ox = c.x; oy = c.y
-  }
+  if (!cfg || !svg || !meta.value || ox == null || oy == null) return
 
   let best = null, bestD2 = Infinity
   for (const el of svg.querySelectorAll(cfg.selector)) {
@@ -743,7 +724,7 @@ function nearestPoi(kind) {
     const d2 = (x - ox) ** 2 + (y - oy) ** 2
     if (d2 < bestD2) { bestD2 = d2; best = { x, y, el } }
   }
-  if (!best) { poiMsg.value = cfg.none; return }
+  if (!best) return   // knappen er uansett grået ut når kartet mangler typen
 
   const name = best.el.getAttribute('data-name')
   const distLabel = fmtDist(Math.sqrt(bestD2))
@@ -752,9 +733,15 @@ function nearestPoi(kind) {
     x: best.x, y: best.y, kind,
   }
   panTo(best.x, best.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
-  searchOpen.value = false
-  mapSearch.clear()
   renderHighlight()
+}
+
+// Fra PUNKT-arket: nærmeste relativt til long-press-punktet, så lukk arket.
+function nearestPoiFromPoint(kind) {
+  const p = contextMenuPoint.value
+  if (!p || !poiCounts.value[kind]) return
+  nearestPoi(kind, p.svgX, p.svgY)
+  closeContextMenu()
 }
 
 // ── Navn-LOD: skjul overflødige stedsnavn i tett-befolkede utsnitt ─────────
@@ -2548,6 +2535,9 @@ async function loadMap() {
     // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
     // i host-en (getBBox()+getCTM() krever attached element).
     mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
+    // Tell POI pr type så «nærmeste»-snarveiene i PUNKT-arket kan gråes ut
+    // når kartet mangler typen (f.eks. ingen holdeplass).
+    computePoiAvailability()
     // Indeksen er ny → gamle el-referanser i forced-settet er foreldede.
     forcedVisibleNameEls.clear()
     // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
@@ -3092,59 +3082,10 @@ onUnmounted(() => {
                class="px-4 py-6 text-center text-[12px] text-white/45">
             Ingen treff på «{{ searchQuery }}»
           </div>
-          <div v-else-if="!searchQuery" class="px-3 py-3">
-            <p class="text-[11px] text-white/45 leading-relaxed px-1 mb-3">
-              Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
-              Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann i utsnittet.
-            </p>
-            <div class="text-[10px] uppercase tracking-wide text-white/35 mb-1.5 px-1">
-              Snarveier — nærmeste
-            </div>
-            <div class="flex flex-col gap-1.5">
-              <button @click="nearestPoi('parkering')"
-                      class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5
-                             active:bg-pink-500/25 border border-white/10 transition text-left">
-                <span class="w-7 h-7 rounded-md bg-[#1f5d8a] text-white text-[13px] font-bold
-                             flex items-center justify-center shrink-0">P</span>
-                <span class="flex-1 text-[13px] text-white">Parkering</span>
-                <svg viewBox="0 0 24 24" class="w-4 h-4 text-pink-400 shrink-0" fill="none"
-                     stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="10" r="3"/>
-                  <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
-                </svg>
-              </button>
-              <button @click="nearestPoi('toalett')"
-                      class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5
-                             active:bg-pink-500/25 border border-white/10 transition text-left">
-                <span class="w-7 h-7 rounded-md bg-[#1f5d8a] text-white text-[9px] font-bold
-                             flex items-center justify-center shrink-0">WC</span>
-                <span class="flex-1 text-[13px] text-white">Toalett</span>
-                <svg viewBox="0 0 24 24" class="w-4 h-4 text-pink-400 shrink-0" fill="none"
-                     stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="10" r="3"/>
-                  <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
-                </svg>
-              </button>
-              <button @click="nearestPoi('holdeplass')"
-                      class="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/5
-                             active:bg-pink-500/25 border border-white/10 transition text-left">
-                <span class="w-7 h-7 rounded-md bg-[#1f5d8a] flex items-center justify-center shrink-0">
-                  <svg viewBox="0 0 24 24" class="w-4 h-4" fill="#fff">
-                    <path d="M6 3 h12 a2 2 0 0 1 2 2 v9 a2 2 0 0 1 -2 2 v1.5 a1 1 0 0 1 -2 0 V18 H8 v1.5 a1 1 0 0 1 -2 0 V16 a2 2 0 0 1 -2 -2 V5 a2 2 0 0 1 2 -2 Z"/>
-                    <rect x="6.5" y="6" width="11" height="5" rx="0.6" fill="#1f5d8a"/>
-                    <circle cx="8.5" cy="14" r="1.2" fill="#1f5d8a"/>
-                    <circle cx="15.5" cy="14" r="1.2" fill="#1f5d8a"/>
-                  </svg>
-                </span>
-                <span class="flex-1 text-[13px] text-white">Buss / tog</span>
-                <svg viewBox="0 0 24 24" class="w-4 h-4 text-pink-400 shrink-0" fill="none"
-                     stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="10" r="3"/>
-                  <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
-                </svg>
-              </button>
-            </div>
-            <p v-if="poiMsg" class="mt-2.5 text-[11px] text-amber-300/90 px-1">{{ poiMsg }}</p>
+          <div v-else-if="!searchQuery"
+               class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
+            Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
+            Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann i utsnittet.
           </div>
           <button v-for="r in searchResults" :key="r.id"
                   @click="selectSearchResult(r)"
@@ -4236,6 +4177,45 @@ onUnmounted(() => {
                 <path d="M6 18 c2 -1.5 4 -2 6 -2 s4 0.5 6 2"/>
               </svg>
               <span>Street View</span>
+            </button>
+          </div>
+
+          <!-- Nærmeste POI relativt til DETTE punktet. Highlighter med rosa
+               puls-ring (samme som søk). Knappen gråes ut når kartet ikke har
+               typen (f.eks. ingen holdeplass i utsnittet). -->
+          <div class="px-4 pt-4 pb-1 text-white/55 text-[10px] uppercase tracking-wide">
+            Nærmeste herfra
+          </div>
+          <div class="px-4 pb-1 grid grid-cols-3 gap-2">
+            <button @click="nearestPoiFromPoint('parkering')" :disabled="!poiCounts.parkering"
+                    class="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-lg border transition
+                           bg-white/5 border-white/10 text-white/80 active:scale-[0.98]
+                           disabled:opacity-35 disabled:active:scale-100">
+              <span class="w-7 h-7 rounded-md bg-[#1f5d8a] text-white text-[13px] font-bold
+                           flex items-center justify-center shrink-0">P</span>
+              <span class="text-[11px]">Parkering</span>
+            </button>
+            <button @click="nearestPoiFromPoint('toalett')" :disabled="!poiCounts.toalett"
+                    class="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-lg border transition
+                           bg-white/5 border-white/10 text-white/80 active:scale-[0.98]
+                           disabled:opacity-35 disabled:active:scale-100">
+              <span class="w-7 h-7 rounded-md bg-[#1f5d8a] text-white text-[9px] font-bold
+                           flex items-center justify-center shrink-0">WC</span>
+              <span class="text-[11px]">Toalett</span>
+            </button>
+            <button @click="nearestPoiFromPoint('holdeplass')" :disabled="!poiCounts.holdeplass"
+                    class="flex flex-col items-center gap-1.5 px-2 py-2.5 rounded-lg border transition
+                           bg-white/5 border-white/10 text-white/80 active:scale-[0.98]
+                           disabled:opacity-35 disabled:active:scale-100">
+              <span class="w-7 h-7 rounded-md bg-[#1f5d8a] flex items-center justify-center shrink-0">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="#fff">
+                  <path d="M6 3 h12 a2 2 0 0 1 2 2 v9 a2 2 0 0 1 -2 2 v1.5 a1 1 0 0 1 -2 0 V18 H8 v1.5 a1 1 0 0 1 -2 0 V16 a2 2 0 0 1 -2 -2 V5 a2 2 0 0 1 2 -2 Z"/>
+                  <rect x="6.5" y="6" width="11" height="5" rx="0.6" fill="#1f5d8a"/>
+                  <circle cx="8.5" cy="14" r="1.2" fill="#1f5d8a"/>
+                  <circle cx="15.5" cy="14" r="1.2" fill="#1f5d8a"/>
+                </svg>
+              </span>
+              <span class="text-[11px]">Buss / tog</span>
             </button>
           </div>
 
