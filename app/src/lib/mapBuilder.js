@@ -129,67 +129,49 @@ export function bboxFromCenter(lat, lon, halfKm) {
 function fmt(n) { return Number(n.toFixed(1)) }
 
 /**
- * Convex hull (monotone chain) for et sett [x,y]-punkter. Returnerer ringen
- * CCW i math-konvensjon, uten det gjentatte start-punktet.
- */
-function convexHull(pts) {
-  const uniq = []
-  const seen = new Set()
-  for (const p of pts) {
-    const k = `${p[0].toFixed(3)},${p[1].toFixed(3)}`
-    if (seen.has(k)) continue
-    seen.add(k)
-    uniq.push(p)
-  }
-  if (uniq.length < 3) return uniq.slice()
-  uniq.sort((a, b) => a[0] - b[0] || a[1] - b[1])
-  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
-  const lower = []
-  for (const p of uniq) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
-    lower.push(p)
-  }
-  const upper = []
-  for (let i = uniq.length - 1; i >= 0; i--) {
-    const p = uniq[i]
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
-    upper.push(p)
-  }
-  lower.pop(); upper.pop()
-  return lower.concat(upper)
-}
-
-/**
- * Forenkle et pier-/havnestruktur-polygon (ISOM 551) til en ren konveks form
- * med maks `maxV` hjørner (3=trekant, 4=firkant, 5=femkant). Sjøkart-WFS gir
- * ofte forvridde, til og med selv-kryssende ringer for kaier/moloer; vi
- * trenger ikke den eksakte fasongen — bare at strukturen er identifiserbar.
+ * Forenkle et pier-/havnestruktur-polygon (ISOM 551) til en ren form med maks
+ * `maxV` hjørner. Sjøkart-WFS gir ofte forvridde ringer med mange punkter for
+ * kaier/moloer; vi trenger ikke den eksakte fasongen — bare at strukturen er
+ * identifiserbar.
  *
- * Strategi: konveks innhylling (fjerner forvridning/selv-kryssing) → reduser
- * til maxV hjørner ved gjentatt å fjerne det hjørnet som danner minst
- * triangel-areal med naboene (minst form-tap).
+ * Strategi: Visvalingam-Whyatt — fjern gjentatte ganger det hjørnet som danner
+ * minst triangel-areal med naboene (minst form-tap) til vi er nede i maxV
+ * hjørner. I motsetning til konveks innhylling BEVARER dette konkaviteter, så
+ * en L-formet molo beholder knekken (signifikant hjørne = stort areal = beholdt)
+ * mens støy-punkter på rette strekk fjernes. maxV=6 gir rom for L-formen
+ * (sekskant), trekanter/firkanter/femkanter faller naturlig ut for enklere kaier.
  *
- * @param {Array<[number,number]>} pts  projiserte [x,y]-punkter
- * @param {number} [maxV=5]
+ * @param {Array<[number,number]>} pts  projiserte [x,y]-punkter (lukket ring, kan ha gjentatt startpunkt)
+ * @param {number} [maxV=6]
  * @returns {Array<[number,number]>}  forenklet ring (uten gjentatt startpunkt)
  */
-function simplifyPierPolygon(pts, maxV = 5) {
-  let hull = convexHull(pts)
-  if (hull.length <= 3) return hull
+function simplifyPierPolygon(pts, maxV = 6) {
+  // Fjern gjentatt sluttpunkt + sammenfallende nabo-punkter (degenererte kanter)
+  const ring = []
+  for (const p of pts) {
+    const last = ring[ring.length - 1]
+    if (last && Math.abs(last[0] - p[0]) < 0.05 && Math.abs(last[1] - p[1]) < 0.05) continue
+    ring.push(p)
+  }
+  if (ring.length > 1) {
+    const a = ring[0], b = ring[ring.length - 1]
+    if (Math.abs(a[0] - b[0]) < 0.05 && Math.abs(a[1] - b[1]) < 0.05) ring.pop()
+  }
+  if (ring.length <= 3) return ring
   const triArea = (a, b, c) =>
     Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2
-  while (hull.length > maxV) {
+  while (ring.length > maxV) {
     let minArea = Infinity
     let minIdx = -1
-    for (let i = 0; i < hull.length; i++) {
-      const prev = hull[(i - 1 + hull.length) % hull.length]
-      const next = hull[(i + 1) % hull.length]
-      const a = triArea(prev, hull[i], next)
+    for (let i = 0; i < ring.length; i++) {
+      const prev = ring[(i - 1 + ring.length) % ring.length]
+      const next = ring[(i + 1) % ring.length]
+      const a = triArea(prev, ring[i], next)
       if (a < minArea) { minArea = a; minIdx = i }
     }
-    hull.splice(minIdx, 1)
+    ring.splice(minIdx, 1)
   }
-  return hull
+  return ring
 }
 
 /**
@@ -888,10 +870,11 @@ export function buildSvg(elements, bbox, options = {}) {
             d = `M${fmt(c.x - half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y + half)}L${fmt(c.x - half)},${fmt(c.y + half)}Z`
             isSmall = true
           } else if (code === '551') {
-            // Kai/brygge/molo: Sjøkart-WFS gir forvridde (av og til selv-
-            // kryssende) ringer. Vi trenger ikke eksakt fasong — bare en
-            // identifiserbar form. Forenkle til konveks form med maks 5
-            // hjørner (trekant/firkant/femkant).
+            // Kai/brygge/molo: Sjøkart-WFS gir forvridde ringer med mye støy.
+            // Vi trenger ikke eksakt fasong — bare en identifiserbar form.
+            // Forenkle til maks 6 hjørner (Visvalingam-Whyatt) som bevarer
+            // konkaviteter, så L-formede moloer beholder knekken mens enklere
+            // kaier faller ut som trekant/firkant/femkant.
             const ring = simplifyPierPolygon(
               el.geometry.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
             )
