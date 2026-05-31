@@ -2008,6 +2008,17 @@ function applyUprightLabels() {
   // Alle tekst-labels i kart-innholdet
   const texts = svg.querySelectorAll('text')
   for (const el of texts) {
+    // v9.3.6 — Hopp over <text> som er en symbol-mal i <defs> (f.eks. «WC»-
+    // teksten i ISOM 554-symbolet). Slike instansieres via <use> inne i en
+    // <g data-upright="1">-gruppe som ALLEREDE counter-roteres lenger ned;
+    // å rotere mal-teksten i tillegg ga dobbel counter-rotation, så WC endte
+    // på -rotation (roterte «feil vei») i stedet for å stå rett opp.
+    let inDefs = el.__indefs
+    if (inDefs === undefined) {
+      inDefs = !!el.closest('defs')
+      el.__indefs = inDefs
+    }
+    if (inDefs) continue
     // v9.1.11 — Perf: cache BÅDE lag-referansen og x/y per element. closest()
     // og baseVal er dyrt; å kjøre dem for hver av 1000+ labels HVER rotasjons-
     // /kompass-frame ga jank (v9.1.10-regresjon: closest per frame). Statisk
