@@ -619,6 +619,14 @@
           "symbol": "drikkevann",
           "scaleMm": 1.8
         }
+      },
+      "560": {
+        "label": "Holdeplass (buss/tog)",
+        "$comment": "Tur-POI: OSM highway=bus_stop / railway=station|halt|tram_stop / public_transport=station. Blå firkant med hvit buss-/tog-piktogram. Brukes av «nærmeste holdeplass»-snarveien.",
+        "point": {
+          "symbol": "holdeplass",
+          "scaleMm": 2.0
+        }
       }
     }
   },
@@ -1094,6 +1102,50 @@
           "d": "M -0.32 0.55 L -0.32 -0.55 L 0.08 -0.55 Q 0.45 -0.55 0.45 -0.18 Q 0.45 0.22 0.08 0.22 L -0.02 0.22 L -0.02 0.55 Z M -0.02 -0.05 L 0.05 -0.05 Q 0.2 -0.05 0.2 -0.18 Q 0.2 -0.3 0.05 -0.3 L -0.02 -0.3 Z",
           "fill": "#fff",
           "fillRule": "evenodd"
+        }
+      ]
+    },
+    "holdeplass": {
+      "$comment": "Holdeplass (buss/tog, ISOM-derivert 560): blå firkant med hvitt buss-piktogram (kropp + vindusbånd + to hjul). Samme universal-stil som parkering/toalett — gjenkjennelig på print. Ingen ramme.",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "rect",
+          "x": -0.8,
+          "y": -0.8,
+          "width": 1.6,
+          "height": 1.6,
+          "fill": "#1f5d8a"
+        },
+        {
+          "type": "rect",
+          "x": -0.5,
+          "y": -0.46,
+          "width": 1.0,
+          "height": 0.74,
+          "fill": "#fff"
+        },
+        {
+          "type": "rect",
+          "x": -0.38,
+          "y": -0.34,
+          "width": 0.76,
+          "height": 0.28,
+          "fill": "#1f5d8a"
+        },
+        {
+          "type": "circle",
+          "cx": -0.28,
+          "cy": 0.42,
+          "r": 0.12,
+          "fill": "#fff"
+        },
+        {
+          "type": "circle",
+          "cx": 0.28,
+          "cy": 0.42,
+          "r": 0.12,
+          "fill": "#fff"
         }
       ]
     },
