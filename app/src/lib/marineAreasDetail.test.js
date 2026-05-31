@@ -39,6 +39,60 @@ describe('buildSvg — 551/552 rendres', () => {
     expect(svg).toContain('data-iso="551"')
     expect(svg).toContain('data-iso="552"')
   })
+
+  const pier551Path = (geometry) => {
+    const pier = {
+      type: 'way', id: 12, tags: { sjokart: 'havnestruktur' },
+      geometry, _source: 'sjokart',
+    }
+    const { svg } = buildSvg([n50Sea, pier], bbox, {})
+    // Finn 551-gruppe-elementet (ikke CSS-regelen) og hent path-d
+    const m = svg.match(/<g data-layer="[^"]*" data-iso="551">([\s\S]*?)<\/g>/)
+    expect(m).toBeTruthy()
+    const dMatch = m[1].match(/ d="([^"]+)"/)
+    expect(dMatch).toBeTruthy()
+    return dMatch[1]
+  }
+
+  it('551-pier med støy forenkles til maks 6 hjørner', () => {
+    // Mange-punkts ring med støy på rette strekk → ≤ 6 hjørner.
+    const d = pier551Path([
+      { lat: 59.020, lon: 10.060 }, { lat: 59.0205, lon: 10.0615 },
+      { lat: 59.0202, lon: 10.0608 }, { lat: 59.021, lon: 10.063 },
+      { lat: 59.0207, lon: 10.0612 }, { lat: 59.0215, lon: 10.0625 },
+      { lat: 59.022, lon: 10.060 }, { lat: 59.0212, lon: 10.0605 },
+      { lat: 59.020, lon: 10.060 },
+    ])
+    const verts = (d.match(/[ML]/g) || []).length
+    expect(verts).toBeGreaterThanOrEqual(3)
+    expect(verts).toBeLessThanOrEqual(6)
+  })
+
+  it('L-formet molo beholder knekken (konkavt 6-hjørne, ikke konveks)', () => {
+    // L-form: et tydelig konkavt hjørne. Skal bevares (6 hjørner), ikke
+    // kollapses til konveks firkant.
+    const d = pier551Path([
+      { lat: 59.0200, lon: 10.0600 }, { lat: 59.0200, lon: 10.0640 },
+      { lat: 59.0210, lon: 10.0640 }, { lat: 59.0210, lon: 10.0615 },
+      { lat: 59.0230, lon: 10.0615 }, { lat: 59.0230, lon: 10.0600 },
+      { lat: 59.0200, lon: 10.0600 },
+    ])
+    const verts = (d.match(/[ML]/g) || []).length
+    expect(verts).toBe(6)
+    // Verifiser at formen er konkav (ikke konveks): minst ett kryssprodukt
+    // har motsatt fortegn av de andre langs ringen.
+    const nums = d.match(/-?\d+(\.\d+)?/g).map(Number)
+    const ring = []
+    for (let i = 0; i < nums.length; i += 2) ring.push([nums[i], nums[i + 1]])
+    let pos = 0, neg = 0
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], c = ring[(i + 2) % ring.length]
+      const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+      if (cross > 0) pos++; else if (cross < 0) neg++
+    }
+    expect(pos).toBeGreaterThan(0)
+    expect(neg).toBeGreaterThan(0)
+  })
 })
 
 describe('buildSvg — skjulte detalj-lag (inset-only)', () => {
