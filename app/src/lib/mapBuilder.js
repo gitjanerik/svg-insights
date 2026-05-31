@@ -321,7 +321,9 @@ const LAND_OVERLAY_CODES = ['001']
 // terreng forblir lesbart og konturer/stier tydelig tegnes oppå.
 const PROTECTED_CODES = ['520']
 const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '510', '511']
-const UPPER_CODES  = ['521', '525', '528']
+// 551 (kai/brygge/molo) + 552 (fareområde) — Sjøkart-areal-koder. Sparsomme,
+// rendres øverst sammen med øvrige man-made-areal. categoryFor → 'sjo-poi'.
+const UPPER_CODES  = ['521', '525', '528', '551', '552']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
 const LAYER_ORDER = [
@@ -354,7 +356,7 @@ const MARINE_POINT_CODES = {
   '555': { requireWater: false },  // drikkevann
 }
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -511,6 +513,8 @@ export function buildSvg(elements, bbox, options = {}) {
   const broer = []         // ISOM 509-derivert (bridge=yes på highway/path)
   const bommer = []        // ISOM 526-derivert (barrier=gate/lift_gate/...)
   const marinePoints = []  // Fase 3: { el, code } for marine/padle-POI-symboler
+  const soundings = []     // Sjøkart dybdepunkt — skjult detalj-lag (inset-only)
+  const dybdekonturer = [] // Sjøkart dybdekurve (306) — skjult detalj-lag (inset-only)
 
   const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0, parkering: 0, bro: 0, bom: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
@@ -565,9 +569,14 @@ export function buildSvg(elements, bbox, options = {}) {
         if (el.type === 'node') { parkeringer.push(el); counts.parkering++ }
       }
       else if (cls.code === '526') { bommer.push(el); counts.bom++ }
+      else if (cls.code === 'dybdepunkt') { soundings.push(el) }
       else if (MARINE_POINT_CODES[cls.code]) { marinePoints.push({ el, code: cls.code }) }
       continue
     }
+    // Dybdekurver (Sjøkart 306) — samles til skjult detalj-lag (kun synlig
+    // i long-press-inset-en). 306 er ikke i LAYER_ORDER, så uten dette
+    // droppes den.
+    if (cls.code === '306') { dybdekonturer.push(el); continue }
     if (buckets[cls.code]) {
       buckets[cls.code].push(el)
       counts[cls.code]++
@@ -711,8 +720,10 @@ export function buildSvg(elements, bbox, options = {}) {
   // Tom array = innlands-kart (ingen sjø): all marin normalisering blir
   // no-op, og rendering er byte-identisk med før.
   let authoritativeSea = []
+  let authoritativeSeaSource = null   // 'dem' | 'n50' | null
   if (demSeaPolygons.length) {
     authoritativeSea = unionPolygonsToSea(demSeaPolygons)
+    if (authoritativeSea.length) authoritativeSeaSource = 'dem'
   } else {
     const n50SeaRings = []
     for (const el of buckets['303'] ?? []) {
@@ -728,7 +739,10 @@ export function buildSvg(elements, bbox, options = {}) {
         }))
       }
     }
-    if (n50SeaRings.length) authoritativeSea = unionRingsToSea(n50SeaRings)
+    if (n50SeaRings.length) {
+      authoritativeSea = unionRingsToSea(n50SeaRings)
+      if (authoritativeSea.length) authoritativeSeaSource = 'n50'
+    }
   }
   const hasAuthoritativeSea = authoritativeSea.length > 0
 
@@ -1050,7 +1064,18 @@ export function buildSvg(elements, bbox, options = {}) {
   // kontur-laget kun rendres der det er land. Konturer som "krysser"
   // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
   const waterPaths = []
-  for (const code of ['301', '302', '303', '307', '308', '309']) {
+  // Fase 1b (single coastline): den MARINE delen av masken kommer fra den
+  // autoritative sjø-geometrien (samme strandlinje som males), ikke fra
+  // unionen av flere kilder. Ferskvann (innsjø 301/302, myr 308, elveflate
+  // 309) maskeres som før. Når vi har en autoritativ sjø dropper vi 303/307
+  // + rå DEM-sjø fra masken (de er allerede dekket av authoritativeSea med
+  // ekte øy-hull). Innlands / uten kyst-modell faller vi tilbake til den
+  // gamle unionen (303/307/DEM med).
+  const freshwaterCodes = ['301', '302', '308', '309']
+  const maskCodes = hasAuthoritativeSea
+    ? freshwaterCodes
+    : ['301', '302', '303', '307', '308', '309']
+  for (const code of maskCodes) {
     for (const el of buckets[code] ?? []) {
       if (el.type === 'merged-water' && el._mergedRings) {
         for (const polygon of el._mergedRings) {
@@ -1075,14 +1100,20 @@ export function buildSvg(elements, bbox, options = {}) {
       }
     }
   }
-  // DEM-derivert sjø går også i land-mask så konturer/vegetasjon ikke renderes over.
-  for (const poly of demSeaPolygons) {
-    for (const ring of poly) {
-      if (ring.length < 3) continue
-      let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-      for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-      d += 'Z'
-      waterPaths.push(d)
+  if (hasAuthoritativeSea) {
+    // Marin maske = den ene autoritative kysten (øy-hull bevart via evenodd).
+    const seaD = multiPolygonToPathD(authoritativeSea, fmt)
+    if (seaD) waterPaths.push(seaD)
+  } else {
+    // Ingen autoritativ sjø: behold rå DEM-sjø i masken (gammel oppførsel).
+    for (const poly of demSeaPolygons) {
+      for (const ring of poly) {
+        if (ring.length < 3) continue
+        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+        d += 'Z'
+        waterPaths.push(d)
+      }
     }
   }
 
@@ -1606,7 +1637,15 @@ export function buildSvg(elements, bbox, options = {}) {
     .join('')
   const demSeaLayerSvg = demSeaBaseSvg + demSeaBandsSvg
   const waterLayers  = renderCodes(WATER_CODES)
-  const landOverlayLayers = renderCodes(LAND_OVERLAY_CODES)
+  // Fase 1b: øy-overlayen (OSM place=island malt kremgul OPPÅ vann) er en
+  // lapp for å dekke feilplassert vann i kyst-arkipel. Når den autoritative
+  // sjøen er DEM-derivert har den allerede ekte øy-HULL, så overlayen er
+  // overflødig — og å male OSM-øy-geometri (en ANNEN strandlinje) oppå ville
+  // gjeninnføre en søm. Vi dropper den da. For N50-/ingen kyst-modell
+  // (der sjø-geometrien mangler øy-hull) beholdes overlayen som sikkerhet.
+  const landOverlayLayers = authoritativeSeaSource === 'dem'
+    ? ''
+    : renderCodes(LAND_OVERLAY_CODES)
   const protectedLayers = renderCodes(PROTECTED_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
   // (casings) først, så ALLE fargefyll (overlays). Det forhindrer at sorte
@@ -1708,6 +1747,34 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bom" data-iso="526">\n${bomSvg}\n  </g>\n` : ''
   const marineLayerSvg = marinePointSvg
     ? `  <g data-layer="sjo-poi">\n${marinePointSvg}\n  </g>\n` : ''
+
+  // ── Skjulte detalj-lag (kun synlig i long-press-inset-en) ────────────
+  // Dybdepunkt-soundings og dybdekurver ble «for voldsomt» på hovedkartet,
+  // så de emitteres med display:none og data-detail="1". Inset-en (MapView)
+  // kloner kart-innholdet i et 150×150 m vindu og skrur PÅ data-detail-lag.
+  // Soundings: blå dybde-tall på hver node. Dybde rundes til heltall.
+  const soundingRows = soundings.map(el => {
+    if (el.type !== 'node') return ''
+    const dybde = Number(el.tags?.dybde)
+    if (!Number.isFinite(dybde)) return ''
+    const p = project(el.lat, el.lon)
+    const label = dybde >= 10 ? String(Math.round(dybde)) : dybde.toFixed(1)
+    return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" text-anchor="middle" data-label="dybde-tall">${label}</text>`
+  }).filter(Boolean)
+  const soundingLayerSvg = soundingRows.length
+    ? `  <g data-layer="dybdepunkt" data-detail="1" style="display:none">\n${soundingRows.join('\n')}\n  </g>\n`
+    : ''
+  // Dybdekurver: tynne lys-blå isobath-linjer.
+  const dybdekonturRows = dybdekonturer.map(el => {
+    const geom = el.type === 'way' ? el.geometry : null
+    if (!geom || geom.length < 2) return ''
+    const d = pathFromGeometry(geom, false, 1.0)
+    return d ? `    <path d="${d}" fill="none" stroke="#6fa8c4" stroke-width="0.1mm"/>` : ''
+  }).filter(Boolean)
+  const dybdekonturLayerSvg = dybdekonturRows.length
+    ? `  <g data-layer="dybdekurve" data-detail="1" style="display:none">\n${dybdekonturRows.join('\n')}\n  </g>\n`
+    : ''
+  const detailLayerSvg = dybdekonturLayerSvg + soundingLayerSvg
 
   // ── Stedsnavn for elver og bekker (304/305) ─────────────────────────
   // Gjenta navnet ~hver 2 km langs polylinjen så det er synlig uansett
@@ -1817,7 +1884,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
   // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
   // finnes i kilden (CSS for patterns, body for symboler).
-  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${marineLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
@@ -1881,6 +1948,7 @@ function categoryFor(code) {
     case '509':                                  return 'bro'
     case '526':                                  return 'bom'
     case '534':                                  return 'parkering'
+    case '551': case '552':                     return 'sjo-poi'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
   }
