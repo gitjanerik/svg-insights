@@ -12,7 +12,7 @@ import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/mapStorage.js'
-import { isomCatalog } from '../lib/symbolizer.js'
+import { isomCatalog, buildPointSymbolDef } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
@@ -1498,9 +1498,9 @@ function attachInsetPanZoom(svg, cx, cy, mapW, mapH) {
   // regionen i noen retning).
   const maxVw = () => Math.min(regionW, regionH * ASPECT)
 
-  // Start-visning: 25 % av arealet → synlig bredde = WINDOW/2 = 500 m
-  // (capped til regionen ved kanten).
-  let vw = Math.min(maxVw(), WINDOW / 2)
+  // Start-visning: ~350 m synlig bredde (god for å lese dybdetall),
+  // capped til regionen ved kanten. Zoom ut til 1 km, inn til 40 m.
+  let vw = Math.min(maxVw(), 350)
   let vh = vw / ASPECT
   let vx = cx - vw / 2, vy = cy - vh / 2
 
@@ -1756,9 +1756,37 @@ function renderMeasure() {
 watch([measureVertices, measureClosed, scale], () => renderMeasure(), { deep: true })
 watch(() => curveball.active.value, () => renderMeasure())
 
+// Sørg for at annoterings-symbolenes <symbol id="iso-sym-X"> finnes i kart-
+// SVG-ens <defs>. Nødvendig fordi mapBuilder (v9.1.10+) kun emitterer defs
+// for symboler som faktisk BRUKES av auto-features i body — annoterings-
+// symboler (knaus/stein/brønn/bro) plasseres klient-side og er typisk ikke
+// auto-brukt, så <use href="#iso-sym-knaus"> fant ingenting (kun stedsmerke,
+// som har egen custom-rendering, virket). Vi injiserer de manglende defs-ene
+// fra katalogen. Stedsmerke hoppes over (rendres via appendStedsmerkeSymbol).
+function ensureAnnotationDefs(svg) {
+  const ns = 'http://www.w3.org/2000/svg'
+  let defs = svg.querySelector('defs')
+  if (!defs) {
+    defs = document.createElementNS(ns, 'defs')
+    svg.insertBefore(defs, svg.firstChild)
+  }
+  for (const s of ANNOTATION_SYMBOLS) {
+    if (s.symbolKey === 'stedsmerke') continue
+    const id = `iso-sym-${s.symbolKey}`
+    if (svg.querySelector(`[id="${id}"]`)) continue
+    const spec = isomCatalog.pointSymbols?.[s.symbolKey]
+    if (!spec) continue
+    const parsed = new DOMParser().parseFromString(
+      `<svg xmlns="${ns}">${buildPointSymbolDef(id, spec)}</svg>`, 'image/svg+xml')
+    const symEl = parsed.querySelector('symbol')
+    if (symEl) defs.appendChild(document.importNode(symEl, true))
+  }
+}
+
 function renderAnnotations() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
+  ensureAnnotationDefs(svg)
   const ns = 'http://www.w3.org/2000/svg'
   const xlink = 'http://www.w3.org/1999/xlink'
   let layer = svg.querySelector('#annotation-layer')
