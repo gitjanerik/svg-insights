@@ -1128,7 +1128,7 @@ const contextMenuOpen = ref(false)
 const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
-const DETAIL_INSET_M = 150             // 150×150 m vindu rundt long-press-punktet
+const DETAIL_INSET_M = 500             // 500×500 m roambart vindu rundt punktet
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -1437,18 +1437,17 @@ function buildDetailInset() {
   const p = contextMenuPoint.value
   if (!src || !p) return
   const ns = 'http://www.w3.org/2000/svg'
-  const half = DETAIL_INSET_M / 2
-  const x0 = p.svgX - half
-  const y0 = p.svgY - half
 
   const svg = document.createElementNS(ns, 'svg')
-  svg.setAttribute('viewBox', `${x0} ${y0} ${DETAIL_INSET_M} ${DETAIL_INSET_M}`)
+  // viewBox settes av attachInsetPanZoom (start: 250×250 m sentrert = 25 %
+  // av det 500 m roambare vinduet).
   svg.setAttribute('xmlns', ns)
   svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   svg.setAttribute('class', 'isom-map')
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+  svg.style.touchAction = 'none'   // vi håndterer pan/zoom selv
 
   // Klon kart-innholdet (hopp over GPS-/pin-overlays).
   for (const child of Array.from(src.childNodes)) {
@@ -1491,7 +1490,97 @@ function buildDetailInset() {
   svg.appendChild(cross)
 
   host.appendChild(svg)
+  attachInsetPanZoom(svg, p.svgX, p.svgY)
 }
+
+// viewBox-basert pan + zoom (ingen rotasjon) på detalj-inset-en. Et 500×500 m
+// vindu sentrert på long-press-punktet er roambart; start-visningen er
+// 250×250 m (= 25 % av arealet). Vektor-skarp ved enhver zoom siden vi
+// manipulerer viewBox, ikke en CSS-transform.
+function attachInsetPanZoom(svg, cx, cy) {
+  const WINDOW = DETAIL_INSET_M          // roambar utstrekning (m)
+  const INIT = DETAIL_INSET_M / 2        // start-visning (m) → 25 % av arealet
+  const MIN_W = 40                       // maks zoom-inn
+  const bx0 = cx - WINDOW / 2
+  const by0 = cy - WINDOW / 2
+  let vw = INIT, vh = INIT
+  let vx = cx - vw / 2, vy = cy - vh / 2
+
+  const clampApply = () => {
+    vw = Math.max(MIN_W, Math.min(WINDOW, vw)); vh = vw
+    vx = Math.max(bx0, Math.min(bx0 + WINDOW - vw, vx))
+    vy = Math.max(by0, Math.min(by0 + WINDOW - vh, vy))
+    svg.setAttribute('viewBox', `${vx.toFixed(2)} ${vy.toFixed(2)} ${vw.toFixed(2)} ${vh.toFixed(2)}`)
+  }
+  clampApply()
+
+  const rect = () => svg.getBoundingClientRect()
+  const zoomAt = (factor, clientX, clientY) => {
+    const r = rect()
+    if (!r.width || !r.height) return
+    const relX = (clientX - r.left) / r.width
+    const relY = (clientY - r.top) / r.height
+    const fx = vx + relX * vw
+    const fy = vy + relY * vh
+    vw = vw / factor; vh = vw
+    vx = fx - relX * vw
+    vy = fy - relY * vh
+    clampApply()
+  }
+  const panBy = (dxPx, dyPx) => {
+    const r = rect()
+    if (!r.width || !r.height) return
+    vx -= (dxPx / r.width) * vw
+    vy -= (dyPx / r.height) * vh
+    clampApply()
+  }
+  const tdist = (e) => Math.hypot(
+    e.touches[0].clientX - e.touches[1].clientX,
+    e.touches[0].clientY - e.touches[1].clientY)
+  const tcenter = (e) => ({
+    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+    y: (e.touches[0].clientY + e.touches[1].clientY) / 2 })
+
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault()
+    zoomAt(e.deltaY > 0 ? 1 / 1.12 : 1.12, e.clientX, e.clientY)
+  }, { passive: false })
+
+  let dragging = false, lastX = 0, lastY = 0, pinchDist = 0
+  svg.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) { pinchDist = tdist(e); dragging = false }
+    else if (e.touches.length === 1) { dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY }
+  }, { passive: false })
+  svg.addEventListener('touchmove', (e) => {
+    e.preventDefault()
+    if (e.touches.length === 2) {
+      const d = tdist(e)
+      if (pinchDist > 0) { const c = tcenter(e); zoomAt(d / pinchDist, c.x, c.y) }
+      pinchDist = d
+    } else if (e.touches.length === 1 && dragging) {
+      panBy(e.touches[0].clientX - lastX, e.touches[0].clientY - lastY)
+      lastX = e.touches[0].clientX; lastY = e.touches[0].clientY
+    }
+  }, { passive: false })
+  svg.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) pinchDist = 0
+    if (e.touches.length < 1) dragging = false
+  })
+
+  // Mus: dra for å panorere.
+  svg.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse') return
+    dragging = true; lastX = e.clientX; lastY = e.clientY
+    try { svg.setPointerCapture(e.pointerId) } catch { /* noop */ }
+  })
+  svg.addEventListener('pointermove', (e) => {
+    if (!dragging || e.pointerType !== 'mouse') return
+    panBy(e.clientX - lastX, e.clientY - lastY)
+    lastX = e.clientX; lastY = e.clientY
+  })
+  svg.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') dragging = false })
+}
+
 watch([contextMenuOpen, contextMenuPoint], async () => {
   if (!contextMenuOpen.value) return
   await nextTick()
@@ -3842,7 +3931,7 @@ onUnmounted(() => {
            @click.self="closeContextMenu">
         <div ref="contextSheetRef"
              class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
-                    max-h-[80dvh] overflow-y-auto"
+                    max-h-[50dvh] overflow-y-auto"
              :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
           <!-- Header: koordinater + lukk -->
           <div class="sticky top-0 px-4 pt-3 pb-2.5 bg-zinc-900/95 backdrop-blur
@@ -3867,15 +3956,19 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <!-- Detalj-inset: 150×150 m utsnitt med alle detaljer (dybdetall,
-               dybdekurver, sjø-POI) avslørt. Fungerer uten GPS. -->
+          <!-- Detalj-inset: roambart 500×500 m utsnitt (start 250 m) med alle
+               detaljer (dybdetall, dybdekurver, sjø-POI) avslørt. Pan + zoom,
+               ingen rotasjon. Fungerer uten GPS. -->
           <div class="px-4 pt-3">
-            <div class="text-[10px] uppercase tracking-wide text-white/45 mb-1">
-              Detaljer · {{ DETAIL_INSET_M }} × {{ DETAIL_INSET_M }} m
+            <div class="flex items-baseline justify-between mb-1">
+              <span class="text-[10px] uppercase tracking-wide text-white/45">
+                Detaljer · {{ DETAIL_INSET_M }} × {{ DETAIL_INSET_M }} m
+              </span>
+              <span class="text-[10px] text-white/30">dra · knip for zoom</span>
             </div>
             <div ref="detailInsetRef"
-                 class="w-full aspect-square max-w-[240px] mx-auto rounded-lg overflow-hidden
-                        border border-white/10 bg-[#fefae0]"></div>
+                 class="w-full aspect-square max-w-[480px] mx-auto rounded-lg overflow-hidden
+                        border border-white/10 bg-[#fefae0] touch-none"></div>
           </div>
 
           <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
