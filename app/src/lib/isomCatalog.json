@@ -578,13 +578,9 @@
       },
       "551": {
         "label": "Kai / brygge / pir / molo",
-        "$comment": "Havne-strukturer fra Sjøkart-WFS (KaiBrygge/Pir/Molo/Bølgebryter)",
+        "$comment": "Havne-strukturer fra Sjøkart-WFS (KaiBrygge/Pir/Molo/Bølgebryter). Forenklet til konveks ≤5-hjørnet form i mapBuilder; uten omriss (kun fyll) for et rent, identifiserbart symbol.",
         "fill": {
           "color": "#6b6b6b"
-        },
-        "stroke": {
-          "color": "#1f1f1f",
-          "widthMm": 0.13
         }
       },
       "552": {

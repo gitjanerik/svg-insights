@@ -129,6 +129,70 @@ export function bboxFromCenter(lat, lon, halfKm) {
 function fmt(n) { return Number(n.toFixed(1)) }
 
 /**
+ * Convex hull (monotone chain) for et sett [x,y]-punkter. Returnerer ringen
+ * CCW i math-konvensjon, uten det gjentatte start-punktet.
+ */
+function convexHull(pts) {
+  const uniq = []
+  const seen = new Set()
+  for (const p of pts) {
+    const k = `${p[0].toFixed(3)},${p[1].toFixed(3)}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    uniq.push(p)
+  }
+  if (uniq.length < 3) return uniq.slice()
+  uniq.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const lower = []
+  for (const p of uniq) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop()
+    lower.push(p)
+  }
+  const upper = []
+  for (let i = uniq.length - 1; i >= 0; i--) {
+    const p = uniq[i]
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop()
+    upper.push(p)
+  }
+  lower.pop(); upper.pop()
+  return lower.concat(upper)
+}
+
+/**
+ * Forenkle et pier-/havnestruktur-polygon (ISOM 551) til en ren konveks form
+ * med maks `maxV` hjørner (3=trekant, 4=firkant, 5=femkant). Sjøkart-WFS gir
+ * ofte forvridde, til og med selv-kryssende ringer for kaier/moloer; vi
+ * trenger ikke den eksakte fasongen — bare at strukturen er identifiserbar.
+ *
+ * Strategi: konveks innhylling (fjerner forvridning/selv-kryssing) → reduser
+ * til maxV hjørner ved gjentatt å fjerne det hjørnet som danner minst
+ * triangel-areal med naboene (minst form-tap).
+ *
+ * @param {Array<[number,number]>} pts  projiserte [x,y]-punkter
+ * @param {number} [maxV=5]
+ * @returns {Array<[number,number]>}  forenklet ring (uten gjentatt startpunkt)
+ */
+function simplifyPierPolygon(pts, maxV = 5) {
+  let hull = convexHull(pts)
+  if (hull.length <= 3) return hull
+  const triArea = (a, b, c) =>
+    Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2
+  while (hull.length > maxV) {
+    let minArea = Infinity
+    let minIdx = -1
+    for (let i = 0; i < hull.length; i++) {
+      const prev = hull[(i - 1 + hull.length) % hull.length]
+      const next = hull[(i + 1) % hull.length]
+      const a = triArea(prev, hull[i], next)
+      if (a < minArea) { minArea = a; minIdx = i }
+    }
+    hull.splice(minIdx, 1)
+  }
+  return hull
+}
+
+/**
  * Mutate ring i-place så orienteringen passer polygon-clipping (CCW i
  * standard y-up math = positivt shoelace signed area). I SVG y-down
  * blir det visuelt CW. Hvis ringen er feil vei, reverseres den.
@@ -823,6 +887,18 @@ export function buildSvg(elements, bbox, options = {}) {
             const half = 6.5
             d = `M${fmt(c.x - half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y + half)}L${fmt(c.x - half)},${fmt(c.y + half)}Z`
             isSmall = true
+          } else if (code === '551') {
+            // Kai/brygge/molo: Sjøkart-WFS gir forvridde (av og til selv-
+            // kryssende) ringer. Vi trenger ikke eksakt fasong — bare en
+            // identifiserbar form. Forenkle til konveks form med maks 5
+            // hjørner (trekant/firkant/femkant).
+            const ring = simplifyPierPolygon(
+              el.geometry.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
+            )
+            if (ring.length < 3) continue
+            d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+            for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+            d += 'Z'
           } else {
             d = pathFromGeometry(el.geometry, true, filter.simplifyM)
           }

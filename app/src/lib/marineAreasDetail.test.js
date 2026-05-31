@@ -39,6 +39,31 @@ describe('buildSvg — 551/552 rendres', () => {
     expect(svg).toContain('data-iso="551"')
     expect(svg).toContain('data-iso="552"')
   })
+
+  it('551-pier forenkles til maks 5 hjørner (konveks form)', () => {
+    // Forvridd / selv-kryssende ring (typisk Sjøkart-WFS kai-geometri) med
+    // mange hjørner → skal kollapses til en konveks form med ≤ 5 punkter.
+    const pier = {
+      type: 'way', id: 12, tags: { sjokart: 'havnestruktur' },
+      geometry: [
+        { lat: 59.020, lon: 10.060 }, { lat: 59.0205, lon: 10.0615 },
+        { lat: 59.0202, lon: 10.0608 }, { lat: 59.021, lon: 10.063 },
+        { lat: 59.0207, lon: 10.0612 }, { lat: 59.0215, lon: 10.0625 },
+        { lat: 59.022, lon: 10.060 }, { lat: 59.0212, lon: 10.0605 },
+        { lat: 59.020, lon: 10.060 },
+      ],
+      _source: 'sjokart',
+    }
+    const { svg } = buildSvg([n50Sea, pier], bbox, {})
+    // Finn 551-gruppe-elementet (ikke CSS-regelen) og tell hjørner i path-d
+    const m = svg.match(/<g data-layer="[^"]*" data-iso="551">([\s\S]*?)<\/g>/)
+    expect(m).toBeTruthy()
+    const dMatch = m[1].match(/ d="([^"]+)"/)
+    expect(dMatch).toBeTruthy()
+    const verts = (dMatch[1].match(/[ML]/g) || []).length
+    expect(verts).toBeGreaterThanOrEqual(3)
+    expect(verts).toBeLessThanOrEqual(5)
+  })
 })
 
 describe('buildSvg — skjulte detalj-lag (inset-only)', () => {
