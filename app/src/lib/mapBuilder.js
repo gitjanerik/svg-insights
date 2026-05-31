@@ -17,6 +17,12 @@ import {
 import { buildContours, detectCliffs, detectKnauser } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToColor } from './sjokartFetcher.js'
+import {
+  unionRingsToSea,
+  unionPolygonsToSea,
+  clipPolygonToSea,
+  multiPolygonToPathD,
+} from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
@@ -660,6 +666,40 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Én autoritativ sjø-geometri (Fase 1: single coastline) ───────────
+  // Fundamentet for topologisk normalisering: ett sett sjø-polygoner i
+  // SVG-meter-rom som alt marint klippes/valideres mot. Kilde-prioritet:
+  //
+  //   1. DEM-0m-isobat (seaFromDem) — CORS-trygg, og marching-squares gir
+  //      ekte øy-HULL (kritisk for at dybde ikke males over øyer).
+  //   2. N50 Havflate (buckets['303'] fra _source='n50') — fallback når
+  //      DEM mangler/er syntetisk. Merk: N50-fetcheren dropper indre ringer,
+  //      så øyer blir ikke hull herfra — derfor er DEM foretrukket.
+  //
+  // Tom array = innlands-kart (ingen sjø): all marin normalisering blir
+  // no-op, og rendering er byte-identisk med før.
+  let authoritativeSea = []
+  if (demSeaPolygons.length) {
+    authoritativeSea = unionPolygonsToSea(demSeaPolygons)
+  } else {
+    const n50SeaRings = []
+    for (const el of buckets['303'] ?? []) {
+      if (el._source !== 'n50') continue
+      if (el.type === 'merged-water' && el._mergedRings) {
+        for (const polygon of el._mergedRings) {
+          if (polygon[0]) n50SeaRings.push(polygon[0])
+        }
+      } else if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+        n50SeaRings.push(el.geometry.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        }))
+      }
+    }
+    if (n50SeaRings.length) authoritativeSea = unionRingsToSea(n50SeaRings)
+  }
+  const hasAuthoritativeSea = authoritativeSea.length > 0
+
   // Bygg ISOM-id-mapene (patterns + symbols) som kroppen trenger. Selve
   // defs- og CSS-strengene bygges LAZY etter at kroppen er satt sammen, så vi
   // kun emitterer det som faktisk brukes (se nær return). widthM → label-skala.
@@ -763,6 +803,20 @@ export function buildSvg(elements, bbox, options = {}) {
             if (sd) subpaths.push(sd)
           }
           d = subpaths.join(' ')
+        }
+        // Fase 1 (single coastline): klipp dybdeareal (307) til den
+        // autoritative kysten. DepthArea ∩ Land = 0 — fjerner dybde-bleeding
+        // forbi strandlinjen og over øyer (øy-hull i sjø-geometrien kapper
+        // bort dybde inne på øyer). Gated på hasAuthoritativeSea; for
+        // innlands-kart eller manglende kyst-modell er d urørt.
+        if (code === '307' && hasAuthoritativeSea && el.type === 'way' && el.geometry?.length >= 3) {
+          const ring = el.geometry.map(g => {
+            const p = project(g.lat, g.lon)
+            return [p.x, p.y]
+          })
+          const clipped = clipPolygonToSea([ring], authoritativeSea)
+          if (clipped.length === 0) continue   // dybdeareal helt på land → dropp
+          d = multiPolygonToPathD(clipped, fmt)
         }
         if (d) {
           // ISOM 307 (Sjøkart dybdeareal): per-polygon fill basert på
