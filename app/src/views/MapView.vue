@@ -225,7 +225,7 @@ const LAYERS = [
   { key: 'kirke',      label: 'Kirker' },
   { key: 'parkering',  label: 'Parkering' },
   { key: 'holdeplass', label: 'Holdeplass' },
-  { key: 'bro',        label: 'Bro / bru' },
+  { key: 'bro',        label: 'Bro' },
   { key: 'bom',        label: 'Bom / barriere' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },

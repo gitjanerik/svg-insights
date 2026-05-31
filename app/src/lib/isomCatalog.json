@@ -385,8 +385,8 @@
         }
       },
       "509": {
-        "label": "Bro / bru",
-        "$comment": "Bro / bru på sti eller vei. Plasseres på midten av bro-segmentet (way med bridge=yes) og roteres for å ligge langs sti-tangenten.",
+        "label": "Bro",
+        "$comment": "Bro på sti eller vei (way med bridge=yes). Rendres f.o.m. v9.3.11 som to parallelle parapet-linjer langs HELE bro-spennet i mapBuilder (broSvg), ikke som ett punkt-symbol — så broen dekker korrekt brolengde. `point`/`bru` beholdes som legacy-referanse men brukes ikke i render lenger.",
         "point": {
           "symbol": "bru",
           "scaleMm": 1.8
