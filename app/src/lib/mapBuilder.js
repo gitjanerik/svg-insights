@@ -820,9 +820,9 @@ export function buildSvg(elements, bbox, options = {}) {
         }
         if (d) {
           // ISOM 307 (Sjøkart dybdeareal): per-polygon fill basert på
-          // gjennomsnitts-dybde. depthToColor gradierer fra grunn (#b6daee)
-          // til dyp (#1f5d8a) så dybde-skiftene blir synlige som distinkte
-          // blå-toner istedenfor ett flat farget areal.
+          // gjennomsnitts-dybde via depthToColor — kystnær 5-bånds dempet
+          // skala (0–2/2–5/5–10/10–20/20+ m), tett i grunt vann der padleren
+          // trenger det, lav-kontrast så den ikke konkurrerer med terrenget.
           let inlineStyle = ''
           let dybdeAttr = ''
           if (code === '307' && el.tags) {
@@ -1527,11 +1527,14 @@ export function buildSvg(elements, bbox, options = {}) {
   // Renderingsrekkefølge: største bånd FØRST (mørkere), så minste sist
   // (lysest) så grunnest farge overstyrer ved kysten. Basis-sjø er
   // ISOM 303-mørk; båndene blir progressivt lysere mot land.
-  const BAND_COLORS_BY_DESC_DISTANCE = ['#8fc4dd', '#b6daee']
+  // v9.2.0: dempet til å matche depthToColor sin kystnære skala. Dette er
+  // en avstand-fra-land-PROXY (ikke ekte dybde), så tonene holdes i den
+  // grunne enden av skalaen — lav-kontrast, underordnet terrenget.
+  const BAND_COLORS_BY_DESC_DISTANCE = ['#aed3e4', '#d8eaf2']
   const sortedBands = [...demSeaBands].sort((a, b) => b.maxDistanceM - a.maxDistanceM)
   const demSeaBandsSvg = sortedBands
     .map((band, idx) => {
-      const color = BAND_COLORS_BY_DESC_DISTANCE[idx] ?? '#b6daee'
+      const color = BAND_COLORS_BY_DESC_DISTANCE[idx] ?? '#cfe6f0'
       const paths = band.polygons.map(poly => {
         const d = polygonsToPathRing(poly)
         return d ? `    <path d="${d}" fill="${color}" fill-rule="evenodd"/>` : ''

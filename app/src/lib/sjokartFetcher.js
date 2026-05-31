@@ -658,24 +658,33 @@ function pushAnyGeom(feature, tags, out, nextId) {
 }
 
 /**
- * Lag en gradert blå farge for et dybdekontur basert på dyp i meter.
- * 4 diskrete bånd istedenfor kontinuerlig gradient — gir et fornuftig
- * sjødybde-skala der hver tone betyr noe konkret istedenfor en uleselig
- * blå-glidning. Lyseste = grunt vann (0-2 m) som indikerer skjær/grunne,
- * mørkeste = dypt vann (50 m+).
+ * Lag en dempet blå farge for et dybdeareal basert på dyp i meter.
  *
- * Bånd (v8.9.25):
- *   <2 m   #d0e4f0  lyseste — grunt, navigasjonsfare
- *   2-10 m #94c3dc  lys — sandbank-/strandsone-dyp
- *   10-50 m #4d89af mid — typisk fjord/innskjær
- *   50+ m  #1f5d8a  mørkeste — dypt fjord-/havvann
+ * Fase 2 (v9.2.0): kystnær 5-bånds-skala tilpasset padling. Den tette
+ * inndelingen ligger i grunt vann (0–2 / 2–5 / 5–10 m) der padleren
+ * faktisk trenger den — grunner, skjær, strømutsatte sund — mens dypt
+ * vann slås sammen (10–20 / 20+). Tonene er BEVISST dempede og lav-
+ * kontrast: et ISOM-kart er informasjonstett, så dybdebåndene skal gi
+ * subtil kontekst uten å konkurrere med terreng/vegetasjon. Faktiske
+ * farer markeres tydelig av skjær-/grunne-PUNKTsymboler (ISOM 211),
+ * ikke av sterke flatefarger.
+ *
+ * Konvensjon: grunnest = lysest (mot kremgul land), dypest = litt mer
+ * mettet — men hele skalaen holder et smalt, mykt verdi-spenn.
+ *
+ *   0–2 m   #d8eaf2  lyseste — grunt, sjekk for skjær
+ *   2–5 m   #c5e0ec
+ *   5–10 m  #aed3e4
+ *   10–20 m #93c3da
+ *   20+ m   #79b3d2  dypest — fortsatt dempet
  *
  * @param {number} dybde meter (positivt tall = dyp)
  * @returns {string} hex-farge
  */
 export function depthToColor(dybde) {
-  if (!Number.isFinite(dybde) || dybde < 2) return '#d0e4f0'
-  if (dybde < 10) return '#94c3dc'
-  if (dybde < 50) return '#4d89af'
-  return '#1f5d8a'
+  if (!Number.isFinite(dybde) || dybde < 2) return '#d8eaf2'
+  if (dybde < 5)  return '#c5e0ec'
+  if (dybde < 10) return '#aed3e4'
+  if (dybde < 20) return '#93c3da'
+  return '#79b3d2'
 }
