@@ -1128,7 +1128,7 @@ const contextMenuOpen = ref(false)
 const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
-const DETAIL_INSET_M = 500             // 500×500 m roambart vindu rundt punktet
+const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -1471,26 +1471,44 @@ function buildDetailInset() {
   svg.appendChild(cross)
 
   host.appendChild(svg)
-  attachInsetPanZoom(svg, p.svgX, p.svgY)
+  const mapW = meta.value?.widthM ?? DETAIL_INSET_M
+  const mapH = meta.value?.heightM ?? DETAIL_INSET_M
+  attachInsetPanZoom(svg, p.svgX, p.svgY, mapW, mapH)
 }
 
 // viewBox-basert pan + zoom (ingen rotasjon) på detalj-inset-en. Et 500×500 m
 // vindu sentrert på long-press-punktet er roambart; start-visningen er
 // 250×250 m (= 25 % av arealet). Vektor-skarp ved enhver zoom siden vi
 // manipulerer viewBox, ikke en CSS-transform.
-function attachInsetPanZoom(svg, cx, cy) {
-  const WINDOW = DETAIL_INSET_M          // roambar utstrekning (m)
-  const INIT = DETAIL_INSET_M / 2        // start-visning (m) → 25 % av arealet
-  const MIN_W = 40                       // maks zoom-inn
-  const bx0 = cx - WINDOW / 2
-  const by0 = cy - WINDOW / 2
-  let vw = INIT, vh = INIT
+function attachInsetPanZoom(svg, cx, cy, mapW, mapH) {
+  const ASPECT = 3 / 2                   // matcher inset-boksen (aspect-[3/2])
+  const WINDOW = DETAIL_INSET_M          // 1×1 km roambar utstrekning (m)
+  const MIN_W = 40                       // maks zoom-inn (synlig bredde)
+  // Alt D — kamera-clamp: den roambare regionen er snittet av 1 km-vinduet
+  // rundt punktet OG de ekte kartgrensene (0…mapW × 0…mapH). Slik ser man
+  // aldri tomrom utenfor kartet; nær en kant glir visningen innover og den
+  // røde kart-rammen viser naturlig hvor kartet slutter.
+  const rxMin = Math.max(0, cx - WINDOW / 2)
+  const rxMax = Math.min(mapW, cx + WINDOW / 2)
+  const ryMin = Math.max(0, cy - WINDOW / 2)
+  const ryMax = Math.min(mapH, cy + WINDOW / 2)
+  const regionW = Math.max(1, rxMax - rxMin)
+  const regionH = Math.max(1, ryMax - ryMin)
+  // Maks synlig bredde: fyll regionen, men hold 3:2-aspekt (ikke større enn
+  // regionen i noen retning).
+  const maxVw = () => Math.min(regionW, regionH * ASPECT)
+
+  // Start-visning: 25 % av arealet → synlig bredde = WINDOW/2 = 500 m
+  // (capped til regionen ved kanten).
+  let vw = Math.min(maxVw(), WINDOW / 2)
+  let vh = vw / ASPECT
   let vx = cx - vw / 2, vy = cy - vh / 2
 
   const clampApply = () => {
-    vw = Math.max(MIN_W, Math.min(WINDOW, vw)); vh = vw
-    vx = Math.max(bx0, Math.min(bx0 + WINDOW - vw, vx))
-    vy = Math.max(by0, Math.min(by0 + WINDOW - vh, vy))
+    vw = Math.max(MIN_W, Math.min(maxVw(), vw))
+    vh = vw / ASPECT
+    vx = Math.max(rxMin, Math.min(rxMax - vw, vx))
+    vy = Math.max(ryMin, Math.min(ryMax - vh, vy))
     svg.setAttribute('viewBox', `${vx.toFixed(2)} ${vy.toFixed(2)} ${vw.toFixed(2)} ${vh.toFixed(2)}`)
   }
   clampApply()
@@ -1503,7 +1521,7 @@ function attachInsetPanZoom(svg, cx, cy) {
     const relY = (clientY - r.top) / r.height
     const fx = vx + relX * vw
     const fy = vy + relY * vh
-    vw = vw / factor; vh = vw
+    vw = vw / factor; vh = vw / ASPECT
     vx = fx - relX * vw
     vy = fy - relY * vh
     clampApply()
