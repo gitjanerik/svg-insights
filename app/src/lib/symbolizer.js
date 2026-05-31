@@ -192,6 +192,8 @@ export function classifyToIsom(el) {
   if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
   if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
   if (t.sjokart === 'slipp')      return { code: '550', cat: 'point' }
+  if (t.sjokart === 'havnestruktur') return { code: '551', cat: 'water' }  // kai/brygge/molo (areal)
+  if (t.sjokart === 'fareomraade')   return { code: '552', cat: 'water' }  // fareområde (areal)
 
   // ── Fase 3: marine / padle-POI ───────────────────────────────────────
   // Mange koder her gjenbruker eksisterende ISOM-marine katalog-symboler
