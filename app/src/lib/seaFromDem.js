@@ -17,7 +17,26 @@
 // `buildContours`-output), klare til å rendres direkte i SVG.
 
 import { contours as d3Contours } from 'd3-contour'
-import { simplifyDP } from './pathUtils.js'
+import { simplifyDP, chaikin } from './pathUtils.js'
+
+// Glatt en (lukket) ring så sjø-/dybde-grenser bukter seg som høydekurver
+// istedenfor å stå med harde, rette marching-squares-streker. Samme oppskrift
+// som buildContours: DP-forenkling → Chaikin corner-cutting → lett final-DP.
+// Vannflaten er en kunstig snitt-flate gjennom geologien — den skal følge
+// terrenget mykt, ikke vises som et polygon-raster.
+function smoothRing(ring, simplifyM) {
+  let r = ring
+  if (simplifyM > 0 && r.length > 4) r = simplifyDP(r, simplifyM)
+  // Chaikin(closed) forventer ingen duplisert slutt-node; d3-contour lukker
+  // ringene (siste == første), så vi dropper duplikatet først.
+  if (r.length > 1) {
+    const f = r[0], l = r[r.length - 1]
+    if (f[0] === l[0] && f[1] === l[1]) r = r.slice(0, -1)
+  }
+  if (r.length >= 3) r = chaikin(r, 2, true)
+  if (r.length > 4) r = simplifyDP(r, Math.max(0.5, simplifyM * 0.5))
+  return r
+}
 
 /**
  * @param {{ data: Float32Array|Array<number>, cols: number, rows: number,
@@ -94,9 +113,8 @@ export function buildSeaFromDem(dem, opts = {}) {
     }
     const rings = []
     for (let r = 0; r < rawRings.length; r++) {
-      let ring = rawRings[r]
-      if (simplifyM > 0 && ring.length > 4) ring = simplifyDP(ring, simplifyM)
-      if (ring.length < 4) continue
+      const ring = smoothRing(rawRings[r], simplifyM)
+      if (ring.length < 3) continue
       if (Math.abs(signedArea(ring)) < minAreaM2) continue
       rings.push(ring)
     }
@@ -215,9 +233,8 @@ export function buildSeaShallowBands(dem, opts = {}) {
       for (const poly of levels[0].coordinates) {
         const rings = []
         for (const ring of poly) {
-          let projected = ring.map(([col, row]) => [col * px, row * py])
-          if (simplifyM > 0 && projected.length > 4) projected = simplifyDP(projected, simplifyM)
-          if (projected.length < 4) continue
+          const projected = smoothRing(ring.map(([col, row]) => [col * px, row * py]), simplifyM)
+          if (projected.length < 3) continue
           rings.push(projected)
         }
         if (rings.length) polygons.push(rings)
