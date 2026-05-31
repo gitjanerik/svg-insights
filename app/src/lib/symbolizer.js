@@ -93,6 +93,10 @@ export function buildPointSymbolDef(symId, spec) {
     if (el.type === 'polygon') {
       return `<polygon points="${el.points}" fill="${el.fill}"/>`
     }
+    if (el.type === 'text') {
+      // Brukt av WC-symbolet (ISOM 554): kort tekst sentrert i symbol-viewBox.
+      return `<text x="${el.x ?? 0}" y="${el.y ?? 0}" font-size="${el.fontSize}" text-anchor="middle" fill="${el.fill}" font-family="sans-serif" font-weight="700">${el.content}</text>`
+    }
     if (el.type === 'rect') {
       // ISOM 540 (stake-port) og 542 (stake-cardinal) bruker rect-elementer
       // — uten denne handleren ble de silent dropped → tomme symboler
@@ -187,6 +191,32 @@ export function classifyToIsom(el) {
   }
   if (t.sjokart === 'lanterne')   return { code: '533', cat: 'point' }
   if (t.sjokart === 'dybdepunkt') return { code: 'dybdepunkt', cat: 'point' }
+  if (t.sjokart === 'slipp')      return { code: '550', cat: 'point' }
+
+  // ── Fase 3: marine / padle-POI ───────────────────────────────────────
+  // Mange koder her gjenbruker eksisterende ISOM-marine katalog-symboler
+  // (533/540–543/211/550) som tidligere ble klassifisert men ikke rendret.
+  // Kilder: OSM (man_made=lighthouse, seamark:type, leisure=marina/slipway,
+  // natural=beach, amenity=toilets/drinking_water) + Sjøkart-WFS.
+  if (t.man_made === 'lighthouse') return { code: '533', cat: 'point' }
+  const seamark = t['seamark:type']
+  if (seamark) {
+    if (/light/.test(seamark)) return { code: '533', cat: 'point' }   // fyr/lykt
+    if (/lateral/.test(seamark)) {
+      const lc = t['seamark:buoy_lateral:category'] || t['seamark:beacon_lateral:category'] || ''
+      if (lc === 'port')      return { code: '540', cat: 'point' }     // rød babord
+      if (lc === 'starboard') return { code: '541', cat: 'point' }     // grønn styrbord
+      return { code: '543', cat: 'point' }
+    }
+    if (/cardinal/.test(seamark))               return { code: '542', cat: 'point' }
+    if (/rock|obstruction|wreck/.test(seamark)) return { code: '211', cat: 'point' }  // skjær/grunne
+    if (/beacon|buoy|pile|stake|mooring/.test(seamark)) return { code: '543', cat: 'point' }
+  }
+  if (t.leisure === 'marina')          return { code: '553', cat: 'point' }  // småbåthavn
+  if (t.leisure === 'slipway')         return { code: '550', cat: 'point' }  // landingssted
+  if (t.natural === 'beach')           return { code: '550', cat: 'point' }  // landingssted (strand)
+  if (t.amenity === 'toilets')         return { code: '554', cat: 'point' }
+  if (t.amenity === 'drinking_water')  return { code: '555', cat: 'point' }
 
   // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
   // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har

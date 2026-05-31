@@ -22,6 +22,7 @@ import {
   unionPolygonsToSea,
   clipPolygonToSea,
   multiPolygonToPathD,
+  pointFeatureKept,
 } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
@@ -70,6 +71,16 @@ export function buildOverpassQuery(bbox) {
   node["amenity"="parking"];
   way["amenity"="parking"];
   node["barrier"~"^(gate|lift_gate|swing_gate|bollard|block|cycle_barrier|cattle_grid)$"];
+  node["man_made"="lighthouse"];
+  way["man_made"="lighthouse"];
+  node["seamark:type"];
+  node["leisure"="marina"];
+  way["leisure"="marina"];
+  node["leisure"="slipway"];
+  way["leisure"="slipway"];
+  way["natural"="beach"];
+  node["amenity"="toilets"];
+  node["amenity"="drinking_water"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -324,6 +335,25 @@ const LAYER_ORDER = [
   '522',
 ]
 
+// Fase 3: marine / padle-POI som rendres som punkt-symboler (eget render-
+// pass, ikke via LAYER_ORDER/layerSvg). `requireWater` styrer topologisk
+// validering (Marker ∈ Water): skjær og flytende sjømerker er nonsens på
+// land og droppes hvis de faller utenfor den autoritative kysten. Fyr,
+// landingssteder, marina, toalett og drikkevann er land-/strand-side og
+// beholdes uansett. Symbol + størrelse hentes fra isomCatalog pr kode.
+const MARINE_POINT_CODES = {
+  '211': { requireWater: true },   // skjær / grunne
+  '533': { requireWater: false },  // fyr / lykt / lanterne
+  '540': { requireWater: true },   // sjømerke babord
+  '541': { requireWater: true },   // sjømerke styrbord
+  '542': { requireWater: true },   // cardinal-sjømerke
+  '543': { requireWater: true },   // sjømerke (generisk beacon/buoy)
+  '550': { requireWater: false },  // slipp / landingssted
+  '553': { requireWater: false },  // småbåthavn / marina
+  '554': { requireWater: false },  // toalett
+  '555': { requireWater: false },  // drikkevann
+}
+
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
@@ -480,6 +510,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const parkeringer = []   // ISOM 534-derivert (amenity=parking)
   const broer = []         // ISOM 509-derivert (bridge=yes på highway/path)
   const bommer = []        // ISOM 526-derivert (barrier=gate/lift_gate/...)
+  const marinePoints = []  // Fase 3: { el, code } for marine/padle-POI-symboler
 
   const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0, parkering: 0, bro: 0, bom: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
@@ -534,6 +565,7 @@ export function buildSvg(elements, bbox, options = {}) {
         if (el.type === 'node') { parkeringer.push(el); counts.parkering++ }
       }
       else if (cls.code === '526') { bommer.push(el); counts.bom++ }
+      else if (MARINE_POINT_CODES[cls.code]) { marinePoints.push({ el, code: cls.code }) }
       continue
     }
     if (buckets[cls.code]) {
@@ -1377,6 +1409,33 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${bomSize}mm" height="${bomSize}mm"/>`
   }).filter(Boolean).join('\n')
 
+  // Fase 3: marine / padle-POI (fyr, sjømerker, skjær, landingssteder,
+  // småbåthavner, toaletter, drikkevann). Symbol + størrelse fra
+  // isomCatalog pr kode. `data-upright` holder symbolet rett ved kart-
+  // rotasjon (samme som parkering). Topologisk Marker ∈ Water-filter:
+  // koder med requireWater droppes hvis de faller på land (utenfor den
+  // autoritative kysten) — kun aktivt når vi faktisk HAR en kyst-modell.
+  const marinePointSvg = marinePoints.map(({ el, code }) => {
+    let p = null
+    if (el.type === 'node') p = project(el.lat, el.lon)
+    else if (el.geometry && el.geometry.length >= 3) p = polygonCentroid(el.geometry)
+    else if (el.geometry && el.geometry.length >= 1) p = project(el.geometry[0].lat, el.geometry[0].lon)
+    if (!p) return ''
+    const meta = MARINE_POINT_CODES[code]
+    if (meta?.requireWater &&
+        !pointFeatureKept(p.x, p.y, authoritativeSea, { requireWater: true })) {
+      return ''
+    }
+    const def = getIsomDef(code, isomCatalog, false)
+    const sym = def?.point
+    if (!sym) return ''
+    const sid = symbolIds.get(sym.symbol)
+    if (!sid) return ''
+    const sz = sym.scaleMm ?? 1.6
+    const half = sz / 2
+    return `    <g data-upright="1" data-iso="${code}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
+  }).filter(Boolean).join('\n')
+
   // Bro / bru (ISOM 509-derivert): to korte parallelle ticks på midten av
   // bridge=yes-way-en, rotert langs sti-tangenten så de ligger langs sti-
   // retningen. Wrapped i <g transform="translate(...) rotate(...)"> siden
@@ -1647,6 +1706,8 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bro" data-iso="509">\n${broSvg}\n  </g>\n` : ''
   const bomLayerSvg = bomSvg
     ? `  <g data-layer="bom" data-iso="526">\n${bomSvg}\n  </g>\n` : ''
+  const marineLayerSvg = marinePointSvg
+    ? `  <g data-layer="sjo-poi">\n${marinePointSvg}\n  </g>\n` : ''
 
   // ── Stedsnavn for elver og bekker (304/305) ─────────────────────────
   // Gjenta navnet ~hver 2 km langs polylinjen så det er synlig uansett
@@ -1756,7 +1817,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
   // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
   // finnes i kilden (CSS for patterns, body for symboler).
-  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${marineLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])

@@ -599,6 +599,30 @@
           "widthMm": 0.13,
           "dasharray": [1.5, 0.5]
         }
+      },
+      "553": {
+        "label": "Småbåthavn / marina",
+        "$comment": "Padle-POI (Fase 3): OSM leisure=marina. Anker-symbol i marineblå.",
+        "point": {
+          "symbol": "anker",
+          "scaleMm": 2.0
+        }
+      },
+      "554": {
+        "label": "Toalett",
+        "$comment": "Padle-/turkart-POI (Fase 3): OSM amenity=toilets. Blå firkant med hvit WC.",
+        "point": {
+          "symbol": "wc",
+          "scaleMm": 2.0
+        }
+      },
+      "555": {
+        "label": "Drikkevann",
+        "$comment": "Padle-/turkart-POI (Fase 3): OSM amenity=drinking_water. Blå dråpe.",
+        "point": {
+          "symbol": "drikkevann",
+          "scaleMm": 1.8
+        }
       }
     }
   },
@@ -1128,6 +1152,86 @@
           "width": 0.15,
           "height": 0.8,
           "fill": "#000"
+        }
+      ]
+    },
+    "anker": {
+      "$comment": "Småbåthavn / marina (ISOM 553): forenklet anker i marineblå.",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "circle",
+          "cx": 0,
+          "cy": -0.62,
+          "r": 0.16,
+          "stroke": "#1f3a5c",
+          "widthMm": 0.12,
+          "fill": "none"
+        },
+        {
+          "type": "line",
+          "x1": 0,
+          "y1": -0.46,
+          "x2": 0,
+          "y2": 0.55,
+          "stroke": "#1f3a5c",
+          "widthMm": 0.14
+        },
+        {
+          "type": "line",
+          "x1": -0.38,
+          "y1": -0.12,
+          "x2": 0.38,
+          "y2": -0.12,
+          "stroke": "#1f3a5c",
+          "widthMm": 0.14
+        },
+        {
+          "type": "path",
+          "d": "M-0.62 0.2 A0.62 0.62 0 0 0 0.62 0.2",
+          "stroke": "#1f3a5c",
+          "widthMm": 0.14,
+          "fill": "none"
+        }
+      ]
+    },
+    "wc": {
+      "$comment": "Toalett (ISOM 554): blå firkant med hvit WC. Universal-symbol-stil (samme som parkering).",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "rect",
+          "x": -0.8,
+          "y": -0.8,
+          "width": 1.6,
+          "height": 1.6,
+          "fill": "#1f5d8a"
+        },
+        {
+          "type": "text",
+          "content": "WC",
+          "x": 0,
+          "y": 0.36,
+          "fontSize": 0.95,
+          "fill": "#fff"
+        }
+      ]
+    },
+    "drikkevann": {
+      "$comment": "Drikkevann (ISOM 555): blå dråpe (amenity=drinking_water).",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "path",
+          "d": "M0 -0.72 C0.5 -0.1 0.5 0.45 0 0.62 C-0.5 0.45 -0.5 -0.1 0 -0.72 Z",
+          "fill": "#1f7aa3"
+        },
+        {
+          "type": "circle",
+          "cx": -0.12,
+          "cy": 0.18,
+          "r": 0.1,
+          "fill": "#bfe3f2"
         }
       ]
     }
