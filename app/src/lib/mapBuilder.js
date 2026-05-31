@@ -1697,7 +1697,12 @@ export function buildSvg(elements, bbox, options = {}) {
       const color = BAND_COLORS_BY_DESC_DISTANCE[idx] ?? '#cfe6f0'
       const paths = band.polygons.map(poly => {
         const d = polygonsToPathRing(poly)
-        return d ? `    <path d="${d}" fill="${color}" fill-rule="evenodd"/>` : ''
+        // stroke="none" overstyrer den arvede ISOM 303-streken (#1f7aa3).
+        // Båndets sjøside er en kunstig avstand-fra-land-kontur, ikke en ekte
+        // strandlinje — uten dette ble den strøket med en fragmentert mørkeblå
+        // linje som fløt i vannet nærmest land. Den ekte kysten strøkes av
+        // dem-sea-basislaget; båndene bidrar kun med gradient-fyll.
+        return d ? `    <path d="${d}" fill="${color}" stroke="none" fill-rule="evenodd"/>` : ''
       }).filter(Boolean).join('\n')
       return paths
         ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea-band" data-band-m="${band.maxDistanceM}">\n${paths}\n  </g>\n`
