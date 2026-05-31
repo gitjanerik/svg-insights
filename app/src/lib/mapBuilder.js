@@ -81,6 +81,9 @@ export function buildOverpassQuery(bbox) {
   way["natural"="beach"];
   node["amenity"="toilets"];
   node["amenity"="drinking_water"];
+  node["highway"="bus_stop"];
+  node["railway"~"^(station|halt|tram_stop)$"];
+  node["public_transport"="station"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -556,13 +559,14 @@ export function buildSvg(elements, bbox, options = {}) {
   const trigpunkter = []   // ISOM 113 (trigonometric point)
   const kirker = []        // ISOM 532-derivert (kirker / chapels)
   const parkeringer = []   // ISOM 534-derivert (amenity=parking)
+  const holdeplasser = []  // ISOM 560-derivert (buss/tog-holdeplass)
   const broer = []         // ISOM 509-derivert (bridge=yes på highway/path)
   const bommer = []        // ISOM 526-derivert (barrier=gate/lift_gate/...)
   const marinePoints = []  // Fase 3: { el, code } for marine/padle-POI-symboler
   const soundings = []     // Sjøkart dybdepunkt — skjult detalj-lag (inset-only)
   const dybdekonturer = [] // Sjøkart dybdekurve (306) — skjult detalj-lag (inset-only)
 
-  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0, parkering: 0, bro: 0, bom: 0 }
+  const counts = { peak: 0, place: 0, hule: 0, gruve: 0, trig: 0, kirke: 0, parkering: 0, holdeplass: 0, bro: 0, bom: 0 }
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
@@ -614,6 +618,7 @@ export function buildSvg(elements, bbox, options = {}) {
         // Node-parkering (way-varianten ble allerede plukket over).
         if (el.type === 'node') { parkeringer.push(el); counts.parkering++ }
       }
+      else if (cls.code === '560') { if (el.type === 'node') { holdeplasser.push(el); counts.holdeplass++ } }
       else if (cls.code === '526') { bommer.push(el); counts.bom++ }
       else if (cls.code === 'dybdepunkt') { soundings.push(el) }
       else if (MARINE_POINT_CODES[cls.code]) { marinePoints.push({ el, code: cls.code }) }
@@ -1486,6 +1491,21 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g data-upright="1" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${parkeringSize}mm" height="${parkeringSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
+  // Holdeplass (ISOM 560-derivert): blå buss-symbol 6.0mm. OSM-node-posisjon.
+  // data-upright="1" holder symbolet rett ved kart-rotasjon (samme som
+  // parkering/toalett). Brukes av «nærmeste holdeplass»-snarveien i søket.
+  const holdeplassSize = 6.0
+  const holdeplassSvg = holdeplasser.map(el => {
+    if (el.type !== 'node') return ''
+    const p = project(el.lat, el.lon)
+    const sid = symbolIds.get('holdeplass')
+    if (!sid) return ''
+    const half = holdeplassSize / 2
+    const name = el.tags?.name ?? el.tags?.navn ?? ''
+    const nameAttr = name ? ` data-name="${xmlEscape(name)}"` : ''
+    return `    <g data-upright="1"${nameAttr} transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${holdeplassSize}mm" height="${holdeplassSize}mm"/></g>`
+  }).filter(Boolean).join('\n')
+
   // Bom / barriere (ISOM 526-derivert): sort horisontal bar 1.6mm. OSM-
   // node-posisjon direkte. Ingen rotasjon — vi har ikke pålitelig vei-
   // tangent ved barriere-noden uten å indeksere alle ways først.
@@ -1800,6 +1820,8 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="kirke" data-iso="532">\n${kirkeSvg}\n  </g>\n` : ''
   const parkeringLayerSvg = parkeringSvg
     ? `  <g data-layer="parkering" data-iso="534">\n${parkeringSvg}\n  </g>\n` : ''
+  const holdeplassLayerSvg = holdeplassSvg
+    ? `  <g data-layer="holdeplass" data-iso="560">\n${holdeplassSvg}\n  </g>\n` : ''
   const broLayerSvg = broSvg
     ? `  <g data-layer="bro" data-iso="509">\n${broSvg}\n  </g>\n` : ''
   const bomLayerSvg = bomSvg
@@ -1943,7 +1965,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
   // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
   // finnes i kilden (CSS for patterns, body for symboler).
-  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
@@ -2007,6 +2029,7 @@ function categoryFor(code) {
     case '509':                                  return 'bro'
     case '526':                                  return 'bom'
     case '534':                                  return 'parkering'
+    case '560':                                  return 'holdeplass'
     case '551': case '552':                     return 'sjo-poi'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'

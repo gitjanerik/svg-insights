@@ -220,6 +220,13 @@ export function classifyToIsom(el) {
   if (t.amenity === 'toilets')         return { code: '554', cat: 'point' }
   if (t.amenity === 'drinking_water')  return { code: '555', cat: 'point' }
 
+  // Holdeplass (ISOM-derivert 560): buss-/tog-/trikkestopp. Hentes fra OSM
+  // highway=bus_stop, railway=station/halt/tram_stop, public_transport=station.
+  // Brukes av «nærmeste holdeplass»-snarveien i kart-søket.
+  if (t.highway === 'bus_stop')        return { code: '560', cat: 'point' }
+  if (t.railway === 'station' || t.railway === 'halt' || t.railway === 'tram_stop') return { code: '560', cat: 'point' }
+  if (t.public_transport === 'station') return { code: '560', cat: 'point' }
+
   // OSM `place=island/islet` — land-øy-overlay som dekker over feilplassert
   // OSM-vann ("Landøya-problemet": natural=water-relations som ikke har
   // riktige inner-rings for hver øy → blå smitter inn på land). Renders
