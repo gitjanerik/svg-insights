@@ -1167,41 +1167,11 @@ function openContextMenuAt(clientX, clientY) {
   }
   contextMenuOpen.value = true
   closeDrawer()
-  centerContextPoint()
+  // v9.3.3: INGEN auto-pan av hovedkartet. Brukeren har allerede plassert/
+  // zoomet/rotert kartet slik de vil — å flytte det ved long-press var
+  // forvirrende og ødela oversikten. Punktet vises i pin + detalj-inset.
 }
 
-// Into-focus: panorer kartet så det valgte punktet havner midt i det synlige
-// kart-arealet OVER bottom-sheeten (ikke skjult bak den). Bevarer gjeldende
-// zoom og rotasjon — dette er en ren autoscroll, ikke en reorientering.
-// Sheeten er ferdig layet ut etter nextTick (overlay-fade er ren opacity, så
-// geometrien er endelig med én gang elementet er i DOM-en).
-async function centerContextPoint() {
-  await nextTick()
-  if (!contextMenuOpen.value || !meta.value) return
-  const wrap = wrapperRef.value
-  const p = contextMenuPoint.value
-  if (!wrap || !p) return
-  const wr = wrap.getBoundingClientRect()
-  if (!wr.width || !wr.height) return
-  // Topp av bottom-sheeten i client-px → bunn av det synlige kart-arealet.
-  // Faller tilbake til wrapper-bunn hvis sheeten ennå ikke er målbar.
-  const sheetTop = contextSheetRef.value
-    ? contextSheetRef.value.getBoundingClientRect().top
-    : wr.bottom
-  const visibleBottom = Math.min(Math.max(sheetTop, wr.top), wr.bottom)
-  // Fokuspunkt i wrapper-lokale px: horisontalt midtstilt, vertikalt midt i
-  // den synlige stripa mellom toppen og sheeten.
-  const focusX = wr.width / 2
-  const focusY = ((wr.top + visibleBottom) / 2) - wr.top
-  panTo(p.svgX, p.svgY, {
-    vbWidth: meta.value.widthM,
-    vbHeight: meta.value.heightM,
-    targetScale: scale.value,
-    focusX,
-    focusY,
-    keepRotation: true,
-  })
-}
 function closeContextMenu() {
   contextMenuOpen.value = false
   contextMenuPoint.value = null
@@ -3978,7 +3948,7 @@ onUnmounted(() => {
               <span class="text-[10px] text-white/30">dra · knip for zoom</span>
             </div>
             <div ref="detailInsetRef"
-                 class="w-full aspect-square max-w-[480px] mx-auto rounded-lg overflow-hidden
+                 class="w-full aspect-[3/2] max-w-[480px] mx-auto rounded-lg overflow-hidden
                         border border-white/10 bg-[#fefae0] touch-none"></div>
           </div>
 
