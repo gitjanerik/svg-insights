@@ -1212,7 +1212,7 @@
       ]
     },
     "anker": {
-      "$comment": "Småbåthavn / marina (ISOM 553): forenklet anker i marineblå. Strekbredde i SYMBOL-ENHETER (strokeW), ikke mm — se GOTCHA i buildPointSymbolDef. Med scaleMm=2 gir strokeW≈0.13 en ~0.13 mm trykk-strek; tidligere widthMm=0.14 ble ~0.53 enheter og fylte ring+bue til en solid blob.",
+      "$comment": "Småbåthavn / marina (ISOM 553): forenklet anker i marineblå. Strekbredde i SYMBOL-ENHETER (strokeW), ikke mm — se GOTCHA i buildPointSymbolDef. Stammen går helt ned til flukes-buens bunn (y=0.62) med runde skjøter (linecap), så ankeret henger sammen som én sammenhengende figur i stedet for en flytende strek over en løs bue.",
       "viewBox": "-1 -1 2 2",
       "elements": [
         {
@@ -1229,9 +1229,10 @@
           "x1": 0,
           "y1": -0.46,
           "x2": 0,
-          "y2": 0.55,
+          "y2": 0.62,
           "stroke": "#1f3a5c",
-          "strokeW": 0.15
+          "strokeW": 0.15,
+          "linecap": "round"
         },
         {
           "type": "line",
@@ -1240,13 +1241,15 @@
           "x2": 0.38,
           "y2": -0.12,
           "stroke": "#1f3a5c",
-          "strokeW": 0.15
+          "strokeW": 0.15,
+          "linecap": "round"
         },
         {
           "type": "path",
           "d": "M-0.62 0.2 A0.62 0.62 0 0 0 0.62 0.2",
           "stroke": "#1f3a5c",
           "strokeW": 0.15,
+          "linecap": "round",
           "fill": "none"
         }
       ]
