@@ -34,6 +34,12 @@ const SJOKART_TIMEOUT_MS = 8000
 // så smale sund (Nesøybrua etc.) oppløses i sjø-masken. Se buildMapFromCenter.
 const COASTAL_DEM_RES_M = 5
 
+// 5 m-oppgraderingen gjøres kun for kart opp til denne total-størrelsen (km).
+// Større kyst-kart er oversiktskart der et ~30 m sund er sub-synlig uansett, og
+// 5 m ville koste (km/5)² celler (14 km = 7,8M) — tregt på mobil. Se gaten i
+// buildMapFromCenter.
+const COASTAL_UPGRADE_MAX_KM = 8
+
 function hasNearSeaLevelPixels(dem) {
   if (!dem?.data) return false
   const { data, noData } = dem
@@ -129,10 +135,21 @@ export async function buildMapFromCenter({
   // Konturer rendres fortsatt fint takket være Chaikin-glatting, og antall
   // høydekurver styres av ekvidistansen (uendret) — 5 m gir bare mer presise
   // vektorer, ikke flere kurver.
+  // 5 m-oppgraderingen gates på kart-STØRRELSE i tillegg til kyst: finheten
+  // trengs der man planlegger å padle gjennom et sund — små, detaljerte kart.
+  // Store oversiktskart beholder probe-oppløsningen (byte-identisk med før
+  // 5 m-funksjonen, og like raskt). Terskel: COASTAL_UPGRADE_MAX_KM.
   const resolutionM = equidistanceM <= 5 ? 10 : 20
+  const sizeKmTotal = halfKm * 2
+  const canUpgradeToFineDem = resolutionM > COASTAL_DEM_RES_M &&
+                              sizeKmTotal <= COASTAL_UPGRADE_MAX_KM
   const probeDemPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
   const demPromise = probeDemPromise.then(async (probeDem) => {
-    if (!hasNearSeaLevelPixels(probeDem) || resolutionM <= COASTAL_DEM_RES_M) {
+    const coastal = hasNearSeaLevelPixels(probeDem)
+    if (!coastal || !canUpgradeToFineDem) {
+      if (coastal && sizeKmTotal > COASTAL_UPGRADE_MAX_KM) {
+        console.log(`[DEM] kyst-kart ${sizeKmTotal.toFixed(1)} km > ${COASTAL_UPGRADE_MAX_KM} km — beholder ${resolutionM} m (5 m for kostbart på store kart)`)
+      }
       return probeDem
     }
     onProgress(`Kystnært kart — henter DEM i ${COASTAL_DEM_RES_M} m for skarpere kystlinje …`)
