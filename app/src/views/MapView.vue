@@ -3341,8 +3341,9 @@ onUnmounted(() => {
 
     <!-- Posisjons-status -->
     <div v-if="!loading && userPos.error"
-         class="absolute bottom-32 left-3 right-3 z-20 px-3 py-2 rounded-lg backdrop-blur
-                bg-amber-600/95 border border-slate-300/40 text-white text-[12px] shadow-lg">
+         class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[90%] px-3 py-2
+                rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
+                text-white text-[12px] shadow-lg text-center whitespace-nowrap">
       {{ userPos.error }}
     </div>
     <div v-else-if="!loading && showOutsideMapBanner"

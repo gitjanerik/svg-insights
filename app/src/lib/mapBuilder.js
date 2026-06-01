@@ -1555,7 +1555,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // mm→meter: root-viewBox er i meter, og 1 mm = scaleDenom/1000 meter — så
   // strek-bredde i "mm" og en mm-basert offset er trygt på root-nivå (i
   // motsetning til den nestede symbol-viewBox-en, jf. anker-fiksen).
-  const broOffsetM = 0.42 * (scaleDenom / 1000)   // halv avstand mellom parapet-linjene (mm→m)
+  const broOffsetM = 0.30 * (scaleDenom / 1000)   // halv avstand mellom parapet-linjene (mm→m)
   const broSvg = broer.map(el => {
     if (!el.geometry || el.geometry.length < 2) return ''
     const pts = el.geometry.map(g => project(g.lat, g.lon))
@@ -1577,7 +1577,7 @@ export function buildSvg(elements, bbox, options = {}) {
       right.push({ x: pts[i].x - nx * broOffsetM, y: pts[i].y - ny * broOffsetM })
     }
     const toPath = poly => 'M' + poly.map(p => `${fmt(p.x)} ${fmt(p.y)}`).join(' L')
-    return `    <path d="${toPath(left)}" fill="none" stroke="#1a1a1a" stroke-width="0.18mm" stroke-linecap="round" stroke-linejoin="round"/>\n    <path d="${toPath(right)}" fill="none" stroke="#1a1a1a" stroke-width="0.18mm" stroke-linecap="round" stroke-linejoin="round"/>`
+    return `    <path d="${toPath(left)}" fill="none" stroke="#1a1a1a" stroke-width="0.13mm" stroke-linecap="round" stroke-linejoin="round"/>\n    <path d="${toPath(right)}" fill="none" stroke="#1a1a1a" stroke-width="0.13mm" stroke-linecap="round" stroke-linejoin="round"/>`
   }).filter(Boolean).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
