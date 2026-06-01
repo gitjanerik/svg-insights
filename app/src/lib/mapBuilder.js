@@ -1642,6 +1642,9 @@ export function buildSvg(elements, bbox, options = {}) {
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
     demSource: dem?.source ?? null,
+    demResolutionM: dem?.transform
+      ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
+      : null,
     domSource: dom?.source ?? null,
     vegReclassified: chm ? vegReclassified : null,
     lakeLabels: lakeLabels.length,

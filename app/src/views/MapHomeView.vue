@@ -10,6 +10,9 @@ const loading = ref(true)
 const builtin = ref([
   { id: 'vardasen', navn: 'Vardåsen i Asker', center: { lat: 59.813746, lon: 10.414616 }, halfKm: 2.5, builtin: true },
 ])
+// Metadata for referansekart hentes fra SVG-ens data-meta (ekvidistanse,
+// DEM-kilde, bygge-tidspunkt) — keyet på id. Fylles av loadBuiltinMeta().
+const builtinMeta = ref({})
 
 async function refresh() {
   loading.value = true
@@ -20,8 +23,33 @@ async function refresh() {
   }
 }
 
-onMounted(refresh)
+onMounted(() => { refresh(); loadBuiltinMeta() })
 onActivated(refresh)
+
+// Hent data-meta fra referansekartets SVG. data-meta ligger på rot-<svg>-
+// taggen helt øverst, så vi henter kun de første KB-ene via Range. Degraderer
+// stille hvis Range/fetch feiler (kortet viser da bare størrelse).
+async function loadBuiltinMeta() {
+  for (const m of builtin.value) {
+    if (builtinMeta.value[m.id]) continue
+    try {
+      const url = `${import.meta.env.BASE_URL}maps/${m.id}.svg`
+      const res = await fetch(url, { headers: { Range: 'bytes=0-8191' } })
+      if (!res.ok) continue
+      const meta = parseSvgMeta(await res.text())
+      if (meta) builtinMeta.value = { ...builtinMeta.value, [m.id]: meta }
+    } catch { /* ignorer — kortet degraderer til bare størrelse */ }
+  }
+}
+
+function parseSvgMeta(svgText) {
+  try {
+    const mm = /data-meta='([^']*)'/.exec(svgText)
+    if (!mm) return null
+    const json = mm[1].replace(/&apos;/g, "'").replace(/\\u003c/g, '<').replace(/\\u003e/g, '>')
+    return JSON.parse(json)
+  } catch { return null }
+}
 
 function openMap(id) {
   router.push({ name: 'kart-vis', params: { id } })
@@ -45,6 +73,36 @@ function formatDate(ts) {
   return new Date(ts).toLocaleDateString('no-NO', {
     day: '2-digit', month: 'short', year: 'numeric'
   })
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Dato + klokkeslett på én linje. Tar ms-timestamp eller ISO-streng.
+function formatDateTime(ts) {
+  if (ts == null) return null
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return null
+  return `${formatDate(d)} · ${formatTime(d)}`
+}
+
+// «DEM 5 m» / «syntetisk DEM» / null (utelates). Syntetisk DEM har ingen ekte
+// oppløsning å vise.
+function demLabel(resM, source) {
+  if (source && source.startsWith('synthetic')) return 'syntetisk DEM'
+  if (resM) return `DEM ${Math.round(resM)} m`
+  return null
+}
+
+// Info-linje (linje 2): størrelse · ekvidistanse · DEM. Deler som mangler
+// (eldre kart uten metadata) utelates stille.
+function infoLine(sizeStr, eq, demRes, demSource) {
+  const parts = [`${sizeStr} × ${sizeStr} km`]
+  if (eq) parts.push(`${eq} m ekv.`)
+  const dl = demLabel(demRes, demSource)
+  if (dl) parts.push(dl)
+  return parts.join(' · ')
 }
 
 // ── On-the-fly snarvei: «Lag kart der jeg er» ───────────────────────────
@@ -201,7 +259,12 @@ async function onCreateHere() {
         </div>
         <div class="flex-1 min-w-0">
           <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
-          <div class="text-[12px] text-white/50">{{ (m.halfKm * 2) }} × {{ (m.halfKm * 2) }} km · referansekart</div>
+          <div class="text-[12px] text-white/50 truncate">
+            {{ infoLine(m.halfKm * 2, builtinMeta[m.id]?.equidistance, builtinMeta[m.id]?.demResolutionM, builtinMeta[m.id]?.demSource) }}
+          </div>
+          <div v-if="formatDateTime(builtinMeta[m.id]?.generated)" class="text-[11px] text-white/35 truncate">
+            {{ formatDateTime(builtinMeta[m.id]?.generated) }}
+          </div>
         </div>
       </div>
 
@@ -227,11 +290,10 @@ async function onCreateHere() {
           </div>
           <div class="flex-1 min-w-0">
             <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
-            <div class="text-[12px] text-white/50 flex items-center gap-2 truncate">
-              <span>{{ (m.halfKm * 2).toFixed(1) }} × {{ (m.halfKm * 2).toFixed(1) }} km</span>
-              <span>·</span>
-              <span>{{ formatDate(m.opprettet) }}</span>
+            <div class="text-[12px] text-white/50 truncate">
+              {{ infoLine((m.halfKm * 2).toFixed(1), m.equidistanceM, m.demResolutionM, m.demSource) }}
             </div>
+            <div class="text-[11px] text-white/35 truncate">{{ formatDateTime(m.opprettet) }}</div>
           </div>
           <button @click.stop="onDelete(m.id, m.navn)"
                   class="w-9 h-9 rounded-lg flex items-center justify-center text-white/35

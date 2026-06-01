@@ -241,6 +241,14 @@ export async function buildMapFromCenter({
     bbox,
     center: { ...center },
     halfKm,
+    // Metadata for kart-listas info-linje (overlever listMaps som dropper
+    // svg/dem). demResolutionM = faktisk DEM-oppløsning (5 m på kystnære
+    // kart, ellers probe-oppløsning); demSource = WCS-coverage eller syntetisk.
+    equidistanceM,
+    demResolutionM: dem?.transform
+      ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
+      : null,
+    demSource: dem?.source ?? null,
     counts,
     svg,
     source,
