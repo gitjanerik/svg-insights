@@ -30,6 +30,10 @@ const EMPTY_SJOKART = {
 
 const SJOKART_TIMEOUT_MS = 8000
 
+// Kyst-kart oppgraderes til denne DEM-oppløsningen (m) i et andre fetch-trinn,
+// så smale sund (Nesøybrua etc.) oppløses i sjø-masken. Se buildMapFromCenter.
+const COASTAL_DEM_RES_M = 5
+
 function hasNearSeaLevelPixels(dem) {
   if (!dem?.data) return false
   const { data, noData } = dem
@@ -110,14 +114,41 @@ export async function buildMapFromCenter({
   //   - Overpass, N50 og DEM kjøres parallelt fra start.
   //   - Sjøkart kjøres parallelt så snart DEM-resultatet bekrefter kyst-bbox;
   //     hard 8s timeout så et hengende Geonorge-endpoint aldri blokkerer kartet.
-  // DEM-oppløsning: 20 m som default, 10 m bare når brukeren har valgt
-  // fine konturer (≤ 5 m ekvidistanse). 20 m halverer cellene per akse →
-  // 4× mindre TIFF å laste ned + dekode, typisk 1-3 s besparelse på 4×4 km
-  // kart. Konturer rendres fortsatt fint takket være Chaikin-glatting; tap
-  // av presisjon er umerkelig på print 1:10 000.
+  // DEM-oppløsning — to-trinns ved kyst:
+  //   Trinn 1 (probe): 20 m som default, 10 m når brukeren har valgt fine
+  //     konturer (≤ 5 m ekvidistanse). Billig (4×4 km ≈ 40k celler), og gir
+  //     oss det eksakte kyst-signalet via hasNearSeaLevelPixels (piksler
+  //     ≤ 0.5 m = havflate — samme test som gater Sjøkart).
+  //   Trinn 2 (oppgradering): er bbox-en kystnær, hentes DEM på nytt i 5 m.
+  //     Smale sund (f.eks. Nesøybrua, ~30-40 m) oppløses ikke ved 20/10 m —
+  //     DEM-0.5m-masken klemmer halsen igjen og en øy blir til halvøy. 5 m
+  //     åpner sundet. Kostnaden (16× piksler vs 20 m) betales KUN ved kysten;
+  //     innlands-kart henter bare probe-DEM-et og er byte-identiske med før.
+  //     Trygg degradering: feiler 5 m-hentingen (eller faller til syntetisk),
+  //     beholder vi probe-DEM-et — kartet blir aldri verre enn før.
+  // Konturer rendres fortsatt fint takket være Chaikin-glatting, og antall
+  // høydekurver styres av ekvidistansen (uendret) — 5 m gir bare mer presise
+  // vektorer, ikke flere kurver.
   const resolutionM = equidistanceM <= 5 ? 10 : 20
-  const demPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
-  const sjokartPromise = demPromise.then(dem => {
+  const probeDemPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
+  const demPromise = probeDemPromise.then(async (probeDem) => {
+    if (!hasNearSeaLevelPixels(probeDem) || resolutionM <= COASTAL_DEM_RES_M) {
+      return probeDem
+    }
+    onProgress(`Kystnært kart — henter DEM i ${COASTAL_DEM_RES_M} m for skarpere kystlinje …`)
+    try {
+      const fine = await fetchDEM(bbox, utmBbox, { resolutionM: COASTAL_DEM_RES_M, useReal: true })
+      if (fine && !fine.source?.startsWith('synthetic')) return fine
+      console.warn('[DEM] 5 m-oppgradering ga syntetisk DEM — beholder probe-oppløsning')
+      return probeDem
+    } catch (e) {
+      console.warn(`[DEM] 5 m-oppgradering feilet (${e?.message ?? e}) — beholder ${resolutionM} m`)
+      return probeDem
+    }
+  })
+  // Sjøkart gates på probe-DEM-et (returnerer først) så WFS-hentingen starter
+  // parallelt med 5 m-oppgraderingen, ikke etter den.
+  const sjokartPromise = probeDemPromise.then(dem => {
     if (!hasNearSeaLevelPixels(dem)) {
       console.log('[Sjøkart] hopper over — bbox er innlands (ingen DEM-piksler ≤ 0.5 m)')
       return EMPTY_SJOKART
