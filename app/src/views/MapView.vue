@@ -572,25 +572,32 @@ watch(reliefStepIndex, () => {
 })
 
 // Tap = step (wrap), lang-trykk (500 ms) = nullstill til default.
+// `knobSettled` gjør at ett trykk gir nøyaktig ett hakk: et avsluttet trykk
+// (committet step ELLER lang-trykk-reset) markeres settled, så et nytt
+// avsluttende event ikke kan telle om igjen.
 let knobTimer = null
-let knobLongFired = false
+let knobSettled = true
 function knobDown(kind) {
-  knobLongFired = false
+  knobSettled = false
   if (knobTimer) clearTimeout(knobTimer)
   knobTimer = setTimeout(() => {
-    knobLongFired = true
+    knobSettled = true   // lang-trykk konsumerer trykket → ingen step ved release
     if (kind === 'stroke') strokeStepIndex.value = STROKE_DEFAULT_IDX
     else reliefStepIndex.value = RELIEF_DEFAULT_IDX
   }, 500)
 }
+// Bindes til BÅDE pointerup og pointercancel. Enkelte mobil-nettlesere
+// (sett på Samsung Internet) sender `pointercancel` i stedet for `pointerup`
+// når knappen krymper via `active:scale-95`. Da knobCancel bare ryddet timeren
+// uten å telle, ble trykket «mistet» — reliefknotten hoppet over et hakk og
+// tok det igjen ved neste trykk (tellefeilen). `knobSettled`-vakten gjør
+// committen idempotent, så pointerup + pointercancel aldri teller dobbelt.
 function knobUp(kind) {
   if (knobTimer) { clearTimeout(knobTimer); knobTimer = null }
-  if (knobLongFired) return
+  if (knobSettled) return
+  knobSettled = true
   if (kind === 'stroke') strokeStepIndex.value = (strokeStepIndex.value + 1) % STROKE_STEPS.length
   else reliefStepIndex.value = (reliefStepIndex.value + 1) % RELIEF_STEPS.length
-}
-function knobCancel() {
-  if (knobTimer) { clearTimeout(knobTimer); knobTimer = null }
 }
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
@@ -3187,7 +3194,7 @@ onUnmounted(() => {
            lang-trykk = nullstill. Bua viser nivå; senter-streken tegnes i
            faktisk valgt tykkelse (selv-demonstrerende). -->
       <button @pointerdown="knobDown('stroke')" @pointerup="knobUp('stroke')"
-              @pointerleave="knobCancel" @pointercancel="knobCancel"
+              @pointercancel="knobUp('stroke')"
               aria-label="Strektykkelse — tap for å justere, hold for å nullstille"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition">
@@ -3202,7 +3209,7 @@ onUnmounted(() => {
       <!-- Relieff-knott: tap = mer relieff (wrapper til av etter max),
            lang-trykk = nullstill. Senter-bumpens skygge følger nivået. -->
       <button @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
-              @pointerleave="knobCancel" @pointercancel="knobCancel"
+              @pointercancel="knobUp('relief')"
               aria-label="Relieff-styrke — tap for å justere, hold for å nullstille"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition">
