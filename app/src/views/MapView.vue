@@ -325,23 +325,34 @@ const cbDemError = ref(null)
 
 // v8.9.4: ensureDem brukes nå av flere features (CurveBall, hill-shading,
 // høydeprofil) — derav den generelle navngivningen.
+// v9.3.21: concurrency-guard. På det innebygde kartet hentes DEM lazy over
+// nett, og flere samtidige kallere (mount-relieff + raske knott-trykk) trigget
+// hver sin fetchDEM. Del én henting via `demInFlight` så vi ikke fyrer N nett-
+// kall — og så alle kallere resumer samlet mot samme resultat.
+let demInFlight = null
 async function ensureDem() {
   if (storedDem.value || !meta.value) return !!storedDem.value
+  if (demInFlight) return demInFlight
   cbDemFetching.value = true
   cbDemError.value = null
-  try {
-    const m = meta.value
-    const utmBbox = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
-    const dem = await fetchDEM(m.bbox, utmBbox, { resolutionM: 10, useReal: true })
-    if (dem && !dem.source?.startsWith('synthetic')) {
-      storedDem.value = dem
-      storedHighestPoint.value = findHighestPoint(dem)
+  demInFlight = (async () => {
+    try {
+      const m = meta.value
+      const utmBbox = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
+      const dem = await fetchDEM(m.bbox, utmBbox, { resolutionM: 10, useReal: true })
+      if (dem && !dem.source?.startsWith('synthetic')) {
+        storedDem.value = dem
+        storedHighestPoint.value = findHighestPoint(dem)
+      }
+    } catch (e) {
+      cbDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
+    } finally {
+      cbDemFetching.value = false
+      demInFlight = null
     }
-  } catch (e) {
-    cbDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
-  }
-  cbDemFetching.value = false
-  return !!storedDem.value
+    return !!storedDem.value
+  })()
+  return demInFlight
 }
 // Alias for å bevare eksisterende kall-sites (CurveBall + Tournament).
 const ensureDemForCurveBall = ensureDem
@@ -1074,15 +1085,18 @@ async function applyHillshade() {
   // vekk et evt. gammelt separat knaus-lag fra tidligere klient-versjoner.
   svg.querySelector('#knaus-relief-layer')?.remove()
   const wantOn = reliefOpacity.value > 0
-  let img = svg.querySelector('#hillshade-layer')
+  // Hjelper: fjern ALLE relieff-lag. Det KAN finnes flere — se race-merknaden
+  // under. «0 %» (av) må derfor querySelectorAll, ikke bare ett, ellers blir
+  // et duplikat igjen og gir et svakt relieff selv om knotten viser 0 %.
+  const removeAllHillshade = () => svg.querySelectorAll('#hillshade-layer').forEach(el => el.remove())
   if (!wantOn) {
-    if (img) img.remove()
+    removeAllHillshade()
     return
   }
   // Lazy-last DEM hvis nødvendig — built-in Vardåsen fetcher fra Kartverket WCS
   await ensureDem()
   if (!storedDem.value) {
-    if (img) img.remove()
+    removeAllHillshade()
     return
   }
   if (cachedHillshadeDem !== storedDem.value) {
@@ -1093,6 +1107,15 @@ async function applyHillshade() {
     cachedHillshadeUrl = hillshadeToDataURL(shade)
     cachedHillshadeDem = storedDem.value
   }
+  // v9.3.21: re-query ETTER await (ikke før). På det innebygde kartet hentes
+  // DEM lazy over nett, så flere applyHillshade-kall kan stå og vente på
+  // `await ensureDem()` samtidig. Fanget vi `img` FØR ventingen, så hver av
+  // dem null → hver opprettet sitt eget #hillshade-layer → duplikater. «0 %»
+  // ryddet bare ett → et orphan-lag ble igjen med gammel opasitet (det svake
+  // relieffet ved 0 %). Behold første, fjern resten, så det finnes nøyaktig ett.
+  const existing = svg.querySelectorAll('#hillshade-layer')
+  let img = existing[0] ?? null
+  for (let i = 1; i < existing.length; i++) existing[i].remove()
   // Plasser-strategi: hillshade skal blende NED over kart-innholdet
   // (vegetasjon, vann, veier), men ligge UNDER user-/annotation-/track-/
   // measure-lagene som er klient-genererte overlays. Insert-before
