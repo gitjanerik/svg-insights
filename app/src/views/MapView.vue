@@ -3786,7 +3786,7 @@ onUnmounted(() => {
          feilet, så kartet viser bare terreng. Lesbart, bryter på flere linjer,
          med «Prøv på nytt»-knapp som bygger kartet på nytt. -->
     <div v-if="detailsFailed && !loading && !curveball.active.value"
-         class="absolute bottom-32 left-3 right-3 z-20 max-w-[420px] mx-auto
+         class="absolute bottom-32 left-3 right-20 z-20 max-w-[420px]
                 rounded-lg backdrop-blur bg-amber-600/95 border border-amber-300/40
                 text-white text-[12px] shadow-lg p-3">
       <div class="flex items-start gap-2">
