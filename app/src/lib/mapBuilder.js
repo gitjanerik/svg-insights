@@ -30,7 +30,19 @@ import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import polygonClipping from 'polygon-clipping'
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+// Overpass-ventetid er den dominerende flaskehalsen i kart-bygging (81–97 % av
+// total tid, målt v9.3.25 — 4,7–11,5 s), og det varierer hvilket speil som er
+// overlastet. Vi kjører derfor flere speil i kappløp (Promise.any) og tar det
+// første gyldige svaret. Begge støtter CORS for browser-fetch.
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+]
+const OVERPASS_HEADERS = {
+  'Content-Type': 'application/x-www-form-urlencoded',
+  'Accept': 'application/json',
+  'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
+}
 
 export function buildOverpassQuery(bbox) {
   return `
@@ -99,21 +111,41 @@ out geom;
 
 export async function fetchOverpass(bbox, { signal } = {}) {
   const body = 'data=' + encodeURIComponent(buildOverpassQuery(bbox))
-  const res = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-      'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
-    },
-    body,
-    signal,
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Overpass-feil ${res.status}: ${text.slice(0, 300)}`)
+  if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+
+  // Kjør speilene i kappløp: første gyldige svar vinner, resten avbrytes (sparer
+  // båndbredde/last). Hvert speil har egen AbortController, lenket til ekstern
+  // signal slik at prefetch-avbrudd stopper alle.
+  const controllers = OVERPASS_MIRRORS.map(() => new AbortController())
+  const abortAll = () => controllers.forEach(c => { try { c.abort() } catch { /* noop */ } })
+  if (signal) signal.addEventListener('abort', abortAll, { once: true })
+
+  const attempts = OVERPASS_MIRRORS.map((url, i) => (async () => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: OVERPASS_HEADERS,
+      body,
+      signal: controllers[i].signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Overpass-feil ${res.status} (${url}): ${text.slice(0, 200)}`)
+    }
+    return res.json()
+  })())
+
+  try {
+    const data = await Promise.any(attempts)
+    abortAll()   // stopp de tapende speilene
+    return data
+  } catch (e) {
+    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+    // Promise.any → AggregateError når ALLE speil feilet.
+    const errs = e?.errors ?? [e]
+    throw new Error(`Alle Overpass-speil feilet: ${errs.map(x => x?.message ?? String(x)).join(' | ')}`)
+  } finally {
+    if (signal) signal.removeEventListener('abort', abortAll)
   }
-  return res.json()
 }
 
 export function bboxFromCenter(lat, lon, halfKm) {
