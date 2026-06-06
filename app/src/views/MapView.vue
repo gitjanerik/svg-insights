@@ -2346,13 +2346,13 @@ function onExportTrackGpx(tr) {
   downloadGpx(tr, meta.value, mapTitle.value)
 }
 
-// ── Auto-kart: regenerer når visnings-senter krysser 75%-terskelen ────────
+// ── Auto-kart: regenerer når visnings-senter krysser 85%-terskelen ────────
 // FAB-en er en på/av-bryter (default AV, alltid synlig, uavhengig av GPS).
-// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥75 % av
+// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥85 % av
 // halv-bredden ut mot en kant, bygges et nytt kart med SAMME størrelse +
 // ekvidistanse, sentrert der du ser. En trigger-ramme + trådkors tegnes på
 // kartet så du ser når det vil skje («hold trådkorset innenfor rammen»).
-const AUTO_MAP_THRESHOLD = 0.75   // andel av halv-bredden før ny-bygg trigges
+const AUTO_MAP_THRESHOLD = 0.85   // andel av halv-bredden før ny-bygg trigges
 const autoMapEnabled = ref(false) // toggle-tilstand (default AV)
 const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
@@ -2412,7 +2412,7 @@ function visibleCenterSvg() {
 
 // Tegn (eller fjern) trigger-rammen som en stiplet rect i selve kart-SVG-en,
 // i SVG-meter-rommet, så den panner/zoomer/roterer SAMMEN med kartet. Rammen
-// er det indre 75 %-rektangelet (fra 12,5 % til 87,5 % på hver side).
+// er det indre 85 %-rektangelet (fra 7,5 % til 92,5 % på hver side).
 function renderAutoMapFrame() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
