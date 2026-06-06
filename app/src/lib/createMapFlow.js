@@ -15,7 +15,8 @@
 //   })
 //   router.push({ name: 'kart-vis', params: { id } })
 
-import { fetchOverpass, buildSvg, bboxFromCenter } from './mapBuilder.js'
+import { fetchOverpass, bboxFromCenter } from './mapBuilder.js'
+import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
 import { isOsmWaterSalty } from './symbolizer.js'
@@ -94,7 +95,11 @@ export async function buildMapFromCenter({
   equidistanceM,
   navn,
   onProgress = () => {},
+  signal,
 }) {
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+  }
   const bbox = bboxFromCenter(center.lat, center.lon, halfKm)
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
@@ -143,7 +148,7 @@ export async function buildMapFromCenter({
   const sizeKmTotal = halfKm * 2
   const canUpgradeToFineDem = resolutionM > COASTAL_DEM_RES_M &&
                               sizeKmTotal <= COASTAL_UPGRADE_MAX_KM
-  const probeDemPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
+  const probeDemPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true, signal })
   const demPromise = probeDemPromise.then(async (probeDem) => {
     const coastal = hasNearSeaLevelPixels(probeDem)
     if (!coastal || !canUpgradeToFineDem) {
@@ -154,7 +159,7 @@ export async function buildMapFromCenter({
     }
     onProgress(`Kystnært kart — henter DEM i ${COASTAL_DEM_RES_M} m for skarpere kystlinje …`)
     try {
-      const fine = await fetchDEM(bbox, utmBbox, { resolutionM: COASTAL_DEM_RES_M, useReal: true })
+      const fine = await fetchDEM(bbox, utmBbox, { resolutionM: COASTAL_DEM_RES_M, useReal: true, signal })
       if (fine && !fine.source?.startsWith('synthetic')) return fine
       console.warn('[DEM] 5 m-oppgradering ga syntetisk DEM — beholder probe-oppløsning')
       return probeDem
@@ -216,9 +221,13 @@ export async function buildMapFromCenter({
   sourceParts.push('DEM-sjø (NHM_DTM_25832)')
   const source = sourceParts.join(' + ')
 
+  throwIfAborted()
   onProgress(`Bygger SVG fra ${elements.length} elementer …`)
 
-  const { svg, counts } = buildSvg(elements, bbox, {
+  // buildSvg kjøres i en Web Worker (buildSvgClient) så det tunge passet ikke
+  // fryser UI-en — kritisk når et kart bygges i bakgrunnen (prefetch) mens
+  // brukeren fortsatt panner. signal avbryter (terminerer workeren) ved bom.
+  const { svg, counts } = await buildSvgClient(elements, bbox, {
     dem,
     contourIntervalM: equidistanceM,
     scaleDenom: 10000,
@@ -226,8 +235,9 @@ export async function buildMapFromCenter({
     // DEM-sjø ALLTID på når DEM er ekte. Buggy «smitter inn på lavtliggende
     // øyer»-tilfeller dekkes av ISOM 001 land-overlay (OSM place=island).
     skipDemSea: false,
-  })
+  }, { signal })
 
+  throwIfAborted()
   onProgress(`Lagrer kart …`)
 
   const id = generateMapId()
@@ -257,6 +267,7 @@ export async function buildMapFromCenter({
     highestPoint,
     opprettet: Date.now(),
   }
+  throwIfAborted()   // ikke lagre et avbrutt (bom-)prefetch-kart
   await saveMap(entry)
   return { id, entry }
 }

@@ -2346,13 +2346,22 @@ function onExportTrackGpx(tr) {
   downloadGpx(tr, meta.value, mapTitle.value)
 }
 
-// ── Auto-kart: regenerer når visnings-senter krysser 75%-terskelen ────────
+// ── Auto-kart: regenerer når visnings-senter krysser 85%-terskelen ────────
 // FAB-en er en på/av-bryter (default AV, alltid synlig, uavhengig av GPS).
-// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥75 % av
+// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥85 % av
 // halv-bredden ut mot en kant, bygges et nytt kart med SAMME størrelse +
 // ekvidistanse, sentrert der du ser. En trigger-ramme + trådkors tegnes på
 // kartet så du ser når det vil skje («hold trådkorset innenfor rammen»).
-const AUTO_MAP_THRESHOLD = 0.75   // andel av halv-bredden før ny-bygg trigges
+//
+// Spekulativ prefetch: når senteret passerer 50 %-sonen (men ikke 85 % ennå)
+// gjetter vi hvor du havner (projiserer reise-retningen ut til rammen) og bygger
+// kartet i bakgrunnen (Web Worker, jank-fritt). Krysser du så 85 % og gjettet
+// stemmer, bruker vi det ferdige kartet → tilnærmet umiddelbart. Bommer gjettet
+// (du snur), forkastes prefetch-en (worker termineres, kartet lagres aldri /
+// slettes) og vi bygger ferskt.
+const AUTO_MAP_THRESHOLD = 0.85   // andel av halv-bredden før ny-bygg trigges
+const PREFETCH_THRESHOLD = 0.5    // andel der bakgrunns-bygging starter
+const PREFETCH_MATCH_TOL_FRAC = 0.25  // hvor nær gjettet må være (× halv-bredde)
 const autoMapEnabled = ref(false) // toggle-tilstand (default AV)
 const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
@@ -2361,6 +2370,9 @@ let autoMapToastTimer = null
 let autoMapOfflineNotified = false   // offline-toast vises kun én gang
 let autoMapArmed = true              // hindrer umiddelbar re-trigger etter bygg
 let autoMapCheckTimer = null
+// Spekulativ prefetch i bakgrunnen: { predicted:{x,y}, promise, controller,
+// aborted }. promise løses til { id, entry } fra buildMapFromCenter.
+let autoMapPrefetch = null
 // Om kartet som vises NÅ ble auto-generert (settes fra init-prefs). Styrer
 // push-vs-replace + opprydding: fra brukerens opprinnelige kart pushes første
 // auto-kart (tilbake-knappen → opprinnelig), videre auto-kart replace-r og
@@ -2381,6 +2393,7 @@ function toggleAutoMap() {
     autoMapOfflineNotified = false
     showAutoMapToast('Auto-kart på — dra forbi rammen for nytt kart')
   } else {
+    cancelPrefetch()
     showAutoMapToast('Auto-kart av')
   }
   renderAutoMapFrame()
@@ -2412,7 +2425,7 @@ function visibleCenterSvg() {
 
 // Tegn (eller fjern) trigger-rammen som en stiplet rect i selve kart-SVG-en,
 // i SVG-meter-rommet, så den panner/zoomer/roterer SAMMEN med kartet. Rammen
-// er det indre 75 %-rektangelet (fra 12,5 % til 87,5 % på hver side).
+// er det indre 85 %-rektangelet (fra 7,5 % til 92,5 % på hver side).
 function renderAutoMapFrame() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
@@ -2422,7 +2435,7 @@ function renderAutoMapFrame() {
     return
   }
   const m = meta.value
-  const inset = (1 - AUTO_MAP_THRESHOLD) / 2   // 0.125
+  const inset = (1 - AUTO_MAP_THRESHOLD) / 2   // 0.075
   const x0 = inset * m.widthM
   const y0 = inset * m.heightM
   const rw = AUTO_MAP_THRESHOLD * m.widthM
@@ -2462,20 +2475,113 @@ function scheduleAutoMapCheck() {
 }
 watch([scale, translateX, translateY, rotation], scheduleAutoMapCheck)
 
+// Felles gate: ikke kjør auto-kart-logikk når et annet modus eier UI-en
+// (måling, annotering, spill, søk, åpen drawer) — da er skjermsenteret dekket
+// eller irrelevant.
+function autoMapModeBusy() {
+  return curveball.active.value || annot.isAnnotateMode.value ||
+         measureMode.value || searchOpen.value || showControls.value
+}
+
+function autoMapDist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+// Projiser reise-retningen (kart-senter → synlig-senter) ut til 85%-rammen og
+// returner punktet der den treffer — vårt gjett på hvor du krysser terskelen.
+function predictTriggerCenter(c) {
+  const m = meta.value
+  const cx = m.widthM / 2, cy = m.heightM / 2
+  const dx = c.x - cx, dy = c.y - cy
+  if (dx === 0 && dy === 0) return { x: cx, y: cy }
+  const bx = AUTO_MAP_THRESHOLD * m.widthM / 2
+  const by = AUTO_MAP_THRESHOLD * m.heightM / 2
+  const sx = dx !== 0 ? bx / Math.abs(dx) : Infinity
+  const sy = dy !== 0 ? by / Math.abs(dy) : Infinity
+  const s = Math.min(sx, sy)
+  return { x: cx + s * dx, y: cy + s * dy }
+}
+
+// Bygge-parametre for et auto-kart sentrert på et SVG-punkt (samme størrelse +
+// ekvidistanse som dagens kart).
+function autoMapBuildOpts(centerSvg) {
+  const m = meta.value
+  const { lat, lon } = svgToWgs84(centerSvg.x, centerSvg.y, m)
+  const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
+  return {
+    center: { lat, lon, name: 'Auto-kart' },
+    halfKm: +(m.widthM / 2000).toFixed(3),
+    equidistanceM: m.equidistance ?? 20,
+    navn: `Tur ${stamp}`,
+  }
+}
+
+// Forwarde tilstand til det nye kartet via sessionStorage (consume-on-read):
+// tema + lag, faktisk GPS-status, at auto-modus forblir PÅ, at kartet er auto-
+// generert, bevart zoom/rotasjon, og «flyttet sentrum»-toast.
+function writeAutoMapPrefs(id) {
+  try {
+    sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
+      theme: currentTheme.value,
+      layers: Array.from(visibleLayers.value),
+      autoStartGps: userPos.isWatching,
+      autoMapEnabled: true,
+      isAutoMap: true,
+      scale: scale.value,
+      rotation: rotation.value,
+      movedCenterToast: true,
+    }))
+  } catch { /* noop */ }
+}
+
+// Start en bakgrunns-bygging mot et gjettet senter. Worker-basert (jank-fritt),
+// avbrytbar via AbortController.
+function startPrefetch(predicted) {
+  const controller = new AbortController()
+  const opts = autoMapBuildOpts(predicted)
+  const promise = buildMapFromCenter({ ...opts, signal: controller.signal })
+  promise.catch(() => { /* abort/feil håndteres ved bruk/forkasting */ })
+  autoMapPrefetch = { predicted, promise, controller, aborted: false }
+}
+
+// Forkast en pågående/ferdig prefetch: terminer workeren (stopper CPU) og slett
+// kartet hvis det rakk å bli lagret før avbruddet.
+function cancelPrefetch() {
+  const p = autoMapPrefetch
+  autoMapPrefetch = null
+  if (!p) return
+  p.aborted = true
+  try { p.controller.abort() } catch { /* noop */ }
+  p.promise.then(r => { if (r?.id) deleteStoredMap(r.id).catch(() => {}) }).catch(() => {})
+}
+
+// Vurder å starte/erstatte en prefetch når senteret er i 50–85%-sonen.
+function maybePrefetch(c) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+  const m = meta.value
+  const predicted = predictTriggerCenter(c)
+  if (autoMapPrefetch) {
+    // Behold hvis gjettet fortsatt er nært; bytt hvis retningen endret seg mye.
+    if (autoMapDist(autoMapPrefetch.predicted, predicted) < PREFETCH_MATCH_TOL_FRAC * m.widthM / 2) return
+    cancelPrefetch()
+  }
+  startPrefetch(predicted)
+}
+
 function checkAutoMapTrigger() {
   if (!autoMapEnabled.value || !autoMapArmed || buildingOnTheFly.value) return
-  // Ikke trigg når et annet modus eier UI-en (måling, annotering, spill, søk,
-  // åpen drawer) — da er skjermsenteret enten dekket eller irrelevant.
-  if (curveball.active.value || annot.isAnnotateMode.value ||
-      measureMode.value || searchOpen.value || showControls.value) return
+  if (autoMapModeBusy()) return
   const m = meta.value
   const c = visibleCenterSvg()
   if (!m || !c) return
   const dx = Math.abs(c.x - m.widthM / 2)
   const dy = Math.abs(c.y - m.heightM / 2)
-  if (dx < AUTO_MAP_THRESHOLD * m.widthM / 2 &&
-      dy < AUTO_MAP_THRESHOLD * m.heightM / 2) return  // fortsatt innenfor rammen
-  void triggerAutoMap(c)
+  const past85 = dx >= AUTO_MAP_THRESHOLD * m.widthM / 2 ||
+                 dy >= AUTO_MAP_THRESHOLD * m.heightM / 2
+  if (past85) { void triggerAutoMap(c); return }
+  const past50 = dx >= PREFETCH_THRESHOLD * m.widthM / 2 ||
+                 dy >= PREFETCH_THRESHOLD * m.heightM / 2
+  if (past50) maybePrefetch(c)
 }
 
 async function triggerAutoMap(centerSvg) {
@@ -2484,6 +2590,7 @@ async function triggerAutoMap(centerSvg) {
   // Offline-gate: bygging krever nett (OSM Overpass + Kartverket WCS uten
   // fallback). Suppress stille, men forklar én gang med en diskret toast.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    cancelPrefetch()
     if (!autoMapOfflineNotified) {
       autoMapOfflineNotified = true
       showAutoMapToast('Offline — kan ikke lage nytt kart')
@@ -2498,31 +2605,26 @@ async function triggerAutoMap(centerSvg) {
   closeDrawer()
   closeSearch()
   try {
-    const { lat, lon } = svgToWgs84(centerSvg.x, centerSvg.y, m)
-    const halfKm = +(m.widthM / 2000).toFixed(3)
-    const equidistanceM = m.equidistance ?? 20
-    const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
-    const navn = `Tur ${stamp}`
-    const { id } = await buildMapFromCenter({
-      center: { lat, lon, name: 'Auto-kart' },
-      halfKm, equidistanceM, navn,
-      onProgress: (msg) => { buildingProgress.value = msg },
-    })
-    // Forwarde tilstand til det nye kartet via sessionStorage (consume-on-read):
-    // tema + lag, faktisk GPS-status, at auto-modus skal forbli PÅ, at det nye
-    // kartet er auto-generert, bevart zoom/rotasjon, og «flyttet sentrum»-toast.
-    try {
-      sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
-        theme: currentTheme.value,
-        layers: Array.from(visibleLayers.value),
-        autoStartGps: userPos.isWatching,
-        autoMapEnabled: true,
-        isAutoMap: true,
-        scale: scale.value,
-        rotation: rotation.value,
-        movedCenterToast: true,
-      }))
-    } catch { /* noop */ }
+    // Bruk en treffende prefetch hvis gjettet er nær det faktiske krysningspunktet.
+    const hit = autoMapPrefetch && !autoMapPrefetch.aborted &&
+      autoMapDist(autoMapPrefetch.predicted, centerSvg) < PREFETCH_MATCH_TOL_FRAC * m.widthM / 2
+        ? autoMapPrefetch : null
+    let id
+    if (hit) {
+      autoMapPrefetch = null
+      buildingProgress.value = 'Henter forhåndslastet kart …'
+      const r = await hit.promise   // sannsynligvis allerede ferdig
+      id = r.id
+    } else {
+      cancelPrefetch()   // forkast evt. bom-prefetch
+      buildingProgress.value = 'Forbereder …'
+      const r = await buildMapFromCenter({
+        ...autoMapBuildOpts(centerSvg),
+        onProgress: (msg) => { buildingProgress.value = msg },
+      })
+      id = r.id
+    }
+    writeAutoMapPrefs(id)
     // «replace, behold opprinnelig»: fra et auto-kart erstatter vi history-
     // oppføringen og sletter forrige auto-kart fra lagring; fra brukerens
     // opprinnelige kart pusher vi (tilbake-knappen tar deg til opprinnelig).
@@ -3129,6 +3231,7 @@ onUnmounted(() => {
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
+  cancelPrefetch()
 })
 </script>
 
