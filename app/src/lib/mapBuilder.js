@@ -432,9 +432,22 @@ export function buildSvg(elements, bbox, options = {}) {
     contourIntervalM = 5,
     includeCliffs = true,
     includeKnauser = true,
+    includeBuildingMass = true,    // ISOM 522 tett-bebyggelse (tung union)
     skipContoursIfSynthetic = false,
     skipDemSea = false,
   } = options
+
+  // Lett timing-instrumentering: måler de tunge stegene og returneres som
+  // `timings` (logges av createMapFlow). includeCliffs/includeBuildingMass = false
+  // (progressiv fase-1) hopper over de to dyreste CPU-lagene.
+  const timings = {}
+  const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+  const _time = (label, fn) => {
+    const t0 = _now()
+    const r = fn()
+    timings[label] = +(_now() - t0).toFixed(1)
+    return r
+  }
 
   // Hvis DEM er syntetisk og bruker har bedt om at vi skal hoppe over
   // konturer i det tilfellet, bruk DEM kun til ingenting (eller faktisk
@@ -696,7 +709,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // 'bygning'). Tidligere v8.9.27 forsøk på å fjerne urbanMass helt
   // ga uakseptabel ytelse i bymiljø-kart.
   let urbanMassMultiPoly = []
-  if (buckets['521'].length >= 5) {
+  if (includeBuildingMass && buckets['521'].length >= 5) {
     const buildingsXY = buckets['521']
       .filter(el => el.geometry && el.geometry.length >= 3)
       .map(el => ({
@@ -710,11 +723,11 @@ export function buildSvg(elements, bbox, options = {}) {
     // 50/100 m var for slappe — eneboligfelt med store tomter ble
     // aldri klyngetegnet, og SVG-en blåste opp i tettbygde områder.
     // Min klyngestørrelse holdes på 5 så enslige tun ikke slukes.
-    const { urbanMass, scattered } = classifyBuildings(buildingsXY, {
+    const { urbanMass, scattered } = _time('buildingMass', () => classifyBuildings(buildingsXY, {
       neighborRadiusM: 15,
       minClusterSize: 5,
       bufferM: 6,
-    })
+    }))
     if (urbanMass.length > 0) {
       urbanMassMultiPoly = urbanMass
       buckets['521'] = scattered.map(b => b.original)
@@ -728,8 +741,8 @@ export function buildSvg(elements, bbox, options = {}) {
   let demSeaPolygons = []
   let demSeaBands = []
   if (usableDem) {
-    const c = buildContours(usableDem, contourIntervalM, 5)
-    const cl = includeCliffs ? detectCliffs(usableDem, 45, 10) : []
+    const c = _time('contours', () => buildContours(usableDem, contourIntervalM, 5))
+    const cl = includeCliffs ? _time('cliffs', () => detectCliffs(usableDem, 45, 10)) : []
     // v9.1.17 — knauser tilbake som ÉN merged vektor-<path> (ISOM 213). Etter
     // raster-eksperimentet (v9.1.7–9.1.16, blurry «vorter» + mobil-GPU-kost):
     // vektor er 1 DOM-node, knivskarp ved enhver zoom, og solid strek = like
@@ -738,7 +751,7 @@ export function buildSvg(elements, bbox, options = {}) {
     // v9.1.18 — knaus vises KUN ved 5 m ekvidistanse (ISOM-detaljnivå). På
     // grovere ekvidistanse (10/20/25/50/100 m) er kartet oversiktspreget og
     // knaus-detalj hører ikke hjemme.
-    const k = (includeKnauser && contourIntervalM === 5) ? detectKnauser(usableDem, 5, 2.5) : []
+    const k = (includeKnauser && contourIntervalM === 5) ? _time('knauser', () => detectKnauser(usableDem, 5, 2.5)) : []
     demFeatures = { contours: c, cliffs: cl, knauser: k, equidistanceM: contourIntervalM }
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
@@ -1986,7 +1999,7 @@ export function buildSvg(elements, bbox, options = {}) {
 ${body}</svg>
 `
 
-  return { svg, counts, meta }
+  return { svg, counts, meta, timings }
 }
 
 // Rangér et OSM place=* sted etter viktighet for label-LOD og skrift-størrelse.
