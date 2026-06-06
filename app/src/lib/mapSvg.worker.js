@@ -13,8 +13,8 @@ import { buildSvg } from './mapBuilder.js'
 self.onmessage = (e) => {
   const { elements, bbox, options } = e.data ?? {}
   try {
-    const { svg, counts } = buildSvg(elements, bbox, options)
-    self.postMessage({ ok: true, svg, counts })
+    const { svg, counts, timings } = buildSvg(elements, bbox, options)
+    self.postMessage({ ok: true, svg, counts, timings })
   } catch (err) {
     self.postMessage({ ok: false, error: err?.message ?? String(err) })
   }

@@ -47,7 +47,7 @@ export function buildSvgClient(elements, bbox, options = {}, { signal } = {}) {
 
     worker.onmessage = (e) => {
       cleanup()
-      if (e.data?.ok) resolve({ svg: e.data.svg, counts: e.data.counts })
+      if (e.data?.ok) resolve({ svg: e.data.svg, counts: e.data.counts, timings: e.data.timings })
       else reject(new Error(e.data?.error ?? 'buildSvg-worker feilet'))
     }
     worker.onerror = (e) => {

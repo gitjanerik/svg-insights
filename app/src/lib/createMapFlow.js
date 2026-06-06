@@ -109,6 +109,17 @@ export async function buildMapFromCenter({
   const throwIfAborted = () => {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
   }
+  // Lett perf-instrumentering: timer fetch-trinn + buildSvg og logger én linje.
+  const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+  const _t0 = _now()
+  const marks = {}
+  const timeAsync = (label, p) => {
+    const s = _now()
+    return p.then(
+      v => { marks[label] = Math.round(_now() - s); return v },
+      e => { marks[label] = Math.round(_now() - s); throw e },
+    )
+  }
   let bbox = bboxFromCenter(center.lat, center.lon, halfKm)
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
@@ -208,13 +219,13 @@ export async function buildMapFromCenter({
   }).catch(() => EMPTY_SJOKART)
 
   const [osmData, n50Water, dem, sjokart] = await Promise.all([
-    fetchOverpass(bbox),
-    fetchN50Water(bbox).catch(e => {
+    timeAsync('overpass', fetchOverpass(bbox)),
+    timeAsync('n50', fetchN50Water(bbox).catch(e => {
       console.warn('N50-vann ikke tilgjengelig:', e.message)
       return []
-    }),
-    demPromise,
-    sjokartPromise,
+    })),
+    timeAsync('dem', demPromise),
+    timeAsync('sjøkart', sjokartPromise),
   ])
   const sjokartElements = sjokartToElements(sjokart)
 
@@ -256,7 +267,7 @@ export async function buildMapFromCenter({
   // buildSvg kjøres i en Web Worker (buildSvgClient) så det tunge passet ikke
   // fryser UI-en — kritisk når et kart bygges i bakgrunnen (prefetch) mens
   // brukeren fortsatt panner. signal avbryter (terminerer workeren) ved bom.
-  const { svg, counts } = await buildSvgClient(elements, bbox, {
+  const { svg, counts, timings } = await timeAsync('buildSvg', buildSvgClient(elements, bbox, {
     dem,
     contourIntervalM: equidistanceM,
     scaleDenom: 10000,
@@ -264,7 +275,19 @@ export async function buildMapFromCenter({
     // DEM-sjø ALLTID på når DEM er ekte. Buggy «smitter inn på lavtliggende
     // øyer»-tilfeller dekkes av ISOM 001 land-overlay (OSM place=island).
     skipDemSea: false,
-  }, { signal })
+  }, { signal }))
+
+  // Perf-summary i konsollen: ett tall pr fetch-trinn + buildSvg, med
+  // buildSvg-ets interne steg (kontur/stupkant/bymasse) i parentes. Henter man
+  // dette fra mobil-konsollen ser man umiddelbart hva som er flaskehalsen.
+  const ti = timings ?? {}
+  const inner = ['contours', 'cliffs', 'buildingMass', 'knauser']
+    .filter(k => ti[k] != null).map(k => `${k} ${ti[k]}ms`).join(', ')
+  console.log(
+    `[perf] kart ${(halfKm * 2).toFixed(1)}km total ${Math.round(_now() - _t0)}ms | ` +
+    `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | dem ${marks.dem ?? '-'} | ` +
+    `sjøkart ${marks['sjøkart'] ?? '-'} | buildSvg ${marks.buildSvg ?? '-'}${inner ? ` (${inner})` : ''} [ms]`
+  )
 
   throwIfAborted()
   onProgress(`Lagrer kart …`)
