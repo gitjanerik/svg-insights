@@ -286,6 +286,23 @@ const fillingInDetails = ref(false)
 const detailsFailed = ref(false)
 let componentAlive = true
 
+// Datamengde lastet for kartet (SVG + lagret DEM). Vises i drawer-ens Debug og
+// i long-press-info-arket så man ser hvor «tungt» kartet er.
+const mapDataSize = ref({ svgBytes: 0, demBytes: 0 })
+function formatBytes(n) {
+  if (!n || n < 0) return '0'
+  if (n >= 1024 * 1024) return (n / 1048576).toFixed(2).replace('.', ',') + ' MB'
+  if (n >= 1024) return Math.round(n / 1024) + ' KB'
+  return n + ' B'
+}
+const mapDataLabel = computed(() => {
+  const s = mapDataSize.value
+  const parts = []
+  if (s.svgBytes) parts.push(`${formatBytes(s.svgBytes)} SVG`)
+  if (s.demBytes) parts.push(`${formatBytes(s.demBytes)} DEM`)
+  return parts.join(' · ')
+})
+
 // Perf-logg-modal (byggetider). Brukeren på mobil kan ikke lese konsollen, så
 // vi viser localStorage-loggen her med kopier-knapp.
 const showPerfLog = ref(false)
@@ -2746,6 +2763,7 @@ async function loadMap({ silent = false } = {}) {
   try {
     const id = route.params.id ?? 'vardasen'
     let text
+    let demBytes = 0
     if (BUILTIN[id]) {
       mapTitle.value = BUILTIN[id].navn
       const url = `${import.meta.env.BASE_URL}maps/${BUILTIN[id].file}`
@@ -2760,9 +2778,13 @@ async function loadMap({ silent = false } = {}) {
       // v7.2.0: hent DEM hvis lagret (forberedt for CurveBall)
       if (stored.dem) {
         try { storedDem.value = unpackDem(stored.dem) } catch { storedDem.value = null }
+        demBytes = stored.dem.buffer?.byteLength ?? 0
       }
       storedHighestPoint.value = stored.highestPoint ?? null
     }
+    // Datamengde for dette kartet (vises i drawer-ens Debug + long-press-arket).
+    // SVG-en er hoved-payloaden; DEM-en lagres separat (pakket Float32-buffer).
+    mapDataSize.value = { svgBytes: new Blob([text]).size, demBytes }
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'image/svg+xml')
     const root = doc.documentElement
@@ -4401,7 +4423,10 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <div class="text-white/55 text-[11px] uppercase tracking-wide mb-2">Debug</div>
+            <div class="flex items-baseline justify-between gap-2 mb-2">
+              <span class="text-white/55 text-[11px] uppercase tracking-wide">Debug</span>
+              <span v-if="mapDataLabel" class="text-white/45 text-[11px] tabular-nums">{{ mapDataLabel }}</span>
+            </div>
             <button @click="diagnose = !diagnose"
                     class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
                     :class="diagnose
@@ -4565,6 +4590,10 @@ onUnmounted(() => {
                   · {{ formatDistanceM(contextMenuInfo.fromUser.distM) }}
                 </span>
               </span>
+            </div>
+            <div v-if="mapDataLabel" class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Kartdata</span>
+              <span class="text-white/85 tabular-nums">{{ mapDataLabel }}</span>
             </div>
           </div>
 
