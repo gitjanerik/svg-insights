@@ -11,7 +11,7 @@ import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
-import { loadMap as loadStoredMap, listMaps as listStoredMaps } from '../lib/mapStorage.js'
+import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog, buildPointSymbolDef } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
@@ -2346,83 +2346,204 @@ function onExportTrackGpx(tr) {
   downloadGpx(tr, meta.value, mapTitle.value)
 }
 
-// ── On-the-fly kart-snarvei ──────────────────────────────────────────────
-// Avstand fra brukerens posisjon til kartets sentrum (i SVG-units = meter).
-// Brukes til 500 m-grensen: snarveien skal ikke kunne lage et nytt kart som
-// dekker det samme området man allerede står midt i.
-const distFromMapCenter = computed(() => {
-  if (!meta.value) return null
-  if (userPos.svgX == null || userPos.svgY == null) return null
-  const cx = meta.value.widthM / 2
-  const cy = meta.value.heightM / 2
-  return Math.hypot(userPos.svgX - cx, userPos.svgY - cy)
-})
-const onTheFlyEnabled = computed(() =>
-  userPos.isWatching &&
-  distFromMapCenter.value != null &&
-  distFromMapCenter.value >= 500
-)
-const buildingOnTheFly = ref(false)
+// ── Auto-kart: regenerer når visnings-senter krysser 75%-terskelen ────────
+// FAB-en er en på/av-bryter (default AV, alltid synlig, uavhengig av GPS).
+// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥75 % av
+// halv-bredden ut mot en kant, bygges et nytt kart med SAMME størrelse +
+// ekvidistanse, sentrert der du ser. En trigger-ramme + trådkors tegnes på
+// kartet så du ser når det vil skje («hold trådkorset innenfor rammen»).
+const AUTO_MAP_THRESHOLD = 0.75   // andel av halv-bredden før ny-bygg trigges
+const autoMapEnabled = ref(false) // toggle-tilstand (default AV)
+const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
-const onTheFlyHintTimer = ref(null)
-const showOnTheFlyHint = ref(false)
+const autoMapToast = ref('')      // transient melding (på/av, offline, flyttet)
+let autoMapToastTimer = null
+let autoMapOfflineNotified = false   // offline-toast vises kun én gang
+let autoMapArmed = true              // hindrer umiddelbar re-trigger etter bygg
+let autoMapCheckTimer = null
+// Om kartet som vises NÅ ble auto-generert (settes fra init-prefs). Styrer
+// push-vs-replace + opprydding: fra brukerens opprinnelige kart pushes første
+// auto-kart (tilbake-knappen → opprinnelig), videre auto-kart replace-r og
+// sletter forrige auto-kart fra lagring (ingen opphopning).
+const currentMapIsAuto = ref(false)
 
-function onOnTheFlyTap() {
-  if (buildingOnTheFly.value) return
-  if (!onTheFlyEnabled.value) {
-    // Vis info-bobbel og fade ut igjen etter 3.5 s
-    showOnTheFlyHint.value = true
-    if (onTheFlyHintTimer.value) clearTimeout(onTheFlyHintTimer.value)
-    onTheFlyHintTimer.value = setTimeout(() => {
-      showOnTheFlyHint.value = false
-    }, 3500)
-    return
-  }
-  void createOnTheFly()
+function showAutoMapToast(msg) {
+  autoMapToast.value = msg
+  if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
+  autoMapToastTimer = setTimeout(() => { autoMapToast.value = '' }, 3500)
 }
 
-async function createOnTheFly() {
-  if (!meta.value) return
-  if (userPos.latRaw == null || userPos.lonRaw == null) return
+function toggleAutoMap() {
+  if (buildingOnTheFly.value) return
+  autoMapEnabled.value = !autoMapEnabled.value
+  if (autoMapEnabled.value) {
+    autoMapArmed = true
+    autoMapOfflineNotified = false
+    showAutoMapToast('Auto-kart på — dra forbi rammen for nytt kart')
+  } else {
+    showAutoMapToast('Auto-kart av')
+  }
+  renderAutoMapFrame()
+}
+
+// Viewbox-koordinaten (SVG-meter) som ligger midt på skjermen akkurat nå.
+// Invers av forward-transformen i applyNameLOD/panTo: SVG fyller wrapperen med
+// preserveAspectRatio="xMidYMid meet", deretter M = T(tx,ty)∘R(rot)∘S(s).
+function visibleCenterSvg() {
+  const m = meta.value
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!m || !wrap || !wrap.width || !wrap.height) return null
+  const w = wrap.width, h = wrap.height
+  const fit = Math.min(w / m.widthM, h / m.heightM)
+  const offX = (w - m.widthM * fit) / 2
+  const offY = (h - m.heightM * fit) / 2
+  const s = scale.value || 1
+  const rot = (rotation.value || 0) * Math.PI / 180
+  const cos = Math.cos(rot), sin = Math.sin(rot)
+  const tx = translateX.value, ty = translateY.value
+  // Skjermsenter (wrapper-lokalt). Løs (X,Y) = T + s·R·(px,py) for (px,py),
+  // deretter trekk fra letterbox-offset / del på fit for viewBox-koordinat.
+  const A = (w / 2 - tx) / s
+  const B = (h / 2 - ty) / s
+  const px = A * cos + B * sin
+  const py = -A * sin + B * cos
+  return { x: (px - offX) / fit, y: (py - offY) / fit }
+}
+
+// Tegn (eller fjern) trigger-rammen som en stiplet rect i selve kart-SVG-en,
+// i SVG-meter-rommet, så den panner/zoomer/roterer SAMMEN med kartet. Rammen
+// er det indre 75 %-rektangelet (fra 12,5 % til 87,5 % på hver side).
+function renderAutoMapFrame() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const existing = svg.querySelector('#auto-map-frame')
+  if (!autoMapEnabled.value || !meta.value) {
+    if (existing) existing.remove()
+    return
+  }
+  const m = meta.value
+  const inset = (1 - AUTO_MAP_THRESHOLD) / 2   // 0.125
+  const x0 = inset * m.widthM
+  const y0 = inset * m.heightM
+  const rw = AUTO_MAP_THRESHOLD * m.widthM
+  const rh = AUTO_MAP_THRESHOLD * m.heightM
+  const ns = 'http://www.w3.org/2000/svg'
+  let g = existing
+  if (!g) {
+    g = document.createElementNS(ns, 'g')
+    g.setAttribute('id', 'auto-map-frame')
+    g.setAttribute('pointer-events', 'none')
+    const rect = document.createElementNS(ns, 'rect')
+    rect.setAttribute('fill', 'none')
+    rect.setAttribute('stroke', '#10b981')
+    rect.setAttribute('stroke-width', '2')
+    rect.setAttribute('stroke-dasharray', '10 8')
+    rect.setAttribute('stroke-linecap', 'round')
+    rect.setAttribute('vector-effect', 'non-scaling-stroke')
+    rect.setAttribute('opacity', '0.85')
+    g.appendChild(rect)
+    svg.appendChild(g)
+  }
+  const rect = g.querySelector('rect')
+  rect.setAttribute('x', String(x0))
+  rect.setAttribute('y', String(y0))
+  rect.setAttribute('width', String(rw))
+  rect.setAttribute('height', String(rh))
+}
+
+// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame).
+function scheduleAutoMapCheck() {
+  if (!autoMapEnabled.value) return
+  if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
+  autoMapCheckTimer = setTimeout(() => {
+    if (isGesturing && isGesturing.value) { scheduleAutoMapCheck(); return }
+    checkAutoMapTrigger()
+  }, 400)
+}
+watch([scale, translateX, translateY, rotation], scheduleAutoMapCheck)
+
+function checkAutoMapTrigger() {
+  if (!autoMapEnabled.value || !autoMapArmed || buildingOnTheFly.value) return
+  // Ikke trigg når et annet modus eier UI-en (måling, annotering, spill, søk,
+  // åpen drawer) — da er skjermsenteret enten dekket eller irrelevant.
+  if (curveball.active.value || annot.isAnnotateMode.value ||
+      measureMode.value || searchOpen.value || showControls.value) return
+  const m = meta.value
+  const c = visibleCenterSvg()
+  if (!m || !c) return
+  const dx = Math.abs(c.x - m.widthM / 2)
+  const dy = Math.abs(c.y - m.heightM / 2)
+  if (dx < AUTO_MAP_THRESHOLD * m.widthM / 2 &&
+      dy < AUTO_MAP_THRESHOLD * m.heightM / 2) return  // fortsatt innenfor rammen
+  void triggerAutoMap(c)
+}
+
+async function triggerAutoMap(centerSvg) {
+  const m = meta.value
+  if (!m) return
+  // Offline-gate: bygging krever nett (OSM Overpass + Kartverket WCS uten
+  // fallback). Suppress stille, men forklar én gang med en diskret toast.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!autoMapOfflineNotified) {
+      autoMapOfflineNotified = true
+      showAutoMapToast('Offline — kan ikke lage nytt kart')
+    }
+    return
+  }
+  autoMapArmed = false   // ikke trigg igjen mens denne byggingen pågår
+  const wasAuto = currentMapIsAuto.value
+  const prevId = mapId.value
   buildingOnTheFly.value = true
   buildingProgress.value = 'Forbereder …'
   closeDrawer()
   closeSearch()
   try {
-    const halfKm = +(meta.value.widthM / 2000).toFixed(3)
-    const equidistanceM = meta.value.equidistance ?? 20
-    const center = {
-      lat: userPos.latRaw,
-      lon: userPos.lonRaw,
-      name: 'Min posisjon',
-    }
+    const { lat, lon } = svgToWgs84(centerSvg.x, centerSvg.y, m)
+    const halfKm = +(m.widthM / 2000).toFixed(3)
+    const equidistanceM = m.equidistance ?? 20
     const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
     const navn = `Tur ${stamp}`
     const { id } = await buildMapFromCenter({
-      center, halfKm, equidistanceM, navn,
+      center: { lat, lon, name: 'Auto-kart' },
+      halfKm, equidistanceM, navn,
       onProgress: (msg) => { buildingProgress.value = msg },
     })
-    // Forwarde tema + synlige lag til den nye kart-visningen via session-
-    // storage. Brukes én gang (consume-on-read), ingen entry-schema-endring.
-    // autoStartGps speiler at GPS allerede var aktivt i kilde-MapView
-    // (FAB er kun synlig når GPS er på) så det nye kartet åpnes med GPS
-    // også aktivt — brukeren skal ikke trenge å starte det manuelt igjen.
+    // Forwarde tilstand til det nye kartet via sessionStorage (consume-on-read):
+    // tema + lag, faktisk GPS-status, at auto-modus skal forbli PÅ, at det nye
+    // kartet er auto-generert, bevart zoom/rotasjon, og «flyttet sentrum»-toast.
     try {
       sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
         theme: currentTheme.value,
         layers: Array.from(visibleLayers.value),
-        autoStartGps: true,
+        autoStartGps: userPos.isWatching,
+        autoMapEnabled: true,
+        isAutoMap: true,
+        scale: scale.value,
+        rotation: rotation.value,
+        movedCenterToast: true,
       }))
     } catch { /* noop */ }
-    router.push({ name: 'kart-vis', params: { id } })
+    // «replace, behold opprinnelig»: fra et auto-kart erstatter vi history-
+    // oppføringen og sletter forrige auto-kart fra lagring; fra brukerens
+    // opprinnelige kart pusher vi (tilbake-knappen tar deg til opprinnelig).
+    if (wasAuto) {
+      try { await deleteStoredMap(prevId) } catch { /* noop */ }
+      router.replace({ name: 'kart-vis', params: { id } })
+    } else {
+      router.push({ name: 'kart-vis', params: { id } })
+    }
   } catch (e) {
-    console.error('On-the-fly kart-bygging feilet:', e)
+    console.error('Auto-kart-bygging feilet:', e)
     buildingOnTheFly.value = false
     buildingProgress.value = ''
-    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+    autoMapArmed = true
+    if (!autoMapOfflineNotified) {
+      autoMapOfflineNotified = true
+      showAutoMapToast('Kunne ikke lage nytt kart')
+    }
   }
-  // Merk: vi lar buildingOnTheFly stå true til komponenten rives av router.push,
-  // så loaderen holder seg synlig under navigasjonen.
+  // Merk: ved suksess lar vi buildingOnTheFly stå true til komponenten rives av
+  // navigasjonen, så loaderen holder seg synlig under overgangen.
 }
 
 // Slå opp symbolKey + label for en lagret annotering. Faller tilbake til
@@ -2506,9 +2627,11 @@ async function loadMap() {
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
     }
-    // Forbruk init-prefs fra on-the-fly snarvei (tema + synlige lag fra
-    // forrige kart). Én gang per ny mapId.
+    // Forbruk init-prefs fra auto-kart / on-the-fly (tema + synlige lag, GPS,
+    // auto-modus, bevart zoom/rotasjon). Én gang per ny mapId.
     let pendingAutoStartGps = false
+    let pendingRestoreView = null   // {scale, rotation} — bevar visning over hopp
+    let pendingMovedToast = false
     try {
       const k = `mapview-init-prefs:${mapId.value}`
       const raw = sessionStorage.getItem(k)
@@ -2518,6 +2641,12 @@ async function loadMap() {
         if (prefs.theme) currentTheme.value = prefs.theme
         if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
         if (prefs.autoStartGps) pendingAutoStartGps = true
+        if (prefs.autoMapEnabled) autoMapEnabled.value = true
+        if (prefs.isAutoMap) currentMapIsAuto.value = true
+        if (typeof prefs.scale === 'number' || typeof prefs.rotation === 'number') {
+          pendingRestoreView = { scale: prefs.scale ?? 1, rotation: prefs.rotation ?? 0 }
+        }
+        if (prefs.movedCenterToast) pendingMovedToast = true
       }
     } catch { /* noop */ }
     setupHostSvg(root)
@@ -2553,6 +2682,21 @@ async function loadMap() {
     applyNameLOD()
     // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
     maybeHighlightFromQuery()
+    // Auto-kart: gjenopprett visning + ramme etter et trigget hopp. Bevart
+    // zoom/rotasjon legges på rundt det NYE kartets sentrum (panTo sentrerer
+    // kart-senter under skjermsenter), så trådkorset peker på samme punkt du
+    // var på vei mot — og dx/dy ≈ 0, ingen umiddelbar re-trigger.
+    if (autoMapEnabled.value) renderAutoMapFrame()
+    if (pendingRestoreView) {
+      rotation.value = pendingRestoreView.rotation
+      await nextTick()
+      panTo(meta.value.widthM / 2, meta.value.heightM / 2, {
+        vbWidth: meta.value.widthM, vbHeight: meta.value.heightM,
+        targetScale: pendingRestoreView.scale, keepRotation: true,
+      })
+    }
+    autoMapArmed = true
+    if (pendingMovedToast) showAutoMapToast('Nytt kart — flyttet sentrum hit')
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
@@ -2983,6 +3127,8 @@ onUnmounted(() => {
   screenWake.stop()
   window.removeEventListener('resize', scheduleNameLOD)
   if (nameLodTimer) clearTimeout(nameLodTimer)
+  if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
+  if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
 })
 </script>
 
@@ -3158,18 +3304,18 @@ onUnmounted(() => {
           {{ knobHint }}
         </div>
       </Transition>
-      <!-- On-the-fly snarvei: synlig når GPS er aktivert. Inaktiv (grayet ut)
-           hvis brukeren er < 500 m fra kartets sentrum. Tap når inaktiv viser
-           kort info-bobbel; tap når aktiv starter bygging av nytt kart
-           sentrert på brukeren med samme størrelse/ekvidistanse. -->
-      <div v-if="userPos.isWatching" class="relative">
-        <button @click="onOnTheFlyTap"
-                :aria-label="onTheFlyEnabled ? 'Lag nytt kart her' : 'Du er for nær kartets sentrum'"
+      <!-- Auto-kart-bryter: alltid synlig, default AV. PÅ (grønn) viser en
+           trigger-ramme + trådkors på kartet; panner du forbi rammen bygges et
+           nytt kart med samme størrelse, sentrert der du ser. Toast forklarer
+           på/av, offline og «flyttet sentrum». -->
+      <div class="relative">
+        <button @click="toggleAutoMap"
+                :aria-label="autoMapEnabled ? 'Auto-kart på — slå av' : 'Auto-kart av — slå på'"
                 class="w-12 h-12 rounded-full shadow-lg flex items-center justify-center
                        active:scale-95 transition relative"
-                :class="onTheFlyEnabled
+                :class="autoMapEnabled
                         ? 'bg-emerald-500 text-white'
-                        : 'bg-zinc-950 text-white/40'">
+                        : 'bg-zinc-950 text-white/70'">
           <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <!-- kartblad + pluss-merke i hjørnet -->
@@ -3180,13 +3326,13 @@ onUnmounted(() => {
             <line x1="16.3" y1="6" x2="19.7" y2="6" stroke="#0e1116" stroke-width="1.6"/>
           </svg>
         </button>
-        <!-- Info-bobbel — vises 3.5 s etter tap på inaktiv knapp -->
+        <!-- Toast — på/av, offline-varsel, «flyttet sentrum» -->
         <Transition name="hint-fade">
-          <div v-if="showOnTheFlyHint"
+          <div v-if="autoMapToast"
                class="absolute right-14 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg
                       bg-zinc-950/95 text-white text-[11px] leading-tight shadow-lg
                       whitespace-nowrap pointer-events-none border border-white/10">
-            Flytt deg minst 500 m fra kartets sentrum
+            {{ autoMapToast }}
           </div>
         </Transition>
       </div>
@@ -3257,6 +3403,23 @@ onUnmounted(() => {
           :view-box="cbViewBox"
           @drop="onCurveBallContinue"/>
       </div>
+    </div>
+
+    <!-- Auto-kart trådkors: fast i skjermsenter når auto-modus er PÅ. Sammen
+         med trigger-rammen (tegnet i kartet) viser det «hold trådkorset
+         innenfor rammen» — krysser det rammen bygges et nytt kart. pointer-
+         events-none så det aldri sluker kart-gester. Skjult i spill/søk. -->
+    <div v-if="autoMapEnabled && !curveball.active.value && !searchOpen"
+         class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+      <svg viewBox="0 0 48 48" class="w-12 h-12 drop-shadow"
+           fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round">
+        <circle cx="24" cy="24" r="9" opacity="0.9"/>
+        <line x1="24" y1="4"  x2="24" y2="15"/>
+        <line x1="24" y1="33" x2="24" y2="44"/>
+        <line x1="4"  y1="24" x2="15" y2="24"/>
+        <line x1="33" y1="24" x2="44" y2="24"/>
+        <circle cx="24" cy="24" r="1.8" fill="#10b981" stroke="none"/>
+      </svg>
     </div>
 
     <!-- Highlight-chip — vises når et søkeresultat eller ?hl= har satt en
