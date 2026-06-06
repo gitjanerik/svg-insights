@@ -241,6 +241,11 @@ export async function buildMapFromCenter({
   }))
 
   const id = generateMapId()
+  // Marker som ferskt kart så MapView gir det en garantert «litt kontur + litt
+  // relieff»-baseline (relieff persisteres globalt — er det skrudd til 0 ville
+  // ellers ALLE nye kart blitt blast). Felles knutepunkt → dekker picker,
+  // hjem-FAB og auto-kart likt. Consume-on-read i MapView.
+  try { sessionStorage.setItem(`mapview-freshlook:${id}`, '1') } catch { /* noop */ }
   const isRealDem = (d) => d && !d.source?.startsWith('synthetic')
   const buildEntry = ({ svg, counts, dem, source }, partial) => ({
     id,

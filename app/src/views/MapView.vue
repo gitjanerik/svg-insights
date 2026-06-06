@@ -281,6 +281,9 @@ const diagnose = ref(false)
 // Terreng-først: kartet ble vist med konturer+relieff straks, og OSM/detaljer
 // fylles inn i bakgrunnen. Chip vises mens vi venter på full-byggingen.
 const fillingInDetails = ref(false)
+// Settes hvis bakgrunns-byggingen (Overpass) feilet → vis banner med «Prøv på
+// nytt»-knapp i stedet for en teknisk, overflytende toast.
+const detailsFailed = ref(false)
 let componentAlive = true
 
 // Perf-logg-modal (byggetider). Brukeren på mobil kan ikke lese konsollen, så
@@ -537,6 +540,10 @@ const STROKE_STEPS = [0.4, 0.6, 0.85, 1.2, 1.6, 2.2]
 const STROKE_DEFAULT_IDX = 2  // 0.85× = 85% av tidligere default på små kart
 const RELIEF_STEPS = [0, 0.18, 0.30, 0.42, 0.58, 0.72]
 const RELIEF_DEFAULT_IDX = 3
+// Ferske kart får minst dette relieff-nivået («litt relieff») hvis relieffet er
+// skrudd HELT av (idx 0) — så et globalt persistert «av» ikke gjør alle nye
+// kart blast. Et bevisst lavt nivå (idx 1 = 0.18) respekteres.
+const FRESH_RELIEF_MIN_IDX = 2
 const STROKE_LS_KEY = 'svg-insights-mapview-stroke-step'
 const RELIEF_LS_KEY = 'svg-insights-mapview-relief-step'
 
@@ -2802,6 +2809,20 @@ async function loadMap({ silent = false } = {}) {
         if (prefs.movedCenterToast) pendingMovedToast = true
       }
     } catch { /* noop */ }
+    // Fersk-kart-baseline: garanter «litt kontur + litt relieff» på nye kart så
+    // de ikke blir blast hvis relieff er globalt skrudd av. Consume-on-read.
+    if (!silent) {
+      try {
+        const fk = `mapview-freshlook:${mapId.value}`
+        if (sessionStorage.getItem(fk)) {
+          sessionStorage.removeItem(fk)
+          if (reliefStepIndex.value === 0) reliefStepIndex.value = FRESH_RELIEF_MIN_IDX
+          if (!visibleLayers.value.has('kontur')) {
+            visibleLayers.value = new Set(visibleLayers.value).add('kontur')
+          }
+        }
+      } catch { /* noop */ }
+    }
     setupHostSvg(root)
     loading.value = false
     await nextTick()
@@ -2866,14 +2887,57 @@ function consumeTerrainFinalize() {
   const fin = consumeMapFinalize(mapId.value)
   if (!fin) return
   fillingInDetails.value = true
+  detailsFailed.value = false
   fin.then(() => {
     if (!componentAlive) return
     return loadMap({ silent: true })
   }).catch(() => {
-    if (componentAlive) showAutoMapToast('Kunne ikke laste alle detaljer — regenerer kartet ved behov')
+    // Bakgrunns-byggingen feilet (oftest Overpass nede). Vis en lesbar banner
+    // med en «Prøv på nytt»-knapp i stedet for en teknisk toast.
+    if (componentAlive) detailsFailed.value = true
   }).finally(() => {
     if (componentAlive) fillingInDetails.value = false
   })
+}
+
+// «Prøv på nytt» fra detalj-feil-banneret: bygg kartet på nytt fra samme senter
+// (samme størrelse/ekvidistanse/navn), erstatt det delvise kartet.
+async function retryMapDetails() {
+  if (!meta.value || buildingOnTheFly.value) return
+  detailsFailed.value = false
+  const prevId = mapId.value
+  const centerSvg = { x: meta.value.widthM / 2, y: meta.value.heightM / 2 }
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Prøver på nytt …'
+  try {
+    const { lat, lon } = svgToWgs84(centerSvg.x, centerSvg.y, meta.value)
+    const { id } = await buildMapFromCenter({
+      center: { lat, lon, name: mapTitle.value },
+      halfKm: +(meta.value.widthM / 2000).toFixed(3),
+      equidistanceM: meta.value.equidistance ?? 20,
+      navn: mapTitle.value,
+      terrainFirst: true,
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    try {
+      sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
+        theme: currentTheme.value,
+        layers: Array.from(visibleLayers.value),
+        autoStartGps: userPos.isWatching,
+        autoMapEnabled: autoMapEnabled.value,
+        isAutoMap: currentMapIsAuto.value,
+        scale: scale.value,
+        rotation: rotation.value,
+      }))
+    } catch { /* noop */ }
+    if (prevId && prevId !== 'vardasen') { try { await deleteStoredMap(prevId) } catch { /* noop */ } }
+    router.replace({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('Regenerering feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    detailsFailed.value = true
+  }
 }
 
 function setupHostSvg(sourceRoot) {
@@ -3715,6 +3779,33 @@ onUnmounted(() => {
              stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
           <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
         </svg>
+      </button>
+    </div>
+
+    <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
+         feilet, så kartet viser bare terreng. Lesbart, bryter på flere linjer,
+         med «Prøv på nytt»-knapp som bygger kartet på nytt. -->
+    <div v-if="detailsFailed && !loading && !curveball.active.value"
+         class="absolute bottom-32 left-3 right-3 z-20 max-w-[420px] mx-auto
+                rounded-lg backdrop-blur bg-amber-600/95 border border-amber-300/40
+                text-white text-[12px] shadow-lg p-3">
+      <div class="flex items-start gap-2">
+        <div class="flex-1 min-w-0 leading-snug">
+          Fikk ikke lastet stier og detaljer. Kartet viser bare terreng nå.
+        </div>
+        <button @click="detailsFailed = false" aria-label="Lukk"
+                class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
+                       text-white/90 active:scale-90 active:bg-white/10 shrink-0">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <button @click="retryMapDetails"
+              class="mt-2 w-full px-3 py-1.5 rounded-md bg-white/15 border border-white/25
+                     text-white text-[12px] font-medium active:scale-[0.98]">
+        Prøv på nytt
       </button>
     </div>
 
