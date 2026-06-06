@@ -35,6 +35,18 @@ import { logPerf } from './perfLog.js'
 // stier/vann (ingen forskyvning) på nabo-kart.
 const DEM_TILE_CACHE_ENABLED = true
 
+// Terreng-først «finalize»-register: når et kart bygges terreng-først lagres
+// konturer+relieff straks, og den fulle byggingen (Overpass + OSM) fortsetter
+// som en promise her, nøklet på kart-id. MapView konsumerer den og re-render-er
+// når full SVG er klar. Lever på modul-nivå så den overlever navigasjonen til
+// den nye kart-visningen (samme JS-kontekst).
+const mapFinalizers = new Map()
+export function consumeMapFinalize(id) {
+  const p = mapFinalizers.get(id)
+  if (p) mapFinalizers.delete(id)
+  return p ?? null
+}
+
 const EMPTY_SJOKART = {
   dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [],
 }
@@ -106,6 +118,7 @@ export async function buildMapFromCenter({
   navn,
   onProgress = () => {},
   signal,
+  terrainFirst = false,
 }) {
   const throwIfAborted = () => {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
@@ -190,7 +203,7 @@ export async function buildMapFromCenter({
   const canUpgradeToFineDem = resolutionM > COASTAL_DEM_RES_M &&
                               sizeKmTotal <= COASTAL_UPGRADE_MAX_KM
   const probeDemPromise = fetchDemFor(resolutionM)
-  const demPromise = probeDemPromise.then(async (probeDem) => {
+  const demPromise = timeAsync('dem', probeDemPromise.then(async (probeDem) => {
     const coastal = hasNearSeaLevelPixels(probeDem)
     if (!coastal || !canUpgradeToFineDem) {
       if (coastal && sizeKmTotal > COASTAL_UPGRADE_MAX_KM) {
@@ -208,105 +221,35 @@ export async function buildMapFromCenter({
       console.warn(`[DEM] 5 m-oppgradering feilet (${e?.message ?? e}) — beholder ${resolutionM} m`)
       return probeDem
     }
-  })
+  }))
   // Sjøkart gates på probe-DEM-et (returnerer først) så WFS-hentingen starter
   // parallelt med 5 m-oppgraderingen, ikke etter den.
-  const sjokartPromise = probeDemPromise.then(dem => {
+  const sjokartPromise = timeAsync('sjøkart', probeDemPromise.then(dem => {
     if (!hasNearSeaLevelPixels(dem)) {
       console.log('[Sjøkart] hopper over — bbox er innlands (ingen DEM-piksler ≤ 0.5 m)')
       return EMPTY_SJOKART
     }
     return withHardTimeout(fetchSjokart(bbox), SJOKART_TIMEOUT_MS, EMPTY_SJOKART, 'Sjøkart')
-  }).catch(() => EMPTY_SJOKART)
+  }).catch(() => EMPTY_SJOKART))
 
-  const [osmData, n50Water, dem, sjokart] = await Promise.all([
-    timeAsync('overpass', fetchOverpass(bbox, { signal })),
-    timeAsync('n50', fetchN50Water(bbox).catch(e => {
-      console.warn('N50-vann ikke tilgjengelig:', e.message)
-      return []
-    })),
-    timeAsync('dem', demPromise),
-    timeAsync('sjøkart', sjokartPromise),
-  ])
-  const sjokartElements = sjokartToElements(sjokart)
-
-  const n50HasFreshwater = n50Water.some(el =>
-    (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
-    el.tags?.waterway === 'stream'
-  )
-  const n50HasSea = n50Water.some(el =>
-    el.tags?.water === 'sea' || el.tags?.salt === 'yes'
-  )
-
-  const elements = osmData.elements.filter(el => {
-    const tags = el.tags ?? {}
-    const isWaterPolygon = tags.natural === 'water' || !!tags.water ||
-                           tags.natural === 'bay' || tags.natural === 'strait' ||
-                           tags.place === 'sea' || tags.place === 'ocean'
-    if (isWaterPolygon) {
-      if (isOsmWaterSalty(tags)) return !n50HasSea
-      if (tags.name) return true
-      return !n50HasFreshwater
-    }
-    if (tags.waterway === 'stream' || tags.waterway === 'ditch') {
-      return !n50HasFreshwater
-    }
-    return true
-  })
-  if (n50Water.length > 0) elements.push(...n50Water)
-  if (sjokartElements.length > 0) elements.push(...sjokartElements)
-
-  const sourceParts = ['OSM']
-  if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
-  if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
-  sourceParts.push('DEM-sjø (NHM_DTM_25832)')
-  const source = sourceParts.join(' + ')
-
-  throwIfAborted()
-  onProgress(`Bygger SVG fra ${elements.length} elementer …`)
-
-  // buildSvg kjøres i en Web Worker (buildSvgClient) så det tunge passet ikke
-  // fryser UI-en — kritisk når et kart bygges i bakgrunnen (prefetch) mens
-  // brukeren fortsatt panner. signal avbryter (terminerer workeren) ved bom.
-  const { svg, counts, timings } = await timeAsync('buildSvg', buildSvgClient(elements, bbox, {
-    dem,
-    contourIntervalM: equidistanceM,
-    scaleDenom: 10000,
-    skipContoursIfSynthetic: true,
-    // DEM-sjø ALLTID på når DEM er ekte. Buggy «smitter inn på lavtliggende
-    // øyer»-tilfeller dekkes av ISOM 001 land-overlay (OSM place=island).
-    skipDemSea: false,
-  }, { signal }))
-
-  // Perf-summary i konsollen: ett tall pr fetch-trinn + buildSvg, med
-  // buildSvg-ets interne steg (kontur/stupkant/bymasse) i parentes. Henter man
-  // dette fra mobil-konsollen ser man umiddelbart hva som er flaskehalsen.
-  const ti = timings ?? {}
-  const inner = ['contours', 'cliffs', 'buildingMass', 'knauser']
-    .filter(k => ti[k] != null).map(k => `${k} ${ti[k]}ms`).join(', ')
-  logPerf(
-    `[perf] kart ${(halfKm * 2).toFixed(1)}km total ${Math.round(_now() - _t0)}ms | ` +
-    `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | dem ${marks.dem ?? '-'} | ` +
-    `sjøkart ${marks['sjøkart'] ?? '-'} | buildSvg ${marks.buildSvg ?? '-'}${inner ? ` (${inner})` : ''} [ms]`
-  )
-
-  throwIfAborted()
-  onProgress(`Lagrer kart …`)
+  // Overpass + N50 fyres parallelt nå (delt mellom terreng- og full-bygg) så
+  // OSM-hentingen (flaskehalsen) starter samtidig med DEM.
+  const overpassP = timeAsync('overpass', fetchOverpass(bbox, { signal }))
+  const n50P = timeAsync('n50', fetchN50Water(bbox).catch(e => {
+    console.warn('N50-vann ikke tilgjengelig:', e.message)
+    return []
+  }))
 
   const id = generateMapId()
-  const isRealDem = dem && !dem.source?.startsWith('synthetic')
-  const packedDem = isRealDem ? packDem(dem) : null
-  const highestPoint = isRealDem ? findHighestPoint(dem) : null
-
-  const entry = {
+  const isRealDem = (d) => d && !d.source?.startsWith('synthetic')
+  const buildEntry = ({ svg, counts, dem, source }, partial) => ({
     id,
     navn,
     bbox,
     center: { ...center },
     halfKm,
     // Metadata for kart-listas info-linje (overlever listMaps som dropper
-    // svg/dem). demResolutionM = faktisk DEM-oppløsning (5 m på kystnære
-    // kart, ellers probe-oppløsning); demSource = WCS-coverage eller syntetisk.
+    // svg/dem). demResolutionM = faktisk DEM-oppløsning; demSource = coverage.
     equidistanceM,
     demResolutionM: dem?.transform
       ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
@@ -316,11 +259,117 @@ export async function buildMapFromCenter({
     svg,
     source,
     annotations: [],
-    dem: packedDem,
-    highestPoint,
+    dem: isRealDem(dem) ? packDem(dem) : null,
+    highestPoint: isRealDem(dem) ? findHighestPoint(dem) : null,
     opprettet: Date.now(),
+    partial: !!partial,
+  })
+
+  // Full bygging: vent på alle kilder, slå sammen, bygg full SVG (worker).
+  const assembleAndBuildFull = async () => {
+    const [osmData, n50Water, dem, sjokart] = await Promise.all([overpassP, n50P, demPromise, sjokartPromise])
+    const sjokartElements = sjokartToElements(sjokart)
+
+    const n50HasFreshwater = n50Water.some(el =>
+      (el.tags?.natural === 'water' && el.tags?.salt !== 'yes') ||
+      el.tags?.waterway === 'stream'
+    )
+    const n50HasSea = n50Water.some(el =>
+      el.tags?.water === 'sea' || el.tags?.salt === 'yes'
+    )
+
+    const elements = osmData.elements.filter(el => {
+      const tags = el.tags ?? {}
+      const isWaterPolygon = tags.natural === 'water' || !!tags.water ||
+                             tags.natural === 'bay' || tags.natural === 'strait' ||
+                             tags.place === 'sea' || tags.place === 'ocean'
+      if (isWaterPolygon) {
+        if (isOsmWaterSalty(tags)) return !n50HasSea
+        if (tags.name) return true
+        return !n50HasFreshwater
+      }
+      if (tags.waterway === 'stream' || tags.waterway === 'ditch') {
+        return !n50HasFreshwater
+      }
+      return true
+    })
+    if (n50Water.length > 0) elements.push(...n50Water)
+    if (sjokartElements.length > 0) elements.push(...sjokartElements)
+
+    const sourceParts = ['OSM']
+    if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
+    if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
+    sourceParts.push('DEM-sjø (NHM_DTM_25832)')
+    const source = sourceParts.join(' + ')
+
+    throwIfAborted()
+    onProgress(`Bygger SVG fra ${elements.length} elementer …`)
+    // buildSvg i Web Worker så det tunge passet ikke fryser UI-en. signal
+    // avbryter (terminerer workeren) ved prefetch-bom.
+    const { svg, counts, timings } = await timeAsync('buildSvg', buildSvgClient(elements, bbox, {
+      dem,
+      contourIntervalM: equidistanceM,
+      scaleDenom: 10000,
+      skipContoursIfSynthetic: true,
+      // DEM-sjø ALLTID på når DEM er ekte. Øy-overlay (ISOM 001) dekker
+      // «smitter inn på lavtliggende øyer»-tilfeller.
+      skipDemSea: false,
+    }, { signal }))
+
+    const ti = timings ?? {}
+    const inner = ['contours', 'cliffs', 'buildingMass', 'knauser']
+      .filter(k => ti[k] != null).map(k => `${k} ${ti[k]}ms`).join(', ')
+    logPerf(
+      `[perf] kart ${(halfKm * 2).toFixed(1)}km total ${Math.round(_now() - _t0)}ms | ` +
+      `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | dem ${marks.dem ?? '-'} | ` +
+      `sjøkart ${marks['sjøkart'] ?? '-'} | buildSvg ${marks.buildSvg ?? '-'}${inner ? ` (${inner})` : ''}` +
+      `${terrainFirst ? ' [terreng-først]' : ''} [ms]`
+    )
+    return { svg, counts, dem, source }
   }
-  throwIfAborted()   // ikke lagre et avbrutt (bom-)prefetch-kart
+
+  // Terreng-først: vent KUN på DEM, bygg konturer + DEM-sjø straks og lagre, og
+  // fyll inn OSM/full bygging i bakgrunnen (mapFinalizers → MapView re-render).
+  // Gir bruker terreng å «lese» mens Overpass (flaskehalsen) fortsatt lastes.
+  // Trygg fallback: syntetisk DEM eller feil → bygg full som vanlig.
+  if (terrainFirst) {
+    try {
+      const dem = await demPromise
+      if (isRealDem(dem)) {
+        const terrain = await timeAsync('terreng', buildSvgClient([], bbox, {
+          dem,
+          contourIntervalM: equidistanceM,
+          scaleDenom: 10000,
+          skipContoursIfSynthetic: true,
+          skipDemSea: false,
+        }, { signal }))
+        throwIfAborted()
+        const entry = buildEntry(
+          { svg: terrain.svg, counts: terrain.counts, dem, source: 'Terreng (DEM) — fyller inn detaljer …' },
+          true,
+        )
+        await saveMap(entry)
+        onProgress('Terreng klart — fyller inn stier og detaljer …')
+        const finalize = (async () => {
+          const full = await assembleAndBuildFull()
+          const fullEntry = buildEntry(full, false)
+          await saveMap(fullEntry)
+          return fullEntry
+        })()
+        finalize.catch(() => { /* MapView-konsumenten håndterer feil */ })
+        mapFinalizers.set(id, finalize)
+        return { id, entry, finalize }
+      }
+    } catch (e) {
+      if (signal?.aborted) throw e
+      console.warn(`[terreng-først] feilet (${e?.message ?? e}) — bygger full som vanlig`)
+    }
+  }
+
+  // Normal / fallback: bygg full og lagre.
+  const full = await assembleAndBuildFull()
+  const entry = buildEntry(full, false)
+  throwIfAborted()
   await saveMap(entry)
   return { id, entry }
 }

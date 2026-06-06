@@ -249,6 +249,7 @@ async function generateMap() {
       halfKm: halfKm.value,
       equidistanceM: equidistanceM.value,
       navn,
+      terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => {
         buildProgress.value = msg
         // Heuristikk for state-overgang basert på status-tekst — beholder
