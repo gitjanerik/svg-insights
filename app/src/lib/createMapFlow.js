@@ -25,6 +25,7 @@ import { findHighestPoint, packDem } from './demSampling.js'
 import { wgs84ToUtm32, utm32ToWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
 import { snapUtmBboxToGrid, fetchDEMWithCache } from './demTileCache.js'
+import { logPerf } from './perfLog.js'
 
 // DEM-flis-cache. Når PÅ snappes kart-bbox til res-rutenettet og DEM hentes
 // flis-vis med gjenbruk mellom overlappende kart; AV = byte-identisk med før
@@ -283,7 +284,7 @@ export async function buildMapFromCenter({
   const ti = timings ?? {}
   const inner = ['contours', 'cliffs', 'buildingMass', 'knauser']
     .filter(k => ti[k] != null).map(k => `${k} ${ti[k]}ms`).join(', ')
-  console.log(
+  logPerf(
     `[perf] kart ${(halfKm * 2).toFixed(1)}km total ${Math.round(_now() - _t0)}ms | ` +
     `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | dem ${marks.dem ?? '-'} | ` +
     `sjøkart ${marks['sjøkart'] ?? '-'} | buildSvg ${marks.buildSvg ?? '-'}${inner ? ` (${inner})` : ''} [ms]`
