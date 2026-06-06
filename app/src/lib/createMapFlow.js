@@ -26,11 +26,13 @@ import { wgs84ToUtm32, utm32ToWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
 import { snapUtmBboxToGrid, fetchDEMWithCache } from './demTileCache.js'
 
-// DEM-flis-cache — AV som default. Slås på etter at kontur-justering er
-// verifisert på ekte enhet (sandkassen har ikke WCS-tilgang). Når PÅ snappes
-// kart-bbox til res-rutenettet og DEM hentes flis-vis med gjenbruk; AV =
-// byte-identisk med før (rett fetchDEM, ingen snapping).
-const DEM_TILE_CACHE_ENABLED = false
+// DEM-flis-cache. Når PÅ snappes kart-bbox til res-rutenettet og DEM hentes
+// flis-vis med gjenbruk mellom overlappende kart; AV = byte-identisk med før
+// (rett fetchDEM, ingen snapping). PÅ for verifisering på ekte enhet — den
+// robuste fallback-en i fetchDEMWithCache gjør at verste fall degraderer til
+// dagens oppførsel (én full fetch). Følg med på at høydekurver flukter med
+// stier/vann (ingen forskyvning) på nabo-kart.
+const DEM_TILE_CACHE_ENABLED = true
 
 const EMPTY_SJOKART = {
   dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [],
