@@ -2539,9 +2539,17 @@ function writeAutoMapPrefs(id) {
 function startPrefetch(predicted) {
   const controller = new AbortController()
   const opts = autoMapBuildOpts(predicted)
-  const promise = buildMapFromCenter({ ...opts, signal: controller.signal })
-  promise.catch(() => { /* abort/feil håndteres ved bruk/forkasting */ })
-  autoMapPrefetch = { predicted, promise, controller, aborted: false }
+  const entry = { predicted, controller, aborted: false, failed: false, promise: null }
+  entry.promise = buildMapFromCenter({ ...opts, signal: controller.signal })
+  // En feilet/avbrutt bakgrunns-bygging (typisk forbigående Overpass-feil) skal
+  // IKKE «poisone» neste trigger: marker som feilet og fjern den som aktiv
+  // prefetch, så triggeren bygger ferskt i stedet for å vente på en rejected
+  // promise. (Neste maybePrefetch i 50–85%-sonen starter evt. en ny.)
+  entry.promise.catch(() => {
+    entry.failed = true
+    if (autoMapPrefetch === entry) autoMapPrefetch = null
+  })
+  autoMapPrefetch = entry
 }
 
 // Forkast en pågående/ferdig prefetch: terminer workeren (stopper CPU) og slett
@@ -2605,18 +2613,21 @@ async function triggerAutoMap(centerSvg) {
   closeDrawer()
   closeSearch()
   try {
-    // Bruk en treffende prefetch hvis gjettet er nær det faktiske krysningspunktet.
-    const hit = autoMapPrefetch && !autoMapPrefetch.aborted &&
+    // Bruk en treffende prefetch hvis gjettet er nær det faktiske krysningspunktet
+    // (og den ikke er avbrutt/feilet).
+    const hit = autoMapPrefetch && !autoMapPrefetch.aborted && !autoMapPrefetch.failed &&
       autoMapDist(autoMapPrefetch.predicted, centerSvg) < PREFETCH_MATCH_TOL_FRAC * m.widthM / 2
         ? autoMapPrefetch : null
-    let id
+    let id = null
     if (hit) {
       autoMapPrefetch = null
       buildingProgress.value = 'Henter forhåndslastet kart …'
-      const r = await hit.promise   // sannsynligvis allerede ferdig
-      id = r.id
-    } else {
-      cancelPrefetch()   // forkast evt. bom-prefetch
+      // Skulle den ferdige prefetch-en likevel ha rejected (forbigående feil),
+      // faller vi tilbake til ferskt bygg under — aldri «ingen kart» når online.
+      try { id = (await hit.promise).id } catch { id = null }
+    }
+    if (!id) {
+      cancelPrefetch()   // forkast evt. bom/feilet prefetch
       buildingProgress.value = 'Forbereder …'
       const r = await buildMapFromCenter({
         ...autoMapBuildOpts(centerSvg),
