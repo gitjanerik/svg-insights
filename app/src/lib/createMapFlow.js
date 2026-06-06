@@ -15,14 +15,24 @@
 //   })
 //   router.push({ name: 'kart-vis', params: { id } })
 
-import { fetchOverpass, buildSvg, bboxFromCenter } from './mapBuilder.js'
+import { fetchOverpass, bboxFromCenter } from './mapBuilder.js'
+import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
 import { findHighestPoint, packDem } from './demSampling.js'
-import { wgs84ToUtm32 } from './utm.js'
+import { wgs84ToUtm32, utm32ToWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
+import { snapUtmBboxToGrid, fetchDEMWithCache } from './demTileCache.js'
+
+// DEM-flis-cache. Når PÅ snappes kart-bbox til res-rutenettet og DEM hentes
+// flis-vis med gjenbruk mellom overlappende kart; AV = byte-identisk med før
+// (rett fetchDEM, ingen snapping). PÅ for verifisering på ekte enhet — den
+// robuste fallback-en i fetchDEMWithCache gjør at verste fall degraderer til
+// dagens oppførsel (én full fetch). Følg med på at høydekurver flukter med
+// stier/vann (ingen forskyvning) på nabo-kart.
+const DEM_TILE_CACHE_ENABLED = true
 
 const EMPTY_SJOKART = {
   dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [],
@@ -94,8 +104,12 @@ export async function buildMapFromCenter({
   equidistanceM,
   navn,
   onProgress = () => {},
+  signal,
 }) {
-  const bbox = bboxFromCenter(center.lat, center.lon, halfKm)
+  const throwIfAborted = () => {
+    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+  }
+  let bbox = bboxFromCenter(center.lat, center.lon, halfKm)
   const sizeKm = (halfKm * 2).toFixed(1)
   onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
 
@@ -103,10 +117,31 @@ export async function buildMapFromCenter({
   // Overpass/N50 i stedet for å vente på dem (v8.10.18: sparer 3-10 s).
   const sw = wgs84ToUtm32(bbox.south, bbox.west)
   const ne = wgs84ToUtm32(bbox.north, bbox.east)
-  const utmBbox = {
+  let utmBbox = {
     minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
     minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
   }
+
+  // DEM-oppløsning (probe). 10 m ved fine konturer (≤ 5 m ekvidistanse),
+  // ellers 20 m. Beregnes her oppe fordi flis-cachen snapper bbox til dette
+  // rutenettet (multiplum av 5/10/20 → også 5 m-justert for kyst-oppgraderingen).
+  const resolutionM = equidistanceM <= 5 ? 10 : 20
+
+  // Flis-cache PÅ: snap bbox til res-rutenettet så kart-grid og flis-grid
+  // flukter eksakt (ingen resampling). Recompute WGS84-bbox fra de snappede
+  // hjørnene så Overpass/buildSvg bruker SAMME extent som DEM-en.
+  if (DEM_TILE_CACHE_ENABLED) {
+    utmBbox = snapUtmBboxToGrid(utmBbox, resolutionM)
+    const sw2 = utm32ToWgs84(utmBbox.minE, utmBbox.minN)
+    const ne2 = utm32ToWgs84(utmBbox.maxE, utmBbox.maxN)
+    bbox = { south: sw2.lat, west: sw2.lon, north: ne2.lat, east: ne2.lon }
+  }
+
+  // DEM-henting: via flis-cache (gjenbruk overlappende fliser) når PÅ, ellers
+  // rett fetchDEM. Begge returnerer en DEM for samme (evt. snappede) extent.
+  const fetchDemFor = (res) => DEM_TILE_CACHE_ENABLED
+    ? fetchDEMWithCache(utmBbox, { resolutionM: res, signal })
+    : fetchDEM(bbox, utmBbox, { resolutionM: res, useReal: true, signal })
 
   // Vann-strategi:
   //   - SJØ: DEM (Kartverket NHM_DTM_25832). 0 m elevasjon = sjø.
@@ -139,11 +174,10 @@ export async function buildMapFromCenter({
   // trengs der man planlegger å padle gjennom et sund — små, detaljerte kart.
   // Store oversiktskart beholder probe-oppløsningen (byte-identisk med før
   // 5 m-funksjonen, og like raskt). Terskel: COASTAL_UPGRADE_MAX_KM.
-  const resolutionM = equidistanceM <= 5 ? 10 : 20
   const sizeKmTotal = halfKm * 2
   const canUpgradeToFineDem = resolutionM > COASTAL_DEM_RES_M &&
                               sizeKmTotal <= COASTAL_UPGRADE_MAX_KM
-  const probeDemPromise = fetchDEM(bbox, utmBbox, { resolutionM, useReal: true })
+  const probeDemPromise = fetchDemFor(resolutionM)
   const demPromise = probeDemPromise.then(async (probeDem) => {
     const coastal = hasNearSeaLevelPixels(probeDem)
     if (!coastal || !canUpgradeToFineDem) {
@@ -154,7 +188,7 @@ export async function buildMapFromCenter({
     }
     onProgress(`Kystnært kart — henter DEM i ${COASTAL_DEM_RES_M} m for skarpere kystlinje …`)
     try {
-      const fine = await fetchDEM(bbox, utmBbox, { resolutionM: COASTAL_DEM_RES_M, useReal: true })
+      const fine = await fetchDemFor(COASTAL_DEM_RES_M)
       if (fine && !fine.source?.startsWith('synthetic')) return fine
       console.warn('[DEM] 5 m-oppgradering ga syntetisk DEM — beholder probe-oppløsning')
       return probeDem
@@ -216,9 +250,13 @@ export async function buildMapFromCenter({
   sourceParts.push('DEM-sjø (NHM_DTM_25832)')
   const source = sourceParts.join(' + ')
 
+  throwIfAborted()
   onProgress(`Bygger SVG fra ${elements.length} elementer …`)
 
-  const { svg, counts } = buildSvg(elements, bbox, {
+  // buildSvg kjøres i en Web Worker (buildSvgClient) så det tunge passet ikke
+  // fryser UI-en — kritisk når et kart bygges i bakgrunnen (prefetch) mens
+  // brukeren fortsatt panner. signal avbryter (terminerer workeren) ved bom.
+  const { svg, counts } = await buildSvgClient(elements, bbox, {
     dem,
     contourIntervalM: equidistanceM,
     scaleDenom: 10000,
@@ -226,8 +264,9 @@ export async function buildMapFromCenter({
     // DEM-sjø ALLTID på når DEM er ekte. Buggy «smitter inn på lavtliggende
     // øyer»-tilfeller dekkes av ISOM 001 land-overlay (OSM place=island).
     skipDemSea: false,
-  })
+  }, { signal })
 
+  throwIfAborted()
   onProgress(`Lagrer kart …`)
 
   const id = generateMapId()
@@ -257,6 +296,7 @@ export async function buildMapFromCenter({
     highestPoint,
     opprettet: Date.now(),
   }
+  throwIfAborted()   // ikke lagre et avbrutt (bom-)prefetch-kart
   await saveMap(entry)
   return { id, entry }
 }
