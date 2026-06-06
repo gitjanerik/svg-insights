@@ -152,6 +152,7 @@ async function onCreateHere() {
       halfKm: 2,         // 4 × 4 km
       equidistanceM: 20, // 20 m ekvidistanse
       navn: `Tur ${stamp}`,
+      terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => { buildingProgress.value = msg },
     })
     // Be MapView starte GPS automatisk — brukeren har akkurat brukt sin

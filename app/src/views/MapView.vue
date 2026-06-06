@@ -18,7 +18,7 @@ import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
-import { buildMapFromCenter } from '../lib/createMapFlow.js'
+import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -277,6 +277,11 @@ const currentTheme = ref('light')
 const isDark = computed(() => currentTheme.value !== 'light')
 const THEMES = computed(() => Object.entries(isomCatalog.themes ?? {}).map(([k, v]) => ({ key: k, label: v.label ?? k })))
 const diagnose = ref(false)
+
+// Terreng-først: kartet ble vist med konturer+relieff straks, og OSM/detaljer
+// fylles inn i bakgrunnen. Chip vises mens vi venter på full-byggingen.
+const fillingInDetails = ref(false)
+let componentAlive = true
 
 // Perf-logg-modal (byggetider). Brukeren på mobil kan ikke lese konsollen, så
 // vi viser localStorage-loggen her med kopier-knapp.
@@ -2663,6 +2668,7 @@ async function triggerAutoMap(centerSvg) {
       buildingProgress.value = 'Forbereder …'
       const r = await buildMapFromCenter({
         ...autoMapBuildOpts(centerSvg),
+        terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
         onProgress: (msg) => { buildingProgress.value = msg },
       })
       id = r.id
@@ -2725,8 +2731,10 @@ function onPrint() {
   printDocument(svg.outerHTML, { title: mapTitle.value })
 }
 
-async function loadMap() {
-  loading.value = true
+async function loadMap({ silent = false } = {}) {
+  // silent = re-render av samme kart (terreng → full) uten full-skjerm-loader;
+  // beholder zoom/pan og hopper over init-prefs (alt konsumert ved første last).
+  if (!silent) loading.value = true
   loadError.value = null
   try {
     const id = route.params.id ?? 'vardasen'
@@ -2842,10 +2850,30 @@ async function loadMap() {
     }
     autoMapArmed = true
     if (pendingMovedToast) showAutoMapToast('Nytt kart — flyttet sentrum hit')
+    // Terreng-først: hvis dette kartet ble vist som terreng-skjelett, konsumér
+    // finalize-promisen og re-render (stille) når full SVG med OSM er klar.
+    if (!silent) consumeTerrainFinalize()
   } catch (e) {
     loading.value = false
     loadError.value = e.message ?? 'Kunne ikke laste kart'
   }
+}
+
+// Vent på terreng-først-finalize (full bygging i bakgrunnen) og re-render når
+// klar. Beholder gjeldende zoom/pan (silent re-load). Tåler at brukeren har
+// navigert videre (componentAlive-sjekk).
+function consumeTerrainFinalize() {
+  const fin = consumeMapFinalize(mapId.value)
+  if (!fin) return
+  fillingInDetails.value = true
+  fin.then(() => {
+    if (!componentAlive) return
+    return loadMap({ silent: true })
+  }).catch(() => {
+    if (componentAlive) showAutoMapToast('Kunne ikke laste alle detaljer — regenerer kartet ved behov')
+  }).finally(() => {
+    if (componentAlive) fillingInDetails.value = false
+  })
 }
 
 function setupHostSvg(sourceRoot) {
@@ -3270,6 +3298,7 @@ onUnmounted(() => {
   unlockBodyScroll()
   stopGpsTick()
   screenWake.stop()
+  componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
@@ -3567,6 +3596,18 @@ onUnmounted(() => {
         <circle cx="24" cy="24" r="1.8" fill="#10b981" stroke="none"/>
       </svg>
     </div>
+
+    <!-- Terreng-først: kartet viser konturer+relieff straks; chip viser at
+         stier og detaljer fylles inn i bakgrunnen (Overpass laster). -->
+    <Transition name="chip-fade">
+      <div v-if="fillingInDetails && !curveball.active.value && !searchOpen"
+           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-2xl
+                  bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
+                  flex items-center gap-2 pointer-events-none border border-white/10">
+        <span class="w-3.5 h-3.5 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+        <span>Fyller inn stier og detaljer …</span>
+      </div>
+    </Transition>
 
     <!-- Highlight-chip — vises når et søkeresultat eller ?hl= har satt en
          markør. Tap fjerner highlight og dropper søkemodus. Skjules under
