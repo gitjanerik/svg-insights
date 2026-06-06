@@ -220,7 +220,7 @@ export async function buildMapFromCenter({
   }).catch(() => EMPTY_SJOKART)
 
   const [osmData, n50Water, dem, sjokart] = await Promise.all([
-    timeAsync('overpass', fetchOverpass(bbox)),
+    timeAsync('overpass', fetchOverpass(bbox, { signal })),
     timeAsync('n50', fetchN50Water(bbox).catch(e => {
       console.warn('N50-vann ikke tilgjengelig:', e.message)
       return []
