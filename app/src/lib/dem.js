@@ -131,8 +131,9 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
   // bygger derfor en maske av ORIGINALE noData-celler og klipper bort
   // kontur-punkter som faller på dem: ringer splittes i åpne løp av ekte
   // punkter, så ekte konturer ved datagrensen beholdes mens void-rampens
-  // spøkelseslinjer droppes. Ingen noData → masken er tom, og utdata er
-  // byte-identisk med før (innlandskart med full dekning urørt).
+  // spøkelseslinjer droppes. (v10.1.x: grid-ytterkanten klippes på samme måte —
+  // se onEdge under — så også full-dekning-kart slipper kant-spaghettien fra
+  // d3-contours kant-lukking.)
   const orig = dem.data
   const isVoid = new Uint8Array(orig.length)
   let voidCount = 0
@@ -151,16 +152,29 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
     return isVoid[r0 * cols + c0] || isVoid[r0 * cols + c1] ||
            isVoid[r1 * cols + c0] || isVoid[r1 * cols + c1]
   }
+  // Grid-YTTERKANT (v10.1.x): d3-contour lukker konturer som forlater kartet
+  // LANGS rute-kanten (col/row = 0 eller cols/rows). Disse kant-følgende
+  // segmentene males ellers som falske, rette konturlinjer som bunter seg langs
+  // kantene og spesielt i hjørnene — «kontur-spaghetti i periferien». De er en
+  // ren artefakt (ikke ekte iso-linjer), så vi behandler ytterkant-punkter som
+  // klippe-punkter på linje med void: ringen splittes, og det ekte indre løpet
+  // beholdes som en åpen linje som ender ved kanten. Toleranse 1e-6 treffer KUN
+  // den faktiske ytterkanten — indre celle-kryssinger ligger på heltalls col/row
+  // > 0 og berøres ikke.
+  const EDGE = 1e-6
+  const onEdge = (col, row) =>
+    col <= EDGE || col >= cols - EDGE || row <= EDGE || row >= rows - EDGE
+  const pointClipped = (col, row) => onEdge(col, row) || (hasVoid && pointInVoid(col, row))
   // Splitt en (lukket) d3-ring i segmenter av sammenhengende ekte punkter.
   // Helt-ekte ring → ett lukket segment (uendret). Ellers åpne løp; ringen er
   // syklisk, så vi starter ved en void-celle og samler ikke-void-løp.
-  const splitRingByVoid = (ring) => {
+  const splitRingByClip = (ring) => {
     const n = ring.length
     if (n < 2) return []
     const flags = new Array(n)
-    let anyVoid = false
-    for (let i = 0; i < n; i++) { flags[i] = pointInVoid(ring[i][0], ring[i][1]); if (flags[i]) anyVoid = true }
-    if (!anyVoid) return [{ pts: ring, closed: true }]
+    let anyClipped = false
+    for (let i = 0; i < n; i++) { flags[i] = pointClipped(ring[i][0], ring[i][1]); if (flags[i]) anyClipped = true }
+    if (!anyClipped) return [{ pts: ring, closed: true }]
     // Syklisk: dropp duplikat siste punkt (d3-ringer er lukket, first==last).
     const last = ring[n - 1], first = ring[0]
     const uniqN = (last[0] === first[0] && last[1] === first[1]) ? n - 1 : n
@@ -209,9 +223,9 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
       // poly er Array<Ring> der ring[0] = ytre, øvrige = hull
       // Vi vil ha alle ringer som linjer (kontur er jo linje uansett)
       for (const ring of poly) {
-        // Klipp ringen mot periferi-void-masken (v9.3.37). Uten void: ett
-        // lukket segment = uendret oppførsel.
-        const segments = hasVoid ? splitRingByVoid(ring) : [{ pts: ring, closed: true }]
+        // Klipp ringen mot void-masken (v9.3.37) OG grid-ytterkanten (v10.1.x).
+        // Helt indre ring (ingen void/kant) → ett lukket segment, uendret.
+        const segments = splitRingByClip(ring)
         for (const seg of segments) {
           const worldRing = seg.pts.map(p => gridToWorld(p, transform))
           // Min-lengde 4× ekvidistanse for å beholde lokale konturer i bratte
