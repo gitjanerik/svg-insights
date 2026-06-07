@@ -92,19 +92,38 @@ export function computeHillshade(dem, options = {}) {
  * Begge er matematisk eksakt lik de respektive blend-modusene. Ren funksjon
  * (ingen canvas/DOM) så den er enhetstestbar.
  *
+ * v10.1.x: valgfri `feather` (0..0.5, brøkdel av minste flis-dimensjon) toner
+ * alfaen ned til 0 mot flis-kanten med en smoothstep-rampe. I 3×3-fliskartet er
+ * det bare midt-flisen som har DEM ⇒ relieff — uten feather ender skyggingen i
+ * en hard firkant midt i kartet («du ser bare midt-ruta»). Med feather dissolves
+ * relieffet mykt mot periferi-ringen. Default 0 = av (bakoverkompat + testlås).
+ *
  * @param {{rgba: Uint8ClampedArray, cols: number, rows: number}} shade  grayscale-skygge fra computeHillshade
  * @param {'multiply'|'screen'} mode
+ * @param {{feather?: number}} [opts]
  * @returns {Uint8ClampedArray} RGBA med tonet farge + bakt alfa
  */
-export function shadeToToneRGBA(shade, mode) {
-  const src = shade.rgba
+export function shadeToToneRGBA(shade, mode, { feather = 0 } = {}) {
+  const { rgba: src, cols, rows } = shade
   const out = new Uint8ClampedArray(src.length)
   const white = mode === 'screen'
   const v = white ? 255 : 0
+  const fpx = feather > 0 ? Math.max(1, Math.round(Math.min(cols, rows) * feather)) : 0
   for (let i = 0; i < src.length; i += 4) {
     const g = src[i]                 // grå skyggeverdi 0..255 (kanalene er like)
+    let a = white ? g : 255 - g
+    if (fpx > 0) {
+      const px = i >> 2
+      const c = px % cols
+      const r = (px / cols) | 0
+      const d = Math.min(c, r, cols - 1 - c, rows - 1 - r)   // px til nærmeste kant
+      if (d < fpx) {
+        const t = d / fpx
+        a = Math.round(a * (t * t * (3 - 2 * t)))            // smoothstep-rampe
+      }
+    }
     out[i] = v; out[i + 1] = v; out[i + 2] = v
-    out[i + 3] = white ? g : 255 - g
+    out[i + 3] = a
   }
   return out
 }
@@ -123,13 +142,13 @@ export function shadeToToneRGBA(shade, mode) {
  * (i DEM-oppløsning) i stedet for to (hillshade + et stort eget knaus-raster
  * på opptil 4096² = ~67 MB), som var en alvorlig mobil-GPU-flaskehals.
  */
-export function hillshadeToDataURL(shade, { mode = 'opaque', decorate } = {}) {
+export function hillshadeToDataURL(shade, { mode = 'opaque', decorate, feather = 0 } = {}) {
   const canvas = document.createElement('canvas')
   canvas.width = shade.cols
   canvas.height = shade.rows
   const ctx = canvas.getContext('2d')
   const rgba = (mode === 'multiply' || mode === 'screen')
-    ? shadeToToneRGBA(shade, mode)
+    ? shadeToToneRGBA(shade, mode, { feather })
     : new Uint8ClampedArray(shade.rgba)
   const imgData = new ImageData(rgba, shade.cols, shade.rows)
   ctx.putImageData(imgData, 0, 0)

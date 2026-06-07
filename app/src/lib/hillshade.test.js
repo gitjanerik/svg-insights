@@ -31,6 +31,31 @@ describe('shadeToToneRGBA — blend bakt inn i alfa', () => {
     expect([out[8], out[9], out[10], out[11]]).toEqual([255, 255, 255, 255])
   })
 
+  it('feather: kant-alfa tones til 0, senter uberørt (3×3-flis-relieff)', () => {
+    // 9×9 fullt mørk skygge (g=0 ⇒ multiply-alfa=255 overalt uten feather).
+    const n = 9
+    const shade = { cols: n, rows: n, rgba: new Uint8ClampedArray(n * n * 4) }
+    for (let i = 0; i < n * n; i++) { shade.rgba[i * 4 + 3] = 255 }
+    const plain = shadeToToneRGBA(shade, 'multiply')
+    const feathered = shadeToToneRGBA(shade, 'multiply', { feather: 0.2 })
+    const at = (buf, r, c) => buf[(r * n + c) * 4 + 3]
+    // Uten feather: full dekning overalt
+    expect(at(plain, 0, 0)).toBe(255)
+    expect(at(plain, 4, 4)).toBe(255)
+    // Med feather: hjørnet (kant) → 0, senteret beholder full alfa
+    expect(at(feathered, 0, 0)).toBe(0)
+    expect(at(feathered, 4, 4)).toBe(255)
+    // Monotont stigende innover fra kanten langs diagonalen
+    expect(at(feathered, 1, 1)).toBeLessThan(at(feathered, 2, 2))
+  })
+
+  it('feather=0 er identisk med ingen feather (bakoverkompat)', () => {
+    const shade = mkShade([0, 64, 128, 192, 255])
+    const a = shadeToToneRGBA(shade, 'screen')
+    const b = shadeToToneRGBA(shade, 'screen', { feather: 0 })
+    expect(Array.from(a)).toEqual(Array.from(b))
+  })
+
   it('alfa-kompositt er matematisk lik mix-blend-mode for alle skygge/base-par', () => {
     const grays = [0, 32, 64, 128, 200, 255]
     const bases = [0, 50, 128, 220, 255]
