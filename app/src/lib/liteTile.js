@@ -1,8 +1,12 @@
-// liteTile.js — bygg en lett 3×3-periferi-flis (v9.3.40).
+// liteTile.js — bygg en lett 3×3-periferi-flis (v9.3.40, v10.1.7).
 //
-// Periferi-flisene rundt midt-flisen viser KUN stier + vann (se buildOverpass-
-// QueryLite). Ingen DEM ⇒ ingen konturer/relieff/knaus, ingen vegetasjon/
-// bygninger/navn/POI. Resultatet er en liten vektor-SVG i samme meter-rom som
+// Periferi-flisene rundt midt-flisen viser stier + vann + MARKDEKKE (skog/eng/
+// åker/myr — flate ISOM-farger via tag-basert classifyToIsom, se buildOverpass-
+// QueryLite). v10.1.7: markdekket lagt til så det grønne/bakken flyter sømløst
+// over flis-grensa i stedet for å stoppe brått mot bar kremfarge (rektangel-
+// effekten). Fortsatt ingen DEM ⇒ ingen konturer/relieff/knaus (CHM-basert
+// tetthets-klassifisering 405–408 skjer kun i midt-flisen), ingen bygninger/
+// navn/POI. Resultatet er en liten vektor-SVG i samme meter-rom som
 // hovedkartet (origo i flisens NV-hjørne, 1 enhet = 1 m), som MapView plasserer
 // på flisens offset i den delte transform-containeren.
 //
