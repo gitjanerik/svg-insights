@@ -43,6 +43,12 @@ const OVERPASS_HEADERS = {
   'Accept': 'application/json',
   'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
 }
+// Klient-side tak på Overpass-ventetid. Server-spørringen har timeout:90, men
+// uten et klient-tak henger «Fyller inn stier og detaljer …»-spinneren til
+// server-timeouten slår inn (føltes som «det skjer ikke noe mer»). Et bundet
+// tak lar terreng-først-finalize feile raskt → «Prøv på nytt»-banner i stedet.
+// 45 s er romslig: vellykkede svar for et par km² kommer typisk på 5–15 s.
+const OVERPASS_TIMEOUT_MS = 45000
 
 export function buildOverpassQuery(bbox) {
   return `
@@ -119,6 +125,10 @@ export async function fetchOverpass(bbox, { signal } = {}) {
   const controllers = OVERPASS_MIRRORS.map(() => new AbortController())
   const abortAll = () => controllers.forEach(c => { try { c.abort() } catch { /* noop */ } })
   if (signal) signal.addEventListener('abort', abortAll, { once: true })
+  // Klient-tak: avbryt alle speil hvis ingen har svart innen taket, så et
+  // hengende endpoint ikke fryser finalize til server-timeouten (90 s).
+  let timedOut = false
+  const timeoutTimer = setTimeout(() => { timedOut = true; abortAll() }, OVERPASS_TIMEOUT_MS)
 
   const attempts = OVERPASS_MIRRORS.map((url, i) => (async () => {
     const res = await fetch(url, {
@@ -140,10 +150,12 @@ export async function fetchOverpass(bbox, { signal } = {}) {
     return data
   } catch (e) {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+    if (timedOut) throw new Error(`Overpass svarte ikke innen ${OVERPASS_TIMEOUT_MS / 1000} s`)
     // Promise.any → AggregateError når ALLE speil feilet.
     const errs = e?.errors ?? [e]
     throw new Error(`Alle Overpass-speil feilet: ${errs.map(x => x?.message ?? String(x)).join(' | ')}`)
   } finally {
+    clearTimeout(timeoutTimer)
     if (signal) signal.removeEventListener('abort', abortAll)
   }
 }

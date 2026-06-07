@@ -1,0 +1,87 @@
+import { describe, it, expect } from 'vitest'
+import { fillNoData, buildContours } from './dem.js'
+
+const NO_DATA = -9999
+
+function makeDem(values, cols, rows, { noData = NO_DATA, res = 10 } = {}) {
+  return {
+    data: Float32Array.from(values),
+    cols,
+    rows,
+    transform: { originX: 0, originY: 0, pixelWidth: res, pixelHeight: res },
+    noData,
+    resolution: res,
+  }
+}
+
+describe('fillNoData', () => {
+  it('returnerer samme data-referanse når det ikke finnes noData', () => {
+    const dem = makeDem([1, 2, 3, 4], 2, 2)
+    const { data, hadNoData } = fillNoData(dem)
+    expect(hadNoData).toBe(false)
+    expect(data).toBe(dem.data)   // ingen kopi → byte-identisk pipeline
+  })
+
+  it('fyller en kant-noData-celle med snitt av gyldige naboer', () => {
+    // 3×3, midtcellen er ekte, ett hjørne er noData. noData-cellen skal fylles
+    // til en endelig verdi i terreng-spennet (ikke -9999).
+    const dem = makeDem([
+      NO_DATA, 100, 100,
+      100, 100, 100,
+      100, 100, 100,
+    ], 3, 3)
+    const { data, hadNoData } = fillNoData(dem)
+    expect(hadNoData).toBe(true)
+    expect(data[0]).toBe(100)
+    for (const v of data) expect(v).toBeGreaterThan(0)   // ingen -9999 igjen
+  })
+
+  it('fyller en hel noData-periferi uten å etterlate -9999', () => {
+    // Ekte terreng i en sentral blokk, hele ytre ring er noData (typisk
+    // dekningsfri kant). Etter fyll skal ingen celle være noData/NaN.
+    const cols = 9, rows = 9
+    const vals = new Array(cols * rows).fill(NO_DATA)
+    for (let y = 3; y <= 5; y++) {
+      for (let x = 3; x <= 5; x++) vals[y * cols + x] = 120 + x + y
+    }
+    const dem = makeDem(vals, cols, rows)
+    const { data } = fillNoData(dem)
+    for (const v of data) {
+      expect(Number.isFinite(v)).toBe(true)
+      expect(v).not.toBe(NO_DATA)
+    }
+  })
+})
+
+describe('buildContours med noData i periferien', () => {
+  // Reproduserer «røde sirkler i periferien»: en flat terreng-skråning med en
+  // klynge noData-celler. Uten fillNoData lager -9999↔terreng-spranget en
+  // konsentrisk blink av ringer rundt klyngen. Med fyll skal antallet kontur-
+  // features holde seg lavt (ingen blink).
+  function rampWithHole() {
+    const cols = 40, rows = 40
+    const vals = new Float32Array(cols * rows)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        vals[y * cols + x] = 20 + x * 5   // jevn øst-vest-rampe, 20→215 m
+      }
+    }
+    // noData-klynge midt i (3×3) — etterligner en dekningsfri flekk.
+    for (let y = 18; y <= 20; y++) {
+      for (let x = 18; x <= 20; x++) vals[y * cols + x] = NO_DATA
+    }
+    return makeDem(vals, cols, rows, { res: 10 })
+  }
+
+  it('lager ingen konsentrisk blink rundt en noData-klynge', () => {
+    const dem = rampWithHole()
+    const { features } = buildContours(dem, 20, 5)
+    // En ren 20→215 m rampe gir ~10 kontur-linjer. En bullseye-blink ville
+    // lagt mange korte ringer rundt klyngen og blåst tallet opp. Taket er
+    // romslig men fanger regresjonen (uten fyll: titalls ekstra ringer).
+    expect(features.length).toBeLessThan(20)
+    // Ingen kontur skal ha en absurd lav «elevasjon» som bare -9999-spranget
+    // kan produsere.
+    for (const f of features) expect(f.elevation).toBeGreaterThan(0)
+  })
+})
