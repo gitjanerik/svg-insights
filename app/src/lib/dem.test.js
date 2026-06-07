@@ -120,21 +120,49 @@ describe('buildContours — periferi-void-masking (v9.3.37)', () => {
     expect(inVoid).toBe(0)
   })
 
-  it('beholder lukkede ringer uberørt når det ikke finnes noData', () => {
-    // En enkel kjegle uten noData → alle konturer skal være lukkede ringer
-    // (closed !== false), byte-identisk pipeline.
+  it('beholder INDRE lukkede ringer uberørt (kjegle som ikke når kanten)', () => {
+    // En kjegle som flater ut til 0 godt INNENFOR rutenettet → alle konturer er
+    // indre lukkede ringer som ikke berører grid-ytterkanten, og skal forbli
+    // lukkede (closed !== false). Verifiserer at kant-klippingen (v10.1.x) ikke
+    // rører konturer som ikke ligger ved kanten.
     const cols = 40, rows = 40
     const vals = new Float32Array(cols * rows)
     const cx = 20, cy = 20
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
         const d = Math.hypot(x - cx, y - cy)
-        vals[y * cols + x] = Math.max(0, 200 - d * 8)
+        vals[y * cols + x] = Math.max(0, 200 - d * 20)  // når 0 ved d=10 ⇒ helt inne i 40×40
       }
     }
     const dem = makeDem(vals, cols, rows, { res: 10 })
     const { features } = buildContours(dem, 20, 5)
     expect(features.length).toBeGreaterThan(0)
     for (const f of features) expect(f.closed).not.toBe(false)
+  })
+
+  it('klipper bort grid-kant-følgende kontursegmenter (kant-spaghetti)', () => {
+    // En monoton rampe (plan som stiger mot øst) → hver kontur krysser hele
+    // kartet og «lukkes» av d3-contour LANGS ytterkanten. Med kant-klippingen
+    // skal disse bli ÅPNE løp (closed === false) — ingen falske lukkede ringer
+    // som tegner rektangel-kanter/hjørne-spaghetti — og ingen vertex skal ligge
+    // PÅ selve ytterkanten (world-x/y = 0 eller cols/rows·res).
+    const cols = 40, rows = 40
+    const vals = new Float32Array(cols * rows)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) vals[y * cols + x] = x * 10   // 0…390 m øst-over
+    }
+    const res = 10
+    const dem = makeDem(vals, cols, rows, { res })
+    const { features } = buildContours(dem, 20, 5)
+    expect(features.length).toBeGreaterThan(0)
+    for (const f of features) {
+      expect(f.closed).toBe(false)
+      for (const [x, yy] of f.coordinates) {
+        expect(x).toBeGreaterThan(0)
+        expect(x).toBeLessThan(cols * res)
+        expect(yy).toBeGreaterThan(0)
+        expect(yy).toBeLessThan(rows * res)
+      }
+    }
   })
 })
