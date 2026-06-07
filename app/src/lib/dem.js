@@ -45,6 +45,63 @@ function gridToWorld([col, row], t) {
 }
 
 /**
+ * Fyll noData-celler før marching squares.
+ *
+ * Kartverket-DTM-en markerer dekningsfri/utenfor-modell (og sjø-fyll) som
+ * noData (-9999, se demFetcher). Når DEM-et har slike celler i periferien —
+ * typisk auto-kart som er scrollet inn i et hjørne med delvis WCS-dekning, der
+ * flis-cachen attpåtil kan ha lagret noData-fliser — gir buildContours en
+ * konsentrisk «blink» av høydekurver rundt hver noData-klynge: -9999 ligger
+ * langt under terrenget, så HVER terskel (40, 60, … 200 m) krysser
+ * -9999↔terreng-spranget og legger en ring. Det er de røde sirklene i
+ * kartutsnittets periferi.
+ *
+ * Fiks: dilatér gyldige verdier inn i noData-cellene (snitt av 4-naboer,
+ * vekslende scan-retning så fyllet propagerer jevnt fra alle kanter). Resultatet
+ * er en glatt flate uten -9999-klippe → ingen blink. Store void faller mot et
+ * konstant snitt (flatt → ingen kurver). Ingen noData = uendret data-referanse,
+ * så innlands-kart med full dekning er byte-identiske.
+ *
+ * @param {DEM} dem
+ * @returns {{ data: Float32Array, hadNoData: boolean }}
+ */
+export function fillNoData(dem) {
+  const { data, cols, rows, noData } = dem
+  const out = Float32Array.from(data, v =>
+    (v === noData || !Number.isFinite(v)) ? NaN : v)
+  let remaining = 0
+  for (let i = 0; i < out.length; i++) if (Number.isNaN(out[i])) remaining++
+  if (remaining === 0) return { data, hadNoData: false }
+
+  const total = out.length
+  for (let iter = 0; remaining > 0 && iter < 80; iter++) {
+    let filled = 0
+    const fwd = (iter % 2) === 0   // alternér retning → jevn propagering
+    for (let s = 0; s < total; s++) {
+      const i = fwd ? s : total - 1 - s
+      if (!Number.isNaN(out[i])) continue
+      const x = i % cols, y = (i / cols) | 0
+      let sum = 0, n = 0
+      if (x > 0 && !Number.isNaN(out[i - 1])) { sum += out[i - 1]; n++ }
+      if (x < cols - 1 && !Number.isNaN(out[i + 1])) { sum += out[i + 1]; n++ }
+      if (y > 0 && !Number.isNaN(out[i - cols])) { sum += out[i - cols]; n++ }
+      if (y < rows - 1 && !Number.isNaN(out[i + cols])) { sum += out[i + cols]; n++ }
+      if (n > 0) { out[i] = sum / n; filled++ }
+    }
+    if (filled === 0) break   // isolert region uten gyldige naboer
+    remaining -= filled
+  }
+  // Rest (stort indre void uten kant-kontakt innen iter-taket): globalt snitt.
+  if (remaining > 0) {
+    let sum = 0, n = 0
+    for (let i = 0; i < total; i++) if (!Number.isNaN(out[i])) { sum += out[i]; n++ }
+    const mean = n ? sum / n : 0
+    for (let i = 0; i < total; i++) if (Number.isNaN(out[i])) out[i] = mean
+  }
+  return { data: out, hadNoData: true }
+}
+
+/**
  * Generer konturer fra et DEM. Bruker marching squares (d3-contour).
  * Returnerer features med polylines i UTM-koordinater.
  *
@@ -60,7 +117,11 @@ function gridToWorld([col, row], t) {
  * }}
  */
 export function buildContours(dem, intervalM = 20, indexEvery = 5) {
-  const { data, cols, rows, transform, noData } = dem
+  const { cols, rows, transform, noData } = dem
+  // Glatt ut noData FØR marching squares så periferien ikke får konsentriske
+  // høydekurve-blink rundt -9999-klyngene (se fillNoData). Ingen noData → samme
+  // array, og resten av funksjonen er uendret.
+  const { data } = fillNoData(dem)
 
   // Finn min/max
   let minE = Infinity, maxE = -Infinity
