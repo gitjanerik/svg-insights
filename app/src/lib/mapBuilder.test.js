@@ -1,21 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { buildSvg, buildOverpassQueryLite } from './mapBuilder.js'
+import { buildSvg } from './mapBuilder.js'
 import { syntheticDEM } from './dem.js'
 import { wgs84ToUtm32 } from './utm.js'
-
-describe('buildOverpassQueryLite — periferi-fliser henter markdekke (v10.1.7)', () => {
-  const q = buildOverpassQueryLite({ south: 59.9, west: 10.7, north: 59.91, east: 10.72 })
-  it('beholder stier + vann', () => {
-    expect(q).toMatch(/highway.*path\|track/)
-    expect(q).toContain('"natural"="water"')
-  })
-  it('henter skog/markdekke så det grønne flyter over flis-grensa', () => {
-    // natural=wood + landuse=forest → ISOM 406 (skog) via tag-basert classifyToIsom
-    expect(q).toMatch(/natural.*wood/)
-    expect(q).toMatch(/landuse.*forest/)
-    expect(q).toMatch(/landuse.*farmland/)
-  })
-})
 
 // Syntetisk DEM (Gaussisk topp i midten) som dekker kartets UTM-utstrekning, så
 // buildContours gir høydekurver innenfor kart-rammen. demProject er identitet,

@@ -121,31 +121,6 @@ out geom;
 `.trim()
 }
 
-// Lett Overpass-spørring for 3×3-periferi-fliser (v9.3.40): KUN stier + vann.
-// Periferien er orienterings-kontekst rundt midt-flisen, så den henter et
-// minimum — ingen vegetasjon, bygninger, navn, POI eller DEM-avhengige lag.
-// Mye mindre svar enn buildOverpassQuery → raskt og snilt mot Overpass-
-// speilene når 8 naboer hentes lazily. Stier = ISOM 505–507 (sti-kategori),
-// vann = innsjø/elv/bekk. Holder samme bbox-konvensjon som full-spørringen.
-export function buildOverpassQueryLite(bbox) {
-  return `
-[out:json][timeout:60][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
-(
-  way["highway"~"^(path|track|footway|bridleway|steps|cycleway)$"];
-  way["natural"="water"];
-  way["water"];
-  way["waterway"~"^(stream|river|canal|ditch)$"];
-  relation["natural"="water"];
-  way["natural"~"^(wood|scrub|heath|grassland|wetland|scree|bare_rock)$"];
-  relation["natural"~"^(wood|scrub|heath|grassland|wetland|scree|bare_rock)$"];
-  way["landuse"~"^(forest|meadow|grass|farmland|farmyard|orchard|vineyard)$"];
-  relation["landuse"~"^(forest|meadow|grass|farmland)$"];
-  way["leisure"="park"];
-);
-out geom;
-`.trim()
-}
-
 // Ett kappløp mellom speilene: første gyldige svar vinner, resten avbrytes
 // (sparer båndbredde/last). Hvert speil har egen AbortController, lenket til
 // ekstern signal slik at prefetch-avbrudd stopper alle. Klient-tak avbryter alle
