@@ -496,8 +496,47 @@ function applyLayerVisibility() {
 }
 
 // Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
-const pinchEnabled = computed(() => !curveball.active.value)
-const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } = usePinchZoom(wrapperRef, { enabled: pinchEnabled })
+// Pan/zoom er av under spillet OG mens et ferskt kart fyller inn stier og
+// detaljer (terreng-først) eller mens første last pågår — brukeren skal ikke
+// kunne interagere med (eller trigge nytt auto-kart fra) et halvbygd kart.
+const pinchEnabled = computed(() =>
+  !curveball.active.value && !fillingInDetails.value && !loading.value)
+// panAtRest: la kartet dras også ved nullstilt zoom (se clampPan for canvas-rom).
+const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } =
+  usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true })
+
+// Pan-clamp — 3×3-rutenett av kart-utsnitt (midtcellen = kartet). Det synlige
+// sentrum kan flyttes inntil ÉN full kart-bredde/-høyde fra kart-senteret i hver
+// retning: nok rom til å pan-e mot auto-kart-trigger i alle himmelretninger ved
+// default zoom, men kartet kan aldri drifte helt bort. Vi klamper det synlige
+// sentrum (rotasjons-trygt) og inverterer til translate; gjelder alle zoom-nivå.
+function clampPan() {
+  const m = meta.value
+  const el = wrapperRef.value
+  if (!m || !el) return
+  const r = el.getBoundingClientRect()
+  const w = r.width, h = r.height
+  if (!w || !h) return
+  const c = visibleCenterSvg()
+  if (!c) return
+  const cx = Math.min(Math.max(c.x, -m.widthM / 2), m.widthM * 1.5)
+  const cy = Math.min(Math.max(c.y, -m.heightM / 2), m.heightM * 1.5)
+  if (cx === c.x && cy === c.y) return   // innenfor → idempotent, ingen endring
+  // Inverter visibleCenterSvg: finn translate som lander (cx,cy) på skjermsenter.
+  const fit = Math.min(w / m.widthM, h / m.heightM)
+  const offX = (w - m.widthM * fit) / 2
+  const offY = (h - m.heightM * fit) / 2
+  const s = scale.value || 1
+  const rot = (rotation.value || 0) * Math.PI / 180
+  const cos = Math.cos(rot), sin = Math.sin(rot)
+  const px = cx * fit + offX
+  const py = cy * fit + offY
+  const A = px * cos - py * sin
+  const B = px * sin + py * cos
+  translateX.value = w / 2 - A * s
+  translateY.value = h / 2 - B * s
+}
+watch([scale, translateX, translateY, rotation], clampPan)
 
 // v8.10.3: Toggle `.is-zooming` på SVG-host under aktiv gest så CSS-regelen
 // for `vector-effect: non-scaling-stroke` overstyres til `none` — strokene
@@ -1289,9 +1328,11 @@ function clientToSvgPoint(clientX, clientY) {
 }
 
 function openContextMenuAt(clientX, clientY) {
-  // Long-press skal være no-op mens spillet kjører, eller mens et annet
-  // overlay (søk, on-the-fly) eier UI-en.
-  if (curveball.active.value || buildingOnTheFly.value || searchOpen.value) return
+  // Long-press skal være no-op mens spillet kjører, mens et annet overlay (søk,
+  // on-the-fly) eier UI-en, eller mens et ferskt kart fortsatt fyller inn detaljer
+  // (detalj-insetet ville ellers vist halvbygd data).
+  if (curveball.active.value || buildingOnTheFly.value || searchOpen.value ||
+      fillingInDetails.value) return
   const local = clientToSvgPoint(clientX, clientY)
   if (!local) return
   contextMenuPoint.value = {
@@ -1790,6 +1831,8 @@ function pxToUserUnits(cssPx) {
 
 // Klikk på kart i annoteringsmodus → plasser symbol
 function onMapClick(e) {
+  // Ingen kart-interaksjon mens et ferskt kart fyller inn detaljer.
+  if (fillingInDetails.value) return
   // Måleverktøy har prioritet over annotering siden brukeren eksplisitt
   // har slått det på (annoteringsmodus blir tvunget av i startMeasure).
   const svg = svgHostRef.value?.querySelector('svg')
@@ -2639,6 +2682,8 @@ function maybePrefetch(c) {
 
 function checkAutoMapTrigger() {
   if (!autoMapEnabled.value || !autoMapArmed || buildingOnTheFly.value) return
+  // Ikke trigg/prefetch mens et ferskt kart fortsatt fyller inn detaljer.
+  if (fillingInDetails.value) return
   if (autoMapModeBusy()) return
   const m = meta.value
   const c = visibleCenterSvg()

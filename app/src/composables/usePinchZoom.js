@@ -18,10 +18,14 @@ import { ref, unref, onMounted, onUnmounted } from 'vue'
  * options.enabled (ref|computed|bool) — handlere skipper input når false.
  * options.rotateEnabled (default true) — sett false for å fryse rotasjon
  *   (brukes i ViewerView som ikke har rotasjons-UI).
+ * options.panAtRest (default false) — tillat én-finger-pan også ved scale=1 og
+ *   rotasjon=0 (default «hvile»). MapView slår dette på så kartet kan dras rundt
+ *   i et canvas-rom selv ved nullstilt zoom; ViewerView lar det stå av.
  */
 export function usePinchZoom(elementRef, options = {}) {
   const enabledOpt = options.enabled
   const rotateEnabled = options.rotateEnabled !== false
+  const panAtRest = options.panAtRest === true
   function isEnabled() {
     return enabledOpt == null ? true : !!unref(enabledOpt)
   }
@@ -156,8 +160,10 @@ export function usePinchZoom(elementRef, options = {}) {
       lastTapAt = now
       lastTapX = t.clientX
       lastTapY = t.clientY
-      if (scale.value > 1 || rotation.value !== 0) {
-        // Pan fungerer som rent translate (rotasjon og skala uendret)
+      if (panAtRest || scale.value > 1 || rotation.value !== 0) {
+        // Pan fungerer som rent translate (rotasjon og skala uendret). Ved
+        // panAtRest tillates det også i hvile (scale=1, rot=0) — en stillestående
+        // tap beveger ingenting, så tap/long-press påvirkes ikke.
         isPanning = true
         isGesturing.value = true
         startX = t.clientX - translateX.value
