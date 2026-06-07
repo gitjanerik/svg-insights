@@ -1210,15 +1210,18 @@ async function applyHillshade() {
   // med mix-blend-mode, men uten den dyre per-frame backdrop-blendingen på
   // mobil. Re-tones kun når DEM eller tema-modus endres.
   const mode = reliefBlendMode()
-  // v10.1.x: når 3×3-periferi-ringen er aktiv (auto-kart PÅ) er det bare midt-
-  // flisen som har relieff — feather kanten så skyggingen dissolves mykt mot
-  // ringen i stedet for å ende i en hard firkant. Frittstående full-kart (ring
-  // av) feather-es ikke — relieffet skal fylle hele kartet skarpt til kanten.
-  const feather = autoMapEnabled.value ? 0.12 : 0
-  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode || cachedHillshadeFeather !== feather) {
-    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode, feather })
+  // v10.1.6: når 3×3-periferi-ringen er aktiv (auto-kart PÅ) er det bare midt-
+  // flisen som har relieff. En lineær kant-feather gjorde fortsatt relieffet til
+  // et synlig REKTANGEL med 90°-hjørner (tydeligst der et hjørne traff vann). Vi
+  // bruker i stedet en RADIAL vignette: relieffet blir en myk oval uten rette
+  // kanter/hjørner, og forsvinner helt i hjørnene (der vann-seam-en var). 0.55 =
+  // full styrke innenfor 55 % av radien, smoothstep til 0 ved kant-midtpunkt.
+  // Frittstående full-kart (ring av) → ingen vignette, relieffet fyller kartet.
+  const vignette = autoMapEnabled.value ? 0.55 : 0
+  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode || cachedHillshadeFeather !== vignette) {
+    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode, vignette })
     cachedHillshadeMode = mode
-    cachedHillshadeFeather = feather
+    cachedHillshadeFeather = vignette
   }
   // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
   // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
@@ -2550,7 +2553,7 @@ function toggleAutoMap() {
     clearRing()           // skru av utforsknings-modus → ingen ring
     showAutoMapToast('Auto-kart av')
   }
-  applyHillshade()        // ring av/på endrer relieff-feather (hard kant ↔ myk)
+  applyHillshade()        // ring av/på endrer relieff-vignette (oval ↔ fullt kart)
   renderAutoMapFrame()
 }
 
