@@ -19,9 +19,6 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
-import { neighborTiles } from '../lib/tileGrid.js'
-import { buildLiteTile } from '../lib/liteTile.js'
-import { liteTileCache } from '../lib/liteTileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -45,10 +42,9 @@ const router = useRouter()
 const route = useRoute()
 const wrapperRef = ref(null)
 const svgHostRef = ref(null)
-// Felles transform-wrapper rundt BÅDE midt-kartet (svgHostRef) og periferi-
-// ringen (ringHostRef). Tema-CSS-variabler (--iso-*, --bg, --label-*) settes
-// her, ikke på midt-SVG-en, så de arves ned i begge via CSS custom property-
-// arv — ellers ville bare midt-flisen rekolorere ved tema-bytte (v10.1.x).
+// Felles transform-wrapper rundt kart-SVG-en (svgHostRef). Tema-CSS-variabler
+// (--iso-*, --bg, --label-*) settes her, ikke på SVG-en, så de arves ned via
+// CSS custom property-arv.
 const mapInnerRef = ref(null)
 const searchInputRef = ref(null)
 
@@ -1162,7 +1158,6 @@ let cachedHillshadeUrl = null   // memoize: avhenger av (DEM, blend-modus)
 let cachedHillshadeDem = null
 let cachedShade = null          // rå grayscale-skygge — re-tones ved tema-bytte uten DEM-rekalk
 let cachedHillshadeMode = null
-let cachedHillshadeFeather = null   // 3×3-ring aktiv ⇒ kant-feather bakt inn
 
 // Relieff-blend velges per tema: lyse bakgrunner mørkner naturlig med
 // `multiply`, mens mørke/art-tema (Curves) får `screen` så terrenget lyser
@@ -1210,18 +1205,11 @@ async function applyHillshade() {
   // med mix-blend-mode, men uten den dyre per-frame backdrop-blendingen på
   // mobil. Re-tones kun når DEM eller tema-modus endres.
   const mode = reliefBlendMode()
-  // v10.1.6: når 3×3-periferi-ringen er aktiv (auto-kart PÅ) er det bare midt-
-  // flisen som har relieff. En lineær kant-feather gjorde fortsatt relieffet til
-  // et synlig REKTANGEL med 90°-hjørner (tydeligst der et hjørne traff vann). Vi
-  // bruker i stedet en RADIAL vignette: relieffet blir en myk oval uten rette
-  // kanter/hjørner, og forsvinner helt i hjørnene (der vann-seam-en var). 0.55 =
-  // full styrke innenfor 55 % av radien, smoothstep til 0 ved kant-midtpunkt.
-  // Frittstående full-kart (ring av) → ingen vignette, relieffet fyller kartet.
-  const vignette = autoMapEnabled.value ? 0.55 : 0
-  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode || cachedHillshadeFeather !== vignette) {
-    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode, vignette })
+  // Kartet vises i full skjerm (ingen periferi-ring) → relieffet fyller hele
+  // kartet uten vignette/kant-feather.
+  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode) {
+    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode })
     cachedHillshadeMode = mode
-    cachedHillshadeFeather = vignette
   }
   // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
   // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
@@ -1229,14 +1217,13 @@ async function applyHillshade() {
   // vannflate uten skygge-frynse langs strandlinja (der DTM-en stepper fra
   // innsjø ≈ 0 m opp til land), og land-relieffet leses med mer kontrast.
   // Faller tilbake til toppen av kropps-innholdet (under klient-overlays) når
-  // kartet ikke har vann. v10.1.7: relieffet skal ligge INNE i #map-content
-  // (så oval-vignetten tones det ut med resten); vann-laget ligger der også, så
-  // vi setter inn foran det via dets EGEN forelder (ikke svg-roten — vann er nå
-  // et barnebarn av svg). Uten vann: append til #map-content (over vegetasjon/
-  // kurver, drapérer land). Overlays ligger utenfor #map-content, så relieffet
-  // havner uansett under dem.
-  const contentG = svg.querySelector('#map-content') ?? svg
-  const waterLayer = svg.querySelector('[data-layer="vann"]')
+  // kartet ikke har vann — settes inn foran første overlay-lag (GPS/annotering/
+  // spor/måling), så relieffet drapérer land men ligger under overlays.
+  const insertBefore = svg.querySelector('[data-layer="vann"]')
+                    ?? svg.querySelector('#user-layer')
+                    ?? svg.querySelector('#annotation-layer')
+                    ?? svg.querySelector('#track-layer')
+                    ?? svg.querySelector('#measure-layer')
   if (!img) {
     const ns = 'http://www.w3.org/2000/svg'
     img = document.createElementNS(ns, 'image')
@@ -1249,8 +1236,8 @@ async function applyHillshade() {
     // hovedtråden, så den ikke blokkerer ved første paint / DEM-bytte.
     img.setAttribute('decoding', 'async')
   }
-  if (waterLayer && waterLayer.parentNode) waterLayer.parentNode.insertBefore(img, waterLayer)
-  else contentG.appendChild(img)
+  if (insertBefore) svg.insertBefore(img, insertBefore)
+  else svg.appendChild(img)
   img.setAttribute('x', '0'); img.setAttribute('y', '0')
   img.setAttribute('width', String(meta.value.widthM))
   img.setAttribute('height', String(meta.value.heightM))
@@ -1641,14 +1628,6 @@ function buildDetailInset() {
     }
     svg.appendChild(child.cloneNode(true))
   }
-  // Inset-en er en detalj-LUPE i et rektangulært vindu → skal vise full detalj
-  // UTEN oval-vignetten. Strip masken fra det klonede innholdet, og fjern de
-  // klonede vignette-defs + #map-content-id så de ikke kolliderer (id) med
-  // hovedkartets mask-referanse. (v10.1.7)
-  const insetContent = svg.querySelector('#map-content')
-  if (insetContent) { insetContent.removeAttribute('mask'); insetContent.removeAttribute('id') }
-  svg.querySelector('mask#map-vignette')?.remove()
-  svg.querySelector('radialGradient#map-vignette-grad')?.remove()
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
   // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
@@ -2557,14 +2536,10 @@ function toggleAutoMap() {
     autoMapArmed = true
     autoMapOfflineNotified = false
     showAutoMapToast('Auto-kart på — dra kartet for nytt utsnitt')
-    refreshRingTiles()   // hent periferi-ringen (stier+vann rundt deg)
   } else {
     cancelPrefetch()
-    clearRing()           // skru av utforsknings-modus → ingen ring
     showAutoMapToast('Auto-kart av')
   }
-  applyHillshade()        // ring av/på endrer relieff-vignette (oval ↔ fullt kart)
-  applyContentVignette()  // ring av/på: oval uttoning av kart-innholdet av/på
   renderAutoMapFrame()
 }
 
@@ -2845,15 +2820,10 @@ function labelForAnnotation(a) {
   }
 }
 
-// Print- / eksport-handlers. Eksport/print skal være FULLT rektangulært kart —
-// oval-vignetten (#map-content mask) er kun for 3×3-skjermvisning. Klon SVG-en
-// og strip masken før serialisering. (v10.1.7)
+// Print- / eksport-handlers.
 function mapSvgMarkupForExport() {
   const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return ''
-  const clone = svg.cloneNode(true)
-  clone.querySelector('#map-content')?.removeAttribute('mask')
-  return clone.outerHTML
+  return svg ? svg.outerHTML : ''
 }
 function onExportSvg() {
   const m = mapSvgMarkupForExport()
@@ -2874,146 +2844,6 @@ function onPrint() {
   const m = mapSvgMarkupForExport()
   if (!m) return
   printDocument(m, { title: mapTitle.value })
-}
-
-// ── 3×3-fliskart: periferi-ring (v9.3.40) ────────────────────────────────
-// Rundt midt-kartet vises 8 nabo-fliser med KUN stier + vann (lett vektor),
-// så man har orienterings-kontekst utenfor kart-kanten i stedet for tom
-// kremfarge. Hentes lazy (idle etter at kartet har «landet») og caches i en
-// LRU så de gjenbrukes når man beveger seg tilbake. Ringen er ren kontekst
-// (pointer-events:none); GPS/søk/long-press/relieff er kun på midt-kartet.
-// Koblet til autoMapEnabled (utforsknings-modus): av ⇒ ingen ring.
-// liteTileCache er en MODUL-singleton (lib/liteTileCache.js) — den overlever
-// MapView-remount ved auto-kart-promotering, så overlappende naboer (inkl.
-// flisen du gikk inn i) gjenbrukes umiddelbart på det nye kartet (increment 3).
-const ringHostRef = ref(null)
-// v10.1.2 perf: parse hver lite-flis-SVG-streng ÉN gang til et detached node,
-// og klon ved hver layoutRing i stedet for å re-parse strengen (innerHTML) på
-// nytt hver gang en nabo lander / ved resize. Tømmes i clearRing.
-let ringParsedNodes = new Map()   // tileKey → parset SVGElement (mal for klon)
-let ringAbort = null
-let ringTimer = null
-let ringGeneration = 0                   // bumpes ved kartbytte → forkast utdaterte fetches
-let ringNeighbors = []                   // gjeldende 8 naboer (for re-layout ved resize)
-const ringPending = new Set()            // tileKeys som bygges NÅ (per-instans, ikke i delt cache)
-// Mild Overpass-struping: maks N nabo-henting samtidig, resten køes. Hindrer
-// at 8 forespørsler treffer speilene på én gang (429-vern).
-const RING_MAX_CONCURRENT = 3
-let ringActive = 0
-let ringQueue = []
-
-function clearRing() {
-  ringGeneration++
-  if (ringAbort) { ringAbort.abort(); ringAbort = null }
-  if (ringTimer) { clearTimeout(ringTimer); ringTimer = null }
-  ringQueue = []
-  ringPending.clear()
-  ringNeighbors = []
-  ringParsedNodes.clear()
-  if (ringHostRef.value) ringHostRef.value.innerHTML = ''
-}
-
-// Hent (eller parse + cache) det detached node for en flis-streng. Klones av
-// kalleren før innsetting i DOM, så malen forblir gjenbrukbar.
-function ringTileNode(key) {
-  let node = ringParsedNodes.get(key)
-  if (node) return node
-  const svg = liteTileCache.has(key) ? liteTileCache.get(key) : null
-  if (!svg) return null
-  const tmpl = document.createElement('template')
-  tmpl.innerHTML = svg
-  node = tmpl.content.firstElementChild
-  if (!node) return null
-  node.style.width = '100%'; node.style.height = '100%'; node.style.display = 'block'
-  ringParsedNodes.set(key, node)
-  return node
-}
-
-// Plasser de bygde flisene i delt meter-rom: midt-SVG-en fyller svgHostRef med
-// meet-fit (1 m = fit px + letterbox-offset), og ring-flisene posisjoneres med
-// samme mapping. Parent-transformen panner/zoomer/roterer alt sammen, så denne
-// kjøres KUN ved bygg/ankomst/resize — ikke per frame.
-function layoutRing() {
-  const host = ringHostRef.value
-  if (!host || !meta.value) return
-  const wrap = wrapperRef.value?.getBoundingClientRect()
-  if (!wrap || !wrap.width) return
-  const m = meta.value
-  const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
-  const offX = (wrap.width - m.widthM * fit) / 2
-  const offY = (wrap.height - m.heightM * fit) / 2
-  const w = m.widthM * fit
-  const h = m.heightM * fit
-  host.innerHTML = ''
-  for (const n of ringNeighbors) {
-    const node = ringTileNode(n.key)   // parset + cachet; klones under
-    if (!node) continue                // delt cache holder kun ferdige SVG-er
-    const box = document.createElement('div')
-    // v10.1.2 perf: content-visibility:auto lar nettleseren hoppe over
-    // render/paint av periferi-fliser som er utenfor skjermen (vanlig ved
-    // innzoomet lesing der de 8 nabo-flisene ligger utenfor viewporten).
-    // contain-intrinsic-size gir layouten en størrelse uten å rendre, så
-    // ingen scroll-/layout-hopp når en flis skippes.
-    box.style.cssText = `position:absolute;left:${offX + n.offsetM.x * fit}px;top:${offY + n.offsetM.y * fit}px;` +
-      `width:${w}px;height:${h}px;pointer-events:none;overflow:hidden;` +
-      `content-visibility:auto;contain-intrinsic-size:${w}px ${h}px`
-    box.appendChild(node.cloneNode(true))
-    host.appendChild(box)
-  }
-}
-
-// Sett opp ringen for gjeldende midt-kart. Increment 3: rendrer cachede naboer
-// UMIDDELBART (ingen tom-blink etter et auto-kart-hopp — overlappende fliser
-// ligger i den delte cachen), og køer nett-henting av manglende naboer med
-// mild struping (debounced + maks RING_MAX_CONCURRENT samtidig).
-function refreshRingTiles() {
-  if (!autoMapEnabled.value || !meta.value) { clearRing(); return }
-  const m = meta.value
-  const centerUtm = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
-  if (!Number.isFinite(centerUtm.minE) || centerUtm.maxE <= centerUtm.minE) return
-  const gen = ++ringGeneration
-  if (ringAbort) ringAbort.abort()
-  ringAbort = new AbortController()
-  ringQueue = []
-  ringNeighbors = neighborTiles(centerUtm)
-  layoutRing()   // straks: vis cachede naboer (gjenbruk etter hopp)
-  // Debounce nett-hentingen litt så transiente sentre (rask panning/hopp) ikke
-  // fyrer Overpass for fliser man ikke blir værende ved.
-  if (ringTimer) clearTimeout(ringTimer)
-  ringTimer = setTimeout(() => queueRingFetches(gen), 400)
-}
-
-function queueRingFetches(gen) {
-  if (gen !== ringGeneration || !autoMapEnabled.value) return
-  ringQueue = ringNeighbors.filter(n => !liteTileCache.has(n.key) && !ringPending.has(n.key))
-  pumpRingQueue()
-}
-
-// Strupet kø: kjør maks RING_MAX_CONCURRENT nabo-bygg samtidig. Frigjort slot
-// pumper alltid GJELDENDE kø (generasjons-snapshot per task gjør at utdaterte
-// resultater ikke rendres, men køen stopper aldri opp ved kartbytte).
-function pumpRingQueue() {
-  const signal = ringAbort?.signal
-  const gen = ringGeneration
-  while (ringActive < RING_MAX_CONCURRENT && ringQueue.length) {
-    const n = ringQueue.shift()
-    if (liteTileCache.has(n.key) || ringPending.has(n.key)) continue
-    ringPending.add(n.key)
-    ringActive++
-    buildLiteTile(n.bbox, { signal, utmBbox: n.utmBbox })
-      .then(svg => {
-        if (gen === ringGeneration && componentAlive) {
-          liteTileCache.set(n.key, svg)
-          layoutRing()
-        }
-      })
-      .catch(() => { /* abort/feil: hopp over, retry ved neste mount */ })
-      .finally(() => {
-        ringPending.delete(n.key)
-        ringActive--
-        pumpRingQueue()
-      })
-  }
 }
 
 async function loadMap({ silent = false } = {}) {
@@ -3145,11 +2975,6 @@ async function loadMap({ silent = false } = {}) {
     // kart-senter under skjermsenter), så trådkorset peker på samme punkt du
     // var på vei mot — og dx/dy ≈ 0, ingen umiddelbar re-trigger.
     if (autoMapEnabled.value) renderAutoMapFrame()
-    // 3×3-periferi-ring: hent nabo-flisenes stier+vann (lazy/idle) og rendre
-    // dem rundt midt-kartet. clearRing først så et evt. forrige kart-ring
-    // forsvinner umiddelbart ved kartbytte.
-    clearRing()
-    if (autoMapEnabled.value) refreshRingTiles()
     if (pendingRestoreView) {
       rotation.value = pendingRestoreView.rotation
       await nextTick()
@@ -3229,46 +3054,6 @@ async function retryMapDetails() {
   }
 }
 
-// Oval vignette-maske for kart-innholdet (#map-content) i 3×3-visning. En
-// radial-gradient (objectBoundingBox: ellipse som flukter med flis-bboksen)
-// går fra hvit (synlig) i senter til svart (skjult) ved kant-midtpunkt, og er
-// helt svart i hjørnene. Maskerer man HELE detalj-blokken med denne, løses
-// kartet opp i en myk oval mot periferi-ringen — ingen hard rektangel-grense.
-// Gradienten er statisk (transformeres med kartet), så ingen per-frame-kost
-// som mix-blend-mode hadde. (v10.1.7)
-function buildVignetteDefs(ns) {
-  const defs = document.createElementNS(ns, 'defs')
-  const grad = document.createElementNS(ns, 'radialGradient')
-  grad.setAttribute('id', 'map-vignette-grad')   // default gradientUnits = objectBoundingBox
-  grad.setAttribute('cx', '0.5'); grad.setAttribute('cy', '0.5'); grad.setAttribute('r', '0.5')
-  const stops = [['0', '#fff'], ['0.62', '#fff'], ['1', '#000']]
-  for (const [off, col] of stops) {
-    const s = document.createElementNS(ns, 'stop')
-    s.setAttribute('offset', off); s.setAttribute('stop-color', col)
-    grad.appendChild(s)
-  }
-  const mask = document.createElementNS(ns, 'mask')
-  mask.setAttribute('id', 'map-vignette')
-  mask.setAttribute('maskContentUnits', 'objectBoundingBox')
-  const rect = document.createElementNS(ns, 'rect')
-  rect.setAttribute('x', '0'); rect.setAttribute('y', '0')
-  rect.setAttribute('width', '1'); rect.setAttribute('height', '1')
-  rect.setAttribute('fill', 'url(#map-vignette-grad)')
-  mask.appendChild(rect)
-  defs.appendChild(grad); defs.appendChild(mask)
-  return defs
-}
-
-// Sett (auto-kart PÅ) eller fjern (frittstående full-kart) oval-vignetten på
-// kart-innholdet. Frittstående kart skal fylle hele flaten skarpt; bare i 3×3-
-// visningen er det en periferi-ring å tones ut mot.
-function applyContentVignette() {
-  const content = svgHostRef.value?.querySelector('#map-content')
-  if (!content) return
-  if (autoMapEnabled.value) content.setAttribute('mask', 'url(#map-vignette)')
-  else content.removeAttribute('mask')
-}
-
 function setupHostSvg(sourceRoot) {
   const ns = 'http://www.w3.org/2000/svg'
   const host = svgHostRef.value
@@ -3285,20 +3070,13 @@ function setupHostSvg(sourceRoot) {
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
-  // v10.1.7: alt kart-INNHOLD (bakgrunn + vegetasjon + kurver + relieff osv.)
-  // legges i én gruppe #map-content som kan maskeres med en oval vignette i
-  // 3×3-visning, så HELE detalj-blokken tones ut mot periferi-ringen (ikke bare
-  // relieffet) — fjerner den harde rektangel-grensa. Overlays (GPS/annotering/
-  // spor/måling/søk) appendes til svg-ROTEN etterpå og maskeres IKKE (de skal
-  // være skarpe uansett). Relieffet (#hillshade-layer) settes inn foran
-  // [data-layer="vann"] → havner inni #map-content → tones ut med innholdet.
-  const content = document.createElementNS(ns, 'g')
-  content.setAttribute('id', 'map-content')
+  // Kart-innholdet (bakgrunn + vegetasjon + kurver + relieff osv.) klones
+  // direkte inn i SVG-roten. Overlays (GPS/annotering/spor/måling/søk) appendes
+  // ETTERPÅ så de ligger øverst. Relieffet (#hillshade-layer) settes inn foran
+  // [data-layer="vann"] (eller første overlay-lag).
   for (const child of Array.from(sourceRoot.childNodes)) {
-    content.appendChild(child.cloneNode(true))
+    svg.appendChild(child.cloneNode(true))
   }
-  svg.appendChild(buildVignetteDefs(ns))
-  svg.appendChild(content)
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
   // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester når brukerens
@@ -3306,7 +3084,6 @@ function setupHostSvg(sourceRoot) {
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
-  applyContentVignette()   // sett/fjern oval-masken etter auto-kart-status
   // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
   // perf-klasser (.zoomed-in / .is-zooming) basert på nåværende state,
   // siden watcheren bare reagerer på endringer.
@@ -3703,7 +3480,6 @@ onMounted(() => {
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
   window.addEventListener('resize', scheduleNameLOD)
-  window.addEventListener('resize', layoutRing)   // re-posisjoner periferi-ring ved resize
   window.addEventListener('orientationchange', updateMapRect)
   loadMap()
   loadUserMapsForTournament()
@@ -3718,11 +3494,9 @@ onUnmounted(() => {
   screenWake.stop()
   componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
-  window.removeEventListener('resize', layoutRing)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
-  clearRing()
   cancelPrefetch()
 })
 </script>
@@ -3963,11 +3737,6 @@ onUnmounted(() => {
          @pointercancel="onPointerUpLongPress"
          @contextmenu="onContextMenuEvent">
       <div ref="mapInnerRef" class="w-full h-full relative" :style="mapTransformStyle">
-        <!-- 3×3-periferi-ring: nabo-fliser (stier+vann) bak midt-kartet, i samme
-             transform-rom så de panner/zoomer/roterer i lås. z-index:-1 +
-             pointer-events:none ⇒ ren kontekst, all interaksjon på midt-kartet. -->
-        <div ref="ringHostRef" class="absolute inset-0"
-             style="z-index:-1;pointer-events:none"></div>
         <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
         <CurveBallLayer
           :flipp="curveball"
