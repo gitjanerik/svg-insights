@@ -1,8 +1,9 @@
 <script setup>
-import { ref, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
+import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
 const maps = ref([])
@@ -172,6 +173,42 @@ async function onCreateHere() {
     alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
   }
 }
+
+// ── Søk → bygg direkte ──────────────────────────────────────────────────
+// Søkefeltet på forsiden er en KISS-snarvei (parallelt med «Lag kart der jeg
+// er»): velg et sted fra trefflista → bygg straks et standard 4 × 4 km,
+// 20 m ekvidistanse-kart sentrert der, og åpne det. Ingen mellomside med
+// størrelse/ekvidistanse-valg — det ligger fortsatt under «Flere valg»
+// (MapPickerView) for de som vil finjustere.
+const { query, results, isSearching, error: searchError } = useNominatim()
+
+const showResults = computed(() =>
+  query.value.trim().length >= 2 && (results.value.length > 0 || isSearching.value)
+)
+
+async function onSelectSearchResult(r) {
+  if (buildingOnTheFly.value) return
+  query.value = ''
+  results.value = []
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Henter kartdata …'
+  try {
+    const { id } = await buildMapFromCenter({
+      center: { lat: r.lat, lon: r.lon, name: r.shortName },
+      halfKm: 2,         // 4 × 4 km
+      equidistanceM: 20, // 20 m ekvidistanse
+      navn: r.shortName,
+      terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    router.push({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('Søk-kart-bygging feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+  }
+}
 </script>
 
 <template>
@@ -195,27 +232,44 @@ async function onCreateHere() {
     <!-- Innhold -->
     <div class="flex-1 px-4 pt-4 pb-32 overflow-y-auto">
 
-      <!-- "Nytt kart"-CTA -->
-      <button @click="router.push('/kart/nytt')"
-              class="w-full mb-3 rounded-xl p-4 flex items-center gap-4 text-left
-                     bg-slate-500/25 border border-slate-300/40
-                     active:bg-slate-500/30 active:scale-[0.99] transition">
-        <div class="shrink-0 w-11 h-11 rounded-lg bg-slate-400/20 border border-slate-300/30
-                    flex items-center justify-center text-slate-300">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      <!-- Søkefelt — KISS-snarvei: velg sted → bygg straks 4 × 4 km, 20 m
+           ekvidistanse-kart (samme oppsett som «Lag kart der jeg er»). For
+           finjustering av størrelse/ekvidistanse, se «Flere valg» under. -->
+      <div class="relative z-20 mb-3">
+        <div class="relative">
+          <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
           </svg>
+          <input v-model="query" type="search" autocomplete="off" autocorrect="off"
+                 placeholder="Søk etter sted, postnummer eller adresse"
+                 class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
+                        text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
+                        focus:border-slate-300/50 transition" />
+          <div v-if="isSearching"
+               class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15
+                      border-t-white/70 rounded-full animate-spin" />
         </div>
-        <div class="flex-1">
-          <div class="text-white font-medium">Lag nytt turkart</div>
-          <div class="text-[12px] text-white/65 mt-0.5">Søk etter sted og last ned område</div>
-        </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/50" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </button>
+
+        <!-- Søkeresultater -->
+        <Transition name="fade">
+          <div v-if="showResults"
+               class="absolute left-0 right-0 mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
+                      border border-white/10 shadow-2xl max-h-[50dvh] overflow-y-auto z-30">
+            <div v-if="results.length === 0 && !isSearching"
+                 class="px-4 py-3 text-[13px] text-white/50">Ingen treff</div>
+            <button v-for="r in results" :key="r.id"
+                    @click="onSelectSearchResult(r)"
+                    class="w-full text-left px-4 py-2.5 active:bg-white/10 transition border-b
+                           border-white/8 last:border-0">
+              <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
+              <div class="text-[11px] text-white/50 truncate">{{ r.name }}</div>
+            </button>
+          </div>
+        </Transition>
+
+        <div v-if="searchError" class="mt-2 text-[11px] text-slate-300">{{ searchError }}</div>
+      </div>
 
       <!-- Snarvei: lag kart der jeg er. Krever GPS-tillatelse ved tap.
            4 × 4 km, 20 m ekvidistanse, åpnes med GPS-posisjon midt i kartet. -->
@@ -242,6 +296,22 @@ async function onCreateHere() {
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
+      </button>
+
+      <!-- «Flere valg» — diskret inngang til full picker (MapPickerView) for
+           de som vil finjustere størrelse / ekvidistanse / utsnitt. Tidligere
+           den fremtredende «Lag nytt turkart»-CTA-en; nå nedtonet siden søket
+           øverst dekker hovedflyten. -->
+      <button @click="router.push('/kart/nytt')"
+              class="w-full mb-4 px-3 py-2 rounded-lg text-[12px] font-medium
+                     text-white/55 active:text-white/80 active:bg-white/[0.04]
+                     transition flex items-center justify-center gap-1.5">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/>
+          <line x1="4" y1="18" x2="20" y2="18"/>
+        </svg>
+        Flere valg
       </button>
 
       <!-- Innebygde kart -->
@@ -353,4 +423,7 @@ async function onCreateHere() {
 <style scoped>
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.22s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to       { opacity: 0; }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.15s; }
+.fade-enter-from, .fade-leave-to       { opacity: 0; }
 </style>
