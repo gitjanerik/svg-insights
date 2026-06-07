@@ -123,6 +123,61 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
   // array, og resten av funksjonen er uendret.
   const { data } = fillNoData(dem)
 
+  // Periferi-maske (v9.3.37): fillNoData dilaterer gyldige verdier inn i
+  // noData-voids ved snitt av naboer. Det fjerner blink-ringene, men når et
+  // void ligger MELLOM to ulike-høye gyldige kanter (typisk delvis WCS-dekning
+  // i kart-periferien) blir fyllet en kunstig RAMPE — og rampens konturer er
+  // lange, nær-rette linjer som vifter ut mot hjørnene («periferifeilen»). Vi
+  // bygger derfor en maske av ORIGINALE noData-celler og klipper bort
+  // kontur-punkter som faller på dem: ringer splittes i åpne løp av ekte
+  // punkter, så ekte konturer ved datagrensen beholdes mens void-rampens
+  // spøkelseslinjer droppes. Ingen noData → masken er tom, og utdata er
+  // byte-identisk med før (innlandskart med full dekning urørt).
+  const orig = dem.data
+  const isVoid = new Uint8Array(orig.length)
+  let voidCount = 0
+  for (let i = 0; i < orig.length; i++) {
+    if (orig[i] === noData || !Number.isFinite(orig[i])) { isVoid[i] = 1; voidCount++ }
+  }
+  const hasVoid = voidCount > 0
+  // Et kontur-punkt ligger i grid-rom (col,row) mellom celler; regn det som
+  // void hvis NOEN av de 4 omkransende originale cellene er void (1-celles
+  // dilatasjon → ren klipping langs void-kanten, dropper også grense-blink).
+  const pointInVoid = (col, row) => {
+    const c0 = Math.max(0, Math.min(cols - 1, Math.floor(col)))
+    const c1 = Math.max(0, Math.min(cols - 1, Math.ceil(col)))
+    const r0 = Math.max(0, Math.min(rows - 1, Math.floor(row)))
+    const r1 = Math.max(0, Math.min(rows - 1, Math.ceil(row)))
+    return isVoid[r0 * cols + c0] || isVoid[r0 * cols + c1] ||
+           isVoid[r1 * cols + c0] || isVoid[r1 * cols + c1]
+  }
+  // Splitt en (lukket) d3-ring i segmenter av sammenhengende ekte punkter.
+  // Helt-ekte ring → ett lukket segment (uendret). Ellers åpne løp; ringen er
+  // syklisk, så vi starter ved en void-celle og samler ikke-void-løp.
+  const splitRingByVoid = (ring) => {
+    const n = ring.length
+    if (n < 2) return []
+    const flags = new Array(n)
+    let anyVoid = false
+    for (let i = 0; i < n; i++) { flags[i] = pointInVoid(ring[i][0], ring[i][1]); if (flags[i]) anyVoid = true }
+    if (!anyVoid) return [{ pts: ring, closed: true }]
+    // Syklisk: dropp duplikat siste punkt (d3-ringer er lukket, first==last).
+    const last = ring[n - 1], first = ring[0]
+    const uniqN = (last[0] === first[0] && last[1] === first[1]) ? n - 1 : n
+    let start = 0
+    while (start < uniqN && !flags[start]) start++
+    if (start === uniqN) return [{ pts: ring, closed: true }]  // ingen void blant unike
+    const runs = []
+    let cur = []
+    for (let k = 1; k <= uniqN; k++) {
+      const i = (start + k) % uniqN
+      if (flags[i]) { if (cur.length >= 2) runs.push({ pts: cur, closed: false }); cur = [] }
+      else cur.push(ring[i])
+    }
+    if (cur.length >= 2) runs.push({ pts: cur, closed: false })
+    return runs
+  }
+
   // Finn min/max
   let minE = Infinity, maxE = -Infinity
   for (let i = 0; i < data.length; i++) {
@@ -154,28 +209,35 @@ export function buildContours(dem, intervalM = 20, indexEvery = 5) {
       // poly er Array<Ring> der ring[0] = ytre, øvrige = hull
       // Vi vil ha alle ringer som linjer (kontur er jo linje uansett)
       for (const ring of poly) {
-        const worldRing = ring.map(p => gridToWorld(p, transform))
-        // Min-lengde 4× ekvidistanse for å beholde lokale konturer i bratte
-        // områder (stupkant-soner) og rundt små topper, men fortsatt fjerne
-        // ren støy.
-        if (polylineLength(worldRing) < intervalM * 4) continue
-        // Mildere simplification (2.5m → 1.0m) bevarer nyanser i tette
-        // kontur-regioner (bratte sider) uten å overdrive antall punkter.
-        const simplified = simplifyDP(worldRing, 2.5)
-        const smoothed = chaikin(simplified, 2, true)
-        // v9.1.7: final DP 1.0 → 1.5 m. Chaikin 4-dobler punkttallet; en
-        // strammere etter-DP kuttet for lite. 1.5 m = 0.15 mm @ 1:10 000 —
-        // usynlig på en allerede glattet kurve, men færre path-punkter ⇒
-        // lavere per-frame rasteriseringskost på de kontur-tunge S22-kartene.
-        const final = simplifyDP(smoothed, 1.5)
-        if (final.length < 4) continue
-        features.push({
-          type: 'contour',
-          isomCode: isIndex ? '102' : '101',
-          elevation,
-          isIndex,
-          coordinates: final,
-        })
+        // Klipp ringen mot periferi-void-masken (v9.3.37). Uten void: ett
+        // lukket segment = uendret oppførsel.
+        const segments = hasVoid ? splitRingByVoid(ring) : [{ pts: ring, closed: true }]
+        for (const seg of segments) {
+          const worldRing = seg.pts.map(p => gridToWorld(p, transform))
+          // Min-lengde 4× ekvidistanse for å beholde lokale konturer i bratte
+          // områder (stupkant-soner) og rundt små topper, men fortsatt fjerne
+          // ren støy.
+          if (polylineLength(worldRing) < intervalM * 4) continue
+          // Mildere simplification (2.5m → 1.0m) bevarer nyanser i tette
+          // kontur-regioner (bratte sider) uten å overdrive antall punkter.
+          const simplified = simplifyDP(worldRing, 2.5)
+          const smoothed = chaikin(simplified, 2, seg.closed)
+          // v9.1.7: final DP 1.0 → 1.5 m. Chaikin 4-dobler punkttallet; en
+          // strammere etter-DP kuttet for lite. 1.5 m = 0.15 mm @ 1:10 000 —
+          // usynlig på en allerede glattet kurve, men færre path-punkter ⇒
+          // lavere per-frame rasteriseringskost på de kontur-tunge S22-kartene.
+          const final = simplifyDP(smoothed, 1.5)
+          // Lukket ring trenger ≥4 punkter (areal); åpent løp ≥2 (linje).
+          if (final.length < (seg.closed ? 4 : 2)) continue
+          features.push({
+            type: 'contour',
+            isomCode: isIndex ? '102' : '101',
+            elevation,
+            isIndex,
+            closed: seg.closed,
+            coordinates: final,
+          })
+        }
       }
     }
   }
