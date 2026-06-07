@@ -13,7 +13,7 @@ import { fetchOverpass, buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.j
 import { fetchDEM } from '../src/lib/demFetcher.js'
 import { fetchDOM } from '../src/lib/canopyHeight.js'
 import { fetchN50Water } from '../src/lib/n50Fetcher.js'
-import { wgs84ToUtm32 } from '../src/lib/utm.js'
+import { utm32BboxFromWgs84 } from '../src/lib/utm.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -55,12 +55,9 @@ console.log(`Etter merge: ${elements.length} elementer (N50-vann ${N50_USE_FOR_W
 // DEM: forsøk ekte Kartverket WCS DTM først (workflow har full nettverkstilgang).
 // Fallback til syntetisk Vardåsen-modell hvis WCS feiler eller coverage ikke
 // matcher.
-const sw = wgs84ToUtm32(bbox.south, bbox.west)
-const ne = wgs84ToUtm32(bbox.north, bbox.east)
-const utmBbox = {
-  minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
-  minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
-}
+// Fire-hjørners UTM-extent (utm32BboxFromWgs84) så demokartet blir kvadratisk
+// som brukerkartene, og samme bboks brukes til BÅDE DEM-fetch og buildSvg.
+const utmBbox = utm32BboxFromWgs84(bbox)
 // 5m oppløsning: 1000×1000 celler for 5×5 km — ~4 MB GeoTIFF.
 // Hvis WCS-tjenesten har 1m-data tilgjengelig blir det resamplet ved
 // kilden; hvis bare 10m, får vi resampled 5m (ikke ekte detalj, men
@@ -76,7 +73,7 @@ console.log(`DEM: ${dem.cols} × ${dem.rows} (oppløsning ${dem.resolution.toFix
 const dom = await fetchDOM(utmBbox, 5)
 if (dom) console.log(`DOM: ${dom.cols} × ${dom.rows} (kilde: ${dom.source})`)
 
-const { svg, counts, meta } = buildSvg(elements, bbox, { dem, dom, contourIntervalM: 10 })
+const { svg, counts, meta } = buildSvg(elements, bbox, { dem, dom, utmBbox, contourIntervalM: 10 })
 console.log('Klassifisering:', counts)
 console.log(`Konturer: ekvidistanse ${meta.equidistance} m, høyde ${meta.elevationRange?.min}–${meta.elevationRange?.max} m`)
 

@@ -39,6 +39,30 @@ export function wgs84ToUtm32(lat, lon) {
   return { e: easting, n: northing }
 }
 
+// Akse-justert UTM 32N-bboks som omslutter HELE WGS84-bboksens lat/lon-rektangel.
+// Bruker alle FIRE hjørner — ikke bare SW+NE-diagonalen — fordi UTM-rutenettet
+// roterer ift. lat/lon (meridiankonvergens). Med bare to diagonale hjørner under-
+// estimeres øst-vest-utstrekningen, så et kart som er kvadratisk i bakke-avstand
+// (det velgeren viser) ble rendret PORTRETT (smalere enn høyt), økende vekk fra
+// sentralmeridianen og mot polene (Oslo ~5 %, Tromsø ~28 %). Fire hjørner gir et
+// tilnærmet kvadratisk meter-rom for en kvadratisk bbox. (v10.1.x)
+export function utm32BboxFromWgs84(bbox) {
+  const corners = [
+    wgs84ToUtm32(bbox.south, bbox.west),
+    wgs84ToUtm32(bbox.south, bbox.east),
+    wgs84ToUtm32(bbox.north, bbox.west),
+    wgs84ToUtm32(bbox.north, bbox.east),
+  ]
+  let minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity
+  for (const p of corners) {
+    if (p.e < minE) minE = p.e
+    if (p.e > maxE) maxE = p.e
+    if (p.n < minN) minN = p.n
+    if (p.n > maxN) maxN = p.n
+  }
+  return { minE, maxE, minN, maxN }
+}
+
 // Gitt UTM-bbox lagret i kartets metadata, regn om en posisjon
 // til SVG-koordinater (1 SVG-enhet = 1 m, y-aksen flippet).
 export function utmToSvg(utm, meta) {

@@ -2977,7 +2977,7 @@ function pumpRingQueue() {
     if (liteTileCache.has(n.key) || ringPending.has(n.key)) continue
     ringPending.add(n.key)
     ringActive++
-    buildLiteTile(n.bbox, { signal })
+    buildLiteTile(n.bbox, { signal, utmBbox: n.utmBbox })
       .then(svg => {
         if (gen === ringGeneration && componentAlive) {
           liteTileCache.set(n.key, svg)

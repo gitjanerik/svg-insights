@@ -5,7 +5,7 @@
 // Brukes både fra build-vardasen-svg.js (Node) og fra MapPickerView.vue
 // (klient-side ved kart-generering).
 
-import { wgs84ToUtm32 } from './utm.js'
+import { wgs84ToUtm32, utm32BboxFromWgs84 } from './utm.js'
 import {
   classifyToIsom,
   isTrigPoint,
@@ -543,6 +543,7 @@ export function buildSvg(elements, bbox, options = {}) {
     includeBuildingMass = true,    // ISOM 522 tett-bebyggelse (tung union)
     skipContoursIfSynthetic = false,
     skipDemSea = false,
+    utmBbox = null,                // authoritativ UTM-extent fra kalleren (se under)
   } = options
 
   // Lett timing-instrumentering: måler de tunge stegene og returneres som
@@ -563,12 +564,12 @@ export function buildSvg(elements, bbox, options = {}) {
   const isSyntheticDEM = dem?.source?.startsWith('synthetic')
   const usableDem = (skipContoursIfSynthetic && isSyntheticDEM) ? null : dem
 
-  const sw = wgs84ToUtm32(bbox.south, bbox.west)
-  const ne = wgs84ToUtm32(bbox.north, bbox.east)
-  const minE = Math.min(sw.e, ne.e)
-  const maxE = Math.max(sw.e, ne.e)
-  const minN = Math.min(sw.n, ne.n)
-  const maxN = Math.max(sw.n, ne.n)
+  // UTM-extent. Foretrekk en authoritativ utmBbox fra kalleren (createMapFlow
+  // sender sin snappede bboks så viewBox + DEM-extent er bit-eksakt like, og
+  // periferi-fliser får sin eksakte rutenett-bboks). Ellers utled fra WGS84-
+  // bboksen med ALLE fire hjørner (utm32BboxFromWgs84) så kartet blir kvadratisk
+  // uavhengig av meridiankonvergens — SW+NE-diagonalen alene ga portrett-kart.
+  const { minE, maxE, minN, maxN } = utmBbox ?? utm32BboxFromWgs84(bbox)
   const widthM = maxE - minE
   const heightM = maxN - minN
 
