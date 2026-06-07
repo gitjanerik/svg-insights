@@ -85,3 +85,56 @@ describe('buildContours med noData i periferien', () => {
     for (const f of features) expect(f.elevation).toBeGreaterThan(0)
   })
 })
+
+describe('buildContours — periferi-void-masking (v9.3.37)', () => {
+  // «Periferifeilen»: et noData-void mellom to ulike-høye kanter blir av
+  // fillNoData en kunstig rampe, og rampens konturer er lange rette linjer som
+  // vifter ut mot kantene. Masken skal klippe bort kontur-punkter over
+  // opprinnelige noData-celler.
+  it('legger ingen kontur-punkter inne i et periferi-void', () => {
+    const cols = 60, rows = 60
+    const vals = new Float32Array(cols * rows)
+    // Lav vestlig platå (50 m) og høyt østlig platå (250 m) med et bredt
+    // noData-belte i midten (kolonne 25–34). fillNoData ramper over beltet →
+    // uten masking ville rampen gi rette konturlinjer tvers gjennom voidet.
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        let v
+        if (x < 25) v = 50
+        else if (x > 34) v = 250
+        else v = NO_DATA
+        vals[y * cols + x] = v
+      }
+    }
+    const dem = makeDem(vals, cols, rows, { res: 10 })
+    const { features } = buildContours(dem, 20, 5)
+    // Voidet er kolonne 25–34 → world-x 250…349 m. Ingen kontur-vertex skal
+    // lande i det indre av voidet (gi rom for 1-celles dilatasjon ved kanten).
+    const voidMinX = 26 * 10, voidMaxX = 33 * 10
+    let inVoid = 0
+    for (const f of features) {
+      for (const [x] of f.coordinates) {
+        if (x > voidMinX && x < voidMaxX) inVoid++
+      }
+    }
+    expect(inVoid).toBe(0)
+  })
+
+  it('beholder lukkede ringer uberørt når det ikke finnes noData', () => {
+    // En enkel kjegle uten noData → alle konturer skal være lukkede ringer
+    // (closed !== false), byte-identisk pipeline.
+    const cols = 40, rows = 40
+    const vals = new Float32Array(cols * rows)
+    const cx = 20, cy = 20
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const d = Math.hypot(x - cx, y - cy)
+        vals[y * cols + x] = Math.max(0, 200 - d * 8)
+      }
+    }
+    const dem = makeDem(vals, cols, rows, { res: 10 })
+    const { features } = buildContours(dem, 20, 5)
+    expect(features.length).toBeGreaterThan(0)
+    for (const f of features) expect(f.closed).not.toBe(false)
+  })
+})

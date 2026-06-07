@@ -1311,7 +1311,9 @@ export function buildSvg(elements, bbox, options = {}) {
   const contourLabels = []
   for (const f of demFeatures.contours.features) {
     const projected = f.coordinates.map(demProject)
-    const d = polylineToPath(projected, true)
+    // v9.3.37: åpne kontur-løp (splittet mot periferi-void-masken i dem.js)
+    // skal IKKE lukkes med Z — ellers trekkes en korde tvers over voidet.
+    const d = polylineToPath(projected, f.closed !== false)
     if (f.isIndex) {
       contourIndexPaths.push(d)
       // Legg på elevasjons-tall midt på kurven (forenklet — bare første punkt)
