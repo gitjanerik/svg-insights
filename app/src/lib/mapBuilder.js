@@ -851,6 +851,68 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Vektor-vann er autoritativt — trekk ferskvann fra DEM-sjøen ───────
+  // Steg 2 av vann-omleggingen. buildSeaFromDem klassifiserer ALT ≤0.5m-areal
+  // som rører kart-kanten som SJØ. Store INNSJØER (Tyrifjorden) leser ~0 m i
+  // NHM_DTM og strekker seg ut av kartet, så de feilklassifiseres som sjø →
+  // 303-blå med trappetrinns-kyst + teal grunn-bånd. DEM kan ikke skille sjø fra
+  // en 0-lesende innsjø; det kan VEKTOR-data (N50/OSM vet at det er ferskvann,
+  // 301/302). Prinsipp: vektor-vann er autoritativt for HVA som er vann og av
+  // hvilken type; DEM-sjø er kun en CORS-trygg fallback DER vektor mangler.
+  // Implementasjon: mengde-differanse (polygon-clipping) — der ferskvann dekker
+  // DEM-sjøen forsvinner den falske sjøen (innsjøen rendres som ekte vektor-301
+  // i stedet), mens ekte kyst-sjø uten ferskvanns-overlapp overlever uendret.
+  if (demSeaPolygons.length) {
+    const freshwaterMP = []
+    const projRing = (geom) => geom.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
+    for (const code of ['301', '302']) {
+      for (const el of buckets[code] ?? []) {
+        if (el.type === 'merged-water' && el._mergedRings) {
+          for (const polygon of el._mergedRings) if (polygon?.length) freshwaterMP.push(polygon)
+        } else if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+          freshwaterMP.push([projRing(el.geometry)])
+        } else if (el.type === 'relation' && el.members) {
+          for (const ring of assembleRelationRings(el.members, 'outer')) {
+            if (ring.length >= 3) freshwaterMP.push([projRing(ring)])
+          }
+        }
+      }
+    }
+    if (freshwaterMP.length) {
+      // Per DEM-sjø-polygon: er den HOVEDSAKELIG dekket av vektor-ferskvann, er
+      // det en innsjø feillest som sjø → dropp hele polygonet (alt-eller-intet,
+      // så vi ikke etterlater teal slivere langs strandlinja der DEM-0m-kanten og
+      // vektor-kysten ikke flukter eksakt). Ekte kyst-sjø har ~0 % ferskvanns-
+      // overlapp og beholdes uendret.
+      const ringAreaM2 = (ring) => {
+        if (!ring || ring.length < 3) return 0
+        let a = 0
+        for (let i = 0, n = ring.length; i < n; i++) {
+          const j = (i + 1) % n
+          a += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+        }
+        return Math.abs(a) / 2
+      }
+      const mpAreaM2 = (mp) => mp.reduce((s, poly) => s + ringAreaM2(poly[0]), 0)
+      const mostlyFreshwater = (poly) => {
+        const area = ringAreaM2(poly[0])
+        if (area <= 0) return true
+        try {
+          const inter = polygonClipping.intersection([poly], freshwaterMP)
+          return mpAreaM2(inter) / area > 0.5
+        } catch { return false }
+      }
+      try {
+        demSeaPolygons = demSeaPolygons.filter(p => !mostlyFreshwater(p))
+        demSeaBands = demSeaBands
+          .map(b => ({ ...b, polygons: b.polygons.filter(p => !mostlyFreshwater(p)) }))
+          .filter(b => b.polygons.length)
+      } catch (e) {
+        console.warn(`[DEM-sjø] ferskvanns-vurdering feilet (${e?.message ?? e}) — beholder rå DEM-sjø`)
+      }
+    }
+  }
+
   // ── Én autoritativ sjø-geometri (Fase 1: single coastline) ───────────
   // Fundamentet for topologisk normalisering: ett sett sjø-polygoner i
   // SVG-meter-rom som alt marint klippes/valideres mot. Kilde-prioritet:

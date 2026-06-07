@@ -118,3 +118,40 @@ describe('painter\'s order — vann males OPPÅ terreng, ingen land-mask', () =>
     expect(contourIdx).toBeLessThan(waterIdx)
   })
 })
+
+describe('vektor-vann er autoritativt over DEM-sjø (steg 2)', () => {
+  // DEM med vestre halvdel = 0 m (rører kart-kanten → buildSeaFromDem ser «sjø»),
+  // østre halvdel = 80 m. En vektor-innsjø som dekker vestre halvdel skal TRUMFE:
+  // DEM-sjøen trekkes bort (ingen 303/teal/trappetrinn), innsjøen rendres som
+  // ekte ferskvann (301). Etterligner Tyrifjorden lest som ~0 m i DTM.
+  function demWithWestSea(b) {
+    const sw = wgs84ToUtm32(b.south, b.west)
+    const ne = wgs84ToUtm32(b.north, b.east)
+    const widthM = Math.abs(ne.e - sw.e)
+    const heightM = Math.abs(ne.n - sw.n)
+    const res = 50
+    const cols = Math.round(widthM / res)
+    const rows = Math.round(heightM / res)
+    const data = new Float32Array(cols * rows)
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) data[r * cols + c] = c < cols / 2 ? 0 : 80
+    }
+    return { data, cols, rows, transform: { originX: 0, originY: 0, pixelWidth: res, pixelHeight: res }, noData: -9999, resolution: res }
+  }
+  // Innsjø som dekker mer enn vestre halvdel (lon 10.0–10.06 ⊃ DEM-sjøen ved lon<10.05).
+  const westLake = {
+    type: 'way', id: 50, tags: { natural: 'water', name: 'Testvatn' },
+    geometry: ring(59.0, 10.0, 59.05, 10.06),
+  }
+
+  it('DEM-sjø under en vektor-innsjø trekkes bort, innsjøen rendres som 301', () => {
+    const { svg } = buildSvg([westLake], bbox, { dem: demWithWestSea(bbox), skipDemSea: false })
+    expect(svg).not.toContain('data-src="dem-sea"')   // falsk DEM-sjø fjernet
+    expect(svg).toContain('data-iso="301"')            // innsjøen som ekte ferskvann
+  })
+
+  it('uten overlappende ferskvann beholdes DEM-sjøen (kyst-fallback urørt)', () => {
+    const { svg } = buildSvg([], bbox, { dem: demWithWestSea(bbox), skipDemSea: false })
+    expect(svg).toContain('data-src="dem-sea"')        // ekte kyst-sjø overlever
+  })
+})
