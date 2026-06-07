@@ -19,8 +19,9 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
-import { neighborTiles, TileLRU } from '../lib/tileGrid.js'
+import { neighborTiles } from '../lib/tileGrid.js'
 import { buildLiteTile } from '../lib/liteTile.js'
+import { liteTileCache } from '../lib/liteTileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -2528,7 +2529,7 @@ function toggleAutoMap() {
     autoMapArmed = true
     autoMapOfflineNotified = false
     showAutoMapToast('Auto-kart på — dra kartet for nytt utsnitt')
-    scheduleRingTiles()   // hent periferi-ringen (stier+vann rundt deg)
+    refreshRingTiles()   // hent periferi-ringen (stier+vann rundt deg)
   } else {
     cancelPrefetch()
     clearRing()           // skru av utforsknings-modus → ingen ring
@@ -2843,17 +2844,27 @@ function onPrint() {
 // LRU så de gjenbrukes når man beveger seg tilbake. Ringen er ren kontekst
 // (pointer-events:none); GPS/søk/long-press/relieff er kun på midt-kartet.
 // Koblet til autoMapEnabled (utforsknings-modus): av ⇒ ingen ring.
+// liteTileCache er en MODUL-singleton (lib/liteTileCache.js) — den overlever
+// MapView-remount ved auto-kart-promotering, så overlappende naboer (inkl.
+// flisen du gikk inn i) gjenbrukes umiddelbart på det nye kartet (increment 3).
 const ringHostRef = ref(null)
-const liteTileCache = new TileLRU(16)   // tileKey → SVG-streng ('pending'/'failed' mens den bygges)
 let ringAbort = null
 let ringTimer = null
 let ringGeneration = 0                   // bumpes ved kartbytte → forkast utdaterte fetches
 let ringNeighbors = []                   // gjeldende 8 naboer (for re-layout ved resize)
+const ringPending = new Set()            // tileKeys som bygges NÅ (per-instans, ikke i delt cache)
+// Mild Overpass-struping: maks N nabo-henting samtidig, resten køes. Hindrer
+// at 8 forespørsler treffer speilene på én gang (429-vern).
+const RING_MAX_CONCURRENT = 3
+let ringActive = 0
+let ringQueue = []
 
 function clearRing() {
   ringGeneration++
   if (ringAbort) { ringAbort.abort(); ringAbort = null }
   if (ringTimer) { clearTimeout(ringTimer); ringTimer = null }
+  ringQueue = []
+  ringPending.clear()
   ringNeighbors = []
   if (ringHostRef.value) ringHostRef.value.innerHTML = ''
 }
@@ -2874,7 +2885,7 @@ function layoutRing() {
   host.innerHTML = ''
   for (const n of ringNeighbors) {
     const svg = liteTileCache.has(n.key) ? liteTileCache.get(n.key) : null
-    if (!svg || svg === 'pending' || svg === 'failed') continue
+    if (!svg) continue   // delt cache holder kun ferdige SVG-er
     const box = document.createElement('div')
     box.style.cssText = `position:absolute;left:${offX + n.offsetM.x * fit}px;top:${offY + n.offsetM.y * fit}px;` +
       `width:${m.widthM * fit}px;height:${m.heightM * fit}px;pointer-events:none;overflow:hidden`
@@ -2885,12 +2896,10 @@ function layoutRing() {
   }
 }
 
-// Idle-trigger etter at et kart har landet (debounced). Henter manglende naboer.
-function scheduleRingTiles() {
-  if (ringTimer) clearTimeout(ringTimer)
-  ringTimer = setTimeout(refreshRingTiles, 500)
-}
-
+// Sett opp ringen for gjeldende midt-kart. Increment 3: rendrer cachede naboer
+// UMIDDELBART (ingen tom-blink etter et auto-kart-hopp — overlappende fliser
+// ligger i den delte cachen), og køer nett-henting av manglende naboer med
+// mild struping (debounced + maks RING_MAX_CONCURRENT samtidig).
 function refreshRingTiles() {
   if (!autoMapEnabled.value || !meta.value) { clearRing(); return }
   const m = meta.value
@@ -2899,21 +2908,44 @@ function refreshRingTiles() {
   const gen = ++ringGeneration
   if (ringAbort) ringAbort.abort()
   ringAbort = new AbortController()
-  const signal = ringAbort.signal
+  ringQueue = []
   ringNeighbors = neighborTiles(centerUtm)
-  layoutRing()   // vis umiddelbart det som alt er cachet
-  for (const n of ringNeighbors) {
-    if (liteTileCache.has(n.key)) continue
-    liteTileCache.set(n.key, 'pending')
+  layoutRing()   // straks: vis cachede naboer (gjenbruk etter hopp)
+  // Debounce nett-hentingen litt så transiente sentre (rask panning/hopp) ikke
+  // fyrer Overpass for fliser man ikke blir værende ved.
+  if (ringTimer) clearTimeout(ringTimer)
+  ringTimer = setTimeout(() => queueRingFetches(gen), 400)
+}
+
+function queueRingFetches(gen) {
+  if (gen !== ringGeneration || !autoMapEnabled.value) return
+  ringQueue = ringNeighbors.filter(n => !liteTileCache.has(n.key) && !ringPending.has(n.key))
+  pumpRingQueue()
+}
+
+// Strupet kø: kjør maks RING_MAX_CONCURRENT nabo-bygg samtidig. Frigjort slot
+// pumper alltid GJELDENDE kø (generasjons-snapshot per task gjør at utdaterte
+// resultater ikke rendres, men køen stopper aldri opp ved kartbytte).
+function pumpRingQueue() {
+  const signal = ringAbort?.signal
+  const gen = ringGeneration
+  while (ringActive < RING_MAX_CONCURRENT && ringQueue.length) {
+    const n = ringQueue.shift()
+    if (liteTileCache.has(n.key) || ringPending.has(n.key)) continue
+    ringPending.add(n.key)
+    ringActive++
     buildLiteTile(n.bbox, { signal })
       .then(svg => {
-        if (gen !== ringGeneration || !componentAlive) return
-        liteTileCache.set(n.key, svg)
-        layoutRing()
+        if (gen === ringGeneration && componentAlive) {
+          liteTileCache.set(n.key, svg)
+          layoutRing()
+        }
       })
-      .catch(() => {
-        if (gen !== ringGeneration) return
-        if (liteTileCache.get(n.key) === 'pending') liteTileCache.set(n.key, 'failed')
+      .catch(() => { /* abort/feil: hopp over, retry ved neste mount */ })
+      .finally(() => {
+        ringPending.delete(n.key)
+        ringActive--
+        pumpRingQueue()
       })
   }
 }
@@ -3051,7 +3083,7 @@ async function loadMap({ silent = false } = {}) {
     // dem rundt midt-kartet. clearRing først så et evt. forrige kart-ring
     // forsvinner umiddelbart ved kartbytte.
     clearRing()
-    if (autoMapEnabled.value) scheduleRingTiles()
+    if (autoMapEnabled.value) refreshRingTiles()
     if (pendingRestoreView) {
       rotation.value = pendingRestoreView.rotation
       await nextTick()
