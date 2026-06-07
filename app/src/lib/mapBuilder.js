@@ -121,6 +121,26 @@ out geom;
 `.trim()
 }
 
+// Lett Overpass-spørring for 3×3-periferi-fliser (v9.3.40): KUN stier + vann.
+// Periferien er orienterings-kontekst rundt midt-flisen, så den henter et
+// minimum — ingen vegetasjon, bygninger, navn, POI eller DEM-avhengige lag.
+// Mye mindre svar enn buildOverpassQuery → raskt og snilt mot Overpass-
+// speilene når 8 naboer hentes lazily. Stier = ISOM 505–507 (sti-kategori),
+// vann = innsjø/elv/bekk. Holder samme bbox-konvensjon som full-spørringen.
+export function buildOverpassQueryLite(bbox) {
+  return `
+[out:json][timeout:60][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way["highway"~"^(path|track|footway|bridleway|steps|cycleway)$"];
+  way["natural"="water"];
+  way["water"];
+  way["waterway"~"^(stream|river|canal|ditch)$"];
+  relation["natural"="water"];
+);
+out geom;
+`.trim()
+}
+
 // Ett kappløp mellom speilene: første gyldige svar vinner, resten avbrytes
 // (sparer båndbredde/last). Hvert speil har egen AbortController, lenket til
 // ekstern signal slik at prefetch-avbrudd stopper alle. Klient-tak avbryter alle
@@ -172,8 +192,10 @@ const delay = (ms, signal) => new Promise((resolve, reject) => {
   }, { once: true })
 })
 
-export async function fetchOverpass(bbox, { signal } = {}) {
-  const body = 'data=' + encodeURIComponent(buildOverpassQuery(bbox))
+export async function fetchOverpass(bbox, { signal, query } = {}) {
+  // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
+  // periferi-spørringen for 3×3-fliser); default er den fulle.
+  const body = 'data=' + encodeURIComponent(query ?? buildOverpassQuery(bbox))
   // Prøv på nytt med backoff: speilene feiler ofte forbigående under last, og
   // detalj-fyllingen feilet for ofte med kun ett forsøk. Avbrudd (AbortError fra
   // prefetch/signal) prøves IKKE på nytt — det er en bevisst kansellering.
