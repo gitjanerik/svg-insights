@@ -1240,6 +1240,9 @@ async function applyHillshade() {
     img.setAttribute('preserveAspectRatio', 'none')
     img.setAttribute('pointer-events', 'none')
     img.setAttribute('image-rendering', 'auto')
+    // v10.1.2 perf: la nettleseren dekode relieff-PNG-en asynkront utenfor
+    // hovedtråden, så den ikke blokkerer ved første paint / DEM-bytte.
+    img.setAttribute('decoding', 'async')
   }
   if (insertBefore) svg.insertBefore(img, insertBefore)
   else svg.appendChild(img)
@@ -2861,6 +2864,10 @@ function onPrint() {
 // MapView-remount ved auto-kart-promotering, så overlappende naboer (inkl.
 // flisen du gikk inn i) gjenbrukes umiddelbart på det nye kartet (increment 3).
 const ringHostRef = ref(null)
+// v10.1.2 perf: parse hver lite-flis-SVG-streng ÉN gang til et detached node,
+// og klon ved hver layoutRing i stedet for å re-parse strengen (innerHTML) på
+// nytt hver gang en nabo lander / ved resize. Tømmes i clearRing.
+let ringParsedNodes = new Map()   // tileKey → parset SVGElement (mal for klon)
 let ringAbort = null
 let ringTimer = null
 let ringGeneration = 0                   // bumpes ved kartbytte → forkast utdaterte fetches
@@ -2879,7 +2886,24 @@ function clearRing() {
   ringQueue = []
   ringPending.clear()
   ringNeighbors = []
+  ringParsedNodes.clear()
   if (ringHostRef.value) ringHostRef.value.innerHTML = ''
+}
+
+// Hent (eller parse + cache) det detached node for en flis-streng. Klones av
+// kalleren før innsetting i DOM, så malen forblir gjenbrukbar.
+function ringTileNode(key) {
+  let node = ringParsedNodes.get(key)
+  if (node) return node
+  const svg = liteTileCache.has(key) ? liteTileCache.get(key) : null
+  if (!svg) return null
+  const tmpl = document.createElement('template')
+  tmpl.innerHTML = svg
+  node = tmpl.content.firstElementChild
+  if (!node) return null
+  node.style.width = '100%'; node.style.height = '100%'; node.style.display = 'block'
+  ringParsedNodes.set(key, node)
+  return node
 }
 
 // Plasser de bygde flisene i delt meter-rom: midt-SVG-en fyller svgHostRef med
@@ -2895,16 +2919,22 @@ function layoutRing() {
   const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
   const offX = (wrap.width - m.widthM * fit) / 2
   const offY = (wrap.height - m.heightM * fit) / 2
+  const w = m.widthM * fit
+  const h = m.heightM * fit
   host.innerHTML = ''
   for (const n of ringNeighbors) {
-    const svg = liteTileCache.has(n.key) ? liteTileCache.get(n.key) : null
-    if (!svg) continue   // delt cache holder kun ferdige SVG-er
+    const node = ringTileNode(n.key)   // parset + cachet; klones under
+    if (!node) continue                // delt cache holder kun ferdige SVG-er
     const box = document.createElement('div')
+    // v10.1.2 perf: content-visibility:auto lar nettleseren hoppe over
+    // render/paint av periferi-fliser som er utenfor skjermen (vanlig ved
+    // innzoomet lesing der de 8 nabo-flisene ligger utenfor viewporten).
+    // contain-intrinsic-size gir layouten en størrelse uten å rendre, så
+    // ingen scroll-/layout-hopp når en flis skippes.
     box.style.cssText = `position:absolute;left:${offX + n.offsetM.x * fit}px;top:${offY + n.offsetM.y * fit}px;` +
-      `width:${m.widthM * fit}px;height:${m.heightM * fit}px;pointer-events:none;overflow:hidden`
-    box.innerHTML = svg
-    const inner = box.firstElementChild
-    if (inner) { inner.style.width = '100%'; inner.style.height = '100%'; inner.style.display = 'block' }
+      `width:${w}px;height:${h}px;pointer-events:none;overflow:hidden;` +
+      `content-visibility:auto;contain-intrinsic-size:${w}px ${h}px`
+    box.appendChild(node.cloneNode(true))
     host.appendChild(box)
   }
 }
