@@ -142,8 +142,12 @@ describe('buildSvg — Fase 1b land-mask / øy-overlay', () => {
     // N50-kilde (ikke DEM) → overlay beholdes som sikkerhet
     expect(svg).toContain('data-iso="001"')
   })
-  it('land-mask finnes når det er sjø', () => {
+  it('ingen land-mask — vann skjuler terreng via painter\'s order (v9.3.34)', () => {
+    // Maskeringen er fjernet: det opake vann-fyllet males OPPÅ terreng-detalj
+    // (z-order), så ingen <mask> trengs. Vann-laget skal fortsatt finnes.
     const { svg } = buildSvg([n50Sea], bbox, {})
-    expect(svg).toContain('id="land-mask"')
+    expect(svg).not.toContain('id="land-mask"')
+    expect(svg).not.toContain('mask="url(')
+    expect(svg).toContain('data-layer="vann"')
   })
 })
