@@ -136,6 +136,11 @@ export function buildOverpassQueryLite(bbox) {
   way["water"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   relation["natural"="water"];
+  way["natural"~"^(wood|scrub|heath|grassland|wetland|scree|bare_rock)$"];
+  relation["natural"~"^(wood|scrub|heath|grassland|wetland|scree|bare_rock)$"];
+  way["landuse"~"^(forest|meadow|grass|farmland|farmyard|orchard|vineyard)$"];
+  relation["landuse"~"^(forest|meadow|grass|farmland)$"];
+  way["leisure"="park"];
 );
 out geom;
 `.trim()

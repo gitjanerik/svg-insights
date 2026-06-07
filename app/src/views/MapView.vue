@@ -1229,12 +1229,14 @@ async function applyHillshade() {
   // vannflate uten skygge-frynse langs strandlinja (der DTM-en stepper fra
   // innsjø ≈ 0 m opp til land), og land-relieffet leses med mer kontrast.
   // Faller tilbake til toppen av kropps-innholdet (under klient-overlays) når
-  // kartet ikke har vann.
-  const insertBefore = svg.querySelector('[data-layer="vann"]')
-                    ?? svg.querySelector('#user-layer')
-                    ?? svg.querySelector('#annotation-layer')
-                    ?? svg.querySelector('#track-layer')
-                    ?? svg.querySelector('#measure-layer')
+  // kartet ikke har vann. v10.1.7: relieffet skal ligge INNE i #map-content
+  // (så oval-vignetten tones det ut med resten); vann-laget ligger der også, så
+  // vi setter inn foran det via dets EGEN forelder (ikke svg-roten — vann er nå
+  // et barnebarn av svg). Uten vann: append til #map-content (over vegetasjon/
+  // kurver, drapérer land). Overlays ligger utenfor #map-content, så relieffet
+  // havner uansett under dem.
+  const contentG = svg.querySelector('#map-content') ?? svg
+  const waterLayer = svg.querySelector('[data-layer="vann"]')
   if (!img) {
     const ns = 'http://www.w3.org/2000/svg'
     img = document.createElementNS(ns, 'image')
@@ -1247,8 +1249,8 @@ async function applyHillshade() {
     // hovedtråden, så den ikke blokkerer ved første paint / DEM-bytte.
     img.setAttribute('decoding', 'async')
   }
-  if (insertBefore) svg.insertBefore(img, insertBefore)
-  else svg.appendChild(img)
+  if (waterLayer && waterLayer.parentNode) waterLayer.parentNode.insertBefore(img, waterLayer)
+  else contentG.appendChild(img)
   img.setAttribute('x', '0'); img.setAttribute('y', '0')
   img.setAttribute('width', String(meta.value.widthM))
   img.setAttribute('height', String(meta.value.heightM))
@@ -1639,6 +1641,14 @@ function buildDetailInset() {
     }
     svg.appendChild(child.cloneNode(true))
   }
+  // Inset-en er en detalj-LUPE i et rektangulært vindu → skal vise full detalj
+  // UTEN oval-vignetten. Strip masken fra det klonede innholdet, og fjern de
+  // klonede vignette-defs + #map-content-id så de ikke kolliderer (id) med
+  // hovedkartets mask-referanse. (v10.1.7)
+  const insetContent = svg.querySelector('#map-content')
+  if (insetContent) { insetContent.removeAttribute('mask'); insetContent.removeAttribute('id') }
+  svg.querySelector('mask#map-vignette')?.remove()
+  svg.querySelector('radialGradient#map-vignette-grad')?.remove()
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
   // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
@@ -2554,6 +2564,7 @@ function toggleAutoMap() {
     showAutoMapToast('Auto-kart av')
   }
   applyHillshade()        // ring av/på endrer relieff-vignette (oval ↔ fullt kart)
+  applyContentVignette()  // ring av/på: oval uttoning av kart-innholdet av/på
   renderAutoMapFrame()
 }
 
@@ -2834,26 +2845,35 @@ function labelForAnnotation(a) {
   }
 }
 
-// Print- / eksport-handlers
-function onExportSvg() {
+// Print- / eksport-handlers. Eksport/print skal være FULLT rektangulært kart —
+// oval-vignetten (#map-content mask) er kun for 3×3-skjermvisning. Klon SVG-en
+// og strip masken før serialisering. (v10.1.7)
+function mapSvgMarkupForExport() {
   const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  exportSvgFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.svg`)
+  if (!svg) return ''
+  const clone = svg.cloneNode(true)
+  clone.querySelector('#map-content')?.removeAttribute('mask')
+  return clone.outerHTML
+}
+function onExportSvg() {
+  const m = mapSvgMarkupForExport()
+  if (!m) return
+  exportSvgFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.svg`)
 }
 async function onExportPng() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  await exportPngFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.png`, { dpi: 300 })
+  const m = mapSvgMarkupForExport()
+  if (!m) return
+  await exportPngFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.png`, { dpi: 300 })
 }
 async function onExportPdf() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  await exportPdfFile(svg.outerHTML, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.pdf`, { dpi: 300 })
+  const m = mapSvgMarkupForExport()
+  if (!m) return
+  await exportPdfFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.pdf`, { dpi: 300 })
 }
 function onPrint() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  printDocument(svg.outerHTML, { title: mapTitle.value })
+  const m = mapSvgMarkupForExport()
+  if (!m) return
+  printDocument(m, { title: mapTitle.value })
 }
 
 // ── 3×3-fliskart: periferi-ring (v9.3.40) ────────────────────────────────
@@ -3209,6 +3229,46 @@ async function retryMapDetails() {
   }
 }
 
+// Oval vignette-maske for kart-innholdet (#map-content) i 3×3-visning. En
+// radial-gradient (objectBoundingBox: ellipse som flukter med flis-bboksen)
+// går fra hvit (synlig) i senter til svart (skjult) ved kant-midtpunkt, og er
+// helt svart i hjørnene. Maskerer man HELE detalj-blokken med denne, løses
+// kartet opp i en myk oval mot periferi-ringen — ingen hard rektangel-grense.
+// Gradienten er statisk (transformeres med kartet), så ingen per-frame-kost
+// som mix-blend-mode hadde. (v10.1.7)
+function buildVignetteDefs(ns) {
+  const defs = document.createElementNS(ns, 'defs')
+  const grad = document.createElementNS(ns, 'radialGradient')
+  grad.setAttribute('id', 'map-vignette-grad')   // default gradientUnits = objectBoundingBox
+  grad.setAttribute('cx', '0.5'); grad.setAttribute('cy', '0.5'); grad.setAttribute('r', '0.5')
+  const stops = [['0', '#fff'], ['0.62', '#fff'], ['1', '#000']]
+  for (const [off, col] of stops) {
+    const s = document.createElementNS(ns, 'stop')
+    s.setAttribute('offset', off); s.setAttribute('stop-color', col)
+    grad.appendChild(s)
+  }
+  const mask = document.createElementNS(ns, 'mask')
+  mask.setAttribute('id', 'map-vignette')
+  mask.setAttribute('maskContentUnits', 'objectBoundingBox')
+  const rect = document.createElementNS(ns, 'rect')
+  rect.setAttribute('x', '0'); rect.setAttribute('y', '0')
+  rect.setAttribute('width', '1'); rect.setAttribute('height', '1')
+  rect.setAttribute('fill', 'url(#map-vignette-grad)')
+  mask.appendChild(rect)
+  defs.appendChild(grad); defs.appendChild(mask)
+  return defs
+}
+
+// Sett (auto-kart PÅ) eller fjern (frittstående full-kart) oval-vignetten på
+// kart-innholdet. Frittstående kart skal fylle hele flaten skarpt; bare i 3×3-
+// visningen er det en periferi-ring å tones ut mot.
+function applyContentVignette() {
+  const content = svgHostRef.value?.querySelector('#map-content')
+  if (!content) return
+  if (autoMapEnabled.value) content.setAttribute('mask', 'url(#map-vignette)')
+  else content.removeAttribute('mask')
+}
+
 function setupHostSvg(sourceRoot) {
   const ns = 'http://www.w3.org/2000/svg'
   const host = svgHostRef.value
@@ -3225,9 +3285,20 @@ function setupHostSvg(sourceRoot) {
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+  // v10.1.7: alt kart-INNHOLD (bakgrunn + vegetasjon + kurver + relieff osv.)
+  // legges i én gruppe #map-content som kan maskeres med en oval vignette i
+  // 3×3-visning, så HELE detalj-blokken tones ut mot periferi-ringen (ikke bare
+  // relieffet) — fjerner den harde rektangel-grensa. Overlays (GPS/annotering/
+  // spor/måling/søk) appendes til svg-ROTEN etterpå og maskeres IKKE (de skal
+  // være skarpe uansett). Relieffet (#hillshade-layer) settes inn foran
+  // [data-layer="vann"] → havner inni #map-content → tones ut med innholdet.
+  const content = document.createElementNS(ns, 'g')
+  content.setAttribute('id', 'map-content')
   for (const child of Array.from(sourceRoot.childNodes)) {
-    svg.appendChild(child.cloneNode(true))
+    content.appendChild(child.cloneNode(true))
   }
+  svg.appendChild(buildVignetteDefs(ns))
+  svg.appendChild(content)
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
   // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester når brukerens
@@ -3235,6 +3306,7 @@ function setupHostSvg(sourceRoot) {
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
+  applyContentVignette()   // sett/fjern oval-masken etter auto-kart-status
   // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
   // perf-klasser (.zoomed-in / .is-zooming) basert på nåværende state,
   // siden watcheren bare reagerer på endringer.
