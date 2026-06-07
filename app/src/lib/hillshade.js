@@ -78,8 +78,44 @@ export function computeHillshade(dem, options = {}) {
 }
 
 /**
+ * Bak blend-modus inn i alfa-kanalen så relieffet kan tegnes med NORMAL
+ * kompositt i stedet for `mix-blend-mode` (v9.3.39). mix-blend-mode tvinger
+ * nettleseren til å re-rasterisere backdrop-en (hele vektor-kartet) per frame
+ * under pan/zoom — en alvorlig mobil-flaskehals. Normal alfa-kompositt er
+ * pikselidentisk når vi velger riktig farge + alfa:
+ *
+ *   multiply  (lyse tema): result = base × (skygge/255)
+ *             = base × (1 − α)  ⇒  svart overlegg, α = 255 − skygge
+ *   screen    (mørke tema): result = 1 − (1−base)(1−skygge/255)
+ *             = base + α(1−base) ⇒  hvitt overlegg, α = skygge
+ *
+ * Begge er matematisk eksakt lik de respektive blend-modusene. Ren funksjon
+ * (ingen canvas/DOM) så den er enhetstestbar.
+ *
+ * @param {{rgba: Uint8ClampedArray, cols: number, rows: number}} shade  grayscale-skygge fra computeHillshade
+ * @param {'multiply'|'screen'} mode
+ * @returns {Uint8ClampedArray} RGBA med tonet farge + bakt alfa
+ */
+export function shadeToToneRGBA(shade, mode) {
+  const src = shade.rgba
+  const out = new Uint8ClampedArray(src.length)
+  const white = mode === 'screen'
+  const v = white ? 255 : 0
+  for (let i = 0; i < src.length; i += 4) {
+    const g = src[i]                 // grå skyggeverdi 0..255 (kanalene er like)
+    out[i] = v; out[i + 1] = v; out[i + 2] = v
+    out[i + 3] = white ? g : 255 - g
+  }
+  return out
+}
+
+/**
  * Render hillshade RGBA til en data-URL (PNG). Brukes for å embedde resultatet
  * som SVG <image href="data:image/png;base64,..."/>.
+ *
+ * v9.3.39: valgfri `mode` ('multiply'/'screen') baker blend inn i alfa (se
+ * shadeToToneRGBA) så <image> kan tegnes med normal kompositt. Default 'opaque'
+ * beholder den gamle grå-opake teksturen (bakoverkompat).
  *
  * v9.1.13: valgfri `decorate(ctx, cols, rows)`-callback kjøres etter at
  * skyggingen er tegnet, men før toDataURL — slik at f.eks. knaus-relieff kan
@@ -87,12 +123,15 @@ export function computeHillshade(dem, options = {}) {
  * (i DEM-oppløsning) i stedet for to (hillshade + et stort eget knaus-raster
  * på opptil 4096² = ~67 MB), som var en alvorlig mobil-GPU-flaskehals.
  */
-export function hillshadeToDataURL(shade, decorate) {
+export function hillshadeToDataURL(shade, { mode = 'opaque', decorate } = {}) {
   const canvas = document.createElement('canvas')
   canvas.width = shade.cols
   canvas.height = shade.rows
   const ctx = canvas.getContext('2d')
-  const imgData = new ImageData(new Uint8ClampedArray(shade.rgba), shade.cols, shade.rows)
+  const rgba = (mode === 'multiply' || mode === 'screen')
+    ? shadeToToneRGBA(shade, mode)
+    : new Uint8ClampedArray(shade.rgba)
+  const imgData = new ImageData(rgba, shade.cols, shade.rows)
   ctx.putImageData(imgData, 0, 0)
   if (typeof decorate === 'function') decorate(ctx, shade.cols, shade.rows)
   return canvas.toDataURL('image/png')
