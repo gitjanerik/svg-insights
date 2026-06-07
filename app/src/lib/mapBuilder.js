@@ -33,22 +33,28 @@ import polygonClipping from 'polygon-clipping'
 // Overpass-ventetid er den dominerende flaskehalsen i kart-bygging (81–97 % av
 // total tid, målt v9.3.25 — 4,7–11,5 s), og det varierer hvilket speil som er
 // overlastet. Vi kjører derfor flere speil i kappløp (Promise.any) og tar det
-// første gyldige svaret. Begge støtter CORS for browser-fetch.
+// første gyldige svaret. Alle støtter CORS for browser-fetch.
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
 ]
 const OVERPASS_HEADERS = {
   'Content-Type': 'application/x-www-form-urlencoded',
   'Accept': 'application/json',
   'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
 }
-// Klient-side tak på Overpass-ventetid. Server-spørringen har timeout:90, men
-// uten et klient-tak henger «Fyller inn stier og detaljer …»-spinneren til
-// server-timeouten slår inn (føltes som «det skjer ikke noe mer»). Et bundet
-// tak lar terreng-først-finalize feile raskt → «Prøv på nytt»-banner i stedet.
-// 45 s er romslig: vellykkede svar for et par km² kommer typisk på 5–15 s.
-const OVERPASS_TIMEOUT_MS = 45000
+// Klient-side tak PER FORSØK på Overpass-ventetid. Server-spørringen har
+// timeout:90, men uten et klient-tak henger «Fyller inn stier og detaljer …»-
+// spinneren til server-timeouten slår inn (føltes som «det skjer ikke noe mer»).
+// 30 s er romslig: vellykkede svar for et par km² kommer typisk på 5–15 s.
+const OVERPASS_TIMEOUT_MS = 30000
+// Overpass-speilene feiler ofte forbigående (429/502/504/timeout under last) og
+// lykkes på neste forsøk. Detalj-fyllingen er den vanligste klagen, så vi prøver
+// på nytt med backoff i stedet for å gi opp etter ett kappløp. Terreng vises
+// allerede (terreng-først), så litt ekstra bakgrunns-ventetid er akseptabelt.
+const OVERPASS_ATTEMPTS = 3
+const OVERPASS_BACKOFF_MS = [1500, 4000]   // ventetid før forsøk 2 og 3
 
 export function buildOverpassQuery(bbox) {
   return `
@@ -115,18 +121,16 @@ out geom;
 `.trim()
 }
 
-export async function fetchOverpass(bbox, { signal } = {}) {
-  const body = 'data=' + encodeURIComponent(buildOverpassQuery(bbox))
+// Ett kappløp mellom speilene: første gyldige svar vinner, resten avbrytes
+// (sparer båndbredde/last). Hvert speil har egen AbortController, lenket til
+// ekstern signal slik at prefetch-avbrudd stopper alle. Klient-tak avbryter alle
+// hvis ingen har svart, så et hengende endpoint ikke fryser oss til server-
+// timeouten (90 s). Kaster ved feil; retry-laget i fetchOverpass håndterer det.
+async function raceOverpassMirrors(body, { signal } = {}) {
   if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
-
-  // Kjør speilene i kappløp: første gyldige svar vinner, resten avbrytes (sparer
-  // båndbredde/last). Hvert speil har egen AbortController, lenket til ekstern
-  // signal slik at prefetch-avbrudd stopper alle.
   const controllers = OVERPASS_MIRRORS.map(() => new AbortController())
   const abortAll = () => controllers.forEach(c => { try { c.abort() } catch { /* noop */ } })
   if (signal) signal.addEventListener('abort', abortAll, { once: true })
-  // Klient-tak: avbryt alle speil hvis ingen har svart innen taket, så et
-  // hengende endpoint ikke fryser finalize til server-timeouten (90 s).
   let timedOut = false
   const timeoutTimer = setTimeout(() => { timedOut = true; abortAll() }, OVERPASS_TIMEOUT_MS)
 
@@ -158,6 +162,37 @@ export async function fetchOverpass(bbox, { signal } = {}) {
     clearTimeout(timeoutTimer)
     if (signal) signal.removeEventListener('abort', abortAll)
   }
+}
+
+const delay = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms)
+  if (signal) signal.addEventListener('abort', () => {
+    clearTimeout(t)
+    reject(new DOMException('Avbrutt', 'AbortError'))
+  }, { once: true })
+})
+
+export async function fetchOverpass(bbox, { signal } = {}) {
+  const body = 'data=' + encodeURIComponent(buildOverpassQuery(bbox))
+  // Prøv på nytt med backoff: speilene feiler ofte forbigående under last, og
+  // detalj-fyllingen feilet for ofte med kun ett forsøk. Avbrudd (AbortError fra
+  // prefetch/signal) prøves IKKE på nytt — det er en bevisst kansellering.
+  let lastErr
+  for (let attempt = 0; attempt < OVERPASS_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
+    if (attempt > 0) {
+      const backoff = OVERPASS_BACKOFF_MS[attempt - 1] ?? OVERPASS_BACKOFF_MS.at(-1)
+      console.warn(`[Overpass] forsøk ${attempt} feilet (${lastErr?.message ?? lastErr}) — prøver igjen om ${backoff} ms`)
+      await delay(backoff, signal)
+    }
+    try {
+      return await raceOverpassMirrors(body, { signal })
+    } catch (e) {
+      if (e?.name === 'AbortError' || signal?.aborted) throw e
+      lastErr = e
+    }
+  }
+  throw new Error(`Overpass feilet etter ${OVERPASS_ATTEMPTS} forsøk: ${lastErr?.message ?? lastErr}`)
 }
 
 export function bboxFromCenter(lat, lon, halfKm) {
