@@ -16,13 +16,14 @@ import { buildSvgClient } from './buildSvgClient.js'
  * Hent + bygg en lett periferi-flis for en WGS84-bbox.
  *
  * @param {{south,west,north,east}} bbox
- * @param {{ signal?: AbortSignal }} [opts]
+ * @param {{ signal?: AbortSignal, utmBbox?: {minE,maxE,minN,maxN} }} [opts]
  * @returns {Promise<string>} SVG-streng (kun stier + vann)
  */
-export async function buildLiteTile(bbox, { signal } = {}) {
+export async function buildLiteTile(bbox, { signal, utmBbox = null } = {}) {
   const osm = await fetchOverpass(bbox, { signal, query: buildOverpassQueryLite(bbox) })
   const { svg } = await buildSvgClient(osm.elements ?? [], bbox, {
     dem: null,                  // ingen DEM ⇒ ingen konturer/relieff/knaus/cliffs
+    utmBbox,                    // eksakt rutenett-bboks fra neighborTiles → flukter med midt-flisen
     scaleDenom: 10000,
     includeCliffs: false,
     includeKnauser: false,

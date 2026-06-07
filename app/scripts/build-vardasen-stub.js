@@ -7,7 +7,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildSvg, bboxFromCenter } from '../src/lib/mapBuilder.js'
 import { fetchDEM } from '../src/lib/demFetcher.js'
-import { wgs84ToUtm32 } from '../src/lib/utm.js'
+import { utm32BboxFromWgs84 } from '../src/lib/utm.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -15,15 +15,8 @@ const CENTER = { lat: 59.813746, lon: 10.414616 }
 const HALF_KM = 2.5
 const bbox = bboxFromCenter(CENTER.lat, CENTER.lon, HALF_KM)
 
-// Beregn UTM-bbox slik at fetchDEM kan generere riktig størrelse
-const sw = wgs84ToUtm32(bbox.south, bbox.west)
-const ne = wgs84ToUtm32(bbox.north, bbox.east)
-const utmBbox = {
-  minE: Math.min(sw.e, ne.e),
-  maxE: Math.max(sw.e, ne.e),
-  minN: Math.min(sw.n, ne.n),
-  maxN: Math.max(sw.n, ne.n),
-}
+// Fire-hjørners UTM-bbox (kvadratisk) — samme extent til DEM-fetch og buildSvg
+const utmBbox = utm32BboxFromWgs84(bbox)
 
 // Hent DEM (syntetisk for stub — workflow regenererer med ekte WCS-data)
 const dem = await fetchDEM(bbox, utmBbox, {
@@ -34,6 +27,7 @@ const dem = await fetchDEM(bbox, utmBbox, {
 const { svg: baseSvg, meta } = buildSvg([], bbox, {
   scaleDenom: 10000,
   dem,
+  utmBbox,
   contourIntervalM: 20,
 })
 

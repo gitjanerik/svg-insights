@@ -22,7 +22,7 @@ import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
 import { findHighestPoint, packDem } from './demSampling.js'
-import { wgs84ToUtm32, utm32ToWgs84 } from './utm.js'
+import { utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
 import { snapUtmBboxToGrid, fetchDEMWithCache } from './demTileCache.js'
 import { logPerf } from './perfLog.js'
@@ -140,12 +140,10 @@ export async function buildMapFromCenter({
 
   // Beregn UTM-bbox tidlig så fetchDEM kan startes parallelt med
   // Overpass/N50 i stedet for å vente på dem (v8.10.18: sparer 3-10 s).
-  const sw = wgs84ToUtm32(bbox.south, bbox.west)
-  const ne = wgs84ToUtm32(bbox.north, bbox.east)
-  let utmBbox = {
-    minE: Math.min(sw.e, ne.e), maxE: Math.max(sw.e, ne.e),
-    minN: Math.min(sw.n, ne.n), maxN: Math.max(sw.n, ne.n),
-  }
+  // Fire-hjørners UTM-extent (utm32BboxFromWgs84) så kartet blir kvadratisk for
+  // en kvadratisk bbox — SW+NE-diagonalen alene undervurderte øst-vest og ga
+  // portrett-kart vekk fra sentralmeridianen. Sendes uendret videre til buildSvg.
+  let utmBbox = utm32BboxFromWgs84(bbox)
 
   // DEM-oppløsning (probe). 10 m ved fine konturer (≤ 5 m ekvidistanse),
   // ellers 20 m. Beregnes her oppe fordi flis-cachen snapper bbox til dette
@@ -157,9 +155,17 @@ export async function buildMapFromCenter({
   // hjørnene så Overpass/buildSvg bruker SAMME extent som DEM-en.
   if (DEM_TILE_CACHE_ENABLED) {
     utmBbox = snapUtmBboxToGrid(utmBbox, resolutionM)
-    const sw2 = utm32ToWgs84(utmBbox.minE, utmBbox.minN)
-    const ne2 = utm32ToWgs84(utmBbox.maxE, utmBbox.maxN)
-    bbox = { south: sw2.lat, west: sw2.lon, north: ne2.lat, east: ne2.lon }
+    // Recompute WGS84-bbox fra ALLE fire snappede hjørner (ikke bare SW+NE) så
+    // Overpass dekker hele det kvadratiske utsnittet — med bare diagonalen ble
+    // hjørnene under-dekket og OSM-data manglet i kart-kantene.
+    const cs = [
+      utm32ToWgs84(utmBbox.minE, utmBbox.minN), utm32ToWgs84(utmBbox.maxE, utmBbox.minN),
+      utm32ToWgs84(utmBbox.minE, utmBbox.maxN), utm32ToWgs84(utmBbox.maxE, utmBbox.maxN),
+    ]
+    bbox = {
+      south: Math.min(...cs.map(c => c.lat)), north: Math.max(...cs.map(c => c.lat)),
+      west: Math.min(...cs.map(c => c.lon)), east: Math.max(...cs.map(c => c.lon)),
+    }
   }
 
   // DEM-henting: via flis-cache (gjenbruk overlappende fliser) når PÅ, ellers
@@ -313,6 +319,7 @@ export async function buildMapFromCenter({
     // avbryter (terminerer workeren) ved prefetch-bom.
     const { svg, counts, timings } = await timeAsync('buildSvg', buildSvgClient(elements, bbox, {
       dem,
+      utmBbox,                       // authoritativ extent (samme som DEM-fetch) → kvadratisk + bit-eksakt
       contourIntervalM: equidistanceM,
       scaleDenom: 10000,
       skipContoursIfSynthetic: true,
@@ -343,6 +350,7 @@ export async function buildMapFromCenter({
       if (isRealDem(dem)) {
         const terrain = await timeAsync('terreng', buildSvgClient([], bbox, {
           dem,
+          utmBbox,                   // samme authoritative extent som full-bygget
           contourIntervalM: equidistanceM,
           scaleDenom: 10000,
           skipContoursIfSynthetic: true,
