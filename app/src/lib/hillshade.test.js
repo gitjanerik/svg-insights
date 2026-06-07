@@ -56,6 +56,34 @@ describe('shadeToToneRGBA — blend bakt inn i alfa', () => {
     expect(Array.from(a)).toEqual(Array.from(b))
   })
 
+  it('vignette: hjørner helt transparente, senter full styrke (ingen rektangel)', () => {
+    // 21×21 fullt mørk skygge (multiply ⇒ alfa 255 uten vignette overalt).
+    const n = 21
+    const shade = { cols: n, rows: n, rgba: new Uint8ClampedArray(n * n * 4) }
+    for (let i = 0; i < n * n; i++) shade.rgba[i * 4 + 3] = 255
+    const out = shadeToToneRGBA(shade, 'multiply', { vignette: 0.55 })
+    const at = (r, c) => out[(r * n + c) * 4 + 3]
+    const mid = (n - 1) / 2
+    expect(at(mid, mid)).toBe(255)   // senter: full
+    expect(at(0, 0)).toBe(0)         // hjørner (rad ≈ 1,41): borte
+    expect(at(0, n - 1)).toBe(0)
+    expect(at(n - 1, 0)).toBe(0)
+    expect(at(n - 1, n - 1)).toBe(0)
+    expect(at(0, mid)).toBe(0)       // kant-midtpunkt (rad = 1): borte
+    expect(at(mid, 0)).toBe(0)
+    // Monotont stigende innover langs en akse
+    expect(at(mid, 2)).toBeLessThan(at(mid, Math.round(mid)))
+  })
+
+  it('vignette vinner over feather når begge er satt', () => {
+    const n = 11
+    const shade = { cols: n, rows: n, rgba: new Uint8ClampedArray(n * n * 4) }
+    for (let i = 0; i < n * n; i++) shade.rgba[i * 4 + 3] = 255
+    const both = shadeToToneRGBA(shade, 'multiply', { feather: 0.2, vignette: 0.5 })
+    const vigOnly = shadeToToneRGBA(shade, 'multiply', { vignette: 0.5 })
+    expect(Array.from(both)).toEqual(Array.from(vigOnly))
+  })
+
   it('alfa-kompositt er matematisk lik mix-blend-mode for alle skygge/base-par', () => {
     const grays = [0, 32, 64, 128, 200, 255]
     const bases = [0, 50, 128, 220, 255]

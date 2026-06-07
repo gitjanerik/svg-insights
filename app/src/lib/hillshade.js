@@ -93,26 +93,48 @@ export function computeHillshade(dem, options = {}) {
  * (ingen canvas/DOM) så den er enhetstestbar.
  *
  * v10.1.x: valgfri `feather` (0..0.5, brøkdel av minste flis-dimensjon) toner
- * alfaen ned til 0 mot flis-kanten med en smoothstep-rampe. I 3×3-fliskartet er
- * det bare midt-flisen som har DEM ⇒ relieff — uten feather ender skyggingen i
- * en hard firkant midt i kartet («du ser bare midt-ruta»). Med feather dissolves
- * relieffet mykt mot periferi-ringen. Default 0 = av (bakoverkompat + testlås).
+ * alfaen ned til 0 mot flis-kanten med en smoothstep-rampe.
+ *
+ * v10.1.6: valgfri `vignette` (0..1) er en RADIAL elliptisk falloff i stedet for
+ * kant-feather: full styrke innenfor radius `vignette` (normalisert, 1 = halve
+ * flis-bredden/-høyden), smoothstep til 0 ved kant-midtpunkt (rad 1), og helt
+ * borte i hjørnene (rad ≈ 1,41). Relieffet blir da en MYK OVAL uten rette kanter
+ * eller 90°-hjørner — i 3×3-fliskartet så midt-flisens relieff ut som et påklistret
+ * rektangel (tydeligst der et hjørne traff vann), og kant-feather (lineær) kan
+ * ikke fjerne et 90°-hjørne. Vignette-ovalen forsvinner før den når noen rett kant.
+ * `feather` og `vignette` er gjensidig utelukkende; vignette vinner hvis begge er satt.
  *
  * @param {{rgba: Uint8ClampedArray, cols: number, rows: number}} shade  grayscale-skygge fra computeHillshade
  * @param {'multiply'|'screen'} mode
- * @param {{feather?: number}} [opts]
+ * @param {{feather?: number, vignette?: number}} [opts]
  * @returns {Uint8ClampedArray} RGBA med tonet farge + bakt alfa
  */
-export function shadeToToneRGBA(shade, mode, { feather = 0 } = {}) {
+export function shadeToToneRGBA(shade, mode, { feather = 0, vignette = 0 } = {}) {
   const { rgba: src, cols, rows } = shade
   const out = new Uint8ClampedArray(src.length)
   const white = mode === 'screen'
   const v = white ? 255 : 0
-  const fpx = feather > 0 ? Math.max(1, Math.round(Math.min(cols, rows) * feather)) : 0
+  const fpx = (!vignette && feather > 0) ? Math.max(1, Math.round(Math.min(cols, rows) * feather)) : 0
+  // Radial vignette: normaliser pikselposisjon til ellipse der 1 = halve bredden/
+  // -høyden (kant-midtpunkt). Full innenfor `vignette`, smoothstep til 0 ved 1.
+  const useVig = vignette > 0
+  const cx = (cols - 1) / 2, cy = (rows - 1) / 2
+  const inner = Math.min(0.98, Math.max(0, vignette))
+  const span = Math.max(1e-3, 1 - inner)
   for (let i = 0; i < src.length; i += 4) {
     const g = src[i]                 // grå skyggeverdi 0..255 (kanalene er like)
     let a = white ? g : 255 - g
-    if (fpx > 0) {
+    if (useVig) {
+      const px = i >> 2
+      const nx = (px % cols - cx) / (cx || 1)
+      const ny = ((px / cols | 0) - cy) / (cy || 1)
+      const rad = Math.hypot(nx, ny)
+      if (rad >= 1) a = 0
+      else if (rad > inner) {
+        const t = (1 - rad) / span               // 1 ved inner → 0 ved kant
+        a = Math.round(a * (t * t * (3 - 2 * t))) // smoothstep
+      }
+    } else if (fpx > 0) {
       const px = i >> 2
       const c = px % cols
       const r = (px / cols) | 0
@@ -142,13 +164,13 @@ export function shadeToToneRGBA(shade, mode, { feather = 0 } = {}) {
  * (i DEM-oppløsning) i stedet for to (hillshade + et stort eget knaus-raster
  * på opptil 4096² = ~67 MB), som var en alvorlig mobil-GPU-flaskehals.
  */
-export function hillshadeToDataURL(shade, { mode = 'opaque', decorate, feather = 0 } = {}) {
+export function hillshadeToDataURL(shade, { mode = 'opaque', decorate, feather = 0, vignette = 0 } = {}) {
   const canvas = document.createElement('canvas')
   canvas.width = shade.cols
   canvas.height = shade.rows
   const ctx = canvas.getContext('2d')
   const rgba = (mode === 'multiply' || mode === 'screen')
-    ? shadeToToneRGBA(shade, mode, { feather })
+    ? shadeToToneRGBA(shade, mode, { feather, vignette })
     : new Uint8ClampedArray(shade.rgba)
   const imgData = new ImageData(rgba, shade.cols, shade.rows)
   ctx.putImageData(imgData, 0, 0)
