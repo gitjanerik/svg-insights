@@ -324,29 +324,8 @@ async function onCreateHere() {
         Slett alle ({{ maps.length }}) kart
       </button>
 
-      <!-- Tegnforklaring (nederst på siden) -->
-      <button @click="router.push('/tegnforklaring')"
-              class="w-full mt-6 rounded-lg p-3 flex items-center gap-3 text-left
-                     bg-white/[0.04] border border-white/10 active:bg-white/[0.07] active:scale-[0.99] transition">
-        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
-                    flex items-center justify-center text-white/65">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="4" width="18" height="16" rx="2"/>
-            <line x1="7" y1="9" x2="17" y2="9"/>
-            <line x1="7" y1="13" x2="17" y2="13"/>
-            <line x1="7" y1="17" x2="13" y2="17"/>
-          </svg>
-        </div>
-        <div class="flex-1 text-left">
-          <div class="text-white text-sm font-medium">Tegnforklaring</div>
-          <div class="text-[12px] text-white/50 mt-0.5">ISOM-symboler brukt i kartene</div>
-        </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </button>
+      <!-- Tegnforklaring-knappen er fjernet fra forsiden (v9.3.38) — den finnes
+           fortsatt som hurtigvalg inne i kart-visningen (MapView-drawer). -->
     </div>
 
     <!-- Full-screen loader for on-the-fly kart-bygging -->

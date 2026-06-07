@@ -348,7 +348,7 @@ const ALL_TABS = [
   { key: 'maaling',     label: 'Måling' },
   { key: 'sporing',     label: 'Sporing',    userOnly: true },
   { key: 'eksport',     label: 'Eksport' },
-  { key: 'om',          label: 'Om' },
+  { key: 'om',          label: 'Innstillinger' },
 ]
 const activeTab = ref('lag')
 try {
@@ -2456,11 +2456,11 @@ function onExportTrackGpx(tr) {
 }
 
 // ── Auto-kart: regenerer når visnings-senter krysser 85%-terskelen ────────
-// FAB-en er en på/av-bryter (default AV, alltid synlig, uavhengig av GPS).
-// Når PÅ: når du panner/zoomer slik at skjermsenteret har flyttet seg ≥85 % av
-// halv-bredden ut mot en kant, bygges et nytt kart med SAMME størrelse +
-// ekvidistanse, sentrert der du ser. En trigger-ramme + trådkors tegnes på
-// kartet så du ser når det vil skje («hold trådkorset innenfor rammen»).
+// v9.3.38: default PÅ og «skjult» — ingen FAB, ramme eller trådkors. Styres av
+// en bryter i Innstillinger-fanen (localStorage-persistert). Når du
+// panner/zoomer slik at skjermsenteret har flyttet seg ≥85 % av halv-bredden ut
+// mot en kant, bygges et nytt kart med SAMME størrelse + ekvidistanse, sentrert
+// der du ser — stille, uten visuelle hjelpe-elementer.
 //
 // Spekulativ prefetch: når senteret passerer 50 %-sonen (men ikke 85 % ennå)
 // gjetter vi hvor du havner (projiserer reise-retningen ut til rammen) og bygger
@@ -2471,7 +2471,19 @@ function onExportTrackGpx(tr) {
 const AUTO_MAP_THRESHOLD = 0.85   // andel av halv-bredden før ny-bygg trigges
 const PREFETCH_THRESHOLD = 0.5    // andel der bakgrunns-bygging starter
 const PREFETCH_MATCH_TOL_FRAC = 0.25  // hvor nær gjettet må være (× halv-bredde)
-const autoMapEnabled = ref(false) // toggle-tilstand (default AV)
+// Auto-kart: default PÅ og «skjult» fra v9.3.38 — ingen FAB lenger, styres via
+// en bryter i Innstillinger-fanen. Valget huskes i localStorage på tvers av
+// økter (default PÅ når nøkkelen mangler). Trigger-rammen tegnes ikke lenger
+// (SHOW_AUTO_MAP_FRAME=false) så funksjonen jobber stille i bakgrunnen.
+const AUTO_MAP_PREF_KEY = 'svg-insights-automap-enabled'
+const SHOW_AUTO_MAP_FRAME = false
+function loadAutoMapPref() {
+  try { return localStorage.getItem(AUTO_MAP_PREF_KEY) !== '0' } catch { return true }
+}
+function saveAutoMapPref(on) {
+  try { localStorage.setItem(AUTO_MAP_PREF_KEY, on ? '1' : '0') } catch { /* noop */ }
+}
+const autoMapEnabled = ref(loadAutoMapPref()) // default PÅ, persistert
 const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
 const autoMapToast = ref('')      // transient melding (på/av, offline, flyttet)
@@ -2497,10 +2509,11 @@ function showAutoMapToast(msg) {
 function toggleAutoMap() {
   if (buildingOnTheFly.value) return
   autoMapEnabled.value = !autoMapEnabled.value
+  saveAutoMapPref(autoMapEnabled.value)   // husk valget på tvers av økter
   if (autoMapEnabled.value) {
     autoMapArmed = true
     autoMapOfflineNotified = false
-    showAutoMapToast('Auto-kart på — dra forbi rammen for nytt kart')
+    showAutoMapToast('Auto-kart på — dra kartet for nytt utsnitt')
   } else {
     cancelPrefetch()
     showAutoMapToast('Auto-kart av')
@@ -2539,7 +2552,9 @@ function renderAutoMapFrame() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
   const existing = svg.querySelector('#auto-map-frame')
-  if (!autoMapEnabled.value || !meta.value) {
+  // v9.3.38: auto-kart kjører stille — trigger-rammen tegnes ikke (SHOW_AUTO_MAP_FRAME
+  // = false). Behold fjerne-grenen så en evt. gammel ramme ryddes bort.
+  if (!SHOW_AUTO_MAP_FRAME || !autoMapEnabled.value || !meta.value) {
     if (existing) existing.remove()
     return
   }
@@ -2873,7 +2888,8 @@ async function loadMap({ silent = false } = {}) {
         if (prefs.theme) currentTheme.value = prefs.theme
         if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
         if (prefs.autoStartGps) pendingAutoStartGps = true
-        if (prefs.autoMapEnabled) autoMapEnabled.value = true
+        // v9.3.38: auto-kart styres nå av localStorage-preferansen (default PÅ),
+        // ikke av per-kart session-prefs — så vi overstyrer ikke autoMapEnabled her.
         if (prefs.isAutoMap) currentMapIsAuto.value = true
         if (typeof prefs.scale === 'number' || typeof prefs.rotation === 'number') {
           pendingRestoreView = { scale: prefs.scale ?? 1, rotation: prefs.rotation ?? 0 }
@@ -3615,38 +3631,9 @@ onUnmounted(() => {
           {{ knobHint }}
         </div>
       </Transition>
-      <!-- Auto-kart-bryter: alltid synlig, default AV. PÅ (grønn) viser en
-           trigger-ramme + trådkors på kartet; panner du forbi rammen bygges et
-           nytt kart med samme størrelse, sentrert der du ser. Toast forklarer
-           på/av, offline og «flyttet sentrum». -->
-      <div class="relative">
-        <button @click="toggleAutoMap"
-                :aria-label="autoMapEnabled ? 'Auto-kart på — slå av' : 'Auto-kart av — slå på'"
-                class="w-12 h-12 rounded-full shadow-lg flex items-center justify-center
-                       active:scale-95 transition relative"
-                :class="autoMapEnabled
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-zinc-950 text-white/70'">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <!-- kartblad + pluss-merke i hjørnet -->
-            <path d="M3 6 L9 4 L15 6 L21 4 V18 L15 20 L9 18 L3 20 Z"/>
-            <path d="M9 4 V18 M15 6 V20"/>
-            <circle cx="18" cy="6" r="3.5" fill="currentColor" stroke="none" opacity="0.95"/>
-            <line x1="18" y1="4.3" x2="18" y2="7.7" stroke="#0e1116" stroke-width="1.6"/>
-            <line x1="16.3" y1="6" x2="19.7" y2="6" stroke="#0e1116" stroke-width="1.6"/>
-          </svg>
-        </button>
-        <!-- Toast — på/av, offline-varsel, «flyttet sentrum» -->
-        <Transition name="hint-fade">
-          <div v-if="autoMapToast"
-               class="absolute right-14 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg
-                      bg-zinc-950/95 text-white text-[11px] leading-tight shadow-lg
-                      whitespace-nowrap pointer-events-none border border-white/10">
-            {{ autoMapToast }}
-          </div>
-        </Transition>
-      </div>
+      <!-- Auto-kart-FAB fjernet (v9.3.38): funksjonen er default PÅ og styres
+           via bryteren i Innstillinger-fanen. Runtime-toasts (offline, «flyttet
+           sentrum») rendres som et eget element nederst på kartet. -->
       <!-- Strek-knott: tap = tykkere (wrapper til tynnest etter tykkest),
            lang-trykk = nullstill. Bua viser nivå; senter-streken tegnes i
            faktisk valgt tykkelse (selv-demonstrerende). -->
@@ -3716,22 +3703,20 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Auto-kart trådkors: fast i skjermsenter når auto-modus er PÅ. Sammen
-         med trigger-rammen (tegnet i kartet) viser det «hold trådkorset
-         innenfor rammen» — krysser det rammen bygges et nytt kart. pointer-
-         events-none så det aldri sluker kart-gester. Skjult i spill/søk. -->
-    <div v-if="autoMapEnabled && !curveball.active.value && !searchOpen"
-         class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-      <svg viewBox="0 0 48 48" class="w-12 h-12 drop-shadow"
-           fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round">
-        <circle cx="24" cy="24" r="9" opacity="0.9"/>
-        <line x1="24" y1="4"  x2="24" y2="15"/>
-        <line x1="24" y1="33" x2="24" y2="44"/>
-        <line x1="4"  y1="24" x2="15" y2="24"/>
-        <line x1="33" y1="24" x2="44" y2="24"/>
-        <circle cx="24" cy="24" r="1.8" fill="#10b981" stroke="none"/>
-      </svg>
-    </div>
+    <!-- Auto-kart-trådkorset er fjernet (v9.3.38): auto-kart er default PÅ og
+         kjører stille uten ramme/trådkors — dra kartet, så bygges nytt utsnitt. -->
+
+    <!-- Auto-kart runtime-toast (offline / «flyttet sentrum» / på-av): fast
+         nederst-midt på kartet siden FAB-en er borte. -->
+    <Transition name="chip-fade">
+      <div v-if="autoMapToast && !curveball.active.value && !searchOpen"
+           class="absolute left-1/2 -translate-x-1/2 z-30 px-3 py-2 rounded-2xl
+                  bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
+                  text-center max-w-[85%] pointer-events-none border border-white/10"
+           :style="{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }">
+        {{ autoMapToast }}
+      </div>
+    </Transition>
 
     <!-- Terreng-først: kartet viser konturer+relieff straks; chip viser at
          stier og detaljer fylles inn i bakgrunnen (Overpass laster). -->
@@ -4522,23 +4507,27 @@ onUnmounted(() => {
                       :class="screenWake.enabled.value ? 'left-5' : 'left-0.5'" />
               </button>
             </div>
-            <div class="text-white/70 text-[12px] leading-relaxed space-y-2">
-              <p>
-                <strong class="text-white">SVG Insights</strong> utforsker hva man kan
-                bygge med ren SVG i nettleseren — kart, font-editor, foto-effekter.
-              </p>
-              <p>
-                Dette kartet bruker ISOM 2017-2-inspirert symbolisering med mm-baserte
-                streker for print-kvalitet. Kartdata © OpenStreetMap-bidragsytere
-                (ODbL). Høydedata fra Kartverket (NHM_DTM / DOM).
-              </p>
-              <p>
-                Reprojisert til UTM 32N (EPSG:25832-kompatibel) med 1 SVG-enhet = 1 m.
-                Reliefskygge: Horn-formel hill-shading rendret som grayscale-PNG i
-                SVG-en med <code class="text-white/85">mix-blend-mode: multiply</code>.
-              </p>
-              <p class="text-white/45 text-[10px]">v{{ APP_VERSION }}</p>
+            <!-- Auto-kart (v9.3.38): default PÅ, kjører stille. Dra kartet forbi
+                 ~85 % av utsnittet, så bygges et nytt kart sentrert der du ser. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3 flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] text-white font-medium">Auto-kart</div>
+                <div class="text-[11px] text-white/55 leading-snug">
+                  Bygger automatisk et nytt kart-utsnitt når du drar kartet forbi kanten — samme størrelse og ekvidistanse, sentrert der du ser. Slå av om du vil bli stående på ett kart.
+                </div>
+              </div>
+              <button @click="toggleAutoMap"
+                      :aria-pressed="autoMapEnabled"
+                      :aria-label="autoMapEnabled ? 'Slå av auto-kart' : 'Slå på auto-kart'"
+                      class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+                      :class="autoMapEnabled ? 'bg-emerald-500' : 'bg-white/15'">
+                <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                      :class="autoMapEnabled ? 'left-5' : 'left-0.5'" />
+              </button>
             </div>
+            <!-- v9.3.38: forklarende prosa fjernet (finnes på Om-siden +
+                 Tegnforklaring). Denne fanen er nå rene innstillinger. -->
+            <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
           </div>
         </div>
       </div>
