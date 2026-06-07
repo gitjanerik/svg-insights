@@ -14,7 +14,11 @@
  * @returns {{rgba: Uint8ClampedArray, cols: number, rows: number, widthM: number, heightM: number}}
  */
 export function computeHillshade(dem, options = {}) {
-  const { azimuthDeg = 315, elevationDeg = 45, zFactor = 1, gamma = 0.85 } = options
+  // zFactor 1.5: overdriv skråninger litt så relieffet trer tydeligere fram —
+  // store/slake kart (f.eks. Tyrifjorden, 25 m ekvidistanse) ga ellers et veldig
+  // svakt relieff under multiply-blend. gamma 1.0 (nøytral) i stedet for 0.85 så
+  // skyggesidene ikke lysnes opp — dypere skygger = sterkere relieff. (v9.3.36)
+  const { azimuthDeg = 315, elevationDeg = 45, zFactor = 1.5, gamma = 1.0 } = options
   const { data, cols, rows, transform, noData } = dem
   const cellSize = transform.pixelWidth
   const zenithRad = (90 - elevationDeg) * Math.PI / 180

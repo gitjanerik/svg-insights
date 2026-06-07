@@ -1193,11 +1193,15 @@ async function applyHillshade() {
     cachedHillshadeUrl = hillshadeToDataURL(shade)
     cachedHillshadeDem = storedDem.value
   }
-  // Plasser-strategi: hillshade skal blende NED over kart-innholdet
-  // (vegetasjon, vann, veier), men ligge UNDER user-/annotation-/track-/
-  // measure-lagene som er klient-genererte overlays. Insert-before
-  // første overlay-lag som finnes; ellers append.
-  const insertBefore = svg.querySelector('#user-layer')
+  // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
+  // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
+  // stupkant), så det opake vannet dekker relieffet over innsjø/sjø: ren flat
+  // vannflate uten skygge-frynse langs strandlinja (der DTM-en stepper fra
+  // innsjø ≈ 0 m opp til land), og land-relieffet leses med mer kontrast.
+  // Faller tilbake til toppen av kropps-innholdet (under klient-overlays) når
+  // kartet ikke har vann.
+  const insertBefore = svg.querySelector('[data-layer="vann"]')
+                    ?? svg.querySelector('#user-layer')
                     ?? svg.querySelector('#annotation-layer')
                     ?? svg.querySelector('#track-layer')
                     ?? svg.querySelector('#measure-layer')
