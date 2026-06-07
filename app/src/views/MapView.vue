@@ -45,6 +45,11 @@ const router = useRouter()
 const route = useRoute()
 const wrapperRef = ref(null)
 const svgHostRef = ref(null)
+// Felles transform-wrapper rundt BÅDE midt-kartet (svgHostRef) og periferi-
+// ringen (ringHostRef). Tema-CSS-variabler (--iso-*, --bg, --label-*) settes
+// her, ikke på midt-SVG-en, så de arves ned i begge via CSS custom property-
+// arv — ellers ville bare midt-flisen rekolorere ved tema-bytte (v10.1.x).
+const mapInnerRef = ref(null)
 const searchInputRef = ref(null)
 
 const loading = ref(true)
@@ -1157,6 +1162,7 @@ let cachedHillshadeUrl = null   // memoize: avhenger av (DEM, blend-modus)
 let cachedHillshadeDem = null
 let cachedShade = null          // rå grayscale-skygge — re-tones ved tema-bytte uten DEM-rekalk
 let cachedHillshadeMode = null
+let cachedHillshadeFeather = null   // 3×3-ring aktiv ⇒ kant-feather bakt inn
 
 // Relieff-blend velges per tema: lyse bakgrunner mørkner naturlig med
 // `multiply`, mens mørke/art-tema (Curves) får `screen` så terrenget lyser
@@ -1204,9 +1210,15 @@ async function applyHillshade() {
   // med mix-blend-mode, men uten den dyre per-frame backdrop-blendingen på
   // mobil. Re-tones kun når DEM eller tema-modus endres.
   const mode = reliefBlendMode()
-  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode) {
-    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode })
+  // v10.1.x: når 3×3-periferi-ringen er aktiv (auto-kart PÅ) er det bare midt-
+  // flisen som har relieff — feather kanten så skyggingen dissolves mykt mot
+  // ringen i stedet for å ende i en hard firkant. Frittstående full-kart (ring
+  // av) feather-es ikke — relieffet skal fylle hele kartet skarpt til kanten.
+  const feather = autoMapEnabled.value ? 0.12 : 0
+  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode || cachedHillshadeFeather !== feather) {
+    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode, feather })
     cachedHillshadeMode = mode
+    cachedHillshadeFeather = feather
   }
   // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
   // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
@@ -2535,6 +2547,7 @@ function toggleAutoMap() {
     clearRing()           // skru av utforsknings-modus → ingen ring
     showAutoMapToast('Auto-kart av')
   }
+  applyHillshade()        // ring av/på endrer relieff-feather (hard kant ↔ myk)
   renderAutoMapFrame()
 }
 
@@ -3299,12 +3312,16 @@ const scaleBar = computed(() => {
   return { px: 0, label: '', ticks: [] }
 })
 
-// Tema-applisering: setter CSS-variabler pr ISOM-kode + label på SVG-roten.
+// Tema-applisering: setter CSS-variabler pr ISOM-kode + label på den FELLES
+// transform-wrapperen (mapInnerRef) som omslutter både midt-kartet og periferi-
+// ringen. CSS custom properties arves ned, så `var(--iso-*-fill)` i BÅDE midt-
+// SVG-en og hver lite-flis-SVG resolver mot disse — uten dette rekolorerte bare
+// midt-flisen ved tema-bytte og ringen ble hengende på lys-temaet (v10.1.x).
 // Først ryddes ALLE tema-vars (så bytte mellom mono-paletter ikke etterlater
 // rester), så settes vars for valgt tema.
 function applyTheme() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
+  const root = mapInnerRef.value
+  if (!root || !svgHostRef.value?.querySelector('svg')) return
   const themes = isomCatalog.themes ?? {}
   const allCodes = new Set()
   const allLabels = new Set()
@@ -3312,34 +3329,34 @@ function applyTheme() {
     for (const c of Object.keys(t.categories ?? {})) allCodes.add(c)
     for (const l of Object.keys(t.labels ?? {})) allLabels.add(l)
   }
-  svg.style.removeProperty('--bg')
-  svg.style.removeProperty('--art-fill-opacity')
+  root.style.removeProperty('--bg')
+  root.style.removeProperty('--art-fill-opacity')
   for (const code of allCodes) {
-    svg.style.removeProperty(`--iso-${code}-fill`)
-    svg.style.removeProperty(`--iso-${code}-stroke`)
-    svg.style.removeProperty(`--iso-${code}-overlay-stroke`)
+    root.style.removeProperty(`--iso-${code}-fill`)
+    root.style.removeProperty(`--iso-${code}-stroke`)
+    root.style.removeProperty(`--iso-${code}-overlay-stroke`)
   }
   for (const name of allLabels) {
-    svg.style.removeProperty(`--label-${name}-fill`)
-    svg.style.removeProperty(`--label-${name}-halo`)
+    root.style.removeProperty(`--label-${name}-fill`)
+    root.style.removeProperty(`--label-${name}-halo`)
   }
   const t = themes[currentTheme.value]
   if (!t) return
   // Fyll-opacity (subtilt mørke + art-modes) — settes selv for light=1 så
   // tidligere art-mode-rest ikke henger igjen.
   if (typeof t.fillOpacity === 'number' && t.fillOpacity < 1) {
-    svg.style.setProperty('--art-fill-opacity', String(t.fillOpacity))
+    root.style.setProperty('--art-fill-opacity', String(t.fillOpacity))
   }
   if (currentTheme.value === 'light') return
-  if (t.background) svg.style.setProperty('--bg', t.background)
+  if (t.background) root.style.setProperty('--bg', t.background)
   for (const [code, def] of Object.entries(t.categories ?? {})) {
-    if (def.fill?.color) svg.style.setProperty(`--iso-${code}-fill`, def.fill.color)
-    if (def.stroke?.color) svg.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
-    if (def.overlayStroke?.color) svg.style.setProperty(`--iso-${code}-overlay-stroke`, def.overlayStroke.color)
+    if (def.fill?.color) root.style.setProperty(`--iso-${code}-fill`, def.fill.color)
+    if (def.stroke?.color) root.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
+    if (def.overlayStroke?.color) root.style.setProperty(`--iso-${code}-overlay-stroke`, def.overlayStroke.color)
   }
   for (const [name, def] of Object.entries(t.labels ?? {})) {
-    if (def.color) svg.style.setProperty(`--label-${name}-fill`, def.color)
-    if (def.haloColor) svg.style.setProperty(`--label-${name}-halo`, def.haloColor)
+    if (def.color) root.style.setProperty(`--label-${name}-fill`, def.color)
+    if (def.haloColor) root.style.setProperty(`--label-${name}-halo`, def.haloColor)
   }
 }
 
@@ -3832,7 +3849,7 @@ onUnmounted(() => {
          @pointerup="onPointerUpLongPress"
          @pointercancel="onPointerUpLongPress"
          @contextmenu="onContextMenuEvent">
-      <div class="w-full h-full relative" :style="mapTransformStyle">
+      <div ref="mapInnerRef" class="w-full h-full relative" :style="mapTransformStyle">
         <!-- 3×3-periferi-ring: nabo-fliser (stier+vann) bak midt-kartet, i samme
              transform-rom så de panner/zoomer/roterer i lås. z-index:-1 +
              pointer-events:none ⇒ ren kontekst, all interaksjon på midt-kartet. -->

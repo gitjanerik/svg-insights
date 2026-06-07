@@ -171,21 +171,17 @@ const EQUIDISTANCE_OPTIONS = [
   { value: 50,  label: '50 m',  desc: 'oversikt — for store områder' },
 ]
 
-// v8.2.3: minste tillatte ekvidistanse skaleres med bbox-bredde. Tett
+// v10.1.x: minste tillatte ekvidistanse skaleres med bbox-bredde. Tett
 // kontur-rendering er meningsløst på store kart (overlappende streker,
-// rotete kart uten lesbarhet). Regler:
+// rotete kart uten lesbarhet). Maks kartstørrelse er nå 7×7 km (var 14),
+// så terskel-tabellen er skalert ned til det nye domenet (1–7 km):
 //   bredde <  4 km  → alle valg (5/10/20/25/50)
-//   4 ≤ bredde < 8  → min 10 m (5 m utelukket)
-//   8 ≤ bredde < 10 → min 20 m (5/10 m utelukket)
-//   bredde = 10 km  → min 25 m (5/10/20 m utelukket)
-//   bredde > 10 km  → kun 50 m (alt annet utelukket — store oversiktskart
-//     ville fått uleselig tett kontur-rendering, og DEM-sampling nær maks-
-//     bredden (14×14 km) blir tungt nok uten å også tegne tette kurver)
+//   4 ≤ bredde < 6  → min 10 m (5 m utelukket)
+//   bredde ≥ 6 km   → min 20 m (5/10 m utelukket — ved 6–7 km blir tette
+//     kurver uleselige). 25/50 m forblir alltid valgbare som grovere valg.
 const minEquidistance = computed(() => {
   const km = halfKm.value * 2
-  if (km > 10) return 50
-  if (km >= 10) return 25
-  if (km >= 8) return 20
+  if (km >= 6) return 20
   if (km >= 4) return 10
   return 5
 })
@@ -193,9 +189,7 @@ const minEquidistance = computed(() => {
 // Forklarende tooltip når et ekvidistanse-valg er utelukket av gjeldende bredde.
 function widthHintFor(value) {
   if (value === 5)  return 'Krever bredde < 4 km'
-  if (value === 10) return 'Krever bredde < 8 km'
-  if (value === 20) return 'Krever bredde < 10 km'
-  if (value === 25) return 'Krever bredde ≤ 10 km'
+  if (value === 10) return 'Krever bredde < 6 km'
   return ''
 }
 
@@ -348,7 +342,7 @@ function onPreviewTouchMove(e) {
     const d = touchDist(e)
     const ratio = d / lastDist
     const next = halfKm.value / ratio
-    halfKm.value = Math.max(0.5, Math.min(5, next))
+    halfKm.value = Math.max(0.5, Math.min(3.5, next))
     lastDist = d
   } else if (panning && e.touches.length === 1 && panStart) {
     e.preventDefault()
@@ -398,7 +392,7 @@ function onPreviewWheel(e) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
-  halfKm.value = Math.max(0.5, Math.min(5, next))
+  halfKm.value = Math.max(0.5, Math.min(3.5, next))
 }
 
 onMounted(() => {
@@ -637,11 +631,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="7" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="3.5" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>7 km</span><span>14 km</span>
+          <span>1 km</span><span>4 km</span><span>7 km</span>
         </div>
       </div>
 
