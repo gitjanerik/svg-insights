@@ -851,6 +851,68 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
+  // ── Vektor-vann er autoritativt — trekk ferskvann fra DEM-sjøen ───────
+  // Steg 2 av vann-omleggingen. buildSeaFromDem klassifiserer ALT ≤0.5m-areal
+  // som rører kart-kanten som SJØ. Store INNSJØER (Tyrifjorden) leser ~0 m i
+  // NHM_DTM og strekker seg ut av kartet, så de feilklassifiseres som sjø →
+  // 303-blå med trappetrinns-kyst + teal grunn-bånd. DEM kan ikke skille sjø fra
+  // en 0-lesende innsjø; det kan VEKTOR-data (N50/OSM vet at det er ferskvann,
+  // 301/302). Prinsipp: vektor-vann er autoritativt for HVA som er vann og av
+  // hvilken type; DEM-sjø er kun en CORS-trygg fallback DER vektor mangler.
+  // Implementasjon: mengde-differanse (polygon-clipping) — der ferskvann dekker
+  // DEM-sjøen forsvinner den falske sjøen (innsjøen rendres som ekte vektor-301
+  // i stedet), mens ekte kyst-sjø uten ferskvanns-overlapp overlever uendret.
+  if (demSeaPolygons.length) {
+    const freshwaterMP = []
+    const projRing = (geom) => geom.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
+    for (const code of ['301', '302']) {
+      for (const el of buckets[code] ?? []) {
+        if (el.type === 'merged-water' && el._mergedRings) {
+          for (const polygon of el._mergedRings) if (polygon?.length) freshwaterMP.push(polygon)
+        } else if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+          freshwaterMP.push([projRing(el.geometry)])
+        } else if (el.type === 'relation' && el.members) {
+          for (const ring of assembleRelationRings(el.members, 'outer')) {
+            if (ring.length >= 3) freshwaterMP.push([projRing(ring)])
+          }
+        }
+      }
+    }
+    if (freshwaterMP.length) {
+      // Per DEM-sjø-polygon: er den HOVEDSAKELIG dekket av vektor-ferskvann, er
+      // det en innsjø feillest som sjø → dropp hele polygonet (alt-eller-intet,
+      // så vi ikke etterlater teal slivere langs strandlinja der DEM-0m-kanten og
+      // vektor-kysten ikke flukter eksakt). Ekte kyst-sjø har ~0 % ferskvanns-
+      // overlapp og beholdes uendret.
+      const ringAreaM2 = (ring) => {
+        if (!ring || ring.length < 3) return 0
+        let a = 0
+        for (let i = 0, n = ring.length; i < n; i++) {
+          const j = (i + 1) % n
+          a += ring[i][0] * ring[j][1] - ring[j][0] * ring[i][1]
+        }
+        return Math.abs(a) / 2
+      }
+      const mpAreaM2 = (mp) => mp.reduce((s, poly) => s + ringAreaM2(poly[0]), 0)
+      const mostlyFreshwater = (poly) => {
+        const area = ringAreaM2(poly[0])
+        if (area <= 0) return true
+        try {
+          const inter = polygonClipping.intersection([poly], freshwaterMP)
+          return mpAreaM2(inter) / area > 0.5
+        } catch { return false }
+      }
+      try {
+        demSeaPolygons = demSeaPolygons.filter(p => !mostlyFreshwater(p))
+        demSeaBands = demSeaBands
+          .map(b => ({ ...b, polygons: b.polygons.filter(p => !mostlyFreshwater(p)) }))
+          .filter(b => b.polygons.length)
+      } catch (e) {
+        console.warn(`[DEM-sjø] ferskvanns-vurdering feilet (${e?.message ?? e}) — beholder rå DEM-sjø`)
+      }
+    }
+  }
+
   // ── Én autoritativ sjø-geometri (Fase 1: single coastline) ───────────
   // Fundamentet for topologisk normalisering: ett sett sjø-polygoner i
   // SVG-meter-rom som alt marint klippes/valideres mot. Kilde-prioritet:
@@ -1217,70 +1279,17 @@ export function buildSvg(elements, bbox, options = {}) {
     return group('major') + group('mid') + group('minor')
   }
 
-  // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
-  // kontur-laget kun rendres der det er land. Konturer som "krysser"
-  // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
-  // Hver VANN-POLYGON (ytre ring + evt. øy-hull) blir sin EGEN <path> i masken,
-  // ikke én sammenslått path. Kritisk: med én path + fill-rule="evenodd"
-  // KANSELLERER overlappende polygoner fra ulike kilder hverandre (f.eks.
-  // navngitt OSM-vann + N50 for SAMME innsjø — Tyrifjorden) → hull i masken →
-  // konturer lekker ut over vannet. Separate svarte paths union-er i stedet
-  // (svart + svart = svart); evenodd gjelder kun INNEN hver polygon, så øy-hull
-  // forblir land. (Recurring «høydekurver i vann»-bug.)
-  const waterPolyPaths = []   // én komplett polygon-d (ytre + hull) per element
-  const ringToD = (ring) => {
-    if (!ring || ring.length < 3) return ''
-    let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-    for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-    return d + 'Z'
-  }
-  const freshwaterCodes = ['301', '302', '308', '309']
-  const maskCodes = hasAuthoritativeSea
-    ? freshwaterCodes
-    : ['301', '302', '303', '307', '308', '309']
-  for (const code of maskCodes) {
-    for (const el of buckets[code] ?? []) {
-      if (el.type === 'merged-water' && el._mergedRings) {
-        for (const polygon of el._mergedRings) {
-          const d = polygon.map(ringToD).join('')
-          if (d) waterPolyPaths.push(d)
-        }
-      } else if (el.type === 'way' && el.geometry) {
-        const d = pathFromGeometry(el.geometry, true)
-        if (d) waterPolyPaths.push(d)
-      } else if (el.type === 'relation' && el.members) {
-        // Sy sammen multipolygon-ringer (samme bug ville ellers gi segment-
-        // trekanter i masken), og hold ytre + indre i ÉN path så øyer blir hull.
-        const outerRings = assembleRelationRings(el.members, 'outer')
-        const innerRings = assembleRelationRings(el.members, 'inner')
-        const d = [...outerRings, ...innerRings].map(r => pathFromGeometry(r, true)).join('')
-        if (d) waterPolyPaths.push(d)
-      }
-    }
-  }
-  if (hasAuthoritativeSea) {
-    // Marin maske = den ene autoritative kysten (øy-hull bevart via evenodd).
-    const seaD = multiPolygonToPathD(authoritativeSea, fmt)
-    if (seaD) waterPolyPaths.push(seaD)
-  } else {
-    // Ingen autoritativ sjø: behold rå DEM-sjø i masken (gammel oppførsel),
-    // én path per sjø-polygon.
-    for (const poly of demSeaPolygons) {
-      const d = poly.map(ringToD).join('')
-      if (d) waterPolyPaths.push(d)
-    }
-  }
-
-  const hasMaskContent = waterPolyPaths.length > 0
-  const landMaskSvg = hasMaskContent
-    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/>${waterPolyPaths.map(d => `<path d="${d}" fill="black" fill-rule="evenodd"/>`).join('')}</mask>`
-    : ''
-  const contourMaskAttr = hasMaskContent ? ' mask="url(#land-mask)"' : ''
-  // Samme mask brukes for vegetasjon (404, 405-408 etc.) og 522 bymasse
-  // slik at OSM-polygoner som strekker seg utover N50 vann-grensa blir
-  // klippet i stedet for å bli rendret over vann (som ellers ville være
-  // synlig hvis vann-polygonen ikke ligger oppå dem).
-  const landMaskAttr = contourMaskAttr
+  // ── Vann skjuler terreng-detalj via PAINTER'S ORDER, ikke en <mask> ──
+  // Tidligere ble konturer/stupkanter/knauser/vegetasjon malt OPPÅ vann og så
+  // skjult av en svart <mask id="land-mask"> = to representasjoner av vann (blå
+  // fyll + svart maske) som måtte stemme overens. Enhver kilde masken bommet på,
+  // eller evenodd-kansellering ved overlappende kilder, lakk konturer ut over
+  // vann («høydekurver i vann»-saga-en). Nå males terreng-detalj UNDER det
+  // opake vann-fyllet (se body-rekkefølgen): vann-fyllet ER det som dekker
+  // konturer over vann. Én representasjon — kan ikke være uenig med seg selv,
+  // og ingen evenodd-fallgruve (hvert vann-polygon males opakt, overlapp = bare
+  // malt to ganger). Konturer over MYR (308/309, mønster) skinner gjennom, som
+  // ISOM tilsier. (v9.3.34 — erstatter land-mask-lappeteppet.)
 
   // ── Bygg kontur-, knaus- og cliff-lag fra DEM-features ───────────────
   // DEM-transformen (demFetcher / dem.js#gridToWorld) gir world-koord der
@@ -1518,7 +1527,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // Knauser maskeres også av vann — DEM-deriverte punkt-symboler skal ikke
   // ligge oppå en innsjø (samme begrunnelse som stupkanter/konturer).
   const knauserLayerSvg = knauserD
-    ? `  <g data-layer="stein" data-iso="213"${contourMaskAttr}><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
+    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
     : ''
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
@@ -1855,7 +1864,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const labelLayer = labelSvg()
 
   const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
-    ? `  <g data-layer="kontur"${contourMaskAttr}>\n` +
+    ? `  <g data-layer="kontur">\n` +
       `    <g data-iso="101"><path d="${contourMinorPaths.join(' ')}" /></g>\n` +
       `    <g data-iso="102"><path d="${contourIndexPaths.join(' ')}" /></g>\n` +
       (contourLabels.length
@@ -1890,13 +1899,12 @@ export function buildSvg(elements, bbox, options = {}) {
       }).join('\n')}\n  </g>\n`
     : ''
 
-  // Stupkanter maskeres av vann (samme land-mask som konturer). DTM under
-  // innsjøer har ofte bratte artefakter (registrert vannflate-nivå, LiDAR-
-  // tile-skjøter) som slår ut som falske stupkanter midt i vannet — like
-  // meningsløst som en høydekurve gjennom en innsjø. (Rapportert Otersjøen,
-  // Lierne.)
+  // Stupkanter males UNDER vann (painter's order, se body) så DTM-artefakter
+  // (vannflate-nivå, LiDAR-tile-skjøter) som slår ut som falske stupkanter midt
+  // i en innsjø dekkes av vann-fyllet — like meningsløst som en høydekurve
+  // gjennom en innsjø. (Rapportert Otersjøen, Lierne.)
   const cliffsLayerSvg = cliffsSvg
-    ? `  <g data-layer="stupkant" data-iso="203"${contourMaskAttr}>\n${cliffsSvg}\n  </g>\n` : ''
+    ? `  <g data-layer="stupkant" data-iso="203">\n${cliffsSvg}\n  </g>\n` : ''
 
   const huleLayerSvg = huleSvg
     ? `  <g data-layer="stein" data-iso="215">\n${huleSvg}\n  </g>\n` : ''
@@ -2053,7 +2061,15 @@ export function buildSvg(elements, bbox, options = {}) {
   // defs-noder pr kart (mer i % på sparsomme kart), null visuell endring.
   // Trygt ved konstruksjon: en def beholdes kun hvis id-token-en bokstavelig
   // finnes i kilden (CSS for patterns, body for symboler).
-  const body = `${landMaskAttr ? `<g${landMaskAttr}>${groundLayers}${urbanMassLayerSvg}</g>` : `${groundLayers}${urbanMassLayerSvg}`}${landOverlayLayers}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${contourLayerSvg}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${knauserLayerSvg}${cliffsLayerSvg}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  // Painter's order (v9.3.34): terreng-detalj (vegetasjon → øy-overlay →
+  // konturer → knauser → stupkanter) males FØRST, deretter det OPAKE vann-
+  // fyllet (demSea + vann) OPPÅ. Vann-fyllet dekker dermed alt terreng som
+  // strekker seg ut over vann — ingen <mask> trengs. Øy-overlay (001, opak krem)
+  // ligger UNDER konturene så øyer beholder høydekurvene sine; vann ligger over
+  // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
+  // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
+  // tekst) males etter vannet, som før.
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
@@ -2069,7 +2085,7 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
-  <defs>${isomDefs}${landMaskSvg}</defs>
+  <defs>${isomDefs}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
 ${body}</svg>
