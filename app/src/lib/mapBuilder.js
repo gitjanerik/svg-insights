@@ -444,6 +444,11 @@ const WATER_CODES  = ['307', '308', '309', '303', '301', '302', '304', '305']
 // Land-overlay: OSM `place=island/islet` polygoner i kremgul som dekker
 // over feilplassert OSM-vann. Renders ETTER vann-stacken.
 const LAND_OVERLAY_CODES = ['001']
+// Strand / badeplass (ISOM-derivert 556, v9.3.37): sand-stippel-areal i
+// strandens faktiske form. Renders ETTER vann + øy-overlay (sand ligger på
+// strandlinja, over vannet) men FØR konturer/veier. Eget toggle-lag
+// (categoryFor → 'strand'), default PÅ i MapView.
+const STRAND_CODES = ['556']
 // Naturreservat / verneområde (ISOM 520-derivert): semi-transparent grønn
 // overlay rendret ETTER vann men FØR konturer/veier, slik at underliggende
 // terreng forblir lesbart og konturer/stier tydelig tegnes oppå.
@@ -458,6 +463,7 @@ const LAYER_ORDER = [
   ...GROUND_CODES,
   ...WATER_CODES,
   ...LAND_OVERLAY_CODES,
+  ...STRAND_CODES,
   ...PROTECTED_CODES,
   ...PLACEHOLDER_CODES,
   ...ROAD_CODES,
@@ -482,10 +488,11 @@ const MARINE_POINT_CODES = {
   '553': { requireWater: false },  // småbåthavn / marina
   '554': { requireWater: false },  // toalett
   '555': { requireWater: false },  // drikkevann
-  '556': { requireWater: false },  // strand / badeplass
+  // 556 (strand) er flyttet fra punkt-ikon til AREAL (sand-stippel-flate) i
+  // v9.3.37 — se STRAND_CODES + POLYGON_CODES. Ikonet er fjernet helt.
 }
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552', '556'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -1822,6 +1829,9 @@ export function buildSvg(elements, bbox, options = {}) {
   const landOverlayLayers = authoritativeSeaSource === 'dem'
     ? ''
     : renderCodes(LAND_OVERLAY_CODES)
+  // Strand (556): sand-stippel-areal, malt over vann/øy-overlay men under
+  // konturer/veier. Eget data-layer="strand" (categoryFor) → egen toggle.
+  const strandLayers = renderCodes(STRAND_CODES)
   const protectedLayers = renderCodes(PROTECTED_CODES)
   // v8.5.7: Klassisk casing-pattern for veier — render ALLE sorte omriss
   // (casings) først, så ALLE fargefyll (overlays). Det forhindrer at sorte
@@ -2069,7 +2079,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
   // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
   // tekst) males etter vannet, som før.
-  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
@@ -2135,6 +2145,7 @@ function categoryFor(code) {
     case '534':                                  return 'parkering'
     case '560':                                  return 'holdeplass'
     case '551': case '552':                     return 'sjo-poi'
+    case '556':                                  return 'strand'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
   }

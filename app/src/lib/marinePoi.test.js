@@ -22,7 +22,6 @@ describe('classifyToIsom — marine/padle-POI', () => {
     [{ 'seamark:type': 'beacon_isolated_danger' }, '543'],
     [{ leisure: 'marina' }, '553'],
     [{ leisure: 'slipway' }, '550'],
-    [{ natural: 'beach' }, '556'],
     [{ amenity: 'toilets' }, '554'],
     [{ amenity: 'drinking_water' }, '555'],
     [{ sjokart: 'slipp' }, '550'],
@@ -33,6 +32,30 @@ describe('classifyToIsom — marine/padle-POI', () => {
       expect(cls).toEqual({ code, cat: 'point' })
     })
   }
+})
+
+describe('classifyToIsom — strand (v9.3.37: areal, ikke punkt)', () => {
+  it('natural=beach → 556 som areal (cat manmade), ikke point', () => {
+    const cls = classifyToIsom({ type: 'way', tags: { natural: 'beach' } })
+    expect(cls).toEqual({ code: '556', cat: 'manmade' })
+  })
+})
+
+describe('buildSvg — strand rendres som sand-areal (eget lag)', () => {
+  it('natural=beach gir et strand-lag med data-iso=556 og sand-pattern', () => {
+    const beach = {
+      type: 'way', id: 200,
+      tags: { natural: 'beach' },
+      geometry: ringGeom(59.02, 10.02, 59.03, 10.04),
+    }
+    const { svg } = buildSvg([beach], bbox, {})
+    expect(svg).toContain('data-layer="strand"')
+    expect(svg).toContain('data-iso="556"')
+    // sand-stippel-pattern må være referert og definert
+    expect(svg).toContain('iso-pat-strand-sand')
+    // det gamle punkt-ikonet skal IKKE finnes lenger
+    expect(svg).not.toContain('iso-sym-strand')
+  })
 })
 
 describe('isomCatalog — nye Fase 3-symboler er definert og bygges', () => {

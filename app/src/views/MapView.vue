@@ -219,6 +219,7 @@ const LAYERS = [
   { key: 'myr',        label: 'Myr' },
   { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk' },
+  { key: 'strand',     label: 'Strand' },
   { key: 'kontur',     label: 'Høydekurver' },
   { key: 'naturreservat', label: 'Naturreservat' },
   { key: 'bygning',    label: 'Hus og hytter' },

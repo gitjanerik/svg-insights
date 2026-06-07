@@ -228,7 +228,7 @@ export function classifyToIsom(el) {
   }
   if (t.leisure === 'marina')          return { code: '553', cat: 'point' }  // småbåthavn
   if (t.leisure === 'slipway')         return { code: '550', cat: 'point' }  // landingssted
-  if (t.natural === 'beach')           return { code: '556', cat: 'point' }  // strand / badeplass
+  if (t.natural === 'beach')           return { code: '556', cat: 'manmade' }  // strand / badeplass — areal (sand-stippel-flate), ikke punkt (v9.3.37)
   if (t.amenity === 'toilets')         return { code: '554', cat: 'point' }
   if (t.amenity === 'drinking_water')  return { code: '555', cat: 'point' }
 
