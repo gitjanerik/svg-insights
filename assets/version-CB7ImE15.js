@@ -1,0 +1,1 @@
+var e=`10.0.0`;export{e as t};
