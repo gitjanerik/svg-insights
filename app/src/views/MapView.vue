@@ -1150,8 +1150,10 @@ function formatDuration(ms) {
 // embeddes som SVG <image> i bunnen av lag-stacken. Cached så bytte AV/PÅ
 // er øyeblikkelig, og en watch på visibleLayers + storedDem trigger
 // re-apply når brukeren toggler eller når DEM er lazy-lastet inn.
-let cachedHillshadeUrl = null   // memoize-key: storedDem-referansen
+let cachedHillshadeUrl = null   // memoize: avhenger av (DEM, blend-modus)
 let cachedHillshadeDem = null
+let cachedShade = null          // rå grayscale-skygge — re-tones ved tema-bytte uten DEM-rekalk
+let cachedHillshadeMode = null
 
 // Relieff-blend velges per tema: lyse bakgrunner mørkner naturlig med
 // `multiply`, mens mørke/art-tema (Curves) får `screen` så terrenget lyser
@@ -1190,9 +1192,18 @@ async function applyHillshade() {
     // v9.1.17: ren hillshade. Knaus er flyttet tilbake til en vektor-<path>
     // i selve kart-SVG-en (mapBuilder, ISOM 213) — knivskarp og billig — så
     // relieff-bildet skygger nå kun terreng.
-    const shade = computeHillshade(storedDem.value)
-    cachedHillshadeUrl = hillshadeToDataURL(shade)
+    cachedShade = computeHillshade(storedDem.value)
     cachedHillshadeDem = storedDem.value
+    cachedHillshadeUrl = null   // tving re-toning
+  }
+  // v9.3.39: bak blend-modus inn i alfa (svart/multiply for lyse tema, hvit/
+  // screen for mørke) så <image> tegnes med NORMAL kompositt — pikselidentisk
+  // med mix-blend-mode, men uten den dyre per-frame backdrop-blendingen på
+  // mobil. Re-tones kun når DEM eller tema-modus endres.
+  const mode = reliefBlendMode()
+  if (!cachedHillshadeUrl || cachedHillshadeMode !== mode) {
+    cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode })
+    cachedHillshadeMode = mode
   }
   // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
   // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
@@ -1222,9 +1233,10 @@ async function applyHillshade() {
   img.setAttribute('height', String(meta.value.heightM))
   img.setAttribute('href', cachedHillshadeUrl)
   img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedHillshadeUrl)
-  // Styrt av relieff-knotten: opacity fra valgt nivå, blend per tema.
+  // Styrt av relieff-knotten: opacity fra valgt nivå. Blend-modusen er nå bakt
+  // inn i PNG-ens alfa (se over) — normal kompositt, ingen mix-blend-mode.
   img.setAttribute('opacity', String(reliefOpacity.value))
-  img.style.mixBlendMode = reliefBlendMode()
+  img.style.mixBlendMode = 'normal'
 }
 
 // Re-render relieffet når DEM-en lastes eller temaet byttes (blend-modus
