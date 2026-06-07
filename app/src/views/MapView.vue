@@ -19,6 +19,8 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
+import { neighborTiles, TileLRU } from '../lib/tileGrid.js'
+import { buildLiteTile } from '../lib/liteTile.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -2526,8 +2528,10 @@ function toggleAutoMap() {
     autoMapArmed = true
     autoMapOfflineNotified = false
     showAutoMapToast('Auto-kart på — dra kartet for nytt utsnitt')
+    scheduleRingTiles()   // hent periferi-ringen (stier+vann rundt deg)
   } else {
     cancelPrefetch()
+    clearRing()           // skru av utforsknings-modus → ingen ring
     showAutoMapToast('Auto-kart av')
   }
   renderAutoMapFrame()
@@ -2832,6 +2836,88 @@ function onPrint() {
   printDocument(svg.outerHTML, { title: mapTitle.value })
 }
 
+// ── 3×3-fliskart: periferi-ring (v9.3.40) ────────────────────────────────
+// Rundt midt-kartet vises 8 nabo-fliser med KUN stier + vann (lett vektor),
+// så man har orienterings-kontekst utenfor kart-kanten i stedet for tom
+// kremfarge. Hentes lazy (idle etter at kartet har «landet») og caches i en
+// LRU så de gjenbrukes når man beveger seg tilbake. Ringen er ren kontekst
+// (pointer-events:none); GPS/søk/long-press/relieff er kun på midt-kartet.
+// Koblet til autoMapEnabled (utforsknings-modus): av ⇒ ingen ring.
+const ringHostRef = ref(null)
+const liteTileCache = new TileLRU(16)   // tileKey → SVG-streng ('pending'/'failed' mens den bygges)
+let ringAbort = null
+let ringTimer = null
+let ringGeneration = 0                   // bumpes ved kartbytte → forkast utdaterte fetches
+let ringNeighbors = []                   // gjeldende 8 naboer (for re-layout ved resize)
+
+function clearRing() {
+  ringGeneration++
+  if (ringAbort) { ringAbort.abort(); ringAbort = null }
+  if (ringTimer) { clearTimeout(ringTimer); ringTimer = null }
+  ringNeighbors = []
+  if (ringHostRef.value) ringHostRef.value.innerHTML = ''
+}
+
+// Plasser de bygde flisene i delt meter-rom: midt-SVG-en fyller svgHostRef med
+// meet-fit (1 m = fit px + letterbox-offset), og ring-flisene posisjoneres med
+// samme mapping. Parent-transformen panner/zoomer/roterer alt sammen, så denne
+// kjøres KUN ved bygg/ankomst/resize — ikke per frame.
+function layoutRing() {
+  const host = ringHostRef.value
+  if (!host || !meta.value) return
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!wrap || !wrap.width) return
+  const m = meta.value
+  const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
+  const offX = (wrap.width - m.widthM * fit) / 2
+  const offY = (wrap.height - m.heightM * fit) / 2
+  host.innerHTML = ''
+  for (const n of ringNeighbors) {
+    const svg = liteTileCache.has(n.key) ? liteTileCache.get(n.key) : null
+    if (!svg || svg === 'pending' || svg === 'failed') continue
+    const box = document.createElement('div')
+    box.style.cssText = `position:absolute;left:${offX + n.offsetM.x * fit}px;top:${offY + n.offsetM.y * fit}px;` +
+      `width:${m.widthM * fit}px;height:${m.heightM * fit}px;pointer-events:none;overflow:hidden`
+    box.innerHTML = svg
+    const inner = box.firstElementChild
+    if (inner) { inner.style.width = '100%'; inner.style.height = '100%'; inner.style.display = 'block' }
+    host.appendChild(box)
+  }
+}
+
+// Idle-trigger etter at et kart har landet (debounced). Henter manglende naboer.
+function scheduleRingTiles() {
+  if (ringTimer) clearTimeout(ringTimer)
+  ringTimer = setTimeout(refreshRingTiles, 500)
+}
+
+function refreshRingTiles() {
+  if (!autoMapEnabled.value || !meta.value) { clearRing(); return }
+  const m = meta.value
+  const centerUtm = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
+  if (!Number.isFinite(centerUtm.minE) || centerUtm.maxE <= centerUtm.minE) return
+  const gen = ++ringGeneration
+  if (ringAbort) ringAbort.abort()
+  ringAbort = new AbortController()
+  const signal = ringAbort.signal
+  ringNeighbors = neighborTiles(centerUtm)
+  layoutRing()   // vis umiddelbart det som alt er cachet
+  for (const n of ringNeighbors) {
+    if (liteTileCache.has(n.key)) continue
+    liteTileCache.set(n.key, 'pending')
+    buildLiteTile(n.bbox, { signal })
+      .then(svg => {
+        if (gen !== ringGeneration || !componentAlive) return
+        liteTileCache.set(n.key, svg)
+        layoutRing()
+      })
+      .catch(() => {
+        if (gen !== ringGeneration) return
+        if (liteTileCache.get(n.key) === 'pending') liteTileCache.set(n.key, 'failed')
+      })
+  }
+}
+
 async function loadMap({ silent = false } = {}) {
   // silent = re-render av samme kart (terreng → full) uten full-skjerm-loader;
   // beholder zoom/pan og hopper over init-prefs (alt konsumert ved første last).
@@ -2961,6 +3047,11 @@ async function loadMap({ silent = false } = {}) {
     // kart-senter under skjermsenter), så trådkorset peker på samme punkt du
     // var på vei mot — og dx/dy ≈ 0, ingen umiddelbar re-trigger.
     if (autoMapEnabled.value) renderAutoMapFrame()
+    // 3×3-periferi-ring: hent nabo-flisenes stier+vann (lazy/idle) og rendre
+    // dem rundt midt-kartet. clearRing først så et evt. forrige kart-ring
+    // forsvinner umiddelbart ved kartbytte.
+    clearRing()
+    if (autoMapEnabled.value) scheduleRingTiles()
     if (pendingRestoreView) {
       rotation.value = pendingRestoreView.rotation
       await nextTick()
@@ -3450,6 +3541,7 @@ onMounted(() => {
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
   window.addEventListener('resize', scheduleNameLOD)
+  window.addEventListener('resize', layoutRing)   // re-posisjoner periferi-ring ved resize
   window.addEventListener('orientationchange', updateMapRect)
   loadMap()
   loadUserMapsForTournament()
@@ -3464,9 +3556,11 @@ onUnmounted(() => {
   screenWake.stop()
   componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
+  window.removeEventListener('resize', layoutRing)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
+  clearRing()
   cancelPrefetch()
 })
 </script>
@@ -3707,6 +3801,11 @@ onUnmounted(() => {
          @pointercancel="onPointerUpLongPress"
          @contextmenu="onContextMenuEvent">
       <div class="w-full h-full relative" :style="mapTransformStyle">
+        <!-- 3×3-periferi-ring: nabo-fliser (stier+vann) bak midt-kartet, i samme
+             transform-rom så de panner/zoomer/roterer i lås. z-index:-1 +
+             pointer-events:none ⇒ ren kontekst, all interaksjon på midt-kartet. -->
+        <div ref="ringHostRef" class="absolute inset-0"
+             style="z-index:-1;pointer-events:none"></div>
         <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
         <CurveBallLayer
           :flipp="curveball"
