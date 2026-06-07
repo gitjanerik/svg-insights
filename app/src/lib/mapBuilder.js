@@ -1220,14 +1220,20 @@ export function buildSvg(elements, bbox, options = {}) {
   // ── Bygg land-mask: alle vann-polygoner blir svart, slik at
   // kontur-laget kun rendres der det er land. Konturer som "krysser"
   // innsjøer er nonsens (innsjø = én høyde) — de skal maskeres bort.
-  const waterPaths = []
-  // Fase 1b (single coastline): den MARINE delen av masken kommer fra den
-  // autoritative sjø-geometrien (samme strandlinje som males), ikke fra
-  // unionen av flere kilder. Ferskvann (innsjø 301/302, myr 308, elveflate
-  // 309) maskeres som før. Når vi har en autoritativ sjø dropper vi 303/307
-  // + rå DEM-sjø fra masken (de er allerede dekket av authoritativeSea med
-  // ekte øy-hull). Innlands / uten kyst-modell faller vi tilbake til den
-  // gamle unionen (303/307/DEM med).
+  // Hver VANN-POLYGON (ytre ring + evt. øy-hull) blir sin EGEN <path> i masken,
+  // ikke én sammenslått path. Kritisk: med én path + fill-rule="evenodd"
+  // KANSELLERER overlappende polygoner fra ulike kilder hverandre (f.eks.
+  // navngitt OSM-vann + N50 for SAMME innsjø — Tyrifjorden) → hull i masken →
+  // konturer lekker ut over vannet. Separate svarte paths union-er i stedet
+  // (svart + svart = svart); evenodd gjelder kun INNEN hver polygon, så øy-hull
+  // forblir land. (Recurring «høydekurver i vann»-bug.)
+  const waterPolyPaths = []   // én komplett polygon-d (ytre + hull) per element
+  const ringToD = (ring) => {
+    if (!ring || ring.length < 3) return ''
+    let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+    for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+    return d + 'Z'
+  }
   const freshwaterCodes = ['301', '302', '308', '309']
   const maskCodes = hasAuthoritativeSea
     ? freshwaterCodes
@@ -1236,47 +1242,38 @@ export function buildSvg(elements, bbox, options = {}) {
     for (const el of buckets[code] ?? []) {
       if (el.type === 'merged-water' && el._mergedRings) {
         for (const polygon of el._mergedRings) {
-          for (const ring of polygon) {
-            if (ring.length < 3) continue
-            let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-            for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-            d += 'Z'
-            waterPaths.push(d)
-          }
+          const d = polygon.map(ringToD).join('')
+          if (d) waterPolyPaths.push(d)
         }
       } else if (el.type === 'way' && el.geometry) {
-        waterPaths.push(pathFromGeometry(el.geometry, true))
+        const d = pathFromGeometry(el.geometry, true)
+        if (d) waterPolyPaths.push(d)
       } else if (el.type === 'relation' && el.members) {
-        // Sy sammen multipolygon-ringer før vi pusher (samme bug ville
-        // ellers gi land-mask med segment-trekanter i stedet for lake)
+        // Sy sammen multipolygon-ringer (samme bug ville ellers gi segment-
+        // trekanter i masken), og hold ytre + indre i ÉN path så øyer blir hull.
         const outerRings = assembleRelationRings(el.members, 'outer')
         const innerRings = assembleRelationRings(el.members, 'inner')
-        for (const ring of [...outerRings, ...innerRings]) {
-          waterPaths.push(pathFromGeometry(ring, true))
-        }
+        const d = [...outerRings, ...innerRings].map(r => pathFromGeometry(r, true)).join('')
+        if (d) waterPolyPaths.push(d)
       }
     }
   }
   if (hasAuthoritativeSea) {
     // Marin maske = den ene autoritative kysten (øy-hull bevart via evenodd).
     const seaD = multiPolygonToPathD(authoritativeSea, fmt)
-    if (seaD) waterPaths.push(seaD)
+    if (seaD) waterPolyPaths.push(seaD)
   } else {
-    // Ingen autoritativ sjø: behold rå DEM-sjø i masken (gammel oppførsel).
+    // Ingen autoritativ sjø: behold rå DEM-sjø i masken (gammel oppførsel),
+    // én path per sjø-polygon.
     for (const poly of demSeaPolygons) {
-      for (const ring of poly) {
-        if (ring.length < 3) continue
-        let d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-        for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-        d += 'Z'
-        waterPaths.push(d)
-      }
+      const d = poly.map(ringToD).join('')
+      if (d) waterPolyPaths.push(d)
     }
   }
 
-  const hasMaskContent = waterPaths.length > 0
+  const hasMaskContent = waterPolyPaths.length > 0
   const landMaskSvg = hasMaskContent
-    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/><path d="${waterPaths.join(' ')}" fill="black" fill-rule="evenodd"/></mask>`
+    ? `<mask id="land-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(widthM)}" height="${fmt(heightM)}"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="white"/>${waterPolyPaths.map(d => `<path d="${d}" fill="black" fill-rule="evenodd"/>`).join('')}</mask>`
     : ''
   const contourMaskAttr = hasMaskContent ? ' mask="url(#land-mask)"' : ''
   // Samme mask brukes for vegetasjon (404, 405-408 etc.) og 522 bymasse

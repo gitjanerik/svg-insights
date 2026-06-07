@@ -68,3 +68,27 @@ describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
     expect(svg).toContain('data-dybde="99"')
   })
 })
+
+describe('land-mask — overlappende vann gir separate paths (ingen evenodd-hull)', () => {
+  // To OVERLAPPENDE vann-polygoner som IKKE slås sammen av unionByName (ulik
+  // kilde/navn — etterligner N50 + OSM for samme innsjø, Tyrifjorden). Med én
+  // sammenslått evenodd-path ville overlappet kansellere → hull i masken →
+  // konturer lekker over vann. Fiksen emitterer én svart path PER polygon, så
+  // de union-er (svart + svart = svart) i stedet.
+  const lakeOsm = {
+    type: 'way', id: 10, tags: { natural: 'water', name: 'Tyrifjorden' },
+    geometry: ring(59.01, 10.02, 59.04, 10.07),
+  }
+  const lakeN50 = {
+    type: 'way', id: 11, tags: { natural: 'water' }, _source: 'n50',
+    geometry: ring(59.015, 10.03, 59.045, 10.08),
+  }
+
+  it('emitterer én svart mask-path per vann-polygon (overlapp kansellerer ikke)', () => {
+    const { svg } = buildSvg([lakeOsm, lakeN50], bbox, {})
+    const maskMatch = svg.match(/<mask id="land-mask"[\s\S]*?<\/mask>/)
+    expect(maskMatch).toBeTruthy()
+    const blackPaths = maskMatch[0].match(/<path[^>]*fill="black"/g) ?? []
+    expect(blackPaths.length).toBe(2)
+  })
+})
