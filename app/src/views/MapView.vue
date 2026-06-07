@@ -3371,6 +3371,14 @@ function applyTheme() {
     root.style.removeProperty(`--label-${name}-halo`)
   }
   const t = themes[currentTheme.value]
+  // Viewport-bakgrunn: mal temaets bakgrunnsfarge på den FASTE (utransformerte)
+  // viewporten, så hele kartflaten har riktig base-farge — også letterbox-kanter
+  // og periferi-fliser som ennå ikke er lastet (ingen kremgul «glipe» rundt et
+  // mørkt kart). Lys-tema → tom (faller til side-bakgrunnen som før). (v10.1.3)
+  if (wrapperRef.value) {
+    wrapperRef.value.style.backgroundColor =
+      (t && currentTheme.value !== 'light' && t.background) ? t.background : ''
+  }
   if (!t) return
   // Fyll-opacity (subtilt mørke + art-modes) — settes selv for light=1 så
   // tidligere art-mode-rest ikke henger igjen.

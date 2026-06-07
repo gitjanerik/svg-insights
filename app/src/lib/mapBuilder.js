@@ -2117,8 +2117,15 @@ export function buildSvg(elements, bbox, options = {}) {
     [...patternDefs].filter(([name]) => refSrc.includes(`#iso-pat-${name})`)).map(([, d]) => d).join('') +
     [...symbolDefs].filter(([name]) => body.includes(`#iso-sym-${name}"`)).map(([, d]) => d).join('')
 
+  // NB: --bg settes IKKE inline på <svg>-roten. En inline custom property her
+  // ville shadowe en arvet --bg fra en forelder, så MapViews tema-bytte (som
+  // setter --bg på den felles 3×3-transform-wrapperen) ikke nådde periferi-
+  // flisene — bare midt-flisen rekolorerte (v10.1.x «crazy map»). Bakgrunns-
+  // rektangelet bruker fill="${bgFill}" som presentasjons-attributt (lys default
+  // for frittstående/print/Tegnforklaring), mens CSS-regelen
+  // `#bakgrunn rect { fill: var(--bg, default) }` lar en arvet --bg overstyre.
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} style="--bg: ${bgFill}" data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
