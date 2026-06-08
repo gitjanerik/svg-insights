@@ -2653,9 +2653,11 @@ function renderAutoMapFrame() {
   rect.setAttribute('height', String(rh))
 }
 
-// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame).
+// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame). Kjører
+// både når auto-kart er på (bygg/prefetch) OG når det finnes spøkelses-fliser
+// (promotér-på-dvele) — så «scroll tilbake» virker også med auto-kart av.
 function scheduleAutoMapCheck() {
-  if (!autoMapEnabled.value) return
+  if (!autoMapEnabled.value && !ghostRects.value.length) return
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   autoMapCheckTimer = setTimeout(() => {
     if (isGesturing && isGesturing.value) { scheduleAutoMapCheck(); return }
@@ -2776,10 +2778,50 @@ function centerOverExistingTile(c, m) {
   return ghostRects.value.some(g => rectOverlapFraction(newRect, g) > GHOST_TRIGGER_SUPPRESS_FRAC)
 }
 
+// Promotér-på-dvele (steg 3): har skjermsenter glidd inn på en spøkelses-flis,
+// gjør den til aktiv flis i full detalj. Flisa er allerede lagret (steg 1), så
+// dette er en lokal re-render (~sub-sekund), ikke et nytt bygg. Visningen bevares
+// sømløst: det geografiske punktet under skjermsenter holdes i ro over koordinat-
+// skiftet. Returnerer true hvis en promotering ble startet.
+function maybePromoteMosaic() {
+  if (!ghostRects.value.length || curveball.active.value || animating.value) return false
+  if (buildingOnTheFly.value || fillingInDetails.value) return false
+  const m = meta.value
+  const c = visibleCenterSvg()
+  if (!m || !c) return false
+  // Fortsatt på aktiv flis → ingen promotering.
+  if (c.x >= 0 && c.x <= m.widthM && c.y >= 0 && c.y <= m.heightM) return false
+  // Spøkelse som inneholder skjermsenter?
+  const g = ghostRects.value.find(r => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h)
+  if (!g) return false
+  promoteTile(g, c)
+  return true
+}
+
+// Bytt aktiv flis til spøkelset `g` via router (oppdaterer mapId → annoteringer,
+// spor, DEM lastes korrekt for den nye flisa). promoteView i init-prefs lar
+// loadMap panne slik at det samme geografiske punktet (c, i aktiv-koordinater)
+// blir liggende under skjermsenter etter skiftet — ingen hopp.
+function promoteTile(g, c) {
+  const centerG = { x: c.x - g.x, y: c.y - g.y }   // c uttrykt i g's eget meter-rom
+  try {
+    sessionStorage.setItem(`mapview-init-prefs:${g.id}`, JSON.stringify({
+      theme: currentTheme.value,
+      layers: Array.from(visibleLayers.value),
+      autoStartGps: userPos.isWatching,
+      isAutoMap: !!g.isAuto,
+      promoteView: { x: centerG.x, y: centerG.y, scale: scale.value, rotation: rotation.value },
+    }))
+  } catch { /* noop */ }
+  autoMapArmed = false   // unngå umiddelbar auto-bygg rett etter skiftet
+  router.replace({ name: 'kart-vis', params: { id: g.id } })
+}
+
 function checkAutoMapTrigger() {
-  if (!autoMapEnabled.value || !autoMapArmed || buildingOnTheFly.value) return
-  // Ikke trigg/prefetch mens et ferskt kart fortsatt fyller inn detaljer.
-  if (fillingInDetails.value) return
+  if (buildingOnTheFly.value || fillingInDetails.value) return
+  // Mosaikk-promotering kjører uavhengig av auto-kart-på/av.
+  if (maybePromoteMosaic()) return
+  if (!autoMapEnabled.value || !autoMapArmed) return
   if (autoMapModeBusy()) return
   const m = meta.value
   const c = visibleCenterSvg()
@@ -2972,6 +3014,7 @@ async function loadMap({ silent = false } = {}) {
     // auto-modus, bevart zoom/rotasjon). Én gang per ny mapId.
     let pendingAutoStartGps = false
     let pendingRestoreView = null   // {scale, rotation} — bevar visning over hopp
+    let pendingPromoteView = null   // {x, y, scale, rotation} — mosaikk-promotering
     let pendingMovedToast = false
     try {
       const k = `mapview-init-prefs:${mapId.value}`
@@ -2984,8 +3027,13 @@ async function loadMap({ silent = false } = {}) {
         if (prefs.autoStartGps) pendingAutoStartGps = true
         // v9.3.38: auto-kart styres nå av localStorage-preferansen (default PÅ),
         // ikke av per-kart session-prefs — så vi overstyrer ikke autoMapEnabled her.
-        if (prefs.isAutoMap) currentMapIsAuto.value = true
-        if (typeof prefs.scale === 'number' || typeof prefs.rotation === 'number') {
+        // Mosaikk-promotering setter isAutoMap eksplisitt (true/false) så å
+        // promotér til opprinnelig kart nullstiller auto-flagget korrekt.
+        if (prefs.promoteView) currentMapIsAuto.value = !!prefs.isAutoMap
+        else if (prefs.isAutoMap) currentMapIsAuto.value = true
+        if (prefs.promoteView && typeof prefs.promoteView.x === 'number') {
+          pendingPromoteView = prefs.promoteView
+        } else if (typeof prefs.scale === 'number' || typeof prefs.rotation === 'number') {
           pendingRestoreView = { scale: prefs.scale ?? 1, rotation: prefs.rotation ?? 0 }
         }
         if (prefs.movedCenterToast) pendingMovedToast = true
@@ -3043,7 +3091,17 @@ async function loadMap({ silent = false } = {}) {
     // kart-senter under skjermsenter), så trådkorset peker på samme punkt du
     // var på vei mot — og dx/dy ≈ 0, ingen umiddelbar re-trigger.
     if (autoMapEnabled.value) renderAutoMapFrame()
-    if (pendingRestoreView) {
+    if (pendingPromoteView) {
+      // Mosaikk-promotering: pan slik at det samme geografiske punktet (uttrykt
+      // i den nye flisas meter-rom) blir liggende under skjermsenter — sømløst,
+      // ingen hopp i forhold til der brukeren scrollet.
+      rotation.value = pendingPromoteView.rotation ?? 0
+      await nextTick()
+      panTo(pendingPromoteView.x, pendingPromoteView.y, {
+        vbWidth: meta.value.widthM, vbHeight: meta.value.heightM,
+        targetScale: pendingPromoteView.scale ?? 1, keepRotation: true,
+      })
+    } else if (pendingRestoreView) {
       rotation.value = pendingRestoreView.rotation
       await nextTick()
       panTo(meta.value.widthM / 2, meta.value.heightM / 2, {
@@ -3272,7 +3330,7 @@ async function renderGhostTiles() {
     const ghost = buildGhostSvg(stored.svg, m)
     if (!ghost) continue
     container.appendChild(ghost.el)
-    rects.push({ id: t.id, ...ghost.rect })
+    rects.push({ id: t.id, isAuto: !!t.isAuto, ...ghost.rect })
   }
   if (token !== ghostRenderToken) { container.remove(); return }
   if (!rects.length) container.remove()
