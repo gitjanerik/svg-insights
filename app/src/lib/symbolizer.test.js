@@ -1,5 +1,35 @@
 import { describe, it, expect } from 'vitest'
-import { buildPointSymbolDef } from './symbolizer.js'
+import { buildPointSymbolDef, isOsmWaterSalty, classifyToIsom } from './symbolizer.js'
+
+describe('isOsmWaterSalty — kun autoritative tagger, aldri navn', () => {
+  // Prinsipp: salinitet avgjøres KUN av tagger, ALDRI av navnet.
+  it('ferskvanns-innsjøer med «fjord»-navn er IKKE salt (Tyrifjorden m.fl.)', () => {
+    for (const name of ['Tyrifjorden', 'Randsfjorden', 'Steinsfjorden', 'Hestesund', 'Mjøsa']) {
+      expect(isOsmWaterSalty({ natural: 'water', name })).toBe(false)
+      expect(isOsmWaterSalty({ natural: 'water', 'name:no': name })).toBe(false)
+    }
+  })
+
+  it('water=fjord-taggen alene gjør IKKE vannet salt (valg B — ofte feil-tagget innlands)', () => {
+    expect(isOsmWaterSalty({ natural: 'water', water: 'fjord' })).toBe(false)
+    expect(isOsmWaterSalty({ natural: 'water', water: 'lake' })).toBe(false)
+  })
+
+  it('autoritative tagger gjør vannet salt', () => {
+    expect(isOsmWaterSalty({ natural: 'water', salt: 'yes' })).toBe(true)
+    expect(isOsmWaterSalty({ tidal: 'yes' })).toBe(true)
+    expect(isOsmWaterSalty({ place: 'sea' })).toBe(true)
+    expect(isOsmWaterSalty({ place: 'ocean' })).toBe(true)
+    expect(isOsmWaterSalty({ natural: 'bay' })).toBe(true)
+    expect(isOsmWaterSalty({ natural: 'strait' })).toBe(true)
+    expect(isOsmWaterSalty({ water: 'sea' })).toBe(true)
+  })
+
+  it('Tyrifjorden (natural=water + fjord-navn) klassifiseres som ferskvann 301, ikke sjø 303', () => {
+    const res = classifyToIsom({ type: 'way', tags: { natural: 'water', name: 'Tyrifjorden' } })
+    expect(res).toEqual({ code: '301', cat: 'water' })
+  })
+})
 
 describe('buildPointSymbolDef', () => {
   it('renders rect-elementer (ISOM 540 stake-port)', () => {
