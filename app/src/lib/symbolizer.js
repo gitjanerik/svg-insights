@@ -126,40 +126,28 @@ export function buildPointSymbolDef(symId, spec) {
  * Klassifiser en OSM/N50-feature til ISOM-kode (forenklet — full versjon
  * vil bruke LiDAR/CHM/NIBIO i fase 3 av v6.0).
  */
-// Norske navn-suffix som med rimelig sikkerhet indikerer saltvann.
-// Bevisst konservativ liste — "sjøen"/"sjø" alene er IKKE med (Mjøsa,
-// Storsjøen, Lutvann er innsjøer; Nordsjøen er sjø). "vannet"/"vatnet"
-// er omtrent alltid ferskvann og blir derfor ikke filtrert som salt.
-const SALT_NAME_SUFFIXES = [
-  'fjord', 'fjorden', 'fjorder',
-  'sundet', 'sund',
-  'havet', 'havn', 'havna',
-  'pollen',
-]
-function nameLooksSalty(name) {
-  if (!name) return false
-  const lower = name.toLowerCase().trim()
-  return SALT_NAME_SUFFIXES.some(suf =>
-    lower === suf || lower.endsWith(' ' + suf) || lower.endsWith('-' + suf) || lower.endsWith(suf)
-  )
-}
-
 /**
- * Heuristikk for om et OSM-vann-element representerer saltvann (sjø, fjord,
- * bay, strait osv) snarere enn ferskvann (innsjø, tjern, dam). Brukes både
- * til ISOM-koding (303 vs 301) og til granulært filter når vi velger mellom
- * autoritative kilder (N50 Havflate vs Innsjø).
+ * Avgjør om et OSM-vann-element representerer saltvann (sjø, fjord, bay,
+ * strait) snarere enn ferskvann (innsjø, tjern, dam). Brukes både til ISOM-
+ * koding (303 vs 301) og til granulært filter når vi velger mellom autoritative
+ * kilder (N50 Havflate vs Innsjø).
+ *
+ * PRINSIPP: KUN autoritative tagger avgjør salinitet — ALDRI navnet. Norske
+ * stedsnavn er upålitelige: Tyrifjorden/Randsfjorden/Steinsfjorden er ferskvanns-
+ * innsjøer med «fjord»-navn, og «Hestesund» er innlands. En tidligere navne-
+ * suffiks-heuristikk (`nameLooksSalty`) feilklassifiserte alle fjord-navngitte
+ * innsjøer som sjø og er nå fjernet. `water=fjord` er også droppet: en water-tagg
+ * på et innlands natural=water-polygon er upålitelig (ofte feil-tagget på
+ * ferskvanns-fjord-innsjøer), og ekte sjø-fjorder fanges uansett av kystlinje/
+ * Sjøkart/place=sea/salt=yes/DEM-sjø.
  */
 export function isOsmWaterSalty(tags) {
   const t = tags ?? {}
   if (t.salt === 'yes' || t.tidal === 'yes') return true
   if (t.place === 'sea' || t.place === 'ocean') return true
   if (t.natural === 'bay' || t.natural === 'strait') return true
-  const saltyWaterTypes = new Set(['sea', 'fjord', 'bay', 'strait', 'lagoon', 'cove'])
+  const saltyWaterTypes = new Set(['sea', 'bay', 'strait', 'lagoon', 'cove'])
   if (saltyWaterTypes.has(t.water)) return true
-  if (nameLooksSalty(t.name)) return true
-  if (nameLooksSalty(t['name:no'])) return true
-  if (nameLooksSalty(t['name:nb'])) return true
   return false
 }
 
