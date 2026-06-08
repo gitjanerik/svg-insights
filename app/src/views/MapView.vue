@@ -312,10 +312,14 @@ async function refreshAutoTileCount() {
 const ghostRects = ref([])           // [{ id, x, y, w, h }]
 let ghostRenderToken = 0             // invaliderer pågående render ved navigasjon
 const GHOST_LAYERS = ['vann', 'kontur']
-const GHOST_OPACITY = 0.5
+const GHOST_OPACITY = 0.9            // lett demping vs aktiv flis (men sammenhengende mosaikk)
 const GHOST_RENDER_RADIUS_TILES = 3  // hvor mange flis-bredder unna vi tegner
 const MAX_GHOSTS_RENDERED = 12       // tak på antall spøkelser i DOM samtidig
 const GHOST_TRIGGER_SUPPRESS_FRAC = 0.35  // overlapp-andel som undertrykker auto-kart
+// Cache for spøkelses-relieff (data-URL) nøklet på «tileId:blendMode» — DEM-en
+// per flis endrer seg ikke, så vi slipper å re-beregne hillshade ved scroll
+// frem/tilbake. Tømmes ikke (bundet av MAX_AUTO_TILES-fliser × 2 blend-modi).
+const ghostShadeCache = new Map()
 function formatBytes(n) {
   if (!n || n < 0) return '0'
   if (n >= 1024 * 1024) return (n / 1048576).toFixed(2).replace('.', ',') + ' MB'
@@ -708,6 +712,7 @@ watch(strokeStepIndex, () => {
 })
 watch(reliefStepIndex, () => {
   applyHillshade()
+  updateGhostReliefOpacity()   // hold mosaikk-spøkelsene i takt med relieff-nivået
   try { localStorage.setItem(RELIEF_LS_KEY, String(reliefStepIndex.value)) } catch { /* noop */ }
   flashKnobHint(reliefOpacity.value === 0 ? 'Relieff av' : `Relieff ${Math.round(reliefOpacity.value * 100)}%`)
 })
@@ -3232,7 +3237,9 @@ function setupHostSvg(sourceRoot) {
 // ALDRI plukker opp spøkelses-innhold. Stiling skjer via .iso-*-klasser som den
 // aktive SVG-ens <style> dekker (samme katalog), så vi dropper å klone <style>;
 // <defs> klones for evt. mønster-url-referanser.
-function buildGhostSvg(svgText, activeMeta) {
+function buildGhostSvg(stored, activeMeta) {
+  const svgText = stored?.svg
+  if (!svgText) return null
   let doc
   try { doc = new DOMParser().parseFromString(svgText, 'image/svg+xml') } catch { return null }
   const root = doc.documentElement
@@ -3268,6 +3275,26 @@ function buildGhostSvg(svgText, activeMeta) {
     c.removeAttribute('id')              // unngå duplikat-#bakgrunn
     gsvg.appendChild(c)
   }
+  // Relieff (steg 2b): samme hillshade-pipeline som aktiv flis, fra flisas egen
+  // lagrede DEM, så mosaikken får sammenhengende relieff i stedet for flate
+  // spøkelser. Bakt-alfa-blend (ingen mix-blend-mode), så billig nok per flis.
+  // Lagt UNDER vann (som aktiv) så vann dekker relieffet langs strandlinja.
+  // Relieff-bildet bygges når flisa har DEM (uavhengig av nåværende nivå), med
+  // opacity = reliefOpacity → relieff-knotten kan justere ghosts live uten
+  // re-render (updateGhostReliefOpacity).
+  const ghostShade = stored.dem ? ghostHillshadeUrl(stored) : null
+  if (ghostShade) {
+    const img = document.createElementNS(ns, 'image')
+    img.setAttribute('x', '0'); img.setAttribute('y', '0')
+    img.setAttribute('width', String(Wg)); img.setAttribute('height', String(Hg))
+    img.setAttribute('preserveAspectRatio', 'none')
+    img.setAttribute('pointer-events', 'none')
+    img.setAttribute('decoding', 'async')
+    img.setAttribute('href', ghostShade)
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', ghostShade)
+    img.setAttribute('opacity', String(reliefOpacity.value))
+    gsvg.appendChild(img)
+  }
   for (const key of GHOST_LAYERS) {
     for (const g of root.querySelectorAll(`[data-layer="${key}"]`)) {
       const c = g.cloneNode(true)
@@ -3276,6 +3303,30 @@ function buildGhostSvg(svgText, activeMeta) {
     }
   }
   return { el: gsvg, rect: { x: off.dx, y: off.dy, w: Wg, h: Hg } }
+}
+
+// Oppdater opacity på spøkelses-relieffet live når relieff-knotten endres
+// (billig — ingen re-render / DEM-relast). href/blend-modus uendret.
+function updateGhostReliefOpacity() {
+  const imgs = svgHostRef.value?.querySelector('svg #ghost-tiles')?.querySelectorAll('image')
+  if (!imgs) return
+  for (const im of imgs) im.setAttribute('opacity', String(reliefOpacity.value))
+}
+
+// Hillshade-data-URL for en spøkelses-flis, fra flisas lagrede (pakkede) DEM.
+// Cachet på id:blendMode. Returnerer null ved manglende DEM / feil (flat fallback).
+function ghostHillshadeUrl(stored) {
+  const mode = reliefBlendMode()
+  const key = `${stored.id ?? stored.navn}:${mode}`
+  const hit = ghostShadeCache.get(key)
+  if (hit !== undefined) return hit
+  let url = null
+  try {
+    const dem = unpackDem(stored.dem)
+    if (dem) url = hillshadeToDataURL(computeHillshade(dem), { mode })
+  } catch { url = null }
+  ghostShadeCache.set(key, url)
+  return url
 }
 
 // Tegn falmede nabo-fliser rundt den aktive. Asynkront + token-vaktet (avbrytes
@@ -3327,7 +3378,7 @@ async function renderGhostTiles() {
     try { stored = await loadStoredMap(t.id) } catch { continue }
     if (token !== ghostRenderToken || !componentAlive) { container.remove(); return }
     if (!stored?.svg) continue
-    const ghost = buildGhostSvg(stored.svg, m)
+    const ghost = buildGhostSvg(stored, m)
     if (!ghost) continue
     container.appendChild(ghost.el)
     rects.push({ id: t.id, isAuto: !!t.isAuto, ...ghost.rect })
@@ -3514,6 +3565,9 @@ function onThemeChange(newTheme, oldTheme) {
     visibleLayers.value = new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key))
   }
   applyLayerVisibility()
+  // Tema-bytte endrer relieff-blend-modus → spøkelses-relieffet må re-tones
+  // (ny data-URL pr modus). Sjelden operasjon; hillshade-compute er cachet.
+  void renderGhostTiles()
 }
 
 watch(currentTheme, onThemeChange)
