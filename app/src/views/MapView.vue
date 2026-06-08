@@ -19,7 +19,7 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
-import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES } from '../lib/tileCache.js'
+import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES, tileOffset, rectOverlapFraction } from '../lib/tileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -302,6 +302,20 @@ const autoTileCount = ref(0)
 async function refreshAutoTileCount() {
   try { autoTileCount.value = await countAutoTiles() } catch { autoTileCount.value = 0 }
 }
+
+// ── Mosaikk / spøkelses-fliser (steg 2) ─────────────────────────────────────
+// Tidligere besøkte fliser tegnes som falmede nabo-fliser (kun bakgrunn + vann
+// + høydekurver) i den aktive flisas meter-rom, så man kan «scrolle tilbake».
+// ghostRects holder hver spøkelses-flis' rektangel (i aktiv-flis-koordinater)
+// → brukes av clampPan (mosaikk-utstrekning) og checkAutoMapTrigger (ikke bygg
+// nytt over en flis vi allerede har). Relieff på spøkelser kommer i steg 2b.
+const ghostRects = ref([])           // [{ id, x, y, w, h }]
+let ghostRenderToken = 0             // invaliderer pågående render ved navigasjon
+const GHOST_LAYERS = ['vann', 'kontur']
+const GHOST_OPACITY = 0.5
+const GHOST_RENDER_RADIUS_TILES = 3  // hvor mange flis-bredder unna vi tegner
+const MAX_GHOSTS_RENDERED = 12       // tak på antall spøkelser i DOM samtidig
+const GHOST_TRIGGER_SUPPRESS_FRAC = 0.35  // overlapp-andel som undertrykker auto-kart
 function formatBytes(n) {
   if (!n || n < 0) return '0'
   if (n >= 1024 * 1024) return (n / 1048576).toFixed(2).replace('.', ',') + ' MB'
@@ -522,11 +536,12 @@ const pinchEnabled = computed(() =>
 const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } =
   usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true })
 
-// Pan-clamp — 3×3-rutenett av kart-utsnitt (midtcellen = kartet). Det synlige
-// sentrum kan flyttes inntil ÉN full kart-bredde/-høyde fra kart-senteret i hver
-// retning: nok rom til å pan-e mot auto-kart-trigger i alle himmelretninger ved
-// default zoom, men kartet kan aldri drifte helt bort. Vi klamper det synlige
-// sentrum (rotasjons-trygt) og inverterer til translate; gjelder alle zoom-nivå.
+// Pan-clamp — det synlige sentrum klampes til mosaikk-utstrekningen pluss en
+// halv flis i hver retning (frontier-slakk så auto-kart fortsatt kan trigges på
+// ukjent grunn). Uten spøkelses-fliser er utstrekningen den aktive flisa, og
+// grensene blir [-W/2, 1.5W] × [-H/2, 1.5H] — byte-identisk med den gamle
+// «±1 flis»-oppførselen. Med spøkelser strekker grensa seg over hele mosaikken.
+// Rotasjons-trygt: vi klamper det synlige sentrum og inverterer til translate.
 function clampPan() {
   const m = meta.value
   const el = wrapperRef.value
@@ -536,8 +551,17 @@ function clampPan() {
   if (!w || !h) return
   const c = visibleCenterSvg()
   if (!c) return
-  const cx = Math.min(Math.max(c.x, -m.widthM / 2), m.widthM * 1.5)
-  const cy = Math.min(Math.max(c.y, -m.heightM / 2), m.heightM * 1.5)
+  // Mosaikk-bbox i aktiv-flis-koordinater = aktiv flis ∪ alle spøkelses-rekter.
+  let minX = 0, minY = 0, maxX = m.widthM, maxY = m.heightM
+  for (const g of ghostRects.value) {
+    if (g.x < minX) minX = g.x
+    if (g.y < minY) minY = g.y
+    if (g.x + g.w > maxX) maxX = g.x + g.w
+    if (g.y + g.h > maxY) maxY = g.y + g.h
+  }
+  const marginX = m.widthM / 2, marginY = m.heightM / 2
+  const cx = Math.min(Math.max(c.x, minX - marginX), maxX + marginX)
+  const cy = Math.min(Math.max(c.y, minY - marginY), maxY + marginY)
   if (cx === c.x && cy === c.y) return   // innenfor → idempotent, ingen endring
   // Inverter visibleCenterSvg: finn translate som lander (cx,cy) på skjermsenter.
   const fit = Math.min(w / m.widthM, h / m.heightM)
@@ -729,8 +753,13 @@ watch(() => curveball.active.value, (active) => {
     nextTick(updateMapRect)
     // Reset() animerer scale/translate over 200ms — re-mål når transitionen er ferdig.
     setTimeout(updateMapRect, 250)
+    // Skjul mosaikk-spøkelsene under spill (rent spillbrett).
+    const gc = svgHostRef.value?.querySelector('svg #ghost-tiles')
+    if (gc) gc.style.display = 'none'
   } else {
     mapRect.value = null
+    const gc = svgHostRef.value?.querySelector('svg #ghost-tiles')
+    if (gc) gc.style.display = ''
   }
 })
 
@@ -2737,6 +2766,16 @@ function maybePrefetch(c) {
   startPrefetch(predicted)
 }
 
+// Ville et nytt auto-kart sentrert i `c` (samme størrelse som aktiv flis)
+// vesentlig duplisere en spøkelses-flis vi allerede har? I så fall skal vi IKKE
+// bygge nytt — man «scroller tilbake» til en flis vi har (steg 3 promoterer den
+// til full detalj). Returnerer true hvis overlapp med en spøkelse er stor nok.
+function centerOverExistingTile(c, m) {
+  if (!ghostRects.value.length) return false
+  const newRect = { x: c.x - m.widthM / 2, y: c.y - m.heightM / 2, w: m.widthM, h: m.heightM }
+  return ghostRects.value.some(g => rectOverlapFraction(newRect, g) > GHOST_TRIGGER_SUPPRESS_FRAC)
+}
+
 function checkAutoMapTrigger() {
   if (!autoMapEnabled.value || !autoMapArmed || buildingOnTheFly.value) return
   // Ikke trigg/prefetch mens et ferskt kart fortsatt fyller inn detaljer.
@@ -2745,6 +2784,8 @@ function checkAutoMapTrigger() {
   const m = meta.value
   const c = visibleCenterSvg()
   if (!m || !c) return
+  // Mosaikk: ikke bygg på nytt der vi allerede har en (spøkelses-)flis.
+  if (centerOverExistingTile(c, m)) return
   const dx = Math.abs(c.x - m.widthM / 2)
   const dy = Math.abs(c.y - m.heightM / 2)
   const past85 = dx >= AUTO_MAP_THRESHOLD * m.widthM / 2 ||
@@ -3012,6 +3053,9 @@ async function loadMap({ silent = false } = {}) {
     }
     autoMapArmed = true
     if (pendingMovedToast) showAutoMapToast('Nytt kart — flyttet sentrum hit')
+    // Mosaikk: tegn falmede nabo-fliser (steg 2) så man kan scrolle tilbake.
+    // Async + fail-safe; setupHostSvg har tømt evt. gamle spøkelser.
+    void renderGhostTiles()
     // Terreng-først: hvis dette kartet ble vist som terreng-skjelett, konsumér
     // finalize-promisen og re-render (stille) når full SVG med OSM er klar.
     if (!silent) consumeTerrainFinalize()
@@ -3098,6 +3142,10 @@ function setupHostSvg(sourceRoot) {
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+  // v10.x mosaikk: la innhold utenfor viewBox (spøkelses-nabofliser) vises i
+  // stedet for å klippes ved SVG-viewporten. Skjermkanten (kart-flate-wrapperen)
+  // klipper fortsatt, og UI-chrome ligger over (høyere z-index).
+  svg.style.overflow = 'visible'
   // Kart-innholdet (bakgrunn + vegetasjon + kurver + relieff osv.) klones
   // direkte inn i SVG-roten. Overlays (GPS/annotering/spor/måling/søk) appendes
   // ETTERPÅ så de ligger øverst. Relieffet (#hillshade-layer) settes inn foran
@@ -3117,6 +3165,119 @@ function setupHostSvg(sourceRoot) {
   // siden watcheren bare reagerer på endringer.
   if (scale.value >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
   if (isGesturing && isGesturing.value) svg.classList.add('is-zooming')
+}
+
+// Bygg ett spøkelse (nested <svg>) fra en lagret flis' SVG-tekst, plassert i den
+// aktive flisas meter-rom. Returnerer { el, rect } eller null (for langt unna /
+// ugyldig). Kun bakgrunn + vann + høydekurver klones — data-layer strippes på
+// klonene så den aktive flisas lag-queries (querySelectorAll('[data-layer=…]'))
+// ALDRI plukker opp spøkelses-innhold. Stiling skjer via .iso-*-klasser som den
+// aktive SVG-ens <style> dekker (samme katalog), så vi dropper å klone <style>;
+// <defs> klones for evt. mønster-url-referanser.
+function buildGhostSvg(svgText, activeMeta) {
+  let doc
+  try { doc = new DOMParser().parseFromString(svgText, 'image/svg+xml') } catch { return null }
+  const root = doc.documentElement
+  if (!root || root.nodeName === 'parsererror' || root.querySelector('parsererror')) return null
+  let gm
+  try { gm = JSON.parse(root.getAttribute('data-meta')) } catch { return null }
+  const ub = gm?.utmBbox
+  const Wg = gm?.widthM, Hg = gm?.heightM
+  if (!ub || !Wg || !Hg) return null
+  const off = tileOffset({ minE: activeMeta.minE, maxN: activeMeta.maxN }, { minE: ub.minE, maxN: ub.maxN })
+  if (!off) return null
+  // Radius-gate i meter: ikke tegn fliser fra et helt annet område.
+  if (Math.abs(off.dx) > GHOST_RENDER_RADIUS_TILES * activeMeta.widthM ||
+      Math.abs(off.dy) > GHOST_RENDER_RADIUS_TILES * activeMeta.heightM) return null
+
+  const ns = 'http://www.w3.org/2000/svg'
+  const gsvg = document.createElementNS(ns, 'svg')
+  gsvg.setAttribute('x', String(off.dx))
+  gsvg.setAttribute('y', String(off.dy))
+  gsvg.setAttribute('width', String(Wg))
+  gsvg.setAttribute('height', String(Hg))
+  gsvg.setAttribute('viewBox', `0 0 ${Wg} ${Hg}`)
+  gsvg.setAttribute('preserveAspectRatio', 'none')  // 1:1 meter, ingen letterbox
+  gsvg.setAttribute('class', 'isom-map')
+  gsvg.setAttribute('opacity', String(GHOST_OPACITY))
+  gsvg.setAttribute('pointer-events', 'none')
+
+  const defs = root.querySelector('defs')
+  if (defs) gsvg.appendChild(defs.cloneNode(true))
+  const bg = root.querySelector('#bakgrunn')
+  if (bg) {
+    const c = bg.cloneNode(true)
+    c.removeAttribute('id')              // unngå duplikat-#bakgrunn
+    gsvg.appendChild(c)
+  }
+  for (const key of GHOST_LAYERS) {
+    for (const g of root.querySelectorAll(`[data-layer="${key}"]`)) {
+      const c = g.cloneNode(true)
+      c.removeAttribute('data-layer')    // skjerm aktiv-flisas lag-queries
+      gsvg.appendChild(c)
+    }
+  }
+  return { el: gsvg, rect: { x: off.dx, y: off.dy, w: Wg, h: Hg } }
+}
+
+// Tegn falmede nabo-fliser rundt den aktive. Asynkront + token-vaktet (avbrytes
+// hvis brukeren navigerer videre). Fail-safe: feil → ingen spøkelser, aktiv flis
+// uberørt. Kjøres etter at den aktive flisa er satt opp (også ved silent reload,
+// siden setupHostSvg tømmer DOM-en).
+async function renderGhostTiles() {
+  const token = ++ghostRenderToken
+  ghostRects.value = []
+  const svg = svgHostRef.value?.querySelector('svg')
+  const m = meta.value
+  if (!svg || !m || m.minE == null) return
+  svg.querySelector('#ghost-tiles')?.remove()
+  if (curveball.active.value) return    // ingen spøkelser under spill
+
+  let tiles
+  try { tiles = await listStoredMaps() } catch { return }
+  if (token !== ghostRenderToken || !componentAlive) return
+
+  // Pre-filtrer på senter-avstand (grader) så vi ikke laster fjerne kart fra
+  // andre regioner. Grov terskel basert på flis-bredde i grader.
+  const activeCenter = m.bbox
+    ? { lat: (m.bbox.south + m.bbox.north) / 2, lon: (m.bbox.west + m.bbox.east) / 2 }
+    : null
+  const radiusDeg = activeCenter
+    ? (GHOST_RENDER_RADIUS_TILES + 1) * (m.widthM / 111320)
+    : Infinity
+  const cands = tiles
+    .filter(t => t.id !== mapId.value && t.center && (!activeCenter ||
+      Math.abs(t.center.lat - activeCenter.lat) < radiusDeg))
+    .map(t => ({ t, d: activeCenter ? Math.hypot(t.center.lat - activeCenter.lat, t.center.lon - activeCenter.lon) : 0 }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, MAX_GHOSTS_RENDERED)
+  if (!cands.length) return
+
+  const ns = 'http://www.w3.org/2000/svg'
+  const container = document.createElementNS(ns, 'g')
+  container.setAttribute('id', 'ghost-tiles')
+  container.setAttribute('pointer-events', 'none')
+  // Etter aktivt kart-innhold (men før #user-layer) → aktiv-flisas lag-queries
+  // treffer fortsatt aktivt innhold først (dokument-rekkefølge).
+  const userLayer = svg.querySelector('#user-layer')
+  if (userLayer) svg.insertBefore(container, userLayer)
+  else svg.appendChild(container)
+
+  const rects = []
+  for (const { t } of cands) {
+    let stored
+    try { stored = await loadStoredMap(t.id) } catch { continue }
+    if (token !== ghostRenderToken || !componentAlive) { container.remove(); return }
+    if (!stored?.svg) continue
+    const ghost = buildGhostSvg(stored.svg, m)
+    if (!ghost) continue
+    container.appendChild(ghost.el)
+    rects.push({ id: t.id, ...ghost.rect })
+  }
+  if (token !== ghostRenderToken) { container.remove(); return }
+  if (!rects.length) container.remove()
+  ghostRects.value = rects
+  clampPan()   // utvid pan-grensa til mosaikken
 }
 
 watch(

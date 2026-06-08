@@ -73,3 +73,35 @@ export async function countAutoTiles() {
   const all = await listMaps()
   return all.filter(m => m.isAuto).length
 }
+
+// ── Mosaikk-geometri (steg 2) ──────────────────────────────────────────────
+// Fliser deler UTM-rutenett (bbox snappes til res-grid i createMapFlow), så en
+// nabo-flis kan plasseres i den aktive flisas SVG-meter-rom via et rent offset.
+
+/**
+ * Offset (i meter = SVG-brukerenheter) for å plassere en nabo-flis i den aktive
+ * flisas koordinatrom. SVG-y vokser nedover mens UTM-nord vokser oppover, så
+ * y speiles om maxN.
+ *
+ * @param {{minE:number, maxN:number}} active  aktiv flis' UTM-hjørne
+ * @param {{minE:number, maxN:number}} ghost    nabo-flis' UTM-hjørne
+ * @returns {{dx:number, dy:number}|null}
+ */
+export function tileOffset(active, ghost) {
+  if (!active || !ghost) return null
+  if (active.minE == null || active.maxN == null || ghost.minE == null || ghost.maxN == null) return null
+  return { dx: ghost.minE - active.minE, dy: active.maxN - ghost.maxN }
+}
+
+/**
+ * Andel av rektangel `a` som overlappes av `b` (0..1). Brukes for å avgjøre om
+ * et nytt auto-kart (sentrert der man ser) ville duplisere en flis vi allerede
+ * har — da skal auto-kart-triggeren undertrykkes (man «scroller tilbake», ikke
+ * bygger nytt). Rektangler: {x, y, w, h}.
+ */
+export function rectOverlapFraction(a, b) {
+  if (!a || !b || !(a.w > 0) || !(a.h > 0)) return 0
+  const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+  const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
+  return (ix * iy) / (a.w * a.h)
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tileDistance, selectTilesToEvict } from './tileCache.js'
+import { tileDistance, selectTilesToEvict, tileOffset, rectOverlapFraction } from './tileCache.js'
 
 const at = (id, lat, lon) => ({ id, center: { lat, lon } })
 
@@ -80,5 +80,56 @@ describe('selectTilesToEvict', () => {
   it('returnerer [] for ugyldig input', () => {
     expect(selectTilesToEvict(null, center, 2)).toEqual([])
     expect(selectTilesToEvict(undefined, center, 2)).toEqual([])
+  })
+})
+
+describe('tileOffset', () => {
+  it('en nabo rett øst plasseres én bredde til høyre, samme y', () => {
+    // aktiv: minE=1000, maxN=5000, 500 m bred. nabo rett øst: minE=1500, maxN=5000.
+    const active = { minE: 1000, maxN: 5000 }
+    const ghost = { minE: 1500, maxN: 5000 }
+    expect(tileOffset(active, ghost)).toEqual({ dx: 500, dy: 0 })
+  })
+
+  it('en nabo rett nord plasseres over (negativ y) pga speilet akse', () => {
+    // nabo nord har høyere maxN → mindre y (oppover på skjermen)
+    const active = { minE: 1000, maxN: 5000 }
+    const ghost = { minE: 1000, maxN: 5500 }
+    expect(tileOffset(active, ghost)).toEqual({ dx: 0, dy: -500 })
+  })
+
+  it('en nabo sør får positiv y (nedover)', () => {
+    const active = { minE: 1000, maxN: 5000 }
+    const ghost = { minE: 1000, maxN: 4500 }
+    expect(tileOffset(active, ghost)).toEqual({ dx: 0, dy: 500 })
+  })
+
+  it('returnerer null ved manglende koordinater', () => {
+    expect(tileOffset(null, { minE: 1, maxN: 2 })).toBeNull()
+    expect(tileOffset({ minE: 1, maxN: 2 }, { minE: 1 })).toBeNull()
+  })
+})
+
+describe('rectOverlapFraction', () => {
+  const a = { x: 0, y: 0, w: 100, h: 100 }
+
+  it('er 0 for abuttende (ikke-overlappende) rektangler', () => {
+    expect(rectOverlapFraction(a, { x: 100, y: 0, w: 100, h: 100 })).toBe(0)
+  })
+
+  it('er 1 for identiske rektangler', () => {
+    expect(rectOverlapFraction(a, { x: 0, y: 0, w: 100, h: 100 })).toBe(1)
+  })
+
+  it('regner riktig delvis overlapp', () => {
+    // b dekker høyre halvdel av a → 50 %
+    expect(rectOverlapFraction(a, { x: 50, y: 0, w: 100, h: 100 })).toBeCloseTo(0.5)
+    // forskjøvet både x og y med 50 → 25 % overlapp
+    expect(rectOverlapFraction(a, { x: 50, y: 50, w: 100, h: 100 })).toBeCloseTo(0.25)
+  })
+
+  it('er 0 for ugyldig/0-areal input', () => {
+    expect(rectOverlapFraction(null, a)).toBe(0)
+    expect(rectOverlapFraction({ x: 0, y: 0, w: 0, h: 100 }, a)).toBe(0)
   })
 })
