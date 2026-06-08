@@ -1,7 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { buildSvg } from './mapBuilder.js'
+import { buildSvg, bboxFromCenter, viewportAspect } from './mapBuilder.js'
 import { syntheticDEM } from './dem.js'
 import { wgs84ToUtm32 } from './utm.js'
+
+describe('bboxFromCenter — aspekt strekker N/S, ikke E/V (v10.1.10)', () => {
+  const lat = 59.9, lon = 10.75, halfKm = 2
+
+  it('aspect=1 gir kvadratisk bbox (uendret oppførsel)', () => {
+    const b = bboxFromCenter(lat, lon, halfKm, 1)
+    const dLat = b.north - b.south
+    const groundHeightKm = dLat * 111
+    const groundWidthKm = (b.east - b.west) * 111 * Math.cos(lat * Math.PI / 180)
+    expect(groundWidthKm).toBeCloseTo(2 * halfKm, 3)
+    expect(groundHeightKm).toBeCloseTo(2 * halfKm, 3)
+  })
+
+  it('default-parameter = kvadrat (bakoverkompatibelt)', () => {
+    expect(bboxFromCenter(lat, lon, halfKm)).toEqual(bboxFromCenter(lat, lon, halfKm, 1))
+  })
+
+  it('aspect=2 dobler N/S-utstrekning men holder E/V uendret', () => {
+    const sq = bboxFromCenter(lat, lon, halfKm, 1)
+    const tall = bboxFromCenter(lat, lon, halfKm, 2)
+    // E/V (bredde) uendret
+    expect(tall.east - tall.west).toBeCloseTo(sq.east - sq.west, 9)
+    // N/S (høyde) doblet
+    expect(tall.north - tall.south).toBeCloseTo(2 * (sq.north - sq.south), 9)
+    // fortsatt sentrert på samme punkt
+    expect((tall.north + tall.south) / 2).toBeCloseTo(lat, 9)
+  })
+})
+
+describe('viewportAspect — klampet [1, 2.2] (v10.1.10)', () => {
+  it('uten window (test/worker) faller til 1 (kvadrat)', () => {
+    expect(viewportAspect()).toBe(1)
+  })
+})
 
 // Syntetisk DEM (Gaussisk topp i midten) som dekker kartets UTM-utstrekning, så
 // buildContours gir høydekurver innenfor kart-rammen. demProject er identitet,

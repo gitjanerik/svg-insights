@@ -15,7 +15,7 @@
 //   })
 //   router.push({ name: 'kart-vis', params: { id } })
 
-import { fetchOverpass, bboxFromCenter } from './mapBuilder.js'
+import { fetchOverpass, bboxFromCenter, viewportAspect } from './mapBuilder.js'
 import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
@@ -106,7 +106,10 @@ function withHardTimeout(promise, ms, fallback, label) {
  *
  * @param {object} opts
  * @param {{lat:number, lon:number, name?:string}} opts.center
- * @param {number} opts.halfKm  — halv-bredde i km (kart blir 2*halfKm × 2*halfKm)
+ * @param {number} opts.halfKm  — halv-bredde i km (E/V). Kart blir 2*halfKm bredt,
+ *   og 2*halfKm*aspect høyt (N/S strekkes til skjerm-formatet, se aspect)
+ * @param {number} [opts.aspect]  — høyde/bredde-forhold (default: viewportAspect()
+ *   så kartet fyller portrett-skjermen). aspect=1 ⇒ kvadrat (gammel oppførsel)
  * @param {number} opts.equidistanceM  — kontur-intervall
  * @param {string} opts.navn  — kartets navn
  * @param {(msg:string)=>void} [opts.onProgress]  — status-callback for UI
@@ -114,6 +117,7 @@ function withHardTimeout(promise, ms, fallback, label) {
 export async function buildMapFromCenter({
   center,
   halfKm,
+  aspect,
   equidistanceM,
   navn,
   onProgress = () => {},
@@ -134,9 +138,14 @@ export async function buildMapFromCenter({
       e => { marks[label] = Math.round(_now() - s); throw e },
     )
   }
-  let bbox = bboxFromCenter(center.lat, center.lon, halfKm)
-  const sizeKm = (halfKm * 2).toFixed(1)
-  onProgress(`Henter kartdata for ${sizeKm} × ${sizeKm} km …`)
+  // Aspekt (høyde/bredde): følger skjerm-formatet så kartet fyller MapView i
+  // fullskjerm uten cream-letterbox over/under. Kalleren kan overstyre (f.eks.
+  // picker-previewen sender samme aspekt den viser). aspect=1 ⇒ kvadrat.
+  const mapAspect = aspect ?? viewportAspect()
+  let bbox = bboxFromCenter(center.lat, center.lon, halfKm, mapAspect)
+  const widthKm = (halfKm * 2).toFixed(1)
+  const heightKm = (halfKm * 2 * mapAspect).toFixed(1)
+  onProgress(`Henter kartdata for ${widthKm} × ${heightKm} km …`)
 
   // Beregn UTM-bbox tidlig så fetchDEM kan startes parallelt med
   // Overpass/N50 i stedet for å vente på dem (v8.10.18: sparer 3-10 s).

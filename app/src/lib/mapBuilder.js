@@ -197,15 +197,34 @@ export async function fetchOverpass(bbox, { signal, query } = {}) {
   throw new Error(`Overpass feilet etter ${OVERPASS_ATTEMPTS} forsøk: ${lastErr?.message ?? lastErr}`)
 }
 
-export function bboxFromCenter(lat, lon, halfKm) {
-  const dLat = halfKm / 111
-  const dLon = halfKm / (111 * Math.cos(lat * Math.PI / 180))
+// v10.1.10: kartet skal FYLLE portrett-skjermen med ekte terreng i stedet for å
+// vises kvadratisk med cream-letterbox over/under (kvadratisk kart tilpasset
+// bredden på en høy skjerm → tomme bånd nord/sør). Derfor er bbox-en ikke lenger
+// låst kvadratisk: `aspect` (= høyde/bredde) strekker N/S-utstrekningen så meter-
+// rommet matcher skjerm-formatet. E/V (bredden = brukerens valgte størrelse) er
+// uendret; vi legger KUN til terreng nord og sør. aspect=1 ⇒ kvadrat (uendret).
+export function bboxFromCenter(lat, lon, halfKm, aspect = 1) {
+  const dLon = halfKm / (111 * Math.cos(lat * Math.PI / 180))   // halv-bredde E/V (uendret)
+  const dLat = (halfKm * aspect) / 111                          // halv-høyde N/S (strukket)
   return {
     south: lat - dLat,
     north: lat + dLat,
     west: lon - dLon,
     east: lon + dLon,
   }
+}
+
+// Skjerm-formatet (høyde/bredde) som kartets N/S-strekk skal følge, så et nytt
+// kart fyller MapView i fullskjerm uten letterbox. Klampet [1, 2.2]: aldri
+// smalere enn kvadrat (vi utvider bare nord/sør, aldri øst/vest — selv på
+// liggende nettbrett faller vi tilbake til kvadrat), og aldri mer enn 2.2 så
+// data-uttrekket (DEM/Overpass) ikke eksploderer på ekstreme skjermer. Uten
+// `window` (worker/SSR/test) → 1 (kvadrat, byte-identisk med før).
+export function viewportAspect() {
+  if (typeof window === 'undefined') return 1
+  const w = window.innerWidth, h = window.innerHeight
+  if (!w || !h) return 1
+  return Math.max(1, Math.min(2.2, h / w))
 }
 
 // v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
