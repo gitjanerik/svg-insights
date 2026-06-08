@@ -12,7 +12,7 @@ import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
-import { isomCatalog, buildPointSymbolDef } from '../lib/symbolizer.js'
+import { isomCatalog, buildPointSymbolDef, buildIsomDefs, buildIsomCss } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
@@ -319,6 +319,9 @@ const GHOST_TRIGGER_SUPPRESS_FRAC = 0.35  // overlapp-andel som undertrykker aut
 // per flis endrer seg ikke, så vi slipper å re-beregne hillshade ved scroll
 // frem/tilbake. Tømmes ikke (bundet av MAX_AUTO_TILES-fliser × 2 blend-modi).
 const ghostShadeCache = new Map()
+// Pattern-id-mappingen (navn → iso-pat-id) for å bygge supplerende ISOM-CSS for
+// spøkelses-fliser, se ensureGhostIsomStyles. Katalogen er statisk → regn én gang.
+const { patternIds: ghostPatternIds } = buildIsomDefs(isomCatalog)
 function formatBytes(n) {
   if (!n || n < 0) return '0'
   if (n >= 1024 * 1024) return (n / 1048576).toFixed(2).replace('.', ',') + ' MB'
@@ -502,7 +505,10 @@ function applyLayerVisibility() {
   const root = svgHostRef.value?.querySelector('svg')
   if (!root) return
   for (const lay of LAYERS) {
-    const groups = root.querySelectorAll(`[data-layer="${lay.key}"]`)
+    // Også spøkelses-nabofliser (data-ghost-layer): de beholder lag-attributtet
+    // under et eget navn så lag-toggling når dem, men `[data-layer] path`-perf-
+    // regelen (non-scaling-stroke / re-tessellering) IKKE matcher dem.
+    const groups = root.querySelectorAll(`[data-layer="${lay.key}"], [data-ghost-layer="${lay.key}"]`)
     for (const g of groups) {
       g.style.display = visibleLayers.value.has(lay.key) ? '' : 'none'
     }
@@ -3236,10 +3242,12 @@ function setupHostSvg(sourceRoot) {
 // som ekte kart, ikke gråtone-relieff. Detaljer:
 //  • `data-iso` BEHOLDES (fyll/strek-farger er CSS-nøklet på den) — den aktive
 //    flisas <style> (samme katalog, scoped .isom-map) farger spøkelses-innholdet.
-//  • `data-layer`/`data-name`/`data-detail` STRIPPES: hindrer at aktiv-flisas
-//    descendant-queries (lag-toggling, navn-LOD, søkeindeks) rører spøkelser, OG
-//    gir gratis perf — uten `[data-layer] path`-regelen blir strekene skalerende
-//    (GPU-komposittert, ingen re-tessellering per frame under zoom).
+//  • `data-layer` RENAVNES til `data-ghost-layer`: lag-toggling (applyLayerVisibility)
+//    når fortsatt spøkelsene (f.eks. «Tett bebyggelse» av/på), men `data-name`/
+//    `data-detail`-queries (navn-LOD, søkeindeks) og perf-regelen `[data-layer] path`
+//    (non-scaling-stroke) matcher dem IKKE — strekene blir skalerende og GPU-
+//    komposittert (ingen re-tessellering per frame under zoom).
+//  • `data-name`/`data-detail` STRIPPES helt.
 //  • Tekst (navn, kontur-/dybde-tall) FJERNES: unngår LOD-/upright-prosessering
 //    av spøkelses-labels og tett tekst-rot ved utzoom. Spøkelser er kontekst.
 function buildGhostSvg(stored, activeMeta) {
@@ -3299,9 +3307,13 @@ function buildGhostSvg(stored, activeMeta) {
     }
   }
 
-  // Strip queryede attributter (behold data-iso for fyll-/strek-farger).
-  for (const el of gsvg.querySelectorAll('[data-layer],[data-name],[data-detail]')) {
+  // Renavn data-layer → data-ghost-layer (toggling når dem, perf-regelen ikke),
+  // strip resten (behold data-iso for fyll-/strek-farger).
+  for (const el of gsvg.querySelectorAll('[data-layer]')) {
+    el.setAttribute('data-ghost-layer', el.getAttribute('data-layer'))
     el.removeAttribute('data-layer')
+  }
+  for (const el of gsvg.querySelectorAll('[data-name],[data-detail]')) {
     el.removeAttribute('data-name')
     el.removeAttribute('data-detail')
   }
@@ -3394,7 +3406,41 @@ async function renderGhostTiles() {
   if (token !== ghostRenderToken) { container.remove(); return }
   if (!rects.length) container.remove()
   ghostRects.value = rects
+  if (rects.length) {
+    // Sørg for at spøkelses-koder som den aktive flisa ikke selv bruker (og
+    // derfor mangler i dens lazy CSS) får fyll-/strek-regler — ellers rendres de
+    // svart. Deretter respekterer vi lag-toggling (f.eks. bymasse av) på dem.
+    ensureGhostIsomStyles(svg, container)
+    applyLayerVisibility()
+  }
   clampPan()   // utvid pan-grensa til mosaikken
+}
+
+// Den aktive flisas <style> er «lazy» (v9.1.10) — den emitterer kun ISOM-regler
+// for koder flisa SELV bruker. Spøkelses-nabofliser bruker aktiv-flisas <style>
+// til farging, så en kode et spøkelse har men aktiv-flisa mangler (f.eks. 522
+// tett bebyggelse i en by-nabo til en sjø-flis) får ingen fyll-regel → den
+// rendres med SVG-default svart fyll. Vi skanner spøkelses-kodene, finner de som
+// aktiv-stilen ikke dekker, og injiserer ett supplerende <style> med regler for
+// dem (fra GJELDENDE katalog → konsistente farger). Pattern-referansene
+// (url(#iso-pat-…)) resolves mot spøkelsenes egne <defs> som klones med flisa.
+function ensureGhostIsomStyles(svg, container) {
+  const codes = new Set()
+  for (const el of container.querySelectorAll('[data-iso]')) codes.add(el.getAttribute('data-iso'))
+  if (!codes.size) return
+  const activeCss = svg.querySelector('style')?.textContent ?? ''
+  const missing = new Set([...codes].filter(c => !activeCss.includes(`[data-iso="${c}"]`)))
+  if (!missing.size) return
+  const css = buildIsomCss(isomCatalog, ghostPatternIds, { usedCodes: missing, widthM: meta.value?.widthM })
+  let suppl = svg.querySelector('#ghost-isom-style')
+  if (!suppl) {
+    suppl = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+    suppl.setAttribute('id', 'ghost-isom-style')
+    // Først i SVG-en → den aktive (autoritative) <style> kommer etter og vinner
+    // på evt. delte boilerplate-regler; supplerende per-kode-regler står alene.
+    svg.insertBefore(suppl, svg.firstChild)
+  }
+  suppl.textContent = css
 }
 
 watch(
