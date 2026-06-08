@@ -311,8 +311,7 @@ async function refreshAutoTileCount() {
 // nytt over en flis vi allerede har). Relieff på spøkelser kommer i steg 2b.
 const ghostRects = ref([])           // [{ id, x, y, w, h }]
 let ghostRenderToken = 0             // invaliderer pågående render ved navigasjon
-const GHOST_LAYERS = ['vann', 'kontur']
-const GHOST_OPACITY = 0.9            // lett demping vs aktiv flis (men sammenhengende mosaikk)
+const GHOST_OPACITY = 1.0            // opake spøkelser: ingen dobbel-mørkning/bånd i overlapp-soner
 const GHOST_RENDER_RADIUS_TILES = 3  // hvor mange flis-bredder unna vi tegner
 const MAX_GHOSTS_RENDERED = 12       // tak på antall spøkelser i DOM samtidig
 const GHOST_TRIGGER_SUPPRESS_FRAC = 0.35  // overlapp-andel som undertrykker auto-kart
@@ -3232,11 +3231,17 @@ function setupHostSvg(sourceRoot) {
 
 // Bygg ett spøkelse (nested <svg>) fra en lagret flis' SVG-tekst, plassert i den
 // aktive flisas meter-rom. Returnerer { el, rect } eller null (for langt unna /
-// ugyldig). Kun bakgrunn + vann + høydekurver klones — data-layer strippes på
-// klonene så den aktive flisas lag-queries (querySelectorAll('[data-layer=…]'))
-// ALDRI plukker opp spøkelses-innhold. Stiling skjer via .iso-*-klasser som den
-// aktive SVG-ens <style> dekker (samme katalog), så vi dropper å klone <style>;
-// <defs> klones for evt. mønster-url-referanser.
+// ugyldig). Option A: FULL detalj — hele den lagrede flisa klones (vegetasjon,
+// veier, bygninger, vann, kurver) + relieff fra flisas DEM, så naboene ser ut
+// som ekte kart, ikke gråtone-relieff. Detaljer:
+//  • `data-iso` BEHOLDES (fyll/strek-farger er CSS-nøklet på den) — den aktive
+//    flisas <style> (samme katalog, scoped .isom-map) farger spøkelses-innholdet.
+//  • `data-layer`/`data-name`/`data-detail` STRIPPES: hindrer at aktiv-flisas
+//    descendant-queries (lag-toggling, navn-LOD, søkeindeks) rører spøkelser, OG
+//    gir gratis perf — uten `[data-layer] path`-regelen blir strekene skalerende
+//    (GPU-komposittert, ingen re-tessellering per frame under zoom).
+//  • Tekst (navn, kontur-/dybde-tall) FJERNES: unngår LOD-/upright-prosessering
+//    av spøkelses-labels og tett tekst-rot ved utzoom. Spøkelser er kontekst.
 function buildGhostSvg(stored, activeMeta) {
   const svgText = stored?.svg
   if (!svgText) return null
@@ -3255,8 +3260,12 @@ function buildGhostSvg(stored, activeMeta) {
   if (Math.abs(off.dx) > GHOST_RENDER_RADIUS_TILES * activeMeta.widthM ||
       Math.abs(off.dy) > GHOST_RENDER_RADIUS_TILES * activeMeta.heightM) return null
 
-  const ns = 'http://www.w3.org/2000/svg'
-  const gsvg = document.createElementNS(ns, 'svg')
+  // Dyp-klon hele flisa (selvstendig: egne defs + <use>/mønster-referanser).
+  const gsvg = root.cloneNode(true)
+  gsvg.removeAttribute('data-meta')
+  gsvg.querySelector('style')?.remove()          // bruk aktiv flis' <style>
+  for (const navn of gsvg.querySelectorAll('[data-layer="navn"]')) navn.remove()
+  for (const txt of gsvg.querySelectorAll('text')) txt.remove()
   gsvg.setAttribute('x', String(off.dx))
   gsvg.setAttribute('y', String(off.dy))
   gsvg.setAttribute('width', String(Wg))
@@ -3266,49 +3275,45 @@ function buildGhostSvg(stored, activeMeta) {
   gsvg.setAttribute('class', 'isom-map')
   gsvg.setAttribute('opacity', String(GHOST_OPACITY))
   gsvg.setAttribute('pointer-events', 'none')
+  gsvg.style.contain = 'paint'                    // perf-isolasjon (mister [data-layer]-containment)
 
-  const defs = root.querySelector('defs')
-  if (defs) gsvg.appendChild(defs.cloneNode(true))
-  const bg = root.querySelector('#bakgrunn')
-  if (bg) {
-    const c = bg.cloneNode(true)
-    c.removeAttribute('id')              // unngå duplikat-#bakgrunn
-    gsvg.appendChild(c)
-  }
-  // Relieff (steg 2b): samme hillshade-pipeline som aktiv flis, fra flisas egen
-  // lagrede DEM, så mosaikken får sammenhengende relieff i stedet for flate
-  // spøkelser. Bakt-alfa-blend (ingen mix-blend-mode), så billig nok per flis.
-  // Lagt UNDER vann (som aktiv) så vann dekker relieffet langs strandlinja.
-  // Relieff-bildet bygges når flisa har DEM (uavhengig av nåværende nivå), med
-  // opacity = reliefOpacity → relieff-knotten kan justere ghosts live uten
-  // re-render (updateGhostReliefOpacity).
-  const ghostShade = stored.dem ? ghostHillshadeUrl(stored) : null
-  if (ghostShade) {
-    const img = document.createElementNS(ns, 'image')
-    img.setAttribute('x', '0'); img.setAttribute('y', '0')
-    img.setAttribute('width', String(Wg)); img.setAttribute('height', String(Hg))
-    img.setAttribute('preserveAspectRatio', 'none')
-    img.setAttribute('pointer-events', 'none')
-    img.setAttribute('decoding', 'async')
-    img.setAttribute('href', ghostShade)
-    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', ghostShade)
-    img.setAttribute('opacity', String(reliefOpacity.value))
-    gsvg.appendChild(img)
-  }
-  for (const key of GHOST_LAYERS) {
-    for (const g of root.querySelectorAll(`[data-layer="${key}"]`)) {
-      const c = g.cloneNode(true)
-      c.removeAttribute('data-layer')    // skjerm aktiv-flisas lag-queries
-      gsvg.appendChild(c)
+  // Relieff fra flisas egen DEM, UNDER vann-laget (finn vann FØR data-layer
+  // strippes) — samme hillshade-pipeline + blend-modus som aktiv flis.
+  if (stored.dem) {
+    const url = ghostHillshadeUrl(stored)
+    if (url) {
+      const ns = 'http://www.w3.org/2000/svg'
+      const img = document.createElementNS(ns, 'image')
+      img.setAttribute('x', '0'); img.setAttribute('y', '0')
+      img.setAttribute('width', String(Wg)); img.setAttribute('height', String(Hg))
+      img.setAttribute('preserveAspectRatio', 'none')
+      img.setAttribute('pointer-events', 'none')
+      img.setAttribute('decoding', 'async')
+      img.setAttribute('href', url)
+      img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
+      img.setAttribute('opacity', String(reliefOpacity.value))
+      img.setAttribute('data-ghost-relief', '1')
+      const vann = gsvg.querySelector('[data-layer="vann"]')
+      if (vann) gsvg.insertBefore(img, vann)
+      else gsvg.appendChild(img)
     }
   }
+
+  // Strip queryede attributter (behold data-iso for fyll-/strek-farger).
+  for (const el of gsvg.querySelectorAll('[data-layer],[data-name],[data-detail]')) {
+    el.removeAttribute('data-layer')
+    el.removeAttribute('data-name')
+    el.removeAttribute('data-detail')
+  }
+  gsvg.querySelector('#bakgrunn')?.removeAttribute('id')
+
   return { el: gsvg, rect: { x: off.dx, y: off.dy, w: Wg, h: Hg } }
 }
 
 // Oppdater opacity på spøkelses-relieffet live når relieff-knotten endres
 // (billig — ingen re-render / DEM-relast). href/blend-modus uendret.
 function updateGhostReliefOpacity() {
-  const imgs = svgHostRef.value?.querySelector('svg #ghost-tiles')?.querySelectorAll('image')
+  const imgs = svgHostRef.value?.querySelector('svg #ghost-tiles')?.querySelectorAll('image[data-ghost-relief]')
   if (!imgs) return
   for (const im of imgs) im.setAttribute('opacity', String(reliefOpacity.value))
 }
@@ -3366,11 +3371,14 @@ async function renderGhostTiles() {
   const container = document.createElementNS(ns, 'g')
   container.setAttribute('id', 'ghost-tiles')
   container.setAttribute('pointer-events', 'none')
-  // Etter aktivt kart-innhold (men før #user-layer) → aktiv-flisas lag-queries
-  // treffer fortsatt aktivt innhold først (dokument-rekkefølge).
-  const userLayer = svg.querySelector('#user-layer')
-  if (userLayer) svg.insertBefore(container, userLayer)
-  else svg.appendChild(container)
+  // HELT BAK den aktive flisa (foran #bakgrunn): den aktive flisas opake
+  // bakgrunn + innhold dekker spøkelsene fullstendig i sitt eget rektangel, så
+  // spøkelser vises KUN utenfor aktiv flis — ingen gjennomslag i åpen mark og
+  // ingen søm i overlapp-sonen (aktiv flis er autoritativ der). Trygt mht queries
+  // siden data-layer er strippet fra spøkelser.
+  const bg = svg.querySelector('#bakgrunn')
+  if (bg) svg.insertBefore(container, bg)
+  else svg.insertBefore(container, svg.firstChild)
 
   const rects = []
   for (const { t } of cands) {
