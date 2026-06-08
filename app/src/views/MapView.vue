@@ -1468,6 +1468,36 @@ function onContextMenuEvent(e) {
   openContextMenuAt(e.clientX, e.clientY)
 }
 
+// Ligger SVG-punktet (meter-rom) inni et ferskvanns-polygon (ISOM 301 innsjø /
+// 302 tjern)? Brukes til å være ærlig om høyde: NHM_DTM er en bar-bakke-modell
+// uten retur over vann, så vannflater leses som nodata-fylt-til-0 («0 moh»).
+// Over innsjøer er den 0-en meningsløs (Tyrifjorden ligger på ~63 m, ikke 0),
+// så vi viser «ikke tilgjengelig» istedenfor en falsk høyde. Saltvann (303)
+// utelates med vilje — der ER havnivå ≈ 0 riktig.
+function pointOnFreshwater(svgX, svgY) {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || typeof svg.createSVGPoint !== 'function') return false
+  const paths = svg.querySelectorAll('g[data-iso="301"] path, g[data-iso="302"] path')
+  if (!paths.length) return false
+  const rootPt = svg.createSVGPoint()
+  rootPt.x = svgX
+  rootPt.y = svgY
+  for (const path of paths) {
+    if (typeof path.isPointInFill !== 'function') continue
+    // getCTM(): path-lokalt → SVG-rot-bruker-rom (= viewBox-meter, der svgX/svgY
+    // bor). Invers mapper punktet ned til path-ens eget rom før fill-testen, så
+    // evt. transform på mellomliggende grupper håndteres. fill-rule evenodd
+    // respekteres → øy-hull i innsjøen teller korrekt som land.
+    const ctm = typeof path.getCTM === 'function' ? path.getCTM() : null
+    let local = rootPt
+    if (ctm) {
+      try { local = rootPt.matrixTransform(ctm.inverse()) } catch { continue }
+    }
+    if (path.isPointInFill(local)) return true
+  }
+  return false
+}
+
 // Info-utregning når menyen er åpen. Cachet via computed slik at en åpen meny
 // ikke re-evaluerer på hver pinch (kun når contextMenuPoint, searchIndex eller
 // DEM endrer seg).
@@ -1502,9 +1532,13 @@ const contextMenuInfo = computed(() => {
     fromUser = { distM, deg, compass: bearingToCompass(deg) }
   }
 
+  // Over ferskvann er DEM-en nodata-fylt-til-0 → ikke vis falsk høyde.
+  const onFreshwater = inside ? pointOnFreshwater(p.svgX, p.svgY) : false
+
   return {
     lat, lon, inside,
-    elevationM: Number.isFinite(ele) ? ele : null,
+    elevationM: (Number.isFinite(ele) && !onFreshwater) ? ele : null,
+    elevationUnavailableWater: onFreshwater,
     place,
     fromUser,
   }
@@ -5017,6 +5051,13 @@ onUnmounted(() => {
               <span class="text-white/45 w-20 shrink-0">Høyde</span>
               <span class="text-white font-medium tabular-nums">
                 {{ Math.round(contextMenuInfo.elevationM) }} moh
+              </span>
+            </div>
+            <div v-else-if="contextMenuInfo.elevationUnavailableWater"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Høyde</span>
+              <span class="text-white/70">
+                Høyde over havet i denne innsjøen er ikke tilgjengelig
               </span>
             </div>
             <div v-if="contextMenuInfo.place"
