@@ -602,15 +602,19 @@ watch(isGesturing, (g) => {
   // <image> med mix-blend-mode må re-komponeres mot bakgrunnen hver frame
   // (blend-mode hindrer billig GPU-lag-isolasjon), så det er dyrt på mobil-
   // GPU under pan/zoom/rotasjon. Det dukker tilbake straks gesten slipper.
-  const hs = svg.querySelector('#hillshade-layer')
-  if (hs) hs.style.visibility = g ? 'hidden' : ''
+  // v10.1.17 — gjelder ALLE synlige fliser: både aktiv-flisas #hillshade-layer
+  // OG mosaikk-spøkelsenes relieff (image[data-ghost-relief]), ellers «henger»
+  // nabofliser igjen med relieff mens aktiv-flisa flater ut → visuell ulikhet.
+  const reliefImgs = svg.querySelectorAll('#hillshade-layer, #ghost-tiles image[data-ghost-relief]')
+  for (const hs of reliefImgs) hs.style.visibility = g ? 'hidden' : ''
   // v9.1.15 — Perf: stiplet strek (sti 505-508, gjerde/kraft, jernbane osv)
   // er den desidert dyreste å rastere på mobil-GPU under gest — på et 10 km-
   // kart blir den merge-de sti-pathen tusenvis av dash-segmenter som
   // reberegnes hver frame. Gjør ALLE kart-strekker solide mens gesten varer
   // (solide er allerede uendret), og bytt tilbake til CSS-dash etterpå.
-  // Inline style overstyrer den katalog-genererte data-iso-CSS-en.
-  const paths = svg.querySelectorAll('[data-layer] path')
+  // Inline style overstyrer den katalog-genererte data-iso-CSS-en. Gjelder
+  // også spøkelses-flisene (data-ghost-layer) av samme grunn.
+  const paths = svg.querySelectorAll('[data-layer] path, [data-ghost-layer] path')
   for (const p of paths) p.style.strokeDasharray = g ? 'none' : ''
 })
 
@@ -3301,6 +3305,9 @@ function buildGhostSvg(stored, activeMeta) {
       img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
       img.setAttribute('opacity', String(reliefOpacity.value))
       img.setAttribute('data-ghost-relief', '1')
+      // Bygges spøkelset midt i en gest (sjelden), start relieffet skjult som
+      // aktiv-flisa — isGesturing-watcheren slår det på igjen når gesten slipper.
+      if (isGesturing && isGesturing.value) img.style.visibility = 'hidden'
       const vann = gsvg.querySelector('[data-layer="vann"]')
       if (vann) gsvg.insertBefore(img, vann)
       else gsvg.appendChild(img)
