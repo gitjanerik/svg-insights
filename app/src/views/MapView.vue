@@ -19,6 +19,7 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
+import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES } from '../lib/tileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -113,7 +114,9 @@ const cbShareInfo = computed(() => {
 })
 
 async function loadUserMapsForTournament() {
-  try { userMaps.value = await listStoredMaps() }
+  // Auto-fliser holdes utenfor turnerings-rotasjonen — de er en flyktig mosaikk-
+  // cache, ikke kart brukeren har valgt å spille på.
+  try { userMaps.value = (await listStoredMaps()).filter(m => !m.isAuto) }
   catch { userMaps.value = [] }
 }
 
@@ -294,6 +297,11 @@ let componentAlive = true
 // Datamengde lastet for kartet (SVG + lagret DEM). Vises i drawer-ens Debug og
 // i long-press-info-arket så man ser hvor «tungt» kartet er.
 const mapDataSize = ref({ svgBytes: 0, demBytes: 0 })
+// Antall auto-fliser i tile-cachen (debug-readout). Oppdateres ved last + prune.
+const autoTileCount = ref(0)
+async function refreshAutoTileCount() {
+  try { autoTileCount.value = await countAutoTiles() } catch { autoTileCount.value = 0 }
+}
 function formatBytes(n) {
   if (!n || n < 0) return '0'
   if (n >= 1024 * 1024) return (n / 1048576).toFixed(2).replace('.', ',') + ' MB'
@@ -2665,6 +2673,7 @@ function autoMapBuildOpts(centerSvg) {
     halfKm: +(m.widthM / 2000).toFixed(3),
     equidistanceM: m.equidistance ?? 20,
     navn: `Tur ${stamp}`,
+    isAuto: true,   // markér som auto-flis → inngår i tileCache (kappes, ikke brukerkart)
   }
 }
 
@@ -2791,11 +2800,22 @@ async function triggerAutoMap(centerSvg) {
       id = r.id
     }
     writeAutoMapPrefs(id)
+    // Tile-cache (step 1): tidligere slettet vi forrige auto-kart her for å
+    // unngå opphopning — men da kunne man ikke «scrolle tilbake». Nå BEHOLDER
+    // vi flisene og lar pruneAutoTiles kappe de fjerneste (fra det nye senteret)
+    // når cachen vokser forbi MAX_AUTO_TILES. Den nye flisa beskyttes. Brukerens
+    // opprinnelige kart (ikke-auto) telles aldri og slettes aldri. Fire-and-
+    // forget — opprydding skal ikke forsinke navigasjonen til det nye kartet.
+    try {
+      const ll = svgToWgs84(centerSvg.x, centerSvg.y, m)
+      pruneAutoTiles({ center: { lat: ll.lat, lon: ll.lon }, protectIds: [id, prevId] })
+        .then(() => { void refreshAutoTileCount() })
+        .catch(() => {})
+    } catch { /* svgToWgs84 feilet → hopp over pruning denne gangen */ }
     // «replace, behold opprinnelig»: fra et auto-kart erstatter vi history-
-    // oppføringen og sletter forrige auto-kart fra lagring; fra brukerens
-    // opprinnelige kart pusher vi (tilbake-knappen tar deg til opprinnelig).
+    // oppføringen (tiles navigeres romlig i mosaikken, ikke via tilbake-knappen);
+    // fra brukerens opprinnelige kart pusher vi (tilbake → opprinnelig).
     if (wasAuto) {
-      try { await deleteStoredMap(prevId) } catch { /* noop */ }
       router.replace({ name: 'kart-vis', params: { id } })
     } else {
       router.push({ name: 'kart-vis', params: { id } })
@@ -2882,6 +2902,7 @@ async function loadMap({ silent = false } = {}) {
     // Datamengde for dette kartet (vises i drawer-ens Debug + long-press-arket).
     // SVG-en er hoved-payloaden; DEM-en lagres separat (pakket Float32-buffer).
     mapDataSize.value = { svgBytes: new Blob([text]).size, demBytes }
+    void refreshAutoTileCount()
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'image/svg+xml')
     const root = doc.documentElement
@@ -3037,6 +3058,7 @@ async function retryMapDetails() {
       equidistanceM: meta.value.equidistance ?? 20,
       navn: mapTitle.value,
       terrainFirst: true,
+      isAuto: currentMapIsAuto.value,
       onProgress: (msg) => { buildingProgress.value = msg },
     })
     try {
@@ -4509,6 +4531,11 @@ onUnmounted(() => {
             <div class="flex items-baseline justify-between gap-2 mb-2">
               <span class="text-white/55 text-[11px] uppercase tracking-wide">Debug</span>
               <span v-if="mapDataLabel" class="text-white/45 text-[11px] tabular-nums">{{ mapDataLabel }}</span>
+            </div>
+            <!-- Tile-cache: antall auto-fliser lagret (scroll-tilbake-mosaikk). -->
+            <div class="flex items-baseline justify-between gap-2 mb-2 px-1">
+              <span class="text-white/45 text-[11px]">Auto-fliser i cache</span>
+              <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ MAX_AUTO_TILES }}</span>
             </div>
             <button @click="diagnose = !diagnose"
                     class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
