@@ -500,12 +500,16 @@ function applyLayerVisibility() {
   scheduleNameLOD()
 }
 
-// Pinch/pan/rotate fryses i CurveBall-modus (kart skal stå i ro under spill).
-// Pan/zoom er av under spillet OG mens et ferskt kart fyller inn stier og
-// detaljer (terreng-først) eller mens første last pågår — brukeren skal ikke
-// kunne interagere med (eller trigge nytt auto-kart fra) et halvbygd kart.
+// Pinch/pan/rotate fryses kun i CurveBall-modus (kartet skal stå i ro under
+// spill) og mens aller første last pågår (ingen kart-DOM ennå). Mens et ferskt
+// kart fyller inn stier og detaljer (terreng-først) ELLER mens et nytt kart
+// bygges on-the-fly, lar vi brukeren pan/zoome/rotere fritt — auto-kart-trigger
+// er separat gated (checkAutoMapTrigger returnerer på fillingInDetails/
+// buildingOnTheFly), så gestene lager aldri et konkurrerende auto-kart. Når
+// detaljene lander, byttes SVG-en inn via en silent re-render som beholder
+// gjeldende transform, så stier/detaljer dukker opp sømløst i brukerens utsnitt.
 const pinchEnabled = computed(() =>
-  !curveball.active.value && !fillingInDetails.value && !loading.value)
+  !curveball.active.value && !loading.value)
 // panAtRest: la kartet dras også ved nullstilt zoom (se clampPan for canvas-rom).
 const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } =
   usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true })
@@ -1858,8 +1862,10 @@ function pxToUserUnits(cssPx) {
 
 // Klikk på kart i annoteringsmodus → plasser symbol
 function onMapClick(e) {
-  // Ingen kart-interaksjon mens et ferskt kart fyller inn detaljer.
-  if (fillingInDetails.value) return
+  // Annotering deferres mens et ferskt kart fyller inn detaljer eller bygges
+  // on-the-fly — pan/zoom/rotasjon er fri, men symbol-plassering venter til
+  // kartet er ferdig (unngår plassering på et halvbygd / snart-erstattet kart).
+  if (fillingInDetails.value || buildingOnTheFly.value) return
   // Måleverktøy har prioritet over annotering siden brukeren eksplisitt
   // har slått det på (annoteringsmodus blir tvunget av i startMeasure).
   const svg = svgHostRef.value?.querySelector('svg')
@@ -4956,24 +4962,18 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Full-screen loader for on-the-fly kart-bygging. z-[60] over alt
-         annet inkludert drawer + søk så ingen tilfeldige klikk lekker. -->
-    <Transition name="overlay-fade">
-      <div v-if="buildingOnTheFly"
-           class="absolute inset-0 z-[60] bg-zinc-950/92 backdrop-blur-sm
-                  flex flex-col items-center justify-center text-white">
-        <div class="w-16 h-16 mb-4">
-          <svg viewBox="0 0 50 50" class="w-full h-full animate-spin"
-               fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
-            <circle cx="25" cy="25" r="20" stroke-opacity="0.18"/>
-            <path d="M25 5 a20 20 0 0 1 20 20"/>
-          </svg>
-        </div>
-        <div class="text-[16px] font-semibold mb-1">Oppretter kart</div>
-        <div class="text-[12px] text-white/65 px-6 text-center max-w-[280px]
-                    min-h-[18px] leading-snug">
-          {{ buildingProgress }}
-        </div>
+    <!-- On-the-fly kart-bygging: IKKE-blokkerende chip (pointer-events-none).
+         Tidligere var dette en full-screen blocker som frøs alt; nå forblir det
+         gjeldende kartet pan/zoom/rotér-bart mens det nye bygges. Auto-kart-
+         trigger er gated på buildingOnTheFly, så gestene lager ikke et
+         konkurrerende bygg. z-[60] holder chippen over drawer/søk visuelt. -->
+    <Transition name="chip-fade">
+      <div v-if="buildingOnTheFly && !curveball.active.value && !searchOpen"
+           class="absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded-2xl
+                  bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
+                  flex items-center gap-2 pointer-events-none border border-white/10 max-w-[85%]">
+        <span class="w-3.5 h-3.5 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+        <span class="truncate">{{ buildingProgress || 'Oppretter kart …' }}</span>
       </div>
     </Transition>
   </div>
