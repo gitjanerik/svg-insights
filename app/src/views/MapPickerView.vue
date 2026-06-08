@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
-import { bboxFromCenter } from '../lib/mapBuilder.js'
+import { bboxFromCenter, viewportAspect } from '../lib/mapBuilder.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
@@ -22,7 +22,11 @@ const showInstallInfo = ref(false)    // info-tooltip toggle
 const DEFAULT_CENTER = { lat: 59.9139, lon: 10.7522, name: 'Oslo' }
 
 const center = ref({ ...DEFAULT_CENTER })
-const halfKm = ref(2.0)  // halv-bredde av bbox i km. Kart blir 2*halfKm × 2*halfKm
+const halfKm = ref(2.0)  // halv-bredde av bbox i km (E/V). Kart blir 2*halfKm bredt
+// Skjerm-format (høyde/bredde): kartet strekkes N/S til dette så det fyller
+// fullskjerm uten letterbox (v10.1.10). Settes på mount + resize. buildMapFrom-
+// Center utleder samme aspekt selv, så previewen viser det faktiske utsnittet.
+const mapAspect = ref(viewportAspect())
 const equidistanceM = ref(20)  // høydekurve-intervall, 5/10/20/25/50 m
 const customName = ref('')
 
@@ -214,9 +218,11 @@ function selectResult(r) {
   results.value = []
 }
 
-const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value))
+const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value, mapAspect.value))
 
 const sizeKm = computed(() => (halfKm.value * 2).toFixed(1))
+// Høyde i km (N/S-strekk) for label-en — bredde × høyde, ikke kvadrat lenger.
+const sizeHeightKm = computed(() => (halfKm.value * 2 * mapAspect.value).toFixed(1))
 
 // 'idle' | 'fetching' | 'building' | 'saving' | 'error'
 const buildState = ref('idle')
@@ -273,11 +279,15 @@ async function generateMap() {
 // ── Preview med ekte Kartverket-tiler som bakgrunn ─────────────────────────
 const previewRef = ref(null)
 const previewSize = ref({ w: 0, h: 0 })
-const previewZoom = computed(() => zoomForKm(halfKm.value * 2 + 2))
+// Zoom-en må romme den STØRSTE aksen (høyden ved portrett-aspekt) i den
+// kvadratiske previewen, ellers stikker bbox-rammen utenfor toppen/bunnen.
+const previewZoom = computed(() => zoomForKm(halfKm.value * 2 * mapAspect.value + 2))
 
 function measurePreview() {
   const r = previewRef.value?.getBoundingClientRect()
   if (r) previewSize.value = { w: r.width, h: r.height }
+  // Oppdater skjerm-aspektet så previewen følger rotasjon/vindusendring.
+  mapAspect.value = viewportAspect()
 }
 
 const tiles = computed(() => {
@@ -292,10 +302,11 @@ const tiles = computed(() => {
 const bboxOverlayPx = computed(() => {
   if (!previewSize.value.w) return { w: 0, h: 0 }
   const mPerPx = metersPerPixel(center.value.lat, previewZoom.value)
-  const sizeM = halfKm.value * 2 * 1000
+  const widthM = halfKm.value * 2 * 1000
+  const heightM = widthM * mapAspect.value   // N/S-strekk = portrett-rammen
   return {
-    w: sizeM / mPerPx,
-    h: sizeM / mPerPx,
+    w: widthM / mPerPx,
+    h: heightM / mPerPx,
   }
 })
 
@@ -697,9 +708,10 @@ onMounted(() => {
              :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
              draggable="false" />
 
-        <!-- Kvadratisk netto-frame fast i sentrum. Brukeren drar kartet UNDER
-             rammen for å velge utsnitt. Pinch / scroll endrer størrelse. Ingen
-             dark-mask rundt — bruttokartet skal være synlig på 100% opacity. -->
+        <!-- Netto-frame fast i sentrum (portrett — følger skjerm-formatet så
+             kartet fyller fullskjerm). Brukeren drar kartet UNDER rammen for å
+             velge utsnitt. Pinch / scroll endrer størrelse. Ingen dark-mask
+             rundt — bruttokartet skal være synlig på 100% opacity. -->
         <div class="absolute pointer-events-none border-2 border-white rounded-sm
                     shadow-[0_0_0_2px_rgba(0,0,0,0.5)]"
              :style="{
@@ -718,7 +730,7 @@ onMounted(() => {
 
         <div class="absolute top-3 left-3 px-2.5 py-1 rounded-md bg-zinc-900 text-[11px]
                     text-white border border-white/30 font-medium shadow-lg z-10">
-          {{ sizeKm }} × {{ sizeKm }} km
+          {{ sizeKm }} × {{ sizeHeightKm }} km
         </div>
         <div class="absolute bottom-2 right-2 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/70 text-[8px]
                     text-white/75 border border-white/15 leading-tight pointer-events-none">
