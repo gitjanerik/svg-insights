@@ -18,7 +18,9 @@ const builtinMeta = ref({})
 async function refresh() {
   loading.value = true
   try {
-    maps.value = await listMaps()
+    // Auto-fliser (isAuto) er en intern scroll-tilbake-cache, ikke kart brukeren
+    // bevisst har laget — de skal ikke fylle opp «lagrede kart»-lista.
+    maps.value = (await listMaps()).filter(m => !m.isAuto)
   } finally {
     loading.value = false
   }

@@ -123,6 +123,7 @@ export async function buildMapFromCenter({
   onProgress = () => {},
   signal,
   terrainFirst = false,
+  isAuto = false,
 }) {
   const throwIfAborted = () => {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
@@ -283,6 +284,9 @@ export async function buildMapFromCenter({
     highestPoint: isRealDem(dem) ? findHighestPoint(dem) : null,
     opprettet: Date.now(),
     partial: !!partial,
+    // Auto-genererte fliser markeres så tileCache kan kappe dem (de fjerneste
+    // først) uten å røre brukerens egne kart fra picker/hjem-FAB.
+    isAuto: !!isAuto,
   })
 
   // Full bygging: vent på alle kilder, slå sammen, bygg full SVG (worker).
