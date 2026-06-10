@@ -64,9 +64,10 @@ async function build() {
     if (!prev || SEVERITY[cat] > SEVERITY[prev]) lookup[k] = cat
   }
 
-  // 1) Paginér name-usages. Forsøk rask vei (inline nubKey + threatStatuses),
-  //    og samle SPECIES-usages som mangler noe for berikelse i steg 2.
-  const needEnrich = []
+  // 1) Paginér name-usages. Listings-svaret har `nubKey` (backbone-nøkkel) men
+  //    verken `rank` eller `threatStatuses` — så vi samler hver AKSEPTERT usage
+  //    med en nubKey og henter threat status pr art i steg 2.
+  const candidates = []
   let offset = 0
   let total = 0
   let firstLogged = false
@@ -79,32 +80,36 @@ async function build() {
     }
     for (const u of results) {
       total++
-      if (u.rank !== 'SPECIES' && u.rank !== 'SUBSPECIES') continue
-      const cat = categoryOf(u.threatStatuses)
-      if (cat && Number.isFinite(Number(u.nubKey))) setCat(u.nubKey, cat)
-      else needEnrich.push({ key: u.key, nubKey: u.nubKey })
+      const nubKey = Number(u.nubKey)
+      if (!Number.isFinite(nubKey)) continue
+      if (u.taxonomicStatus && u.taxonomicStatus !== 'ACCEPTED') continue
+      candidates.push({ key: u.key, nubKey })
     }
     if (page?.endOfRecords) break
     offset += 1000
   }
-  console.log(`Name-usages: ${total}. Inline-treff: ${Object.keys(lookup).length}. Trenger berikelse: ${needEnrich.length}.`)
+  console.log(`Name-usages: ${total}. Aksepterte med nubKey: ${candidates.length}.`)
 
-  // 2) Berik pr art via detalj-endepunktet — gir både nubKey og threatStatuses.
-  if (needEnrich.length) {
-    let enrichLogged = false
-    await mapLimit(needEnrich, CONCURRENCY, async ({ key }) => {
-      const u = await getJson(`${GBIF}/species/${key}`)
-      if (!enrichLogged) { console.log('Eksempel-detalj (felt):', Object.keys(u).join(', ')); enrichLogged = true }
-      let cat = categoryOf(u.threatStatuses)
-      let nubKey = u.nubKey
-      // Siste utvei: threat status fra distributions-extensionen.
-      if (!cat) {
-        const dist = await getJson(`${GBIF}/species/${key}/distributions`).catch(() => null)
-        cat = categoryOf((dist?.results ?? []).map((d) => d.threatStatus))
-      }
-      if (cat && Number.isFinite(Number(nubKey))) setCat(nubKey, cat)
-    })
-  }
+  // 2) Berik threat status pr art via detalj-endepunktet (threatStatuses),
+  //    med distributions-extensionen som siste utvei. Logg formen på første art.
+  let diag = false
+  await mapLimit(candidates, CONCURRENCY, async ({ key, nubKey }) => {
+    const u = await getJson(`${GBIF}/species/${key}`)
+    let cat = categoryOf(u.threatStatuses)
+    let distFirst = null
+    if (!cat) {
+      const dist = await getJson(`${GBIF}/species/${key}/distributions`).catch(() => null)
+      distFirst = (dist?.results ?? [])[0] ?? null
+      cat = categoryOf((dist?.results ?? []).map((d) => d.threatStatus))
+    }
+    if (!diag) {
+      diag = true
+      console.log('Detalj-felt:', Object.keys(u).join(', '))
+      console.log('threatStatuses:', JSON.stringify(u.threatStatuses ?? null))
+      console.log('distributions[0]:', JSON.stringify(distFirst).slice(0, 300))
+    }
+    if (cat) setCat(nubKey, cat)
+  })
 
   const byCat = { CR: 0, EN: 0, VU: 0, NT: 0 }
   for (const c of Object.values(lookup)) byCat[c]++
