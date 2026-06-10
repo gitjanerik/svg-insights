@@ -228,6 +228,25 @@ export function viewportAspect() {
   return Math.max(1, Math.min(2.2, h / w))
 }
 
+// A-format (A4/A3/A2 …) stående høyde/bredde-forhold = √2 ≈ 1,4142. Et kart med
+// denne aspekten passer rett inn på et stående A-ark ved print/PDF/SVG-eksport
+// uten margin-tilpasning. Brukes av auto-kart (v10.1.x) og «tilpass til
+// utskrift»-valget i picker-en.
+export const PRINT_ASPECT = Math.SQRT2
+
+// Auto-kart-dimensjoner i A-format. I stedet for å strekke N/S til hele skjerm-
+// formatet (~1:2.2 på portrett-mobil → smalt, lite slingringsrom øst/vest)
+// BEHOLDER vi den skjerm-utledede HØYDEN og utvider bredden til A-format. Det
+// gir «litt ekstra venstre/høyre» (man kan dra utover uten å zoome først) og et
+// print-klart utsnitt. Returnerer { halfKm, aspect } klart til buildMapFromCenter.
+//   høyde = 2·halfKm·viewportAspect()   (uendret fra før)
+//   bredde = høyde / √2                 (A-format)
+export function autoMapAFormat(halfKm) {
+  const heightKm = 2 * halfKm * viewportAspect()
+  const widthKm = heightKm / PRINT_ASPECT
+  return { halfKm: widthKm / 2, aspect: PRINT_ASPECT }
+}
+
 // v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
 // sub-piksel, men sparer ~1 tegn pr koordinat (mindre SVG, raskere parse).
 function fmt(n) { return Number(n.toFixed(1)) }

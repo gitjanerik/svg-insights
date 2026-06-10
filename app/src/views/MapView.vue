@@ -544,8 +544,21 @@ function applyLayerVisibility() {
 const pinchEnabled = computed(() =>
   !curveball.active.value && !loading.value)
 // panAtRest: la kartet dras også ved nullstilt zoom (se clampPan for canvas-rom).
-const { scale, translateX, translateY, rotation, reset, panTo, animating, isGesturing } =
+const { scale, translateX, translateY, rotation, reset, panTo, rotateTo, animating, isGesturing } =
   usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true })
+
+// Desktop uten touch: vis en rotasjons-slider (touch bruker to-finger-rotasjon).
+// Detekteres på mount (touch-evner endrer seg ikke i en sesjon i praksis).
+const hasTouch = ref(false)
+// Slider-verdi i [-180, 180]. rotation.value akkumulerer fritt; vi normaliserer
+// for visning og setter absolutt vinkel via rotateTo ved drag.
+const rotationSliderDeg = computed(() => {
+  const r = ((rotation.value % 360) + 540) % 360 - 180
+  return Math.round(r)
+})
+function onRotateSlider(e) {
+  rotateTo(Number(e.target.value))
+}
 
 // Pan-clamp — det synlige sentrum klampes til mosaikk-utstrekningen pluss en
 // halv flis i hver retning (frontier-slakk så auto-kart fortsatt kan trigges på
@@ -2821,6 +2834,11 @@ function autoMapBuildOpts(centerSvg) {
   return {
     center: { lat, lon, name: 'Auto-kart' },
     halfKm: +(m.widthM / 2000).toFixed(3),
+    // Arv den aktive flisas aspekt (høyde/bredde) så nabo-flisa får NØYAKTIG
+    // samme dimensjoner → mosaikken flukter sømløst uansett om flisa er A-format
+    // (v10.1.23) eller eldre skjerm-format. Uten dette ville en ny flis falt
+    // tilbake til viewportAspect() og fått feil høyde → glipper i mosaikken.
+    aspect: +(m.heightM / m.widthM).toFixed(5),
     equidistanceM: m.equidistance ?? 20,
     navn: `Tur ${stamp}`,
     isAuto: true,   // markér som auto-flis → inngår i tileCache (kappes, ikke brukerkart)
@@ -3051,7 +3069,15 @@ function labelForAnnotation(a) {
 // Print- / eksport-handlers.
 function mapSvgMarkupForExport() {
   const svg = svgHostRef.value?.querySelector('svg')
-  return svg ? svg.outerHTML : ''
+  if (!svg) return ''
+  // Eksport/print = det OPPRINNELIGE kartet (én A-format-flis), ikke mosaikken.
+  // Klon og fjern spøkelses-naboflisene (#ghost-tiles) før serialisering så
+  // utskriften blir det print-tilpassede utsnittet brukeren genererte — med
+  // viewBox/print-mm fra den aktive flisa alene. (user-layer m.fl. strippes av
+  // printExport.stripRuntimeOverlays.)
+  const clone = svg.cloneNode(true)
+  clone.querySelector('#ghost-tiles')?.remove()
+  return clone.outerHTML
 }
 function onExportSvg() {
   const m = mapSvgMarkupForExport()
@@ -3277,6 +3303,9 @@ async function retryMapDetails() {
     const { id } = await buildMapFromCenter({
       center: { lat, lon, name: mapTitle.value },
       halfKm: +(meta.value.widthM / 2000).toFixed(3),
+      // Reproduser SAMME utsnitt — behold flisas aspekt (ellers falt høyden
+      // tilbake til viewportAspect() og «prøv på nytt» ga et annet utsnitt).
+      aspect: +(meta.value.heightM / meta.value.widthM).toFixed(5),
       equidistanceM: meta.value.equidistance ?? 20,
       navn: mapTitle.value,
       terrainFirst: true,
@@ -3374,6 +3403,12 @@ function buildGhostSvg(stored, activeMeta) {
   if (!ub || !Wg || !Hg) return null
   const off = tileOffset({ minE: activeMeta.minE, maxN: activeMeta.maxN }, { minE: ub.minE, maxN: ub.maxN })
   if (!off) return null
+  // Rund offset til hele meter. Flisene er snappet til res-rutenettet (10/20/5 m)
+  // så ekte nabo-offset ER et heltall; float-restfeil (~1e-9 m) i UTM-subtraksjon
+  // ga ellers en sub-piksel-glipe ved flis-kanten. Rundingen lar kanter flukte
+  // eksakt → ingen søm-strek mellom fliser (sammen med cream-viewport-basen).
+  off.dx = Math.round(off.dx)
+  off.dy = Math.round(off.dy)
   // Radius-gate i meter: ikke tegn fliser fra et helt annet område.
   if (Math.abs(off.dx) > GHOST_RENDER_RADIUS_TILES * activeMeta.widthM ||
       Math.abs(off.dy) > GHOST_RENDER_RADIUS_TILES * activeMeta.heightM) return null
@@ -3688,13 +3723,15 @@ function applyTheme() {
     root.style.removeProperty(`--label-${name}-halo`)
   }
   const t = themes[currentTheme.value]
-  // Viewport-bakgrunn: mal temaets bakgrunnsfarge på den FASTE (utransformerte)
+  // Viewport-bakgrunn: mal kartets bakgrunnsfarge på den FASTE (utransformerte)
   // viewporten, så hele kartflaten har riktig base-farge — også letterbox-kanter
-  // og periferi-fliser som ennå ikke er lastet (ingen kremgul «glipe» rundt et
-  // mørkt kart). Lys-tema → tom (faller til side-bakgrunnen som før). (v10.1.3)
+  // og periferi-fliser som ennå ikke er lastet. v10.1.23: GJELDER NÅ OGSÅ
+  // lys-tema (kremgul #fefae0). Tidligere falt lys-tema til side-bakgrunnen
+  // (hvit), og sub-piksel-sømmer mellom mosaikk-fliser slapp den hvite siden
+  // gjennom → hvite «hakk» i kartet. Med kart-cream som base blir enhver søm
+  // usynlig i åpen mark (samme farge), og kun en hårtynn cream-strek i vann/skog.
   if (wrapperRef.value) {
-    wrapperRef.value.style.backgroundColor =
-      (t && currentTheme.value !== 'light' && t.background) ? t.background : ''
+    wrapperRef.value.style.backgroundColor = (t && t.background) ? t.background : ''
   }
   if (!t) return
   // Fyll-opacity (subtilt mørke + art-modes) — settes selv for light=1 så
@@ -3943,6 +3980,8 @@ function unlockBodyScroll() {
 }
 
 onMounted(() => {
+  hasTouch.value = typeof window !== 'undefined' &&
+    ('ontouchstart' in window || (navigator.maxTouchPoints ?? 0) > 0)
   lockBodyScroll()
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -4097,14 +4136,14 @@ onUnmounted(() => {
 
     <!-- Kompass-rose (skjult i CurveBall-modus) -->
     <div v-if="!curveball.active.value"
-         class="absolute top-20 right-3 z-20 pointer-events-auto select-none">
+         class="absolute top-20 right-3 z-20 pointer-events-auto select-none flex flex-col items-end">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
               class="w-14 h-14 rounded-full bg-zinc-950
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
         <svg viewBox="-50 -50 100 100" class="w-12 h-12"
              :style="{ transform: compass.isActive && compass.headingDeg !== null
                                   ? `rotate(${-compass.headingDeg}deg)`
-                                  : 'none',
+                                  : `rotate(${-rotation}deg)`,
                        transition: 'transform 0.2s linear' }">
           <circle r="44" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
           <polygon points="0,-38 6,0 0,8 -6,0" fill="#ef4444"/>
@@ -4117,6 +4156,22 @@ onUnmounted(() => {
            class="text-[10px] text-red-300 mt-1 max-w-[80px] text-right leading-tight
                   px-1.5 py-0.5 rounded bg-zinc-950">
         {{ compass.error }}
+      </div>
+      <!-- Rotasjons-slider (kun desktop/uten touch — touch roterer med to fingre).
+           −180…180°, midtstilt = 0 (kart-nord opp). Roterer rundt viewport-senter.
+           Dobbeltklikk = nullstill til nord. -->
+      <div v-if="!hasTouch"
+           class="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-950
+                  shadow-lg select-none">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-white/55 shrink-0" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/>
+        </svg>
+        <input type="range" min="-180" max="180" step="1" :value="rotationSliderDeg"
+               @input="onRotateSlider" @dblclick="rotateTo(0)"
+               aria-label="Roter kartet (dobbeltklikk = nullstill til nord)"
+               class="w-24 accent-sky-400 cursor-pointer" />
+        <span class="text-[10px] text-white/55 tabular-nums w-9 text-right">{{ rotationSliderDeg }}°</span>
       </div>
     </div>
 

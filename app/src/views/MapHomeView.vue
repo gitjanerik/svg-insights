@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
+import { autoMapAFormat } from '../lib/mapBuilder.js'
 import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
@@ -152,7 +153,9 @@ async function onCreateHere() {
         lon: coords.coords.longitude,
         name: 'Min posisjon',
       },
-      halfKm: 2,         // 4 × 4 km
+      // A-format stående utsnitt (~5,7 × 8 km) — print-klart + litt slingrings-
+      // rom øst/vest så man kan dra utover uten å zoome først.
+      ...autoMapAFormat(2),
       equidistanceM: 20, // 20 m ekvidistanse
       navn: `Tur ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
@@ -197,7 +200,7 @@ async function onSelectSearchResult(r) {
   try {
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
-      halfKm: 2,         // 4 × 4 km
+      ...autoMapAFormat(2),   // A-format stående utsnitt (~5,7 × 8 km), print-klart
       equidistanceM: 20, // 20 m ekvidistanse
       navn: r.shortName,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
