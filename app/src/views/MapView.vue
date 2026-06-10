@@ -23,7 +23,8 @@ import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES, tileOffset, rectOverlap
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
-import { fetchLakeElevation } from '../lib/nveLakeFetcher.js'
+import { fetchLakeData } from '../lib/nveLakeFetcher.js'
+import { fetchLiveWater } from '../lib/nveHydApi.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace,
@@ -1560,27 +1561,59 @@ const contextMenuInfo = computed(() => {
   }
 })
 
-// Long-press over (sannsynlig) vann → hent ekte innsjøhøyde fra NVE
-// Innsjødatabase. NHM_DTM leser ~0 m over vann; NVE har den autoritative
-// vannflate-høyden (Mjøsa ~123 m, Tyrifjorden ~63 m). Token forkaster trege
-// svar. Feiler NVE → 'error'/'empty' → UI viser «ikke tilgjengelig» (aldri 0).
+// HydAPI-nøkkel (sanntids vannstand/temp). DVALE uten nøkkel: registreres
+// gratis på hydapi.nve.no og settes som VITE_NVE_HYDAPI_KEY ved bygg.
+const HYDAPI_KEY = import.meta.env.VITE_NVE_HYDAPI_KEY ?? ''
+
+// Long-press over (sannsynlig) vann → hent innsjø-data fra NVE Innsjødatabase
+// (vannflate-høyde + dyp/areal/volum/magasin når oppmålt). NHM_DTM leser ~0 m
+// over vann; NVE har de autoritative verdiene (Mjøsa ~123 m / 453 m dyp,
+// Tyrifjorden ~63 m). Token forkaster trege svar. Feiler NVE → 'error'/'empty'
+// → UI viser «ikke tilgjengelig» (aldri 0). Når innsjøen er funnet og en
+// HydAPI-nøkkel er satt, hentes sanntids vannstand/temperatur i et andre,
+// ikke-blokkerende steg (fyller lakeQuery.live når den lander).
 watch(contextMenuPoint, async (p) => {
   const token = ++lakeQueryToken
   lakeQuery.value = null
   if (!p || !contextMenuOpen.value) return
   const info = contextMenuInfo.value
   if (!info?.inside || !info.isWater) return   // bare slå opp når punktet er vann
-  lakeQuery.value = { status: 'loading' }
+  lakeQuery.value = { status: 'loading', live: null }
   try {
-    const lake = await fetchLakeElevation(info.lat, info.lon)
+    const lake = await fetchLakeData(info.lat, info.lon)
     if (token !== lakeQueryToken) return        // brukeren har flyttet punktet
-    lakeQuery.value = lake && Number.isFinite(lake.hoyde)
-      ? { status: 'done', hoyde: lake.hoyde, navn: lake.navn }
-      : { status: 'empty' }
+    if (!lake || !Number.isFinite(lake.hoyde)) {
+      lakeQuery.value = { status: 'empty', live: null }
+      return
+    }
+    lakeQuery.value = { status: 'done', lake, live: null }
+    // Sanntids vannstand/temp — kun når en HydAPI-nøkkel finnes (ellers dvale).
+    if (HYDAPI_KEY) {
+      fetchLiveWater(info.lat, info.lon, { apiKey: HYDAPI_KEY, lakeHoyde: lake.hoyde })
+        .then((live) => {
+          if (token === lakeQueryToken && live && lakeQuery.value?.status === 'done') {
+            lakeQuery.value = { ...lakeQuery.value, live }
+          }
+        })
+        .catch(() => { /* graceful: ingen sanntidslinje */ })
+    }
   } catch {
-    if (token === lakeQueryToken) lakeQuery.value = { status: 'error' }
+    if (token === lakeQueryToken) lakeQuery.value = { status: 'error', live: null }
   }
 })
+
+// Areal: under 1 km² vises med to desimaler (små vann), ellers heltall/én desimal.
+function formatAreaKm2(km2) {
+  if (km2 < 1) return km2.toFixed(2)
+  if (km2 < 100) return km2.toFixed(1)
+  return String(Math.round(km2))
+}
+// Volum kommer i mill. m³ fra NVE. Store volum vises i km³ (1 km³ = 1000 mill m³).
+function formatVolum(millM3) {
+  if (millM3 >= 1000) return `${(millM3 / 1000).toFixed(1)} km³`
+  if (millM3 >= 1) return `${Math.round(millM3)} mill. m³`
+  return `${(millM3 * 1e6).toFixed(0)} m³`
+}
 
 const contextActionState = ref('idle')   // 'idle' | 'copied' | 'failed'
 let contextActionTimer = null
@@ -5085,14 +5118,52 @@ onUnmounted(() => {
 
           <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
           <div class="px-4 pt-3 space-y-1.5">
-            <!-- Innsjø med ekte vannflate-høyde fra NVE Innsjødatabase. -->
-            <div v-if="lakeQuery?.status === 'done'"
-                 class="flex items-baseline gap-2 text-[12px]">
-              <span class="text-white/45 w-20 shrink-0">Vannflate</span>
-              <span class="text-white font-medium tabular-nums">
-                {{ Math.round(lakeQuery.hoyde) }} moh<template v-if="lakeQuery.navn"><span class="text-white/55 font-normal"> · {{ lakeQuery.navn }}</span></template>
-              </span>
-            </div>
+            <!-- Innsjø med ekte data fra NVE Innsjødatabase (+ HydAPI sanntid). -->
+            <template v-if="lakeQuery?.status === 'done'">
+              <div class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Vannflate</span>
+                <span class="text-white font-medium tabular-nums">
+                  {{ Math.round(lakeQuery.lake.hoyde) }} moh<template v-if="lakeQuery.lake.navn"><span class="text-white/55 font-normal"> · {{ lakeQuery.lake.navn }}</span></template>
+                </span>
+              </div>
+              <!-- Dyp (bathymetri) — kun for oppmålte innsjøer. -->
+              <div v-if="lakeQuery.lake.maxDybde != null"
+                   class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Dyp</span>
+                <span class="text-white tabular-nums">
+                  maks {{ Math.round(lakeQuery.lake.maxDybde) }} m<template v-if="lakeQuery.lake.midDybde != null"><span class="text-white/55"> · snitt {{ Math.round(lakeQuery.lake.midDybde) }} m</span></template>
+                </span>
+              </div>
+              <!-- Areal / volum når NVE har det. -->
+              <div v-if="lakeQuery.lake.arealKm2 != null || lakeQuery.lake.volumMillM3 != null"
+                   class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Areal</span>
+                <span class="text-white/80 tabular-nums">
+                  <template v-if="lakeQuery.lake.arealKm2 != null">{{ formatAreaKm2(lakeQuery.lake.arealKm2) }} km²</template><template v-if="lakeQuery.lake.volumMillM3 != null"><span class="text-white/55"><template v-if="lakeQuery.lake.arealKm2 != null"> · </template>{{ formatVolum(lakeQuery.lake.volumMillM3) }}</span></template>
+                </span>
+              </div>
+              <!-- Regulert vannkraftmagasin. -->
+              <div v-if="lakeQuery.lake.magasin"
+                   class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Magasin</span>
+                <span class="text-white/80">
+                  Regulert<template v-if="lakeQuery.lake.magasin.navn"><span class="text-white/55"> · {{ lakeQuery.lake.magasin.navn }}</span></template>
+                </span>
+              </div>
+              <!-- Sanntid fra HydAPI (vannstand / temperatur) når tilgjengelig. -->
+              <div v-if="lakeQuery.live?.waterLevel"
+                   class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Vannstand</span>
+                <span class="text-white/80 tabular-nums">
+                  {{ lakeQuery.live.waterLevel.value.toFixed(2) }} moh<span class="text-white/45"> · {{ lakeQuery.live.stationName }}</span>
+                </span>
+              </div>
+              <div v-if="lakeQuery.live?.waterTemp"
+                   class="flex items-baseline gap-2 text-[12px]">
+                <span class="text-white/45 w-20 shrink-0">Vanntemp</span>
+                <span class="text-white/80 tabular-nums">{{ lakeQuery.live.waterTemp.value.toFixed(1) }} °C</span>
+              </div>
+            </template>
             <!-- Vann, men NVE ennå ikke svart. -->
             <div v-else-if="contextMenuInfo.isWater && lakeQuery?.status === 'loading'"
                  class="flex items-baseline gap-2 text-[12px]">
