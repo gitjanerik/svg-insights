@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-10 — v10.1.30: Midtstilte kart-overlays følger side-panelet på desktop
+
+Den midtstilte tittel-badgen («<stedsnavn> · turkart») og de øvrige midtstilte overleggene (highlight-chip, «tegner inn detaljer»-chip, GPS-/utenfor-kart-bannere, «oppretter kart»-chip) sentreres nå i den synlige kart-flaten i stedet for hele viewporten. Tidligere drev de til venstre når det høyrestilte side-panelet var åpent eller endret bredde, og søke-/meny-knappene kunne havne bak panelet. Toppbaren krympes nå til panelets venstrekant (responsivt), så alt re-sentreres når panelbredden dras.
+
+---
+
 ## 2026-06-10 — v10.1.29: Tekststørrelse-slider på desktop
 
 Turkart fikk en tekststørrelse-slider rett under rotasjons-sliden (kun desktop). Midtstilt = normal (100%); brukeren kan både øke og minske font-størrelsen på alle kart-etiketter (navn, høyde, stedsnavn, naturreservat, vann osv) i sanntid, fra 0.5× til 2.0×. Lagres i localStorage, nullstilles av «Sentrer»-FAB-en, dobbeltklikk = normal. På mobil vises ingen slider — pinch holder til zoom. Teknisk: ny `--label-scale` CSS-variabel (analog til `--stroke-scale`) som ganger alle `[data-label]`-font-sizes via `calc()`; halo-bredder skaleres ikke så teksten ikke drukner.
