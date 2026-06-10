@@ -427,6 +427,13 @@ const panelOffsetPx = computed(() =>
 const floatRightStyle = computed(() => ({
   right: (panelOffsetPx.value > 0 ? panelOffsetPx.value + 12 : 12) + 'px',
 }))
+// Horisontal midtstilling for midtstilte overlays (tittel-badge, toasts,
+// highlight-chip): sentrer i den SYNLIGE kart-flaten, ikke hele viewporten,
+// så de ikke drifter til venstre når side-panelet er åpent/endrer bredde.
+// Brukes sammen med `-translate-x-1/2` (sentrerer elementet om denne left-en).
+const mapCenterStyle = computed(() => ({
+  left: panelOffsetPx.value > 0 ? `calc(50% - ${panelOffsetPx.value / 2}px)` : '50%',
+}))
 
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
@@ -4133,9 +4140,14 @@ onUnmounted(() => {
          delvis klikkbar med uønskede effekter (drawer åpnet seg midt i
          spillet). Skjuler hele toppbaren, matcher kompass-rosen og andre
          map-only UI som allerede har samme v-if. -->
+    <!-- Toppbaren krympes til den synlige kart-flaten på desktop (høyre kant =
+         panelbredden) så den midtstilte tittel-badgen re-sentreres responsivt
+         når side-panelet endrer bredde, og søke-/meny-knappene ikke havner bak
+         panelet. Mobil/lukket: full bredde (panelOffsetPx = 0). -->
     <div v-if="!curveball.active.value"
          class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
-                pointer-events-none">
+                pointer-events-none transition-[right] duration-200"
+         :style="{ right: panelOffsetPx + 'px' }">
       <div class="flex items-center gap-2 pointer-events-auto">
         <button @click="router.push('/kart')"
                 aria-label="Tilbake til kart-lista"
@@ -4419,8 +4431,9 @@ onUnmounted(() => {
       <div v-if="autoMapToast && !curveball.active.value && !searchOpen"
            class="absolute left-1/2 -translate-x-1/2 z-30 px-3 py-2 rounded-2xl
                   bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
-                  text-center max-w-[85%] pointer-events-none border border-white/10"
-           :style="{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }">
+                  text-center max-w-[85%] pointer-events-none border border-white/10
+                  transition-[left] duration-200"
+           :style="[mapCenterStyle, { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }]">
         {{ autoMapToast }}
       </div>
     </Transition>
@@ -4431,7 +4444,9 @@ onUnmounted(() => {
       <div v-if="fillingInDetails && !curveball.active.value && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-30 pl-2 pr-3.5 py-1.5 rounded-2xl
                   bg-zinc-950/90 text-white text-[12.5px] font-medium shadow-lg backdrop-blur
-                  flex items-center gap-2 pointer-events-none border border-white/10">
+                  flex items-center gap-2 pointer-events-none border border-white/10
+                  transition-[left] duration-200"
+           :style="mapCenterStyle">
         <!-- Animert «landmåler»-ikon: topo-konturer tegnes inn mens en gul
              sveipelinje roterer over kartet (SMIL) — eye candy som matcher at
              kartet tegnes ferdig i bakgrunnen. -->
@@ -4465,7 +4480,9 @@ onUnmounted(() => {
       <div v-if="highlightedFeature && !curveball.active.value && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-2xl
                   bg-pink-500/95 text-white text-[12px] font-medium shadow-lg
-                  flex items-center gap-2 max-w-[85%] pointer-events-auto">
+                  flex items-center gap-2 max-w-[85%] pointer-events-auto
+                  transition-[left] duration-200"
+           :style="mapCenterStyle">
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor"
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="10" r="3"/>
@@ -4549,13 +4566,17 @@ onUnmounted(() => {
     <div v-if="!loading && userPos.error"
          class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[90%] px-3 py-2
                 rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
-                text-white text-[12px] shadow-lg text-center whitespace-nowrap">
+                text-white text-[12px] shadow-lg text-center whitespace-nowrap
+                transition-[left] duration-200"
+         :style="mapCenterStyle">
       {{ userPos.error }}
     </div>
     <div v-else-if="!loading && showOutsideMapBanner"
          class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[90%]
                 rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
-                text-white text-[12px] shadow-lg flex items-center gap-1.5 pl-3 pr-1 py-2">
+                text-white text-[12px] shadow-lg flex items-center gap-1.5 pl-3 pr-1 py-2
+                transition-[left] duration-200"
+         :style="mapCenterStyle">
       <span>Du er utenfor dette kartet.</span>
       <button @click="dismissOutsideMap" aria-label="Greit, skjønner"
               class="w-6 h-6 -my-0.5 flex items-center justify-center rounded-md
@@ -5746,7 +5767,9 @@ onUnmounted(() => {
       <div v-if="buildingOnTheFly && !curveball.active.value && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded-2xl
                   bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
-                  flex items-center gap-2 pointer-events-none border border-white/10 max-w-[85%]">
+                  flex items-center gap-2 pointer-events-none border border-white/10 max-w-[85%]
+                  transition-[left] duration-200"
+           :style="mapCenterStyle">
         <span class="w-3.5 h-3.5 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
         <span class="truncate">{{ buildingProgress || 'Oppretter kart …' }}</span>
       </div>
