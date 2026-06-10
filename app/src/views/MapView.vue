@@ -26,6 +26,10 @@ import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
 import { fetchLiveWater } from '../lib/nveHydApi.js'
+import { fetchProtectedArea } from '../lib/verneFetcher.js'
+import { fetchSpeciesSummary } from '../lib/gbifSpecies.js'
+import { fetchWikiSummary } from '../lib/wikiSummary.js'
+import { cacheGet, cacheSet, pointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace,
@@ -1470,6 +1474,11 @@ const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
 // Token-nøkkel forkaster trege svar når brukeren long-presser et nytt punkt.
 const lakeQuery = ref(null)
 let lakeQueryToken = 0
+// Verneområde-oppslag (Naturbase + GBIF + Wikipedia) ved long-press.
+// null = ingen verneområde her | { status:'loading' } | { status:'done',
+// area, species, wiki }. species/wiki: 'loading' | objekt | null (utilgjengelig).
+const verneQuery = ref(null)
+let verneQueryToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
@@ -1683,6 +1692,94 @@ watch(contextMenuPoint, async (p) => {
   } catch {
     if (token === lakeQueryToken) lakeQuery.value = { status: 'error', live: null }
   }
+})
+
+// Long-press hvor som helst på kartet → slå opp om punktet ligger i et
+// verneområde (Naturbase via Miljødirektoratet). Ved treff vises navn/verneform/
+// vernedato/areal umiddelbart, og to ikke-blokkerende kall fyller arts-/
+// observasjons-tellere (GBIF) og Wikipedia-ingress når de lander. Ingen treff →
+// ingen verne-seksjon. Token forkaster trege svar; cache gjør gjentatte oppslag
+// momentane (IndexedDB + minne, TTL pr kilde).
+watch(contextMenuPoint, async (p) => {
+  const token = ++verneQueryToken
+  verneQuery.value = null
+  if (!p || !contextMenuOpen.value) return
+  const info = contextMenuInfo.value
+  if (!info?.inside) return
+  verneQuery.value = { status: 'loading' }
+  try {
+    const ptKey = pointKey(info.lat, info.lon)
+    let area = await cacheGet(ptKey)
+    if (!area) {
+      area = await fetchProtectedArea(info.lat, info.lon)
+      if (area) cacheSet(ptKey, area, TTL.vern)
+    }
+    if (token !== verneQueryToken) return
+    if (!area) { verneQuery.value = null; return }
+    verneQuery.value = { status: 'done', area, species: 'loading', wiki: 'loading' }
+    loadVerneSpecies(token, area)
+    loadVerneWiki(token, area.navn)
+  } catch {
+    if (token === verneQueryToken) verneQuery.value = null
+  }
+})
+
+// Arts-/observasjons-telling fra GBIF for verneområde-polygonet. Cachet 24 t på
+// område-ID. Setter species til objekt (treff) eller null (utilgjengelig).
+async function loadVerneSpecies(token, area) {
+  if (!area.rings) { if (token === verneQueryToken) patchVerne(token, { species: null }); return }
+  const key = `species:${area.id}`
+  try {
+    let sp = await cacheGet(key)
+    if (!sp) {
+      sp = await fetchSpeciesSummary(area.rings)
+      if (sp) cacheSet(key, sp, TTL.species)
+    }
+    patchVerne(token, { species: sp ?? null })
+  } catch {
+    patchVerne(token, { species: null })
+  }
+}
+
+// Wikipedia-ingress for verneområde-navnet. Cachet 7 dager på navn.
+async function loadVerneWiki(token, navn) {
+  const key = `wiki:${navn}`
+  try {
+    let wiki = await cacheGet(key)
+    if (!wiki) {
+      wiki = await fetchWikiSummary(navn)
+      if (wiki) cacheSet(key, wiki, TTL.wiki)
+    }
+    patchVerne(token, { wiki: wiki ?? null })
+  } catch {
+    patchVerne(token, { wiki: null })
+  }
+}
+
+// Slå sammen et delvis resultat inn i verneQuery — kun hvis token fortsatt
+// gjelder og oppslaget er i 'done'-tilstand (brukeren kan ha flyttet punktet).
+function patchVerne(token, patch) {
+  if (token === verneQueryToken && verneQuery.value?.status === 'done') {
+    verneQuery.value = { ...verneQuery.value, ...patch }
+  }
+}
+
+// Vernedato (ISO YYYY-MM-DD) → norsk dd.mm.yyyy. Faller tilbake til råverdi.
+function formatVernedato(iso) {
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso
+}
+
+// Heltall med tusenskille (norsk: mellomrom). 1342 → «1 342».
+function formatCount(n) {
+  return Number(n).toLocaleString('nb-NO')
+}
+
+// Artskart sentrert på long-press-punktet (hash-router: #map/lon,lat/zoom).
+const artskartUrl = computed(() => {
+  const info = contextMenuInfo.value
+  if (!info) return 'https://artskart.artsdatabanken.no/'
+  return `https://artskart.artsdatabanken.no/app/#map/${info.lon.toFixed(5)},${info.lat.toFixed(5)}/12`
 })
 
 // Areal: under 1 km² vises med to desimaler (små vann), ellers heltall/én desimal.
@@ -5477,6 +5574,92 @@ onUnmounted(() => {
             <div v-if="mapDataLabel" class="flex items-baseline gap-2 text-[12px]">
               <span class="text-white/45 w-20 shrink-0">Kartdata</span>
               <span class="text-white/85 tabular-nums">{{ mapDataLabel }}</span>
+            </div>
+          </div>
+
+          <!-- Verneområde: Naturbase-metadata + GBIF-arter + Wikipedia.
+               Vises kun når long-press traff et verneområde. -->
+          <div v-if="verneQuery?.status === 'done'" class="px-4 pt-3">
+            <div class="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 space-y-2">
+              <div class="flex items-start gap-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 mt-0.5 shrink-0 text-emerald-300" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+                  <path d="M2 21c0-3 1.85-5.36 5.08-6"/>
+                </svg>
+                <div class="min-w-0">
+                  <div class="text-emerald-100 font-semibold text-[13px] leading-tight">
+                    {{ verneQuery.area.navn }}
+                  </div>
+                  <div v-if="verneQuery.area.verneform" class="text-emerald-200/80 text-[11px]">
+                    {{ verneQuery.area.verneform }}
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-1 text-[12px]">
+                <div v-if="verneQuery.area.vernedato" class="flex items-baseline gap-2">
+                  <span class="text-emerald-200/55 w-20 shrink-0">Vernet</span>
+                  <span class="text-emerald-50 tabular-nums">{{ formatVernedato(verneQuery.area.vernedato) }}</span>
+                </div>
+                <div v-if="verneQuery.area.arealKm2 != null" class="flex items-baseline gap-2">
+                  <span class="text-emerald-200/55 w-20 shrink-0">Areal</span>
+                  <span class="text-emerald-50 tabular-nums">{{ formatAreaKm2(verneQuery.area.arealKm2) }} km²</span>
+                </div>
+                <div v-if="verneQuery.area.forvaltning" class="flex items-baseline gap-2">
+                  <span class="text-emerald-200/55 w-20 shrink-0">Forvaltning</span>
+                  <span class="text-emerald-50/90 truncate">{{ verneQuery.area.forvaltning }}</span>
+                </div>
+
+                <!-- Arter / observasjoner (GBIF) -->
+                <div v-if="verneQuery.species === 'loading'" class="flex items-baseline gap-2">
+                  <span class="text-emerald-200/55 w-20 shrink-0">Arter</span>
+                  <span class="text-emerald-200/50">teller arter …</span>
+                </div>
+                <template v-else-if="verneQuery.species">
+                  <div class="flex items-baseline gap-2">
+                    <span class="text-emerald-200/55 w-20 shrink-0">Arter</span>
+                    <span class="text-emerald-50 tabular-nums">
+                      {{ formatCount(verneQuery.species.speciesCount) }}{{ verneQuery.species.speciesCapped ? '+' : '' }}
+                      <span class="text-emerald-200/55"> · {{ formatCount(verneQuery.species.observationCount) }} obs.</span>
+                    </span>
+                  </div>
+                  <div v-if="verneQuery.species.redListSpeciesCount > 0" class="flex items-baseline gap-2">
+                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
+                    <span class="text-rose-200 tabular-nums">
+                      {{ formatCount(verneQuery.species.redListSpeciesCount) }}{{ verneQuery.species.redListSpeciesCapped ? '+' : '' }} arter
+                      <span class="text-rose-200/55"> · CR/EN/VU/NT</span>
+                    </span>
+                  </div>
+                </template>
+                <div v-else class="flex items-baseline gap-2">
+                  <span class="text-emerald-200/55 w-20 shrink-0">Arter</span>
+                  <span class="text-emerald-200/50">ikke tilgjengelig</span>
+                </div>
+              </div>
+
+              <!-- Wikipedia-ingress -->
+              <div v-if="verneQuery.wiki && verneQuery.wiki !== 'loading'"
+                   class="text-[12px] text-emerald-50/80 leading-snug border-t border-emerald-400/15 pt-2">
+                {{ verneQuery.wiki.extract }}
+              </div>
+
+              <!-- Lenker -->
+              <div class="flex flex-wrap gap-2 pt-0.5">
+                <a v-if="verneQuery.area.faktaarkUrl" :href="verneQuery.area.faktaarkUrl" target="_blank" rel="noopener"
+                   class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
+                  Naturbase faktaark ↗
+                </a>
+                <a :href="artskartUrl" target="_blank" rel="noopener"
+                   class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
+                  Artskart ↗
+                </a>
+                <a v-if="verneQuery.wiki && verneQuery.wiki !== 'loading'" :href="verneQuery.wiki.url"
+                   target="_blank" rel="noopener"
+                   class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
+                  Wikipedia ↗
+                </a>
+              </div>
             </div>
           </div>
 
