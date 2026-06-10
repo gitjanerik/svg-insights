@@ -6,9 +6,11 @@
 //
 //   antall observasjoner  = `count` fra et søk med limit=0
 //   antall arter          = antall distinkte speciesKey (facet, kan cappes)
-//   rødlistede arter      = samme, filtrert på truede IUCN-kategorier
-//                           (CR/EN/VU/NT) — de samme kategoriene Artsdatabanken
-//                           bruker i den norske rødlista.
+//
+// Rødliste-telling er bevisst utelatt: GBIFs `iucnRedListCategory` er den
+// GLOBALE IUCN-rødlista, ikke Artsdatabankens norske rødliste. For norske arter
+// blir den skjevt nedover (truet i Norge ≠ truet globalt), så vi viser den ikke.
+// En ekte norsk rødliste-kilde må til for å telle dette korrekt.
 //
 // GBIF krever gyldig, mot-klokka (CCW) WKT. Vi bygger fra den største ringen,
 // orienterer CCW, og desimerer ned til en håndterbar punktmengde (GBIF avviser
@@ -18,7 +20,6 @@
 const GBIF_BASE =
   import.meta.env?.VITE_GBIF_API_URL ?? 'https://api.gbif.org/v1'
 
-const RED_LIST_CATEGORIES = ['CR', 'EN', 'VU', 'NT']
 const SPECIES_FACET_LIMIT = 500
 const MAX_WKT_POINTS = 400
 
@@ -76,21 +77,21 @@ export function ringsToBboxWkt(rings) {
   return `POLYGON((${minX} ${minY}, ${maxX} ${minY}, ${maxX} ${maxY}, ${minX} ${maxY}, ${minX} ${minY}))`
 }
 
-/** Antall distinkte arter + om facet ble capet, fra en GBIF-respons. */
+/**
+ * Antall distinkte arter, om facet ble capet, og selve nøkkel-lista fra en
+ * GBIF-respons. `keys` er GBIF-backbone speciesKeys — samme nøkler som
+ * checklist-`nubKey`, så de kan snittes direkte mot den norske rødliste-bundelen.
+ */
 export function parseSpeciesFacet(json) {
   const facet = json?.facets?.find((f) => f.field === 'SPECIES_KEY' || f.field === 'speciesKey')
   const counts = facet?.counts ?? []
-  return { speciesCount: counts.length, capped: counts.length >= SPECIES_FACET_LIMIT }
+  const keys = counts.map((c) => Number(c?.name)).filter(Number.isFinite)
+  return { speciesCount: counts.length, capped: counts.length >= SPECIES_FACET_LIMIT, keys }
 }
 
-// Bygg søke-URL manuelt (GBIF tar gjentatte parametre, f.eks.
-// iucnRedListCategory, som URLSearchParams ikke uttrykker greit). `extraQs` er
-// en ferdig query-streng (uten ledende &), eller tom.
-function gbifUrl(wkt, extraQs) {
-  let u = `${GBIF_BASE}/occurrence/search?geometry=${encodeURIComponent(wkt)}` +
+function gbifUrl(wkt) {
+  return `${GBIF_BASE}/occurrence/search?geometry=${encodeURIComponent(wkt)}` +
     `&limit=0&facet=speciesKey&facetLimit=${SPECIES_FACET_LIMIT}&facetMincount=1`
-  if (extraQs) u += `&${extraQs}`
-  return u
 }
 
 async function gbifFetch(url, signal) {
@@ -106,8 +107,7 @@ async function gbifFetch(url, signal) {
  * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
  * @returns {Promise<{
  *   observationCount: number, speciesCount: number, speciesCapped: boolean,
- *   redListObservationCount: number, redListSpeciesCount: number,
- *   redListSpeciesCapped: boolean
+ *   speciesKeys: number[]
  * } | null>}
  */
 export async function fetchSpeciesSummary(rings, opts = {}) {
@@ -125,32 +125,24 @@ export async function fetchSpeciesSummary(rings, opts = {}) {
   const bbox = ringsToBboxWkt(rings)
 
   // Prøv detaljert polygon, fall tilbake til bounding box hvis GBIF avviser det
-  // (for komplekst / ugyldig). `extraQs` legges på begge.
-  const searchWithFallback = async (extraQs) => {
+  // (for komplekst / ugyldig).
+  const searchWithFallback = async () => {
     try {
-      return await gbifFetch(gbifUrl(detailed, extraQs), ctrl.signal)
+      return await gbifFetch(gbifUrl(detailed), ctrl.signal)
     } catch (e) {
       if (ctrl.signal.aborted || !bbox) throw e
-      return gbifFetch(gbifUrl(bbox, extraQs), ctrl.signal)
+      return gbifFetch(gbifUrl(bbox), ctrl.signal)
     }
   }
 
   try {
-    const redQs = RED_LIST_CATEGORIES.map((c) => `iucnRedListCategory=${c}`).join('&')
-    const [all, red] = await Promise.all([
-      searchWithFallback(''),
-      searchWithFallback(redQs),
-    ])
-
+    const all = await searchWithFallback()
     const allSp = parseSpeciesFacet(all)
-    const redSp = parseSpeciesFacet(red)
     return {
       observationCount: Number(all?.count) || 0,
       speciesCount: allSp.speciesCount,
       speciesCapped: allSp.capped,
-      redListObservationCount: Number(red?.count) || 0,
-      redListSpeciesCount: redSp.speciesCount,
-      redListSpeciesCapped: redSp.capped,
+      speciesKeys: allSp.keys,
     }
   } catch (e) {
     if (signal?.aborted || ctrl.signal.aborted) return null

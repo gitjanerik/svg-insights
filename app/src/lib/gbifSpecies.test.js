@@ -48,15 +48,15 @@ describe('ringsToBboxWkt', () => {
 })
 
 describe('parseSpeciesFacet', () => {
-  it('teller distinkte arter fra speciesKey-facet', () => {
+  it('teller distinkte arter og henter ut speciesKeys fra facet', () => {
     const json = { facets: [{ field: 'SPECIES_KEY', counts: [{ name: '1', count: 9 }, { name: '2', count: 3 }] }] }
-    expect(parseSpeciesFacet(json)).toEqual({ speciesCount: 2, capped: false })
+    expect(parseSpeciesFacet(json)).toEqual({ speciesCount: 2, capped: false, keys: [1, 2] })
   })
   it('flagger capped når facet treffer grensen (500)', () => {
     const counts = Array.from({ length: 500 }, (_, i) => ({ name: String(i), count: 1 }))
     expect(parseSpeciesFacet({ facets: [{ field: 'speciesKey', counts }] }).capped).toBe(true)
   })
   it('håndterer manglende facet', () => {
-    expect(parseSpeciesFacet({})).toEqual({ speciesCount: 0, capped: false })
+    expect(parseSpeciesFacet({})).toEqual({ speciesCount: 0, capped: false, keys: [] })
   })
 })

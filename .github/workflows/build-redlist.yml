@@ -1,0 +1,48 @@
+name: Build Norwegian Red List bundle
+
+# Genererer app/public/data/redlist-no.json fra GBIF (full nett-tilgang i CI) og
+# committer den tilbake til branchen. Trigges manuelt, og automatisk når selve
+# build-scriptet/workflowen endres (så første push genererer dataene). Endringer
+# i selve JSON-en matcher ikke paths-filteret → ingen re-trigger-løkke.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['**']
+    paths:
+      - 'app/scripts/build-redlist.js'
+      - '.github/workflows/build-redlist.yml'
+      - 'tools/redlist-2021.csv'
+
+permissions:
+  contents: write
+
+jobs:
+  build-redlist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate red list bundle from GBIF
+        working-directory: app
+        run: node scripts/build-redlist.js
+
+      - name: Commit bundle if changed
+        run: |
+          set -e
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/public/data/redlist-no.json
+          if git diff --staged --quiet; then
+            echo "Ingen endring i rødliste-bundelen"
+          else
+            git -c commit.gpgsign=false commit \
+              --author="Deploy <deploy@svg-insights>" \
+              -m "Norsk rødliste-bundel fra GBIF (auto-generert)"
+            git push origin HEAD:${GITHUB_REF_NAME}
+            echo "Committet oppdatert rødliste-bundel"
+          fi
