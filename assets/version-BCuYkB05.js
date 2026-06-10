@@ -1,1 +1,0 @@
-var e=`10.1.21`;export{e as t};
