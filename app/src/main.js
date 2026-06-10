@@ -12,6 +12,12 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
     navigator.serviceWorker
       .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
       .then((reg) => {
+        // A new SW may already be installed and *waiting* before our
+        // updatefound listener attaches (registration race). Without nudging
+        // it, it stays parked until every tab closes — so a deployed SW fix
+        // (e.g. the maps/* network-first change) never takes effect on a
+        // simple reload. Tell any waiting worker to take over now.
+        if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING')
         // If a waiting worker appears (new deploy), tell it to take over immediately
         reg.addEventListener('updatefound', () => {
           const nw = reg.installing

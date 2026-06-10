@@ -3146,6 +3146,38 @@ function onPrint() {
   runExport('print', (m) => printDocument(m, { title: mapTitle.value }))
 }
 
+// Innebygde kart hentes som rå SVG-fil. Eldre service workers serverte denne
+// via stale-while-revalidate og kunne returnere en utdatert/avkuttet kopi på
+// første last → DOMParser ga «Ugyldig SVG», mens en refresh / «Prøv igjen»
+// traff den revaliderte (friske) kopien. Den nye SW-en henter maps/* network-
+// first, men en allerede-aktiv gammel SW i klienten retter seg ikke før den
+// byttes ut. For å være robust UANSETT SW-tilstand: valider at svaret faktisk
+// parser som SVG med data-meta, og prøv på nytt med cache-bust (query-param
+// som hverken SW-cache eller HTTP-cache matcher) før vi gir opp.
+async function fetchBuiltinSvg(file) {
+  const baseUrl = `${import.meta.env.BASE_URL}maps/${file}`
+  let lastErr = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Cache-bust f.o.m. forsøk 2 — tvinger forbi en gammel SWR-service-worker.
+    const url = attempt === 0 ? baseUrl : `${baseUrl}?v=${Date.now()}`
+    try {
+      const res = await fetch(url, { cache: 'reload' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const text = await res.text()
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml')
+      const root = doc.documentElement
+      const bad = !root || root.nodeName === 'parsererror' || root.querySelector('parsererror')
+      if (!bad && root.getAttribute('data-meta')) return text
+      lastErr = new Error('Ugyldig SVG')
+    } catch (e) {
+      lastErr = e
+    }
+    // Kort backoff — gir en bakgrunns-revalidering tid til å fullføre.
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 150))
+  }
+  throw lastErr ?? new Error('Ugyldig SVG')
+}
+
 async function loadMap({ silent = false } = {}) {
   // silent = re-render av samme kart (terreng → full) uten full-skjerm-loader;
   // beholder zoom/pan og hopper over init-prefs (alt konsumert ved første last).
@@ -3157,10 +3189,7 @@ async function loadMap({ silent = false } = {}) {
     let demBytes = 0
     if (BUILTIN[id]) {
       mapTitle.value = BUILTIN[id].navn
-      const url = `${import.meta.env.BASE_URL}maps/${BUILTIN[id].file}`
-      const res = await fetch(url, { cache: 'no-cache' })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      text = await res.text()
+      text = await fetchBuiltinSvg(BUILTIN[id].file)
     } else {
       const stored = await loadStoredMap(id)
       if (!stored) throw new Error('Kart ikke funnet i lagring')
