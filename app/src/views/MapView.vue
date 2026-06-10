@@ -502,6 +502,9 @@ function onResetAndRefreshGps() {
   // v9.1.19: «Nullstill zoom» rører KUN zoom/pan/rotasjon — IKKE strek- og
   // relieff-knottene. Brukeren vil beholde sine valgte strek-/relieff-nivåer
   // når de bare vil sentrere/uvri kartet.
+  // Tekststørrelse-sliden nullstilles derimot til normal (eksplisitt ønsket):
+  // FAB-en er den naturlige «tilbake til standard»-handlingen for visningen.
+  labelScaleSlider.value = 0   // watch → applyLabelScale + persist
   if (userPos.isWatching) userPos.refresh()
 }
 
@@ -700,6 +703,7 @@ const RELIEF_DEFAULT_IDX = 3
 const FRESH_RELIEF_MIN_IDX = 2
 const STROKE_LS_KEY = 'svg-insights-mapview-stroke-step'
 const RELIEF_LS_KEY = 'svg-insights-mapview-relief-step'
+const LABEL_SCALE_LS_KEY = 'svg-insights-mapview-label-scale'
 
 function loadKnobStep(key, def, len) {
   try {
@@ -718,6 +722,23 @@ function strokeSizeBase(widthM) {
 }
 const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
+
+// Tekststørrelse-slider (desktop) — søsken til rotasjons-sliden. Verdien er
+// −100…100 med 0 = «normal» (midtstilt); skala = 2^(v/100) → 0.5×…2.0×, så
+// brukeren både kan øke og minske størrelsen på alle kart-etiketter. Lagres i
+// localStorage, men nullstilles av «Sentrer/Nullstill»-FAB (onResetAndRefreshGps).
+const LABEL_SCALE_MIN = -100
+const LABEL_SCALE_MAX = 100
+function loadLabelScaleSlider() {
+  try {
+    const v = parseInt(localStorage.getItem(LABEL_SCALE_LS_KEY), 10)
+    if (Number.isInteger(v) && v >= LABEL_SCALE_MIN && v <= LABEL_SCALE_MAX) return v
+  } catch { /* noop */ }
+  return 0
+}
+const labelScaleSlider = ref(loadLabelScaleSlider())
+const userLabelScale = computed(() => Math.pow(2, labelScaleSlider.value / 100))
+const labelScalePct = computed(() => Math.round(userLabelScale.value * 100))
 const strokeScale = computed(() => STROKE_STEPS[strokeStepIndex.value] * strokeSizeBase(meta.value?.widthM))
 const reliefOpacity = computed(() => RELIEF_STEPS[reliefStepIndex.value])
 const strokeFrac = computed(() => strokeStepIndex.value / (STROKE_STEPS.length - 1))
@@ -757,6 +778,19 @@ function applyStrokeScale() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (svg) svg.style.setProperty('--stroke-scale', String(strokeScale.value))
 }
+
+// Tekst-skala — settes som CSS-var på kart-SVG-en; alle [data-label]-font-sizes
+// ganges med den via calc() i symbolizer-CSS-en (se `fs()` der). Sanntid, ingen
+// re-render.
+function applyLabelScale() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (svg) svg.style.setProperty('--label-scale', String(userLabelScale.value))
+}
+watch(labelScaleSlider, () => {
+  applyLabelScale()
+  try { localStorage.setItem(LABEL_SCALE_LS_KEY, String(labelScaleSlider.value)) } catch { /* noop */ }
+  flashKnobHint(`Tekst ${Math.round(userLabelScale.value * 100)}%`)
+})
 
 watch(strokeStepIndex, () => {
   applyStrokeScale()
@@ -3280,6 +3314,7 @@ async function loadMap({ silent = false } = {}) {
     applyLayerVisibility()
     applyTheme()
     applyStrokeScale()
+    applyLabelScale()
     userPos.recompute()
     // Auto-start GPS når init-prefs ber om det (kommer fra on-the-fly-
     // snarveien i MapHomeView, der bruker ikke har annen vei til å slå
@@ -4256,6 +4291,24 @@ onUnmounted(() => {
                aria-label="Roter kartet (dobbeltklikk = nullstill til nord)"
                class="w-24 accent-sky-400 cursor-pointer" />
         <span class="text-[10px] text-white/55 tabular-nums w-9 text-right">{{ rotationSliderDeg }}°</span>
+      </div>
+      <!-- Tekststørrelse-slider (kun desktop, søsken til rotasjons-sliden).
+           −100…100 med midtstilt = normal (100%); skala 0.5×…2.0×. Brukeren
+           kan både øke og minske størrelsen på alle kart-etiketter (navn,
+           høyde, stedsnavn, naturreservat, vann osv). Dobbeltklikk = normal.
+           På mobil vises ingen slider — pinch holder til zoom. -->
+      <div v-if="!hasTouch"
+           class="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-950
+                  shadow-lg select-none">
+        <svg viewBox="0 0 28 24" class="w-4 h-3.5 text-white/55 shrink-0" fill="currentColor">
+          <text x="0" y="20" font-size="12" font-weight="800" font-family="ui-sans-serif, sans-serif">A</text>
+          <text x="11" y="20" font-size="20" font-weight="800" font-family="ui-sans-serif, sans-serif">A</text>
+        </svg>
+        <input type="range" :min="LABEL_SCALE_MIN" :max="LABEL_SCALE_MAX" step="1"
+               v-model.number="labelScaleSlider" @dblclick="labelScaleSlider = 0"
+               aria-label="Tekststørrelse på kart-etiketter (dobbeltklikk = normal)"
+               class="w-24 accent-sky-400 cursor-pointer" />
+        <span class="text-[10px] text-white/55 tabular-nums w-9 text-right">{{ labelScalePct }}%</span>
       </div>
     </div>
 
