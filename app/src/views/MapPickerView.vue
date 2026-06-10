@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
-import { bboxFromCenter, viewportAspect } from '../lib/mapBuilder.js'
+import { bboxFromCenter, viewportAspect, PRINT_ASPECT } from '../lib/mapBuilder.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
@@ -29,6 +29,13 @@ const halfKm = ref(2.0)  // halv-bredde av bbox i km (E/V). Kart blir 2*halfKm b
 const mapAspect = ref(viewportAspect())
 const equidistanceM = ref(20)  // høydekurve-intervall, 5/10/20/25/50 m
 const customName = ref('')
+
+// «Tilpass utsnitt til utskrift» (default AV). PÅ → lås utsnittet til stående
+// A-format (høyde/bredde = √2 ≈ 1,4142) i stedet for skjerm-formatet, så kartet
+// passer rett på et A-ark ved print/PDF/SVG-eksport. Bredden styres fortsatt av
+// slideren; høyden utledes av A-format.
+const fitToPrint = ref(false)
+const effectiveAspect = computed(() => fitToPrint.value ? PRINT_ASPECT : mapAspect.value)
 
 // v8.5.1: Sentrer på GPS. Forhindrer at brukeren ender med et kart sentrert
 // på Nominatim-koordinaten for stedsnavnet (som kan ligge en stund vekk fra
@@ -218,11 +225,11 @@ function selectResult(r) {
   results.value = []
 }
 
-const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value, mapAspect.value))
+const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value, effectiveAspect.value))
 
 const sizeKm = computed(() => (halfKm.value * 2).toFixed(1))
 // Høyde i km (N/S-strekk) for label-en — bredde × høyde, ikke kvadrat lenger.
-const sizeHeightKm = computed(() => (halfKm.value * 2 * mapAspect.value).toFixed(1))
+const sizeHeightKm = computed(() => (halfKm.value * 2 * effectiveAspect.value).toFixed(1))
 
 // 'idle' | 'fetching' | 'building' | 'saving' | 'error'
 const buildState = ref('idle')
@@ -247,6 +254,7 @@ async function generateMap() {
     const { id } = await buildMapFromCenter({
       center: center.value,
       halfKm: halfKm.value,
+      aspect: effectiveAspect.value,   // følg previewen (A-format når «tilpass til utskrift» er på)
       equidistanceM: equidistanceM.value,
       navn,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
@@ -281,7 +289,7 @@ const previewRef = ref(null)
 const previewSize = ref({ w: 0, h: 0 })
 // Zoom-en må romme den STØRSTE aksen (høyden ved portrett-aspekt) i den
 // kvadratiske previewen, ellers stikker bbox-rammen utenfor toppen/bunnen.
-const previewZoom = computed(() => zoomForKm(halfKm.value * 2 * mapAspect.value + 2))
+const previewZoom = computed(() => zoomForKm(halfKm.value * 2 * effectiveAspect.value + 2))
 
 function measurePreview() {
   const r = previewRef.value?.getBoundingClientRect()
@@ -303,7 +311,7 @@ const bboxOverlayPx = computed(() => {
   if (!previewSize.value.w) return { w: 0, h: 0 }
   const mPerPx = metersPerPixel(center.value.lat, previewZoom.value)
   const widthM = halfKm.value * 2 * 1000
-  const heightM = widthM * mapAspect.value   // N/S-strekk = portrett-rammen
+  const heightM = widthM * effectiveAspect.value   // N/S-strekk = portrett-rammen
   return {
     w: widthM / mPerPx,
     h: heightM / mPerPx,
@@ -672,6 +680,23 @@ onMounted(() => {
         <div class="text-[10px] text-white/40 mt-1.5">
           {{ EQUIDISTANCE_OPTIONS.find(o => o.value === equidistanceM)?.desc }}
         </div>
+      </div>
+
+      <!-- Tilpass utsnitt til utskrift (A-format). Default AV. PÅ → previewen
+           (og det genererte kartet) låses til stående A-ark-forhold √2, så det
+           passer rett på et A4/A3-ark i print/PDF/SVG. -->
+      <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
+        <label class="flex items-center gap-3 cursor-pointer"
+               :class="controlsLocked ? 'opacity-50 cursor-not-allowed' : ''">
+          <input type="checkbox" v-model="fitToPrint" :disabled="controlsLocked"
+                 class="w-4 h-4 accent-slate-400 shrink-0 disabled:cursor-not-allowed" />
+          <div class="min-w-0">
+            <div class="text-[13px] font-medium text-white/85">Tilpass utsnitt til utskrift</div>
+            <div class="text-[10px] text-white/40 leading-tight mt-0.5">
+              Låser utsnittet til stående A-format (A4/A3 …) for ren utskrift / PDF / SVG.
+            </div>
+          </div>
+        </label>
       </div>
 
       <div v-if="!shareInvite" class="text-white/65 text-[11px] uppercase tracking-wide">

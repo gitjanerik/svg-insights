@@ -61,6 +61,16 @@ export function usePinchZoom(elementRef, options = {}) {
   let lastTapX = 0
   let lastTapY = 0
   let animTimer = null
+  // Mus-pan (desktop uten touch): venstre-knapp-dra panorerer. Vi starter ikke
+  // pan før fingeren/musa har flyttet seg forbi en liten terskel, så et rent
+  // klikk (annotering, long-press-meny, POI-tap) går uberørt gjennom.
+  let isMouseDown = false
+  let mouseMoved = false
+  let mouseDownX = 0
+  let mouseDownY = 0
+  let panStartTX = 0
+  let panStartTY = 0
+  const MOUSE_PAN_THRESHOLD = 4
 
   function dist(t1, t2) {
     const dx = t1.clientX - t2.clientX
@@ -235,6 +245,49 @@ export function usePinchZoom(elementRef, options = {}) {
     }
   }
 
+  // Mus-pan: kun venstre knapp, og kun når pan er tillatt (samme regel som
+  // touch: panAtRest, eller innzoomet, eller rotert). Lytterne for move/up
+  // ligger på window så draget fortsetter også utenfor elementet.
+  function onMouseDown(e) {
+    if (!isEnabled() || e.button !== 0) return
+    if (isPinching || isPanning) return
+    if (!(panAtRest || scale.value > 1 || rotation.value !== 0)) return
+    isMouseDown = true
+    mouseMoved = false
+    mouseDownX = e.clientX
+    mouseDownY = e.clientY
+    panStartTX = translateX.value
+    panStartTY = translateY.value
+  }
+
+  function onMouseMove(e) {
+    if (!isMouseDown) return
+    const dx = e.clientX - mouseDownX
+    const dy = e.clientY - mouseDownY
+    if (!mouseMoved && Math.hypot(dx, dy) < MOUSE_PAN_THRESHOLD) return
+    mouseMoved = true
+    isGesturing.value = true
+    translateX.value = panStartTX + dx
+    translateY.value = panStartTY + dy
+  }
+
+  function onMouseUp() {
+    if (!isMouseDown) return
+    isMouseDown = false
+    if (!isPinching && !isPanning) isGesturing.value = false
+  }
+
+  // Roter kartet til en absolutt vinkel (grader) rundt elementets SENTER. Brukes
+  // av desktop-rotasjons-slideren (touch bruker to-finger-rotasjon). Pivot =
+  // viewport-senter (ikke transform-origin 0,0) så kartet ikke svinger ut av syne.
+  function rotateTo(deg) {
+    const el = elementRef.value
+    if (!el || !rotateEnabled) return
+    const r = el.getBoundingClientRect()
+    const c = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    applyDelta(c, c, 1, deg - rotation.value)
+  }
+
   function reset() {
     animate()
     scale.value = 1
@@ -251,16 +304,23 @@ export function usePinchZoom(elementRef, options = {}) {
     el.addEventListener('touchend', onTouchEnd)
     el.addEventListener('wheel', onWheel, { passive: false })
     el.addEventListener('dblclick', onDblClick)
+    el.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
   })
 
   onUnmounted(() => {
     const el = elementRef.value
-    if (!el) return
-    el.removeEventListener('touchstart', onTouchStart)
-    el.removeEventListener('touchmove', onTouchMove)
-    el.removeEventListener('touchend', onTouchEnd)
-    el.removeEventListener('wheel', onWheel)
-    el.removeEventListener('dblclick', onDblClick)
+    if (el) {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('dblclick', onDblClick)
+      el.removeEventListener('mousedown', onMouseDown)
+    }
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
     if (animTimer) clearTimeout(animTimer)
     if (wheelEndTimer) clearTimeout(wheelEndTimer)
   })
@@ -324,5 +384,5 @@ export function usePinchZoom(elementRef, options = {}) {
     translateY.value = fy - s * (px * sin + py * cos)
   }
 
-  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, animating, isGesturing }
+  return { scale, translateX, translateY, rotation, reset, zoomIn, zoomOut, panTo, rotateTo, animating, isGesturing }
 }
