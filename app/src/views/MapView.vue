@@ -1723,7 +1723,7 @@ watch(contextMenuPoint, async (p) => {
     if (token !== verneQueryToken) return
     if (!area) { verneQuery.value = null; return }
     verneQuery.value = { status: 'done', area, species: 'loading', wiki: 'loading' }
-    loadVerneSpecies(token, area)
+    loadVerneSpecies(token, area, info.lat, info.lon)
     loadVerneWiki(token, area.navn)
   } catch {
     if (token === verneQueryToken) verneQuery.value = null
@@ -1764,15 +1764,16 @@ function naturtypeVerdiClass(verdi) {
   return 'bg-white/8 text-white/70 border-white/15'
 }
 
-// Arts-/observasjons-telling fra GBIF for verneområde-polygonet. Cachet 24 t på
-// område-ID. Setter species til objekt (treff) eller null (utilgjengelig).
-async function loadVerneSpecies(token, area) {
-  if (!area.rings) { if (token === verneQueryToken) patchVerne(token, { species: null }); return }
+// Arts-/observasjons-telling fra GBIF for verneområdet. Cachet 24 t på område-ID.
+// Bruker Naturbase-polygonet når det er i lon/lat, ellers en bbox rundt klikk-
+// punktet (robust mot at WFS-en leverer projiserte UTM-meter). Setter species
+// til objekt (treff) eller null (utilgjengelig).
+async function loadVerneSpecies(token, area, lat, lon) {
   const key = `species:${area.id}`
   try {
     let sp = await cacheGet(key)
     if (!sp) {
-      sp = await fetchSpeciesSummary(area.rings)
+      sp = await fetchSpeciesSummary({ rings: area.rings, lat, lon, areaKm2: area.arealKm2 })
       if (sp) cacheSet(key, sp, TTL.species)
     }
     // Norsk rødliste: snitt GBIF-artene mot den bundlede Artsdatabanken-lista.
@@ -5674,7 +5675,7 @@ onUnmounted(() => {
                   </div>
                   <div v-if="verneQuery.species.redListNo && verneQuery.species.redListNo.count > 0"
                        class="flex items-baseline gap-2">
-                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
+                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste 2021</span>
                     <span class="text-rose-200 tabular-nums">
                       {{ formatCount(verneQuery.species.redListNo.count) }} arter
                       <span class="text-rose-200/55"> · {{ redListBreakdown(verneQuery.species.redListNo.byCategory) }}</span>

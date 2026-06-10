@@ -45,11 +45,14 @@ function decimateRing(ring, maxPoints) {
 /**
  * Bygg en GBIF-vennlig WKT POLYGON fra ringer ([[lon,lat],...]). Bruker den
  * største (første) ringen, desimerer, orienterer CCW og lukker ringen.
+ * Returnerer null hvis koordinatene ikke er lon/lat-grader (f.eks. projiserte
+ * UTM-meter fra en WFS som ignorerte sr=4326) — da ville WKT-en vært ugyldig.
  */
 export function ringsToWkt(rings, maxPoints = MAX_WKT_POINTS) {
   if (!Array.isArray(rings) || rings.length === 0) return null
   let ring = rings[0].filter((p) => Array.isArray(p) && p.length >= 2)
   if (ring.length < 3) return null
+  if (!ring.every(inDegreeRange)) return null
   ring = decimateRing(ring, maxPoints)
   // GBIF vil ha mot-klokka (CCW). Positivt signedArea = CCW her.
   if (signedArea(ring) < 0) ring = ring.slice().reverse()
@@ -59,6 +62,11 @@ export function ringsToWkt(rings, maxPoints = MAX_WKT_POINTS) {
   if (fx !== lx || fy !== ly) ring = [...ring, [fx, fy]]
   const coords = ring.map(([lon, lat]) => `${lon} ${lat}`).join(', ')
   return `POLYGON((${coords}))`
+}
+
+// Koordinat ser ut som lon/lat-grader (ikke projiserte meter).
+function inDegreeRange(p) {
+  return Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90
 }
 
 /** Omsluttende bounding box som WKT (CCW) — fallback når polygonet avvises. */
@@ -74,7 +82,23 @@ export function ringsToBboxWkt(rings) {
     }
   }
   if (!Number.isFinite(minX)) return null
+  if (!inDegreeRange([minX, minY]) || !inDegreeRange([maxX, maxY])) return null
   return `POLYGON((${minX} ${minY}, ${maxX} ${minY}, ${maxX} ${maxY}, ${minX} ${maxY}, ${minX} ${minY}))`
+}
+
+/**
+ * Bounding box rundt et klikk-punkt, dimensjonert etter verneområdets areal.
+ * Robust fallback når Naturbase-polygonet mangler eller er projisert (UTM-meter):
+ * klikk-punktet er alltid korrekte lon/lat-grader. Bokssiden ≈ √areal, klampet
+ * til 0,6–10 km så vi verken bommer på små reservater eller henter halve fylket.
+ */
+export function pointBboxWkt(lat, lon, areaKm2) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  const halfKm = Math.min(Math.max(Math.sqrt(Math.max(areaKm2 || 1, 0.25)) / 2, 0.3), 5)
+  const dLat = halfKm / 111
+  const dLon = halfKm / ((111 * Math.cos(lat * Math.PI / 180)) || 1)
+  const s = lat - dLat, n = lat + dLat, w = lon - dLon, e = lon + dLon
+  return `POLYGON((${w} ${s}, ${e} ${s}, ${e} ${n}, ${w} ${n}, ${w} ${s}))`
 }
 
 /**
@@ -101,19 +125,29 @@ async function gbifFetch(url, signal) {
 }
 
 /**
- * Hent arts-/observasjons-sammendrag for et verneområde-polygon.
- *
- * @param {Array<Array<[number,number]>>} rings  [[lon,lat],...] (største først)
- * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
- * @returns {Promise<{
- *   observationCount: number, speciesCount: number, speciesCapped: boolean,
- *   speciesKeys: number[]
- * } | null>}
+ * Bygg WKT-kandidater i prioritert rekkefølge: nøyaktig polygon → polygonets
+ * bbox → punkt-bbox rundt klikket. De to første dropper seg selv hvis ringene er
+ * projisert (UTM-meter); punkt-bboksen virker alltid (klikket er lon/lat).
  */
-export async function fetchSpeciesSummary(rings, opts = {}) {
+function candidateWkts({ rings, lat, lon, areaKm2 }) {
+  return [ringsToWkt(rings), ringsToBboxWkt(rings), pointBboxWkt(lat, lon, areaKm2)]
+    .filter(Boolean)
+}
+
+/**
+ * Hent arts-/observasjons-sammendrag for et verneområde.
+ *
+ * @param {Array|{rings?:Array,lat?:number,lon?:number,areaKm2?:number}} geom
+ *   Enten ring-array ([[lon,lat],…]) eller et objekt med ringer + klikk-punkt +
+ *   areal (punktet brukes som robust fallback når polygonet er utilgjengelig).
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
+ * @returns {Promise<{observationCount,speciesCount,speciesCapped,speciesKeys}|null>}
+ */
+export async function fetchSpeciesSummary(geom, opts = {}) {
   const { signal, timeoutMs = 9000 } = opts
-  const detailed = ringsToWkt(rings)
-  if (!detailed) return null
+  const arg = Array.isArray(geom) ? { rings: geom } : (geom || {})
+  const wkts = candidateWkts(arg)
+  if (wkts.length === 0) return null
 
   const ctrl = new AbortController()
   const onAbort = () => ctrl.abort()
@@ -122,21 +156,14 @@ export async function fetchSpeciesSummary(rings, opts = {}) {
     signal.addEventListener('abort', onAbort, { once: true })
   }
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  const bbox = ringsToBboxWkt(rings)
-
-  // Prøv detaljert polygon, fall tilbake til bounding box hvis GBIF avviser det
-  // (for komplekst / ugyldig).
-  const searchWithFallback = async () => {
-    try {
-      return await gbifFetch(gbifUrl(detailed), ctrl.signal)
-    } catch (e) {
-      if (ctrl.signal.aborted || !bbox) throw e
-      return gbifFetch(gbifUrl(bbox), ctrl.signal)
-    }
-  }
 
   try {
-    const all = await searchWithFallback()
+    let all = null
+    for (const wkt of wkts) {
+      try { all = await gbifFetch(gbifUrl(wkt), ctrl.signal); break }
+      catch (e) { if (ctrl.signal.aborted) throw e /* prøv neste kandidat */ }
+    }
+    if (!all) return null
     const allSp = parseSpeciesFacet(all)
     return {
       observationCount: Number(all?.count) || 0,
