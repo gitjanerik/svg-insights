@@ -23,6 +23,7 @@ import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES, tileOffset, rectOverlap
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
+import { fetchLakeElevation } from '../lib/nveLakeFetcher.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace,
@@ -1380,6 +1381,11 @@ function formatArea(m2) {
 // avbryter timeren ved bevegelse (>10 px) eller en sekundær pointer (pinch).
 const contextMenuOpen = ref(false)
 const contextMenuPoint = ref(null)     // { svgX, svgY, clientX, clientY }
+// NVE Innsjødatabase-oppslag for long-press-punktet. Status: 'loading' |
+// 'done' (med hoyde+navn) | 'empty' (ikke en registrert innsjø) | 'error'.
+// Token-nøkkel forkaster trege svar når brukeren long-presser et nytt punkt.
+const lakeQuery = ref(null)
+let lakeQueryToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
@@ -1532,15 +1538,47 @@ const contextMenuInfo = computed(() => {
     fromUser = { distM, deg, compass: bearingToCompass(deg) }
   }
 
-  // Over ferskvann er DEM-en nodata-fylt-til-0 → ikke vis falsk høyde.
+  // Over en innlands-vannflate er DEM-en nodata-fylt-til-0 → ikke vis falsk
+  // høyde. To uavhengige signaler (robust mot at det ene svikter):
+  //   1. SVG-treff i et ferskvanns-polygon (ISOM 301/302).
+  //   2. DEM-artefakt: på et bekreftet INNLANDS-kart (meta.coastal === false)
+  //      er en måling ≈ 0 m nødvendigvis vannflate-artefakten — ekte norsk
+  //      innlands-terreng ligger aldri på havnivå. Fanger store innsjøer
+  //      (Mjøsa/Tyrifjorden) selv når 301-treffet glipper. På kyst-/ukjente
+  //      kart er 0 m ekte havnivå, så da slår ikke (2) inn.
   const onFreshwater = inside ? pointOnFreshwater(p.svgX, p.svgY) : false
+  const inlandWaterArtifact = inside && Number.isFinite(ele) &&
+    Math.abs(ele) < 0.5 && meta.value?.coastal === false
+  const isWater = onFreshwater || inlandWaterArtifact
 
   return {
     lat, lon, inside,
-    elevationM: (Number.isFinite(ele) && !onFreshwater) ? ele : null,
-    elevationUnavailableWater: onFreshwater,
+    elevationM: (Number.isFinite(ele) && !isWater) ? ele : null,
+    isWater,
     place,
     fromUser,
+  }
+})
+
+// Long-press over (sannsynlig) vann → hent ekte innsjøhøyde fra NVE
+// Innsjødatabase. NHM_DTM leser ~0 m over vann; NVE har den autoritative
+// vannflate-høyden (Mjøsa ~123 m, Tyrifjorden ~63 m). Token forkaster trege
+// svar. Feiler NVE → 'error'/'empty' → UI viser «ikke tilgjengelig» (aldri 0).
+watch(contextMenuPoint, async (p) => {
+  const token = ++lakeQueryToken
+  lakeQuery.value = null
+  if (!p || !contextMenuOpen.value) return
+  const info = contextMenuInfo.value
+  if (!info?.inside || !info.isWater) return   // bare slå opp når punktet er vann
+  lakeQuery.value = { status: 'loading' }
+  try {
+    const lake = await fetchLakeElevation(info.lat, info.lon)
+    if (token !== lakeQueryToken) return        // brukeren har flyttet punktet
+    lakeQuery.value = lake && Number.isFinite(lake.hoyde)
+      ? { status: 'done', hoyde: lake.hoyde, navn: lake.navn }
+      : { status: 'empty' }
+  } catch {
+    if (token === lakeQueryToken) lakeQuery.value = { status: 'error' }
   }
 })
 
@@ -3057,6 +3095,7 @@ async function loadMap({ silent = false } = {}) {
       source: m.source,
       demSource: m.demSource ?? null,
       contoursSkipped: m.contoursSkipped ?? null,
+      coastal: m.coastal ?? null,        // true=kyst, false=innland, null=ukjent (eldre kart)
     }
     // Forbruk init-prefs fra auto-kart / on-the-fly (tema + synlige lag, GPS,
     // auto-modus, bevart zoom/rotasjon). Én gang per ny mapId.
@@ -5046,18 +5085,35 @@ onUnmounted(() => {
 
           <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
           <div class="px-4 pt-3 space-y-1.5">
-            <div v-if="contextMenuInfo.elevationM != null"
+            <!-- Innsjø med ekte vannflate-høyde fra NVE Innsjødatabase. -->
+            <div v-if="lakeQuery?.status === 'done'"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Vannflate</span>
+              <span class="text-white font-medium tabular-nums">
+                {{ Math.round(lakeQuery.hoyde) }} moh<template v-if="lakeQuery.navn"><span class="text-white/55 font-normal"> · {{ lakeQuery.navn }}</span></template>
+              </span>
+            </div>
+            <!-- Vann, men NVE ennå ikke svart. -->
+            <div v-else-if="contextMenuInfo.isWater && lakeQuery?.status === 'loading'"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Vannflate</span>
+              <span class="text-white/50">henter innsjøhøyde …</span>
+            </div>
+            <!-- Vann, men NVE har ingen registrert innsjøhøyde her (eller var
+                 utilgjengelig) — ærlig svar, aldri en falsk 0. -->
+            <div v-else-if="contextMenuInfo.isWater"
+                 class="flex items-baseline gap-2 text-[12px]">
+              <span class="text-white/45 w-20 shrink-0">Høyde</span>
+              <span class="text-white/70">
+                Vannflate-høyde ikke tilgjengelig
+              </span>
+            </div>
+            <!-- Land: DEM-høyde. -->
+            <div v-else-if="contextMenuInfo.elevationM != null"
                  class="flex items-baseline gap-2 text-[12px]">
               <span class="text-white/45 w-20 shrink-0">Høyde</span>
               <span class="text-white font-medium tabular-nums">
                 {{ Math.round(contextMenuInfo.elevationM) }} moh
-              </span>
-            </div>
-            <div v-else-if="contextMenuInfo.elevationUnavailableWater"
-                 class="flex items-baseline gap-2 text-[12px]">
-              <span class="text-white/45 w-20 shrink-0">Høyde</span>
-              <span class="text-white/70">
-                Høyde over havet i denne innsjøen er ikke tilgjengelig
               </span>
             </div>
             <div v-if="contextMenuInfo.place"

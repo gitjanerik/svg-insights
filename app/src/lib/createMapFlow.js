@@ -74,6 +74,24 @@ function hasNearSeaLevelPixels(dem) {
   return false
 }
 
+// Finnes det ekte SALTVANN i OSM-dataene? NHM_DTM kan ikke skille sjø fra en
+// innlands-vannflate (begge leser ~0 m), så «havflate-piksler» alene er ikke
+// nok til å kalle et kart kystnært. Store innsjøer (Mjøsa ~123 m, Tyrifjorden
+// ~63 m) leser ~0 m i DEM-en og trigget tidligere både 5 m-DEM-oppgraderingen
+// og Sjøkart-WFS som om de var kyst. Kystlinjen (natural=coastline) er
+// fullstendig kartlagt langs hele Norges-kysten i OSM og er det definitive
+// sjø-signalet; saltvanns-tagger (place=sea, water=sea, salt=yes, bay/strait)
+// fanger fjorder/bukter uten egen kystlinje-way i bbox-en.
+function osmHasSaltwater(elements) {
+  for (const el of elements ?? []) {
+    const t = el?.tags
+    if (!t) continue
+    if (t.natural === 'coastline') return true
+    if (isOsmWaterSalty(t)) return true
+  }
+  return false
+}
+
 function withHardTimeout(promise, ms, fallback, label) {
   return new Promise((resolve) => {
     let settled = false
@@ -219,12 +237,40 @@ export async function buildMapFromCenter({
   const canUpgradeToFineDem = resolutionM > COASTAL_DEM_RES_M &&
                               sizeKmTotal <= COASTAL_UPGRADE_MAX_KM
   const probeDemPromise = fetchDemFor(resolutionM)
+
+  // Overpass + N50 fyres parallelt med DEM (delt mellom terreng- og full-bygg)
+  // så OSM-hentingen (flaskehalsen) starter samtidig med DEM. Deklarert FØR
+  // kyst-deteksjonen siden den trenger OSM-saltvanns-signalet.
+  const overpassP = timeAsync('overpass', fetchOverpass(bbox, { signal }))
+  const n50P = timeAsync('n50', fetchN50Water(bbox).catch(e => {
+    console.warn('N50-vann ikke tilgjengelig:', e.message)
+    return []
+  }))
+
+  // ── Kyst-deteksjon: DEM-havflate OG ekte saltvann i OSM ───────────────
+  // DEM-en alene kan ikke skille sjø fra en innlands-vannflate (begge ~0 m).
+  // Vi krever derfor BÅDE havflate-piksler i DEM-en OG saltvanns-/kystlinje-
+  // bevis i OSM før vi behandler kartet som kystnært. Innland-kart (Mjøsa,
+  // Tyrifjorden) → coastal=false → ingen 5 m-oppgradering, ingen Sjøkart-WFS.
+  // Resultatet caches så både DEM-oppgraderingen, Sjøkart-gaten og meta.coastal
+  // bruker samme svar. Bare ventet på når DEM faktisk viser havflate-piksler
+  // (ellers er svaret trivielt false og vi blokkerer ikke på Overpass).
+  const coastalPromise = probeDemPromise.then(async (probeDem) => {
+    if (!hasNearSeaLevelPixels(probeDem)) return false
+    return overpassP.then(osm => osmHasSaltwater(osm?.elements)).catch(() => false)
+  })
+
   const demPromise = timeAsync('dem', probeDemPromise.then(async (probeDem) => {
-    const coastal = hasNearSeaLevelPixels(probeDem)
-    if (!coastal || !canUpgradeToFineDem) {
-      if (coastal && sizeKmTotal > COASTAL_UPGRADE_MAX_KM) {
-        console.log(`[DEM] kyst-kart ${sizeKmTotal.toFixed(1)} km > ${COASTAL_UPGRADE_MAX_KM} km — beholder ${resolutionM} m (5 m for kostbart på store kart)`)
+    // Ingen oppgradering mulig (for stort/allerede fint) → returnér probe-DEM-et
+    // med en gang; vent IKKE på kyst-signalet (som blokkerer på Overpass).
+    if (!canUpgradeToFineDem) {
+      if (hasNearSeaLevelPixels(probeDem) && sizeKmTotal > COASTAL_UPGRADE_MAX_KM) {
+        console.log(`[DEM] mulig kyst-kart ${sizeKmTotal.toFixed(1)} km > ${COASTAL_UPGRADE_MAX_KM} km — beholder ${resolutionM} m (5 m for kostbart på store kart)`)
       }
+      return probeDem
+    }
+    const coastal = await coastalPromise
+    if (!coastal) {
       return probeDem
     }
     onProgress(`Kystnært kart — henter DEM i ${COASTAL_DEM_RES_M} m for skarpere kystlinje …`)
@@ -238,23 +284,15 @@ export async function buildMapFromCenter({
       return probeDem
     }
   }))
-  // Sjøkart gates på probe-DEM-et (returnerer først) så WFS-hentingen starter
-  // parallelt med 5 m-oppgraderingen, ikke etter den.
-  const sjokartPromise = timeAsync('sjøkart', probeDemPromise.then(dem => {
-    if (!hasNearSeaLevelPixels(dem)) {
-      console.log('[Sjøkart] hopper over — bbox er innlands (ingen DEM-piksler ≤ 0.5 m)')
+  // Sjøkart gates på samme kyst-signal (DEM-havflate + OSM-saltvann). For
+  // innlands-bbox (inkl. store innsjøer) hoppes WFS-hentingen helt over.
+  const sjokartPromise = timeAsync('sjøkart', coastalPromise.then(coastal => {
+    if (!coastal) {
+      console.log('[Sjøkart] hopper over — bbox er innlands (ingen havflate + saltvann)')
       return EMPTY_SJOKART
     }
     return withHardTimeout(fetchSjokart(bbox), SJOKART_TIMEOUT_MS, EMPTY_SJOKART, 'Sjøkart')
   }).catch(() => EMPTY_SJOKART))
-
-  // Overpass + N50 fyres parallelt nå (delt mellom terreng- og full-bygg) så
-  // OSM-hentingen (flaskehalsen) starter samtidig med DEM.
-  const overpassP = timeAsync('overpass', fetchOverpass(bbox, { signal }))
-  const n50P = timeAsync('n50', fetchN50Water(bbox).catch(e => {
-    console.warn('N50-vann ikke tilgjengelig:', e.message)
-    return []
-  }))
 
   const id = generateMapId()
   // Marker som ferskt kart så MapView gir det en garantert «litt kontur + litt
@@ -326,6 +364,7 @@ export async function buildMapFromCenter({
     sourceParts.push('DEM-sjø (NHM_DTM_25832)')
     const source = sourceParts.join(' + ')
 
+    const coastal = await coastalPromise
     throwIfAborted()
     onProgress(`Bygger SVG fra ${elements.length} elementer …`)
     // buildSvg i Web Worker så det tunge passet ikke fryser UI-en. signal
@@ -339,6 +378,7 @@ export async function buildMapFromCenter({
       // DEM-sjø ALLTID på når DEM er ekte. Øy-overlay (ISOM 001) dekker
       // «smitter inn på lavtliggende øyer»-tilfeller.
       skipDemSea: false,
+      coastal,                       // kyst vs innland → meta.coastal (MapView høyde-ærlighet)
     }, { signal }))
 
     const ti = timings ?? {}
