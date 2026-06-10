@@ -287,8 +287,8 @@ async function onSelectSearchResult(r) {
                          shadow-md active:scale-95 transition disabled:opacity-60">
             <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="11" r="3"/>
-              <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+              <circle cx="12" cy="10" r="3"/>
+              <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
             </svg>
           </button>
         </div>
@@ -316,8 +316,8 @@ async function onSelectSearchResult(r) {
            class="mb-4 px-1 text-[11.5px] text-white/45 flex items-center gap-1.5 leading-snug">
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-emerald-300/80 shrink-0" fill="none"
              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="11" r="3"/>
-          <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+          <circle cx="12" cy="10" r="3"/>
+          <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
         </svg>
         <span>Søk etter et sted — eller trykk den grønne knappen for å lage kart der du står.</span>
       </div>

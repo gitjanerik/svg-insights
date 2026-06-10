@@ -5,6 +5,7 @@ import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
+import { useResizablePanel } from '../composables/useResizablePanel.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
@@ -412,6 +413,20 @@ watch(visibleTabs, (tabs) => {
 }, { immediate: true })
 
 const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
+// Desktop: drawer er et høyrestilt side-panel med dra-bar venstrekant
+// (min 360px, maks 50vw, bredde lagret i localStorage per spor).
+const panel = useResizablePanel('map-panel-width')
+// Bredden side-panelet stjeler fra kartet på desktop. Kompass + FAB skyves
+// til venstre for panelet, og kart-wrapperen krympes tilsvarende så «Sentrer»
+// (reset av pinch/zoom) fyller den synlige flaten, ikke hele viewporten.
+const panelOffsetPx = computed(() =>
+  isDesktop.value && showControls.value ? panel.width.value : 0
+)
+// Høyre-offset for flytende kontroller (kompass + FAB): rett til venstre for
+// panelet på desktop, ellers standard 12px (= right-3).
+const floatRightStyle = computed(() => ({
+  right: (panelOffsetPx.value > 0 ? panelOffsetPx.value + 12 : 12) + 'px',
+}))
 
 function openDrawer() { showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
@@ -4176,7 +4191,7 @@ onUnmounted(() => {
     <div v-if="!curveball.active.value"
          class="absolute top-20 z-20 pointer-events-auto select-none flex flex-col items-end
                 transition-[right] duration-200"
-         :class="isDesktop && showControls ? 'right-[21rem]' : 'right-3'">
+         :style="floatRightStyle">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
               class="w-14 h-14 rounded-full bg-zinc-950
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
@@ -4225,8 +4240,8 @@ onUnmounted(() => {
          til venstre for panelet. -->
     <div v-if="!curveball.active.value && !searchOpen"
          class="absolute z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom,right] duration-200"
-         :class="isDesktop && showControls ? 'right-[21rem]' : 'right-3'"
          :style="{
+           right: floatRightStyle.right,
            bottom: (showControls && !isDesktop)
              ? 'calc(45dvh + 0.75rem)'
              : 'calc(env(safe-area-inset-bottom, 0px) + 5rem)'
@@ -4296,8 +4311,9 @@ onUnmounted(() => {
     <!-- Kart-flate. Unified transform (translate ∘ rotate ∘ scale) på ett
          enkelt indre div. Lar finger-pivot styre rotasjons-/zoom-senter
          (v8.9.2). -->
-    <div ref="wrapperRef" class="absolute inset-0 touch-none select-none"
+    <div ref="wrapperRef" class="absolute inset-0 touch-none select-none transition-[right] duration-200"
          :class="annot.isAnnotateMode.value ? 'cursor-crosshair' : ''"
+         :style="{ right: panelOffsetPx + 'px' }"
          @pointerdown="onPointerDownLongPress"
          @pointermove="onPointerMoveLongPress"
          @pointerup="onPointerUpLongPress"
@@ -4371,7 +4387,7 @@ onUnmounted(() => {
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor"
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="10" r="3"/>
-          <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+          <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
         </svg>
         <span class="min-w-0 flex flex-col leading-tight">
           <span class="truncate font-semibold">{{ highlightedFeature.name }}</span>
@@ -4561,9 +4577,19 @@ onUnmounted(() => {
       <div v-if="showControls"
            :class="['absolute z-30 backdrop-blur-md bg-zinc-900/92 flex flex-col shadow-2xl',
                     isDesktop
-                      ? 'top-0 right-0 bottom-0 w-80 border-l border-white/10'
+                      ? 'top-0 right-0 bottom-0 border-l border-white/10'
                       : 'inset-x-0 bottom-0 border-t border-white/10 rounded-t-2xl']"
-           :style="isDesktop ? {} : drawer.drawerHeightStyle.value">
+           :style="isDesktop
+                     ? { width: panel.width.value + 'px', transition: panel.isResizing.value ? 'none' : undefined }
+                     : drawer.drawerHeightStyle.value">
+        <!-- Desktop: dra-bar venstrekant for å justere panelbredden (360px–50vw). -->
+        <div v-if="isDesktop"
+             class="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 z-10 cursor-col-resize group"
+             @pointerdown="panel.onResizeStart($event)">
+          <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-white/10
+                      group-hover:bg-sky-400/60 transition-colors"
+               :class="panel.isResizing.value ? 'bg-sky-400/80' : ''"></div>
+        </div>
         <div class="shrink-0 select-none"
              :class="isDesktop ? '' : 'touch-none cursor-grab active:cursor-grabbing'"
              @pointerdown="isDesktop || drawer.onPointerDown($event)"
@@ -4611,8 +4637,8 @@ onUnmounted(() => {
                           : 'bg-white/5 border-white/10 text-white/80'">
             <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="11" r="3"/>
-              <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+              <circle cx="12" cy="10" r="3"/>
+              <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
             </svg>
             {{ userPos.isWatching ? 'Følger GPS' : 'Start GPS' }}
           </button>
@@ -5407,7 +5433,7 @@ onUnmounted(() => {
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="10" r="3"/>
-                <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+                <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
               </svg>
               <span>Google Maps</span>
             </button>

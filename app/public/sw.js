@@ -8,11 +8,12 @@
  *   - Fetch:
  *       HTML (navigation)  → network first, fall back to cached index.html
  *       Hashed assets (/assets/*-HASH.ext) → cache first, forever
+ *       Map data (/maps/*.svg) → network first, fall back to cache (offline)
  *       Icons, manifest, favicon → stale-while-revalidate
  *       Everything else → network only (Google Fonts, opentype from CDN, etc.)
  */
 
-const CACHE_VERSION = 'svg-insights-v10.1.26'
+const CACHE_VERSION = 'svg-insights-v10.1.27'
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`
 const BASE = '/svg-insights/'
@@ -86,6 +87,25 @@ self.addEventListener('fetch', (e) => {
           return res
         })
       })
+    )
+    return
+  }
+
+  // Map data (built SVG kart, e.g. maps/vardasen.svg) → network-first.
+  // These are large data payloads that the app parses as XML — they must NOT
+  // go through the icon stale-while-revalidate branch below, which could serve
+  // a stale or truncated cached copy on first load ("Ugyldig SVG"; a refresh
+  // then succeeds once the background revalidation has replaced the entry).
+  // Always prefer fresh network; fall back to cache only when offline.
+  if (url.pathname.startsWith(`${BASE}maps/`)) {
+    e.respondWith(
+      fetch(req).then((res) => {
+        if (res && res.ok) {
+          const copy = res.clone()
+          caches.open(ASSET_CACHE).then((c) => c.put(req, copy))
+        }
+        return res
+      }).catch(() => caches.match(req))
     )
     return
   }
