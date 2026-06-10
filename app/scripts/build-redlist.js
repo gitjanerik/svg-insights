@@ -1,123 +1,122 @@
-// Bygg den norske rødliste-bundelen fra GBIF → app/public/data/redlist-no.json.
+// Bygg den norske rødliste-bundelen → app/public/data/redlist-no.json.
 //
-// Kjøres i CI (full nett-tilgang), ikke i klient/sandkasse. Resultatet er et
-// flatt oppslag { gbif-backbone-speciesKey: "CR"|"EN"|"VU"|"NT" } som runtime
-// (redListNo.js) snitter mot artene GBIF returnerer for et verneområde-polygon.
+// KILDE: tools/redlist-2021.csv — Artsdatabankens offisielle eksport av Norsk
+// rødliste for arter 2021 (autoritativ, alle artsgrupper). Gjeldende utgave:
+// rødlista revideres hvert 6. år, så 2021 er ikke utdatert.
 //
-// Hvorfor GBIF og ikke GBIFs globale IUCN-filter: den norske rødlista er en egen
-// nasjonal ekspert-vurdering, publisert som GBIF-checklist. Hver name-usage har
-// en backbone-nøkkel (`nubKey`, samme nøkkel som occurrence-faceten bruker) +
-// threat status fra den NORSKE vurderingen.
+// Runtime (redListNo.js) snitter bundelen mot GBIF-backbone speciesKeys som
+// occurrence-faceten returnerer. Artsdatabanken bruker egne taxon-id-er, så det
+// eneste vi trenger GBIF til er å oversette artsnavn → backbone speciesKey
+// (/species/match). Det skjer her ved bygg (CI), ikke ved klikk.
 //
-// Datasett: env REDLIST_DATASET_KEY, ellers den KOMPLETTE norske rødlista 2015
-// (alle artsgrupper). En komplett liste er viktigere for en «rødlistet?»-
-// indikator enn en nyere, men delvis liste (GBIF har kun en planter-kun 2021-
-// delmengde + den komplette 2015-lista). Kategorien er uendret 2015→2021 for de
-// fleste arter. Bytt via env hvis en komplett 2021-checklist dukker opp.
+// Resultat: { gbif-backbone-speciesKey: "CR"|"EN"|"VU"|"NT" }.
 //
-// Threat status / backbone-nøkkel ligger ikke alltid inline i listings-svaret;
-// da beriker vi pr art via detalj-endepunktet (/species/{key}).
+// OPPDATERING TIL NESTE UTGAVE (f.eks. 2027): erstatt tools/redlist-2021.csv med
+// den nye Artsdatabanken-eksporten (samme kolonner) — workflowen bygger om
+// bundelen automatisk. tools/fetch_redlist_2021.py dokumenterer API-veien hvis
+// man heller vil hente direkte fra Artsdatabanken.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 const GBIF = process.env.GBIF_API_URL ?? 'https://api.gbif.org/v1'
-const DATASET = process.env.REDLIST_DATASET_KEY ?? '4f1047ac-a19d-41a8-98eb-d968b2548b53' // Norsk rødliste 2015 (komplett)
-const KEEP = { CRITICALLY_ENDANGERED: 'CR', ENDANGERED: 'EN', VULNERABLE: 'VU', NEAR_THREATENED: 'NT' }
+const KEEP = new Set(['CR', 'EN', 'VU', 'NT']) // truet + nær truet (ikke RE/DD/LC)
 const SEVERITY = { CR: 4, EN: 3, VU: 2, NT: 1 }
 const CONCURRENCY = 10
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const SRC = process.env.REDLIST_CSV ?? resolve(__dirname, '../../tools/redlist-2021.csv')
 const OUT = resolve(__dirname, '../public/data/redlist-no.json')
 
-async function getJson(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } })
-  if (!res.ok) throw new Error(`GBIF ${res.status} for ${url}`)
-  return res.json()
+// Minimal RFC4180-CSV-parser (håndterer "..."-felt med komma/linjeskift/"").
+function parseCsv(text) {
+  const rows = []
+  let row = [], field = '', inQ = false
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++ } else inQ = false }
+      else field += c
+    } else if (c === '"') inQ = true
+    else if (c === ',') { row.push(field); field = '' }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = '' }
+    else if (c === '\r') { /* hopp */ }
+    else field += c
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row) }
+  return rows
 }
 
-function categoryOf(statuses) {
-  if (!Array.isArray(statuses)) return null
-  for (const s of statuses) if (KEEP[s]) return KEEP[s]
-  return null
+// «VU°» (nedgradert pga naboland-effekt) → «VU». Sluttkategorien er den samme.
+const normCat = (c) => String(c || '').replace(/°/g, '').trim().toUpperCase()
+
+async function matchSpeciesKey(name) {
+  const url = `${GBIF}/species/match?strict=false&name=${encodeURIComponent(name)}`
+  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!res.ok) throw new Error(`GBIF match ${res.status}`)
+  const m = await res.json()
+  if (!m || m.matchType === 'NONE') return null
+  const key = Number(m.speciesKey ?? m.usageKey)
+  return Number.isFinite(key) ? key : null
 }
 
 async function mapLimit(items, limit, fn) {
   let i = 0
-  const workers = Array.from({ length: limit }, async () => {
+  await Promise.all(Array.from({ length: limit }, async () => {
     while (i < items.length) {
       const idx = i++
       try { await fn(items[idx]) } catch { /* hopp over enkeltfeil */ }
     }
-  })
-  await Promise.all(workers)
+  }))
 }
 
-async function build() {
-  console.log(`Datasett: ${DATASET}`)
+function build() {
+  const rows = parseCsv(readFileSync(SRC, 'utf-8'))
+  const header = rows[0].map((h) => h.trim())
+  const col = (name) => header.indexOf(name)
+  const ci = { name: col('scientificName'), cat: col('redListCategory'), area: col('assessmentArea') }
+  if (ci.name < 0 || ci.cat < 0) throw new Error(`Mangler kolonner i ${SRC} (header: ${header})`)
+
+  // Unike artsnavn (Norge) med høyeste rødliste-kategori.
+  const nameToCat = new Map()
+  for (const r of rows.slice(1)) {
+    if (ci.area >= 0 && r[ci.area] !== 'Norge') continue
+    const cat = normCat(r[ci.cat])
+    if (!KEEP.has(cat)) continue
+    const name = (r[ci.name] || '').trim()
+    if (!name) continue
+    const prev = nameToCat.get(name)
+    if (!prev || SEVERITY[cat] > SEVERITY[prev]) nameToCat.set(name, cat)
+  }
+  console.log(`Rødlistede arter (Norge, CR/EN/VU/NT) i kilden: ${nameToCat.size}`)
+  return nameToCat
+}
+
+async function main() {
+  const nameToCat = build()
+  const names = [...nameToCat.keys()]
   const lookup = {}
-  const setCat = (nubKey, cat) => {
-    const k = Number(nubKey)
-    if (!Number.isFinite(k) || !cat) return
-    const prev = lookup[k]
-    if (!prev || SEVERITY[cat] > SEVERITY[prev]) lookup[k] = cat
+  let matched = 0, nomatch = 0
+  const setKey = (key, cat) => {
+    const prev = lookup[key]
+    if (!prev || SEVERITY[cat] > SEVERITY[prev]) lookup[key] = cat
   }
-
-  // 1) Paginér name-usages. Listings-svaret har `nubKey` (backbone-nøkkel) men
-  //    verken `rank` eller `threatStatuses` — så vi samler hver AKSEPTERT usage
-  //    med en nubKey og henter threat status pr art i steg 2.
-  const candidates = []
-  let offset = 0
-  let total = 0
-  let firstLogged = false
-  while (true) {
-    const page = await getJson(`${GBIF}/species?datasetKey=${DATASET}&limit=1000&offset=${offset}`)
-    const results = page?.results ?? []
-    if (!firstLogged && results[0]) {
-      console.log('Eksempel-usage (felt):', Object.keys(results[0]).join(', '))
-      firstLogged = true
-    }
-    for (const u of results) {
-      total++
-      const nubKey = Number(u.nubKey)
-      if (!Number.isFinite(nubKey)) continue
-      if (u.taxonomicStatus && u.taxonomicStatus !== 'ACCEPTED') continue
-      candidates.push({ key: u.key, nubKey })
-    }
-    if (page?.endOfRecords) break
-    offset += 1000
-  }
-  console.log(`Name-usages: ${total}. Aksepterte med nubKey: ${candidates.length}.`)
-
-  // 2) Berik threat status pr art via detalj-endepunktet (threatStatuses),
-  //    med distributions-extensionen som siste utvei. Logg formen på første art.
-  let diag = false
-  await mapLimit(candidates, CONCURRENCY, async ({ key, nubKey }) => {
-    const u = await getJson(`${GBIF}/species/${key}`)
-    let cat = categoryOf(u.threatStatuses)
-    let distFirst = null
-    if (!cat) {
-      const dist = await getJson(`${GBIF}/species/${key}/distributions`).catch(() => null)
-      distFirst = (dist?.results ?? [])[0] ?? null
-      cat = categoryOf((dist?.results ?? []).map((d) => d.threatStatus))
-    }
-    if (!diag) {
-      diag = true
-      console.log('Detalj-felt:', Object.keys(u).join(', '))
-      console.log('threatStatuses:', JSON.stringify(u.threatStatuses ?? null))
-      console.log('distributions[0]:', JSON.stringify(distFirst).slice(0, 300))
-    }
-    if (cat) setCat(nubKey, cat)
+  await mapLimit(names, CONCURRENCY, async (name) => {
+    const key = await matchSpeciesKey(name)
+    if (key == null) { nomatch++; return }
+    matched++
+    setKey(key, nameToCat.get(name))
   })
 
   const byCat = { CR: 0, EN: 0, VU: 0, NT: 0 }
   for (const c of Object.values(lookup)) byCat[c]++
-  console.log(`Rødlistede arter (med GBIF-nøkkel): ${Object.keys(lookup).length}`)
+  console.log(`GBIF-match: ${matched} treff, ${nomatch} uten treff.`)
+  console.log(`Unike GBIF-nøkler i bundelen: ${Object.keys(lookup).length}`)
   console.log(`  CR ${byCat.CR}  EN ${byCat.EN}  VU ${byCat.VU}  NT ${byCat.NT}`)
 
   if (Object.keys(lookup).length === 0) {
-    throw new Error('Ingen rødlistede arter funnet — avbryter (ikke skriv tom bundle).')
+    throw new Error('Ingen arter matchet — avbryter (ikke skriv tom bundle).')
   }
 
   const sorted = {}
@@ -127,4 +126,4 @@ async function build() {
   console.log(`Skrev ${OUT} (${(JSON.stringify(sorted).length / 1024).toFixed(1)} KB).`)
 }
 
-build().catch((e) => { console.error(e); process.exit(1) })
+main().catch((e) => { console.error(e); process.exit(1) })

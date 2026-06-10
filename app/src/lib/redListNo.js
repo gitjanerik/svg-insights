@@ -4,9 +4,11 @@
 // Den norske rødlista er en egen ekspert-dom (CR/EN/VU/NT i Norge) og må komme
 // fra Artsdatabanken. Vi løser det uten ekstra klikk-kall:
 //
-//   1. Ved bygg (CI, scripts/build-redlist.js) hentes den norske rødliste-
-//      checklisten fra GBIF og lagres som `public/data/redlist-no.json` —
-//      et flatt oppslag { gbif-backbone-speciesKey: "CR"|"EN"|"VU"|"NT" }.
+//   1. Ved bygg (CI, scripts/build-redlist.js) leses Artsdatabankens offisielle
+//      Norsk rødliste 2021 (tools/redlist-2021.csv) og lagres som
+//      `public/data/redlist-no.json` — et flatt oppslag
+//      { gbif-backbone-speciesKey: "CR"|"EN"|"VU"|"NT" }. GBIF brukes kun til å
+//      oversette artsnavn → backbone-nøkkel ved bygg.
 //   2. Ved long-press gir GBIF-arts-oppslaget allerede speciesKeys i polygonet.
 //      Vi snitter dem lokalt mot bundelen — null ekstra nettkall.
 //

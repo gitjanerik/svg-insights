@@ -12,6 +12,7 @@ on:
     paths:
       - 'app/scripts/build-redlist.js'
       - '.github/workflows/build-redlist.yml'
+      - 'tools/redlist-2021.csv'
 
 permissions:
   contents: write
