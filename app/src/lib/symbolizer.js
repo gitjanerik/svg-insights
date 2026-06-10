@@ -465,6 +465,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // sanntid uten re-render. Default 1 = ISOM-spec-bredder. Påvirker kun
   // kartlinjer (kategori-strokes), ikke tekst-haloer.
   const sw = (v) => `calc(${v}mm * var(--stroke-scale, 1))`
+  // Global tekst-skala: rotasjons-slidens søsken i MapView (desktop) setter
+  // `--label-scale` på `.isom-map`-roten. calc() lar brukeren øke/minske ALLE
+  // kart-etiketter (navn, høyde, stedsnavn, naturreservat, vann osv) i sanntid
+  // uten re-render. Default 1 = «normal» (slider midtstilt). Halo-bredder
+  // skaleres IKKE — de følger kartstørrelse som før, så teksten ikke drukner.
+  const fs = (v) => `calc(${mm(v)} * var(--label-scale, 1))`
   // Inter variable webfont (selv-hostet via @fontsource-variable/inter, lastet
   // i appens style.css). font-weight: 400 er base for labels; spesifikke labels
   // (peak, stedsnavn) overstyrer under. tabular-nums sørger for at høyde-,
@@ -563,12 +569,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Font og halo skaleres med kartstørrelse (se labelScale over) så et 10 km
   // kart leverer like lesbare labels ved max zoom som 4 km referanse-kart.
   const lab = catalog.labels
-  rules.push(`${root} [data-label] { font-size: ${mm(lab.place.fontSizeMm)}; fill: var(--label-place-fill, ${lab.place.color}); paint-order: stroke; stroke: var(--label-place-halo, ${lab.place.haloColor}); stroke-width: ${haloMm(lab.place.haloWidthMm)}; stroke-linejoin: round; }`)
-  rules.push(`${root} [data-label="peak"] { font-size: ${mm(lab.peak.fontSizeMm)}; fill: var(--label-peak-fill, ${lab.peak.color}); font-weight: ${lab.peak.weight}; stroke: var(--label-peak-halo, ${lab.peak.haloColor}); stroke-width: ${haloMm(lab.peak.haloWidthMm)}; paint-order: stroke; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label] { font-size: ${fs(lab.place.fontSizeMm)}; fill: var(--label-place-fill, ${lab.place.color}); paint-order: stroke; stroke: var(--label-place-halo, ${lab.place.haloColor}); stroke-width: ${haloMm(lab.place.haloWidthMm)}; stroke-linejoin: round; }`)
+  rules.push(`${root} [data-label="peak"] { font-size: ${fs(lab.peak.fontSizeMm)}; fill: var(--label-peak-fill, ${lab.peak.color}); font-weight: ${lab.peak.weight}; stroke: var(--label-peak-halo, ${lab.peak.haloColor}); stroke-width: ${haloMm(lab.peak.haloWidthMm)}; paint-order: stroke; stroke-linejoin: round; }`)
   if (lab['peak-ele']) {
     const pe = lab['peak-ele']
     const styleProps = [
-      `font-size: ${mm(pe.fontSizeMm)}`,
+      `font-size: ${fs(pe.fontSizeMm)}`,
       `fill: var(--label-peak-ele-fill, ${pe.color})`,
       pe.italic ? 'font-style: italic' : null,
       pe.weight ? `font-weight: ${pe.weight}` : null,
@@ -579,11 +585,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     ].filter(Boolean).join('; ')
     rules.push(`${root} [data-label="peak-ele"] { ${styleProps} }`)
   }
-  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${mm(lab['kontur-tall'].fontSizeMm)}; fill: var(--label-kontur-tall-fill, ${lab['kontur-tall'].color}); font-style: italic; }`)
+  rules.push(`${root} [data-label="kontur-tall"] { font-size: ${fs(lab['kontur-tall'].fontSizeMm)}; fill: var(--label-kontur-tall-fill, ${lab['kontur-tall'].color}); font-style: italic; }`)
   if (lab['vann-navn']) {
     const vn = lab['vann-navn']
     const styleProps = [
-      `font-size: ${mm(vn.fontSizeMm)}`,
+      `font-size: ${fs(vn.fontSizeMm)}`,
       `fill: var(--label-vann-navn-fill, ${vn.color})`,
       vn.italic ? 'font-style: italic' : null,
       vn.weight ? `font-weight: ${vn.weight}` : null,
@@ -595,7 +601,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
   }
   if (lab['vann-tall']) {
-    rules.push(`${root} [data-label="vann-tall"] { font-size: ${mm(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
+    rules.push(`${root} [data-label="vann-tall"] { font-size: ${fs(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
   // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
   // v8.10.15: naturreservat-navn — grønn skrift + hvit halo, samme visuelle
@@ -604,7 +610,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     const cfg = lab[kind]
     if (!cfg) continue
     const styleProps = [
-      `font-size: ${mm(cfg.fontSizeMm)}`,
+      `font-size: ${fs(cfg.fontSizeMm)}`,
       `fill: var(--label-${kind}-fill, ${cfg.color})`,
       cfg.italic ? 'font-style: italic' : null,
       cfg.weight ? `font-weight: ${cfg.weight}` : null,
@@ -621,9 +627,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Base: farge/halo/vekt. Skrift-STØRRELSE settes per rank (v9.1.12) — by/
   // tettsted større enn grend/gård, etter OSM place-type (placeRank i
   // mapBuilder). Default-størrelse (mangler data-rank, f.eks. eldre kart) = mid.
-  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${mm(5.8)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
-  rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${mm(7.2)}; }`)
-  rules.push(`${root} [data-label="stedsnavn"][data-rank="minor"] { font-size: ${mm(4.8)}; }`)
+  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${fs(5.8)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
+  rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${fs(7.2)}; }`)
+  rules.push(`${root} [data-label="stedsnavn"][data-rank="minor"] { font-size: ${fs(4.8)}; }`)
   // LOD (v9.1.12): ved utzoom (ikke .zoomed-in) skjuler vi det tette grend-/
   // gård-/locality-teppet (rank=minor) og beholder by/tettsted/landsby for
   // oversikts-orientering. Resten dukker opp ved innzoom. Stor frame-rate-
