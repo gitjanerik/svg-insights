@@ -1,5 +1,643 @@
 # Changelog
 
+## 2026-06-10 — v10.1.26: «Lag nytt kart»-etikett + ryddigere «Flere valg»
+
+Turkart-forsiden fikk en seksjons-overskrift «Lag nytt kart» over søkefeltet (matcher «Innebygd»/«Mine kart»-etikettene), og «Flere valg» ble flyttet fra en løs, sentrert knapp til en høyrestilt handling i overskrifta.
+
+---
+
+## 2026-06-10 — v10.1.25: Drawer som høyrestilt side-panel på desktop
+
+På desktop (≥768px) vises kart-drawer nå som et fullhøyde, høyrestilt side-panel (som illustrasjons-sporet) i stedet for et bunn-ark; kompass og FAB-stack skyves til venstre for panelet når det er åpent. Fane-stilen ble gjort lik i begge spor — understreket aktiv fane.
+
+---
+
+## 2026-06-10 — v10.1.24: Opt-in-innstillinger, ryddigere kartlag, eksport-spinner, søkefelt
+
+Auto-kart og «hold skjerm våken» er nå default AV (opt-in). «Lag»-fanen ble døpt om til «Kartlag» med omsorterte lag (sti/høydekurver/vann øverst, slalombakke/heistrasé sist). Eksport-knappene (SVG/PNG/PDF) viser spinner mens fila lages. Forsidens søkefelt fikk en integrert GPS-knapp. /about: NVE og Kartverket Sjøkart lagt til under datakilder.
+
+---
+
+## 2026-06-10 — v10.1.23: Sømløs mosaikk, mus-kontroller, A-format-utsnitt + print-eksport
+
+Hvite sømmer mellom auto-kart-fliser fjernet (kart-cream som viewport-base + heltalls-flis-offset). Desktop fikk mus-pan, scroll-zoom og en rotasjons-slider. Auto-kart bruker stående A-format-utsnitt, og print/SVG/PNG eksporterer det opprinnelige (print-tilpassede) kartet.
+
+---
+
+<!-- ──────────────────────────────────────────────────────────────────────────
+     Backfill nedenfor (v5.0.1 → v10.1.22): rekonstruert fra git-historikk /
+     PR-titler. Endringsloggen sluttet å bli vedlikeholdt manuelt ved v4.14.2
+     (konvensjonen ble «git-historikk = endringslogg»). Disse postene er derfor
+     grovere — én linje per release. De håndskrevne, detaljerte postene fra
+     v4.14.2 og eldre følger under backfill-blokken.
+     ────────────────────────────────────────────────────────────────────────── -->
+
+## 2026-06-10 — v10.1.22: Innsjøer: dyp/areal/volum/magasin fra NVE + sanntid via HydAPI (long-press)
+
+## 2026-06-10 — v10.1.21: Innsjøer: ekte vannflate-høyde fra NVE + ingen falsk kyst-behandling
+
+## 2026-06-08 — v10.1.20: Lake elevation: honest 'not available' instead of false 0 moh
+
+## 2026-06-08 — v10.1.19: Salt vs fresh water: authoritative tags only, never the name
+
+## 2026-06-08 — v10.1.18: Hide relief + flatten dashes on ghost tiles during gestures too
+
+## 2026-06-08 — v10.1.17: Fix ghost-tile bymasse toggle + black fill on neighbour tiles
+
+## 2026-06-08 — v10.1.16: Auto-map mosaic: full-detail ghost tiles (Option A)
+
+## 2026-06-08 — v10.1.15: Auto-map mosaic (step 2b): render relief on ghost tiles
+
+## 2026-06-08 — v10.1.14: Auto-map mosaic (step 3): promote the tile you scroll onto to full detail
+
+## 2026-06-08 — v10.1.13: Auto-map mosaic (step 2): render previous tiles as faded neighbour ghosts
+
+## 2026-06-08 — v10.1.12: Auto-map tile cache (step 1): retain previous tiles instead of deleting
+
+## 2026-06-08 — v10.1.11: Allow pan/zoom/rotate while a new map loads
+
+## 2026-06-08 — v10.1.10: Kart: bbox følger skjerm-format (portrett) så kartet fyller fullskjerm
+
+## 2026-06-07 — v10.1.9: Kart: dropp 3×3-periferi-ringen — vis kartet i full skjerm
+
+## 2026-06-07 — v10.1.8: Kart-forside: søkefelt øverst som bygger direkte, «Lag nytt turkart» → diskret «Flere valg»
+
+## 2026-06-07 — v10.1.7: Kart: løs opp 3×3-rektangelet — markdekke i periferien + oval uttoning av midt-detaljen
+
+## 2026-06-07 — v10.1.6: Kart: relieff som radial vignette i 3×3-visning (ingen rektangel)
+
+## 2026-06-07 — v10.1.5: Kart: klipp bort kant-følgende kontur-spaghetti i periferien
+
+## 2026-06-07 — v10.1.4: Kart: kvadratisk meter-rom via fire-hjørners UTM-extent
+
+## 2026-06-07 — v10.1.3: Kart: tema-bakgrunn arves til alle 3×3-fliser
+
+## 2026-06-07 — v10.1.2: Kart-perf: content-visibility på periferi-ring + async relieff-dekode + parse-once-fliser
+
+## 2026-06-07 — v10.1.1: Kart: feather relieff-kant + tema på hele 3×3-ringen + maks 7 km
+
+## 2026-06-07 — v10.1.0: 3×3-fliskart: sømløs re-sentrering + Overpass-struping [increment 3]
+
+## 2026-06-07 — v10.0.0: Bump til v10.0.0 — 3×3-fliskart er en major-endring
+
+## 2026-06-07 — v9.3.40: 3×3-fliskart: periferi-ring i MapView [increment 2]
+
+## 2026-06-07 — v9.3.39: Relieff: bak blend inn i alfa, fjern mix-blend-mode
+
+## 2026-06-07 — v9.3.38: UI: auto-kart default på/skjult, Innstillinger-fane, skjul Tegnforklaring
+
+## 2026-06-07 — v9.3.37: Strand som sand-flate i stedet for punkt-ikon
+
+## 2026-06-07 — v9.3.36: Relieff draperer land, ikke vann + sterkere hillshade
+
+## 2026-06-07 — v9.3.35: Vektor-vann autoritativt over DEM-sjø — fjern teal/trappetrinn på innsjøer
+
+## 2026-06-07 — v9.3.34: Vann skjuler terreng via painter's order — fjern land-mask
+
+## 2026-06-07 — v9.3.33: Land-mask: én svart path per vann-polygon — fiks høydekurver i vann
+
+## 2026-06-07 — v9.3.32: Pan ved nullstilt zoom + 3×3 canvas, blokker interaksjon under detalj-fylling
+
+## 2026-06-07 — v9.3.31: Overpass: retry med backoff + tredje speil for robust detalj-fylling
+
+## 2026-06-07 — v9.3.30: Fiks røde høydekurve-blink i periferien + Overpass-tak
+
+## 2026-06-06 — v9.3.29: Detalj-feil-banner: klar FAB-kolonnen så X-en ikke skjules
+
+## 2026-06-06 — v9.3.28: Detalj-feil-banner med «Prøv på nytt» + fersk-kart terreng-baseline
+
+## 2026-06-06 — v9.3.27: Terreng-først: vis konturer + relieff straks, fyll inn OSM i bakgrunnen
+
+## 2026-06-06 — v9.3.26: Overpass i kappløp mellom speil — angrip den målte flaskehalsen
+
+## 2026-06-06 — v9.3.25: Perf-instrumentering + progressiv-fundament (skip av tunge lag)
+
+## 2026-06-06 — v9.3.24: Auto-kart: fiks «av og til ikke noe nytt kart» — feilet prefetch poisonet triggeren
+
+## 2026-06-06 — v9.3.23: Skru på DEM-flis-cache for verifisering på enhet
+
+## 2026-06-06 — v9.3.22: Kart-bygging: Web Worker + spekulativ prefetch for raskere auto-kart
+
+## 2026-06-06 — v9.3.21: Auto-kart: gjør grønn FAB til alltid-synlig auto-regenererings-bryter
+
+## 2026-06-02 — v9.3.20: Fiks tellefeil i relief-/strek-knottene ved pointercancel
+
+## 2026-06-01 — v9.3.19: Kart-liste: tre info-linjer per kort (str/ekv/DEM + dato/tid)
+
+## 2026-06-01 — v9.3.18: Slankere bro + midtstilt GPS-toast tilpasset tekstbredde
+
+## 2026-06-01 — v9.3.17: Kyst-kart: gate 5 m-DEM-oppgradering på kart-størrelse (≤ 8 km)
+
+## 2026-06-01 — v9.3.16: Kyst-kart: oppgrader DEM til 5 m så smale sund oppløses
+
+## 2026-05-31 — v9.3.15: Fjern flytende blå strek på DEM-grunn-bånd nærmest land
+
+## 2026-05-31 — v9.3.14: Anker 553: sammenhengende figur (stamme møter flukes-buen)
+
+## 2026-05-31 — v9.3.13: Wake lock: inaktivitets-timer (2 min) på «Hold skjerm våken»
+
+## 2026-05-31 — v9.3.12: Strand: eget symbol (556) i stedet for slipp-pil
+
+## 2026-05-31 — v9.3.11: Bro 509: tegn langs hele spennet + døp om «Bro / bru» → «Bro»
+
+## 2026-05-31 — v9.3.10: Fiks anker-symbol (553): mm-strek ble solid blob
+
+## 2026-05-31 — v9.3.9: To-linjers highlight-chip så «nærmeste»-distansen ikke kuttes
+
+## 2026-05-31 — v9.3.8: Flytt «nærmeste»-snarveier fra søk til PUNKT-arket
+
+## 2026-05-31 — v9.3.7: Kart-søk: «nærmeste»-snarveier for parkering, toalett og holdeplass
+
+## 2026-05-31 — v9.3.6: Forenkle kai/brygge/molo (551) til konveks ≤5-hjørnet form uten omriss
+
+## 2026-05-31 — v9.3.5: Inset start-zoom 350 m + fiks usynlige annoterings-ikoner
+
+## 2026-05-31 — v9.3.4: Detalj-inset: 1×1 km vindu + kamera-clamp mot kartgrenser
+
+## 2026-05-31 — v9.3.3: Inset 3:2 + ingen auto-pan + Chaikin-glattede dybdebånd
+
+## 2026-05-31 — v9.3.2: Detalj-inset: 65vh drawer + vis alle navn på land
+
+## 2026-05-31 — v9.3.1: Detalj-inset: 500×500 m roambart vindu med pan/zoom + 50vh drawer
+
+## 2026-05-31 — v9.3.0: Long-press detalj-inset + «Sjø & padling»-drawer-seksjon
+
+## 2026-05-31 — v9.2.0: Fase 1: én autoritativ kyst + topologisk klipping av dybdeareal
+
+## 2026-05-30 — v9.1.31: Del bygninger i to lag + automatisk navn-LOD i tette utsnitt
+
+## 2026-05-30 — v9.1.30: Senk maks kartstørrelse fra 20×20 til 14×14 km
+
+## 2026-05-30 — v9.1.29: Tillat 20×20 km kart, lås konturer til 50 m over 10 km bredde
+
+## 2026-05-30 — v9.1.28: Turkart: flytt Bredde/Høydekurver over forhåndsvisning + masker stupkanter mot vann
+
+## 2026-05-30 — v9.1.27: Hjem-app: velg hvilken funksjon appen åpner på
+
+## 2026-05-30 — v9.1.26: Rydd delt kart-skjerm og slipp side-scroll over forhåndsvisning
+
+## 2026-05-30 — v9.1.25: Forenkle delt kart-banner og tilby app-installasjon
+
+## 2026-05-30 — v9.1.24: Delingspanel-polish + lås body-scroll i MapView
+
+## 2026-05-30 — v9.1.23: Sentrer long-press-punktet i synlig kart over lokasjonspanelet
+
+## 2026-05-30 — v9.1.22: fjern «nærmeste sti/vei» fra long-press-panelet (frys-fix)
+
+## 2026-05-30 — v9.1.21: fiks kart-frys ved long-press + global navn-dedup
+
+## 2026-05-29 — v9.1.20: Stedsnavn i tre toggle-bare viktighets-lag
+
+## 2026-05-29 — v9.1.19: Hev maks-zoom 20 → 60 (dypere detalj-innzoom)
+
+## 2026-05-29 — v9.1.18: Knaus kun ved 5 m ekvidistanse (ISOM-detaljnivå)
+
+## 2026-05-29 — v9.1.17: Knaus tilbake som crisp vektor (ISOM 213), dropp raster
+
+## 2026-05-29 — v9.1.15: Sti (stiplet strek) solid under gest + knaus synlig igjen
+
+## 2026-05-29 — v9.1.14: Dempe knaus-relieff («vorte-teppe») + skjul relieff under gest
+
+## 2026-05-29 — v9.1.13: Slå knaus-relieff inn i hillshade-bildet (ett blendet lag)
+
+## 2026-05-29 — v9.1.12: Stedsnavn rangert etter viktighet + LOD ved utzoom
+
+## 2026-05-29 — v9.1.11: Fiks label-rotasjon-regresjon (closest per frame)
+
+## 2026-05-29 — v9.1.10: Lazy ISOM defs/CSS + label-rotasjon-perf på navn-tette kart
+
+## 2026-05-29 — v9.1.9: Knaus: myk relieff-skygging i stedet for bevel-skive
+
+## 2026-05-29 — v9.1.8: Skarpere knaus-bevel (mindre blurry relieff-prikk)
+
+## 2026-05-29 — v9.1.7: Flytt knaus fra SVG til embossed raster-relieff-lag
+
+## 2026-05-29 — v9.1.6: Skaler vann-label dy-stabling med kartstørrelse (fiks 10 km navn/moh-kollisjon)
+
+## 2026-05-28 — v9.1.5: Rydd: fjern Dybdeskygge-lag, døp om Bekk, slå knauser til én path
+
+## 2026-05-28 — v9.1.4: Kartstørrelse-bevisst strektykkelse + tynnere default
+
+## 2026-05-28 — v9.1.3: Erstatt zoom-FAB med strek- og relieff-knotter
+
+## 2026-05-26 — v9.1.2: Lukk-knapp på måle- og utenfor-kart-bannere
+
+## 2026-05-26 — v9.1.1: Stedsmerke uten border + play/stop-ikon i header
+
+## 2026-05-26 — v9.1.0: Long-press kontekstmeny på kart
+
+## 2026-05-25 — v9.0.0: Inter selv-hostet, ingen CDN
+
+## 2026-05-25 — v8.10.20: Inter variable webfont i turkart-sporet
+
+## 2026-05-25 — v8.10.19: DEM 20 m som default for ekvidistanse ≥ 10 m
+
+## 2026-05-25 — v8.10.18: Drastisk perf-fix for kart-generering
+
+## 2026-05-25 — v8.10.17: DEM-sjø som primær kilde, dropp WMS+WMTS-vannmaske
+
+## 2026-05-25 — v8.10.16: P-skilt uten ramme, oransje lysløyper, sjø-fallback restaurert
+
+## 2026-05-25 — v8.10.15: Naturreservat: navn-styling + bbox-bug fix
+
+## 2026-05-25 — v8.10.14: Skjul nederste bokser under søk + Hold skjerm våken
+
+## 2026-05-25 — v8.10.13: Skjul FAB-stack når søkeoverlay er åpent
+
+## 2026-05-25 — v8.10.12: Naturreservat som eget kartlag (ISOM 520-derivert)
+
+## 2026-05-25 — v8.10.11: Parkering: posisjon-bug + 300% større + alltid vannrett
+
+## 2026-05-25 — v8.10.10: On-the-fly: auto-start GPS i nytt kart
+
+## 2026-05-25 — v8.10.9: On-the-fly kart-snarvei + hytte-grense 500 m² + områdenavn
+
+## 2026-05-25 — v8.10.8: Søk: vann/innsjø/tjern fungerer som synonymer
+
+## 2026-05-25 — v8.10.7: Søk: unavngitte vann nederst, sortert etter areal desc
+
+## 2026-05-25 — v8.10.6: Søk: dedupe gjentatte navn + alfabetisk sortering
+
+## 2026-05-25 — v8.10.5: Header GPS+sporing-snarvei, wake-lock, kategori-søk for vann
+
+## 2026-05-24 — v8.10.4: Kart-perf del 2: kombinér paths, lazy fine labels, will-change
+
+## 2026-05-24 — v8.10.3: Kart-perf: gest-detect, scale-aware simplifisering, CSS containment
+
+## 2026-05-24 — v8.10.2: Nye kart-markeringer: bro, bom, parkering + redesignet kirke
+
+## 2026-05-24 — v8.10.1: Fix søke-highlight: posisjoner i user-units, ikke CSS-piksler
+
+## 2026-05-24 — v8.10.0: Søk i kart + del kart med valgfri highlight via URL
+
+## 2026-05-24 — v8.9.32: Hytter som standardisert kvadrat-symbol istedenfor OSM-polygon
+
+## 2026-05-24 — v8.9.31: Småhytter (< 70 m²) renders hvitt med tynt sort omriss
+
+## 2026-05-24 — v8.9.30: Senk bygning-terskler så hytter renders (10 m² / 1.5 m DP)
+
+## 2026-05-24 — v8.9.29: ISOM 522 naboradius tilbake til 15 m (original v6.3.0-verdi)
+
+## 2026-05-24 — v8.9.28: ISOM 522 tilbake, men toggler sammen med 521 under Bygninger
+
+## 2026-05-24 — v8.9.27: Slå sammen Bygninger+Bebyggelse, smalere småvei/sti, bekke-/elve-navn, kirker
+
+## 2026-05-24 — v8.9.26: Eksport-SVG mangler xmlns:xlink → Chrome Android parse-feil
+
+## 2026-05-24 — v8.9.25: Diskrete dybde-bånd, eksport-trygd, strenger Bebyggelse-grense
+
+## 2026-05-24 — v8.9.24: Fjern gang-/sykkelsti+fortau, skaler labels, åker-farge, dybdeskygge, tett-bebyggelse 50m
+
+## 2026-05-24 — v8.9.23: Drop alle vann-heuristikker (DEM-sjø + WMTS-HSL-fallback)
+
+## 2026-05-24 — v8.9.22: WMS-vannmaske: bytt fra HSL-piksel-heuristikk til alpha-basert
+
+## 2026-05-24 — v8.9.21: Bump WMTS-zoom + skip DEM-sjø når WMTS leverer
+
+## 2026-05-24 — v8.9.20: Bevar hole-relasjon i WMTS-polygoner + rydd Land-overlay-toggle
+
+## 2026-05-24 — v8.9.19: Fiks vann-land-vann: rendre LAND-overlay FØR vann-lag
+
+## 2026-05-24 — v8.9.18: WMTS-vannmaske fra Kartverket Norgeskart + rollback Mini-Venezia
+
+## 2026-05-24 — v8.9.17: DEM-basert innsjø-deteksjon + SVG xlink-fix
+
+## 2026-05-24 — v8.9.16: Gjenopprett Sjøkart-Dybdedata for dybdekurver + dybde-shading
+
+## 2026-05-24 — v8.9.15: Innsjø-fix, distance-bånd og N50-filter-fix for navngitte innsjøer
+
+## 2026-05-24 — v8.9.14: DEM-basert sjø-deteksjon fra Kartverket DTM
+
+## 2026-05-24 — v8.9.13: Bump versjon etter revert av v8.9.12
+
+## 2026-05-24 — v8.9.12: Automatisk blå sjø i kyst-bbox
+
+## 2026-05-24 — v8.9.11: Revert "v8.9.12 — Automatisk blå sjø i kyst-bbox"
+
+## 2026-05-23 — v8.9.10: Skill bygninger i to lag: «Frittstående» (på) og «Tett bebyggelse» (av)
+
+## 2026-05-23 — v8.9.9: Rull tilbake v8.9.8 LAND-modus-sjø-fyll + flytt Nullstill karttype til drawer Om-fane
+
+## 2026-05-23 — v8.9.8: Riktig sjø-bakgrunn i kystnære bbox (Sjøkart-307 i mask, implisitt sjø-fyll)
+
+## 2026-05-23 — v8.9.7: Hold alle tekst-labels vannrette ved kart-rotasjon
+
+## 2026-05-23 — v8.9.6: Drawer-faner, hurtigvalg og flyttet måle-HUD
+
+## 2026-05-23 — v8.9.5: Fiks tykkelse på måleverktøy- og spor-linjer
+
+## 2026-05-23 — v8.9.4: Reliefskygge, høydeprofil og måleverktøy
+
+## 2026-05-23 — v8.9.3: Stedsnavn og stedsmerke holdes vannrette ved kart-rotasjon
+
+## 2026-05-23 — v8.9.2: Kart-løsning: rotasjon rundt finger, GPS-spor, easter egg-rebrand
+
+## 2026-05-20 — v8.9.1: Cap EM-felt og bumper-bounce, blokker parallelle spawn-modi
+
+## 2026-05-20 — v8.9.0: Energi-drevet paddle-bredde, synlig konveksitet, ubegrenset cascade
+
+## 2026-05-19 — v8.8.17: Snu tier 2 til handicap, tier 3 gir permanent lengde-boost
+
+## 2026-05-19 — v8.8.16: Konvekse flippers + synlig lilla + 150 % energi
+
+## 2026-05-19 — v8.8.15: Filter ut outline-konturer i Red Curves
+
+## 2026-05-19 — v8.8.14: «Stille før stormen»-musikk under Invaders-formasjon
+
+## 2026-05-19 — v8.8.11: Alle baller rydder rødt, drop timer, Bumper Chain Reaction
+
+## 2026-05-19 — v8.8.10: Phase 2: super-perk timer + sync flippers
+
+## 2026-05-18 — v8.8.9: Invaders: 5+ clusters med level-skalering, breakout inn mot senter
+
+## 2026-05-18 — v8.8.8: fix Invaders-spawn-crash på flate kart
+
+## 2026-05-18 — v8.8.7: cheat-snarvei til Invaders-spawn
+
+## 2026-05-18 — v8.8.6: Invaders march = snake-formasjon (Gjessekortesje)
+
+## 2026-05-18 — v8.8.5: Invaders march-formasjon på kart uten sentriske høydekurver
+
+## 2026-05-18 — v8.8.4: Stedsmerke-bumper i CurveInvaders tredoblet i størrelse
+
+## 2026-05-18 — v8.8.3: rename codename, skjul map-annoteringer i spillet, halo på alle bumpers
+
+## 2026-05-18 — v8.8.2: Stedsmerke i CurveInvaders: mindre pin + treff-trigget animasjon
+
+## 2026-05-18 — v8.8.1: Stedsmerke-fix: ikon synlig, animasjon kun når passende
+
+## 2026-05-18 — v8.8.0: Stedsmerke: rebrand fra "Geocache" + ny squash & stretch-pin
+
+## 2026-05-17 — v8.7.1: fix(map): rydd opp etter v8.7.0 — toppbar, tooltip, halo
+
+## 2026-05-17 — v8.7.0: feat(curveball): annoteringer som custom bumpers + geocache→invaders
+
+## 2026-05-17 — v8.6.2: feat(map): annoterings-liste + tryggere persistens
+
+## 2026-05-17 — v8.6.1: refactor(map): Skatt → Geocache (mer tematisk navn)
+
+## 2026-05-17 — v8.6.0: feat(map): animert Skatt-annotering med SMIL
+
+## 2026-05-17 — v8.5.9: feat(map): annoteringer som egne lag + ikon-polish
+
+## 2026-05-17 — v8.5.8: feat(map): 502 hovedvei 15% smalere
+
+## 2026-05-17 — v8.5.7: feat(map): casing-pattern for veier i kryss
+
+## 2026-05-17 — v8.5.6: feat(map): tips om Presis posisjon + kopier-lat/lng
+
+## 2026-05-17 — v8.5.5: fix(gps): avvis lavkvalitets-fallback-fix-er + debug-readout
+
+## 2026-05-17 — v8.5.4: fix(gps): aktiv polling hvert 3. sekund mot stale watchPosition på toget
+
+## 2026-05-17 — v8.5.3: fix(gps): stroke-bredde via pxToUserUnits så pinch-zoom ikke gjør prikken nesten hvit
+
+## 2026-05-17 — v8.5.2: feat(map+gps): tog-vennlig FAB-refresh + capped accuracy-ring
+
+## 2026-05-17 — v8.5.1: feat(picker): «Sentrer kart på meg (GPS)»-knapp
+
+## 2026-05-17 — v8.5.0: feat(maps+game): Curve Invaders-snarvei i kart-listen + alltid-synlig spillknapp
+
+## 2026-05-17 — v8.4.1: øk ekvidistanse på Vardåsen-demo fra 5 m til 10 m
+
+## 2026-05-17 — v8.4.0: feat(curve-invaders): Map Master + roligere invaders
+
+## 2026-05-17 — v8.3.0: feat(curve-invaders): enhåndsmodus + aksiale flipper-par
+
+## 2026-05-17 — v8.2.3: feat(picker): ekvidistanse-grenser pr kart-størrelse
+
+## 2026-05-17 — v8.2.2: feat(picker): kvadratisk preview + 25m høydekurver
+
+## 2026-05-17 — v8.2.1: fix(router): scroll til topp på hver navigasjon
+
+## 2026-05-17 — v8.2.0: feat(map+game): magnetiske flippere + lag-defaults
+
+## 2026-05-17 — v8.1.3: feat(map): sti-dash med avrundede ender
+
+## 2026-05-17 — v8.1.2: fix(map): emit overlay-paths for roads
+
+## 2026-05-17 — v8.1.1: fix(map): tynnere sort vei-omriss
+
+## 2026-05-17 — v8.1.0: feat(map+game): veifarger, stedsnavn-overlegg, climb-boost, flipper-fix
+
+## 2026-05-10 — v8.0.5: feat(curve-invaders): multiball-rescue cooldown + energi-løft + test-presets
+
+## 2026-05-10 — v8.0.4: feat(curve-invaders): score-balansering + invader-polish
+
+## 2026-05-10 — v8.0.3: feat(curve-invaders): kart-størrelse-uavhengig fart
+
+## 2026-05-10 — v8.0.2: feat(curve-invaders): speed-cap + cascade-fix + kontur-marsj + ball-til-ball
+
+## 2026-05-10 — v8.0.1: feat(curve-invaders): dynamisk HUD-skala + brand-mellomrom
+
+## 2026-05-10 — v8.0.0: feat(curveinvaders): CurveInvaders brand + i18n + codename CurveBall
+
+## 2026-05-10 — v7.4.3: feat(flippkart): nye spawn-modi Miniball + CurveInvaders med level-progresjon
+
+## 2026-05-10 — v7.4.2: feat(flippkart): utfordringsvindu read-only + Start FlippKart-knapp + auto-Curves
+
+## 2026-05-10 — v7.4.1: fix(flippkart): stopp spawn-i-spawn-cascade + auto-start fra delingslenke
+
+## 2026-05-10 — v7.4.0: feat(flippkart): turneringsmodus, deling, tettere bumpere, jevnere level-vekst
+
+## 2026-05-09 — v7.3.7: feat(flippkart): multiball-cascade + koblede paddles + skjul debug-panel
+
+## 2026-05-09 — v7.3.6: debug(flippkart): try/catch + granulær logging for å pinpointe spawn-bug
+
+## 2026-05-09 — v7.3.5: debug(flippkart): in-game debug panel for multiball-feilsøking
+
+## 2026-05-09 — v7.3.4: fix(flippkart): multiball spawns med kick + garantert HUD-flash + tap-to-kick
+
+## 2026-05-09 — v7.3.3: feat(flippkart): v7.3.3 — bumpers som kart-annoterings-symboler
+
+## 2026-05-09 — v7.3.2: fix(flippkart): v7.3.2 — bounding-radius stillness + bumper-center-stuck-bug
+
+## 2026-05-09 — v7.3.1: fix(flippkart): v7.3.1 — skala spatial-konstanter etter map-size + Vardåsen-støtte
+
+## 2026-05-09 — v7.3.0: feat(flippkart): v7.3.0 — bumpers (hus), pos-history stillness-fix, touchsone
+
+## 2026-05-09 — v7.2.9: feat(flippkart): v7.2.9 — multi-ball drop-fix + perks + brattere score-skala
+
+## 2026-05-09 — v7.2.8: fix(flippkart): v7.2.8 — velocity-stillness + MULTIBALL-text + tonere spawn-fart
+
+## 2026-05-09 — v7.2.7: fix(flippkart): v7.2.7 — terrain-energi-mult, mindre friksjon, fix multi-ball spawn
+
+## 2026-05-09 — v7.2.6: feat(flippkart): v7.2.6 — multi-ball når kula stagnerer + 25% raskere
+
+## 2026-05-09 — v7.2.5: feat(flippkart): v7.2.5 — auto-drop, score-target, kick 2/4/6, lyd, highscore
+
+## 2026-05-09 — v7.2.4: feat(flippkart): v7.2.4 — kick-multiplier, treff-baseret scoring, dypere inset
+
+## 2026-05-09 — v7.2.3: feat(flippkart): v7.2.3 — kick-fysikk, paddle-inset, mindre kule, 5× fart
+
+## 2026-05-09 — v7.2.2: feat(flippkart): bump til v7.2.2 + frys pinch/rotate + ekte content-rect + større/raskere kule
+
+## 2026-05-09 — v7.2.1: chore: bump til v7.2.1
+
+## 2026-05-09 — v7.2.0: chore: bump til v7.2.0 + release-notes
+
+## 2026-05-09 — v7.1.18: Sjøkart-polish + Fase 2 + Fase 3 + slate-800 PWA-ikon
+
+## 2026-05-09 — v7.1.17: Skjul WFS-advarsel ved delvis suksess
+
+## 2026-05-09 — v7.1.16: Fase 5 — padle-features fra Sjøkart-WFS
+
+## 2026-05-09 — v7.1.15: Land-kart får alltid kremgul bg (mapType strikt)
+
+## 2026-05-09 — v7.1.14: Tynnere dybdekontur + maritime navn
+
+## 2026-05-09 — v7.1.13: Elegant dybdepunkt-filter (kajakk, ikke 50fot yacht)
+
+## 2026-05-09 — v7.1.12: URN-form CRS for garantert lat,lon aks-order
+
+## 2026-05-09 — v7.1.11: AKUTT — SVG-parse brakk pga XML-tegn i sjokart-samples
+
+## 2026-05-09 — v7.1.10: WFS NAMESPACES-parameter + response-sample i UI
+
+## 2026-05-09 — v7.1.9: Sjøkart endelig korrekt — Dybdekurve, GML-først, robust parser
+
+## 2026-05-09 — v7.1.8: Sjøkart-endepunkt: fjernet død URL + UKJENT APPLIKASJON-deteksjon
+
+## 2026-05-09 — v7.1.7: Bg-backcompat — gamle Sjøkart får også blå bg
+
+## 2026-05-09 — v7.1.6: Sjøkart-WFS — prøv flere OUTPUTFORMAT + GML-fallback
+
+## 2026-05-09 — v7.1.5: Sjøkart-WFS-diagnose + dybdekontur-tall + Tegnforklaring-seksjon
+
+## 2026-05-09 — v7.1.4: Sjøkart-detaljer endelig synlige
+
+## 2026-05-09 — v7.1.3: Land-kart får også blå sjø ved kyst-bbox
+
+## 2026-05-09 — v7.1.2: mapType i meta.value-mapping (v7.1.1-fix-fix)
+
+## 2026-05-09 — v7.1.1: Blå sjø faktisk synlig (CSS-variabel-fix)
+
+## 2026-05-09 — v7.1.0: Karttype-valg (🥾 Land-kart eller 🌊 Sjøkart)
+
+## 2026-05-09 — v7.0.0: Duomap — to maske-koblede kart i samme SVG
+
+## 2026-05-09 — v6.21.2: synlig kyst-diagnostikk i kart-UI
+
+## 2026-05-09 — v6.21.1: robustere coastline-rekonstruksjon (Nesøya-fix)
+
+## 2026-05-09 — v6.21.0: sjø rendres blå for alle kyst-bboxer + sjømerker synlige
+
+## 2026-05-09 — v6.20.1: kontur-tall i riktig retning + UI-polish
+
+## 2026-05-08 — v6.20.0: nytt PWA-ikon + tekst-justeringer
+
+## 2026-05-08 — v6.19.1: drawer 45vh + FAB synlig + tema-overgang fix
+
+## 2026-05-08 — v6.19.0: Mocha + Forest + Curves + Warhol art-modus + fyll-opacity
+
+## 2026-05-08 — v6.18.0: fem kart-temaer (lys, mørk, sepia, indigo, slate)
+
+## 2026-05-08 — v6.17.1: webfont-CTA-tekst + Tegnforklaring i mørkt
+
+## 2026-05-08 — v6.17.0: tabs på About + slate i drawer + «Lag turkart»
+
+## 2026-05-08 — v6.16.2: slate-aksent + fix Høydekurver-buttons + slate-CTA
+
+## 2026-05-08 — v6.16.1: hamburger-fix + mørkt tema gjeninnført + picker invertert
+
+## 2026-05-08 — v6.16.0: UX-rydding — lyst tema, FAB-zoom, kvadratisk frame, PDF, rotasjon
+
+## 2026-05-08 — v6.15.1: trigpunkt-overlay på peak-noder + flere OSM-varianter
+
+## 2026-05-08 — v6.15.0: trigpunkter + sjømerker + finjustering
+
+## 2026-05-08 — v6.14.3: hule (ISOM 215) + gruve (ISOM 216) point-symboler
+
+## 2026-05-08 — v6.14.2: halverte jernbane-bredder + tunnel-opacity
+
+## 2026-05-08 — v6.14.1: tunnel-fantom for jernbane + portal-markører
+
+## 2026-05-08 — v6.14.0: jernbane (ISOM 515) + finere stitråkk-dots
+
+## 2026-05-08 — v6.13.4: fremhevede stier med staccato-dash + dotted stitråkk
+
+## 2026-05-08 — v6.13.3: halverte strektykkelser + moh på alle tjern
+
+## 2026-05-08 — v6.13.2: lesbare labels + utvidet zoom + flere stedsnoder
+
+## 2026-05-08 — v6.13.1: navn på tjern + utvidet vann-merking
+
+## 2026-05-08 — v6.13.0: vinter-pakke + halverte stupkant-bredder
+
+## 2026-05-08 — v6.12.2: tynnere stier + OSM-klassifisering for sti-typer
+
+## 2026-05-08 — v6.12.1: confirmed-inland-deteksjon stopper sjøblå-lekkasje
+
+## 2026-05-08 — v6.12.0: ISOM-symbol-pakke + synlige annoteringer
+
+## 2026-05-08 — v6.11.2: Dynamisk skjerm-skalering for annoteringer + GPS-dot
+
+## 2026-05-08 — v6.11.1: Annoteringssymboler synlig: bruk unit-less user-units + halo
+
+## 2026-05-08 — v6.11.0: ISOM-polish: tydeligere skille mellom sti-typer + fix annotering
+
+## 2026-05-08 — v6.10.4: Filtrer OSM saltvann-relations i coastline-mode (mainland-mask-fix)
+
+## 2026-05-08 — v6.10.3: Bedre øy-deteksjon + Sjøkart-WFS-diagnostikk
+
+## 2026-05-08 — v6.10.2: Reintroduser coastline-rekonstruksjon — blått hav i Oslo/Nesøya
+
+## 2026-05-08 — v6.10.1: Granulært vann-filter — bevarer OSM Oslofjord når N50 mangler sjø
+
+## 2026-05-08 — v6.10.0: Kystkart — Sjøkart-WFS + land-overlay for «Landøya-typetilfellet»
+
+## 2026-05-08 — v6.9.0: ISOM-polish — sykkel-sti, navn-toggle, Tegnforklaring, zoom
+
+## 2026-05-08 — v6.8.4: ROTAARSAKEN — sy sammen OSM multipolygon-relation rings
+
+## 2026-05-08 — v6.8.3: visuell diagnose-modus for wedger uten DevTools
+
+## 2026-05-07 — v6.8.2: per-feature path + data-src diagnose for wedge-debug
+
+## 2026-05-07 — v6.8.1: rotaarsaken til wedger funnet — polygon-clipping CCW-orientering
+
+## 2026-05-07 — v6.8.0: drastisk opprydning — fjerner coastline-polygonisering helt
+
+## 2026-05-07 — v6.7.1: alltid filtrer OSM coastline uansett N50-suksess
+
+## 2026-05-07 — v6.7.0: stupkant-trekanter (ISOM 203 teeth) + N50 utstreknings-validering
+
+## 2026-05-07 — v6.6.1: land-mask for bymasse + vegetasjon
+
+## 2026-05-07 — v6.6.0: Kartverket N50 som autoritativ vann-kilde — Fase 1
+
+## 2026-05-07 — v6.5.8: open-arc gate — coastal-modus krever ekte åpen kyst som krysser bbox
+
+## 2026-05-07 — v6.5.7: place=island/islet som backup land-polygoner — Landøya-fix
+
+## 2026-05-07 — v6.5.6: Mjøsa-fix (skip store lukkede coastline-ringer) + bedre chain-merging
+
+## 2026-05-07 — v6.5.5: snudd masking-strategi — bg=land + sjø-overlay (sea = bbox MINUS land)
+
+## 2026-05-07 — v6.5.4: reparert kystlinje-orientering — land vises nå korrekt over sjø
+
+## 2026-05-07 — v6.5.3: vann-polygoner med samme navn slås sammen — Setten-fix
+
+## 2026-05-07 — v6.5.2: kystlinje-polygonisering — ekte sjø-bakgrunn for kystkart
+
+## 2026-05-07 — v6.5.1: bredere saltvann-deteksjon — navn-heuristikk + place=sea + natural=bay/strait
+
+## 2026-05-07 — v6.5.0: kart-polish — bymasse z-order, vann-høydelabels, saltvann skiller seg fra ferskvann
+
+## 2026-05-07 — v6.4.0: oppdater /about med turkart-pipeline og full v6-versjonslogg
+
+## 2026-05-07 — v6.0.0: ISOM-inspirert turkart-pipeline med høydekurver, N50 og print
+
+## 2026-05-07 — v5.2.1: nytt Vardåsen-senter (59.81/10.41) 5x5 km + opake knapper
+
+## 2026-05-07 — v5.2.0: stedssøk og bbox-velger — lag ditt eget turkart
+
+## 2026-05-06 — v5.1.0: turkart-spor med Vardåsen-SVG, GPS, kompass og lag-toggling
+
+## 2026-05-06 — v5.0.2: skjul endringsloggen fra About-siden
+
+## 2026-04-30 — v5.0.1: webfont-pakken
+
 ## 2026-04-23 — v4.14.2: Rull tilbake 4.14.1
 
 Gaussian-smoothingen introdusert i 4.14.1 rundet faktisk av bokstavformene for mye — mistet den typografiske karakteren som gjorde originalfontene gjenkjennelige. `canvasGlyphRenderer.js` er rullet tilbake til tilstanden før 4.14.1.
