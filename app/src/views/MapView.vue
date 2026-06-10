@@ -1775,13 +1775,6 @@ function formatCount(n) {
   return Number(n).toLocaleString('nb-NO')
 }
 
-// Artskart sentrert på long-press-punktet (hash-router: #map/lon,lat/zoom).
-const artskartUrl = computed(() => {
-  const info = contextMenuInfo.value
-  if (!info) return 'https://artskart.artsdatabanken.no/'
-  return `https://artskart.artsdatabanken.no/app/#map/${info.lon.toFixed(5)},${info.lat.toFixed(5)}/12`
-})
-
 // Areal: under 1 km² vises med to desimaler (små vann), ellers heltall/én desimal.
 function formatAreaKm2(km2) {
   if (km2 < 1) return km2.toFixed(2)
@@ -5624,13 +5617,6 @@ onUnmounted(() => {
                       <span class="text-emerald-200/55"> · {{ formatCount(verneQuery.species.observationCount) }} obs.</span>
                     </span>
                   </div>
-                  <div v-if="verneQuery.species.redListSpeciesCount > 0" class="flex items-baseline gap-2">
-                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
-                    <span class="text-rose-200 tabular-nums">
-                      {{ formatCount(verneQuery.species.redListSpeciesCount) }}{{ verneQuery.species.redListSpeciesCapped ? '+' : '' }} arter
-                      <span class="text-rose-200/55"> · CR/EN/VU/NT</span>
-                    </span>
-                  </div>
                 </template>
                 <div v-else class="flex items-baseline gap-2">
                   <span class="text-emerald-200/55 w-20 shrink-0">Arter</span>
@@ -5650,15 +5636,16 @@ onUnmounted(() => {
                    class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
                   Naturbase faktaark ↗
                 </a>
-                <a :href="artskartUrl" target="_blank" rel="noopener"
-                   class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
-                  Artskart ↗
-                </a>
                 <a v-if="verneQuery.wiki && verneQuery.wiki !== 'loading'" :href="verneQuery.wiki.url"
                    target="_blank" rel="noopener"
                    class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
                   Wikipedia ↗
                 </a>
+                <span v-else
+                   class="px-2.5 py-1.5 rounded-lg border border-emerald-400/15 bg-emerald-500/5 text-emerald-100/35 text-[11px] cursor-not-allowed"
+                   :title="verneQuery.wiki === 'loading' ? 'Søker i Wikipedia …' : 'Ingen Wikipedia-artikkel funnet'">
+                  Wikipedia {{ verneQuery.wiki === 'loading' ? '…' : '—' }}
+                </span>
               </div>
             </div>
           </div>
