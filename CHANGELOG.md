@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-06-10 — v10.1.29: Tekststørrelse-slider på desktop
+
+Turkart fikk en tekststørrelse-slider rett under rotasjons-sliden (kun desktop). Midtstilt = normal (100%); brukeren kan både øke og minske font-størrelsen på alle kart-etiketter (navn, høyde, stedsnavn, naturreservat, vann osv) i sanntid, fra 0.5× til 2.0×. Lagres i localStorage, nullstilles av «Sentrer»-FAB-en, dobbeltklikk = normal. På mobil vises ingen slider — pinch holder til zoom. Teknisk: ny `--label-scale` CSS-variabel (analog til `--stroke-scale`) som ganger alle `[data-label]`-font-sizes via `calc()`; halo-bredder skaleres ikke så teksten ikke drukner.
+
+---
+
+## 2026-06-10 — v10.1.28: Robust last av innebygd kart uavhengig av service-worker-tilstand
+
+Det innebygde Vardåsen-kartet kunne feile på første last («Ugyldig SVG») mens en refresh / «Prøv igjen» virket — fordi en allerede-aktiv gammel service worker (stale-while-revalidate) fortsatt serverte en utdatert/avkuttet kopi til den ble byttet ut. `MapView.fetchBuiltinSvg()` validerer nå at svaret faktisk parser som SVG med data-meta, og prøver på nytt med cache-bust (forbi både SW- og HTTP-cache), maks 3 forsøk. `main.js` nudger i tillegg en allerede ventende SW (`reg.waiting`) med `SKIP_WAITING` så deployede SW-fikser tar effekt på en vanlig reload.
+
+---
+
+## 2026-06-10 — v10.1.27: Dra-bar panelbredde på desktop + pin-ikon- og kart-last-fikser
+
+På desktop kan side-panelet i begge spor (illustrasjon + turkart) nå dras bredere/smalere i venstrekanten — min 360px, maks 50vw, bredde lagret i localStorage per spor. Kart-wrapperen og de flytende kontrollene (kompass/FAB) krympes/skyves tilsvarende så «Sentrer» fyller den synlige flaten. Det grønne map-marker-ikonet ble toppklippet (banen toppet på viewBox y=0) — byttet til en innrammet pin-bane. Innebygde kart (`maps/*.svg`) flyttet til network-first i service workeren (var stale-while-revalidate, som kunne servere utdatert/avkuttet kopi).
+
+---
+
 ## 2026-06-10 — v10.1.26: «Lag nytt kart»-etikett + ryddigere «Flere valg»
 
 Turkart-forsiden fikk en seksjons-overskrift «Lag nytt kart» over søkefeltet (matcher «Innebygd»/«Mine kart»-etikettene), og «Flere valg» ble flyttet fra en løs, sentrert knapp til en høyrestilt handling i overskrifta.
