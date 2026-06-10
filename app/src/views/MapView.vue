@@ -559,6 +559,11 @@ const { scale, translateX, translateY, rotation, reset, panTo, rotateTo, animati
 // Desktop uten touch: vis en rotasjons-slider (touch bruker to-finger-rotasjon).
 // Detekteres på mount (touch-evner endrer seg ikke i en sesjon i praksis).
 const hasTouch = ref(false)
+// Desktop-bredde (≥768px): drawer vises som høyrestilt side-panel (som i
+// illustrasjons-sporet) i stedet for bunn-ark. Følges med matchMedia.
+const isDesktop = ref(false)
+let desktopMq = null
+function updateIsDesktop() { isDesktop.value = !!desktopMq?.matches }
 // Slider-verdi i [-180, 180]. rotation.value akkumulerer fritt; vi normaliserer
 // for visning og setter absolutt vinkel via rotateTo ved drag.
 const rotationSliderDeg = computed(() => {
@@ -4008,6 +4013,11 @@ function unlockBodyScroll() {
 onMounted(() => {
   hasTouch.value = typeof window !== 'undefined' &&
     ('ontouchstart' in window || (navigator.maxTouchPoints ?? 0) > 0)
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    desktopMq = window.matchMedia('(min-width: 768px)')
+    updateIsDesktop()
+    desktopMq.addEventListener('change', updateIsDesktop)
+  }
   lockBodyScroll()
   measureWrapper()
   window.addEventListener('resize', measureWrapper)
@@ -4027,6 +4037,7 @@ onUnmounted(() => {
   screenWake.stop()
   componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
+  desktopMq?.removeEventListener('change', updateIsDesktop)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
@@ -4160,9 +4171,12 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- Kompass-rose (skjult i CurveBall-modus) -->
+    <!-- Kompass-rose (skjult i CurveBall-modus). På desktop skyves den til
+         venstre for side-panelet når drawer er åpen så den ikke havner bak. -->
     <div v-if="!curveball.active.value"
-         class="absolute top-20 right-3 z-20 pointer-events-auto select-none flex flex-col items-end">
+         class="absolute top-20 z-20 pointer-events-auto select-none flex flex-col items-end
+                transition-[right] duration-200"
+         :class="isDesktop && showControls ? 'right-[21rem]' : 'right-3'">
       <button @click="compass.isActive ? compass.stop() : compass.start()"
               class="w-14 h-14 rounded-full bg-zinc-950
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
@@ -4206,10 +4220,14 @@ onUnmounted(() => {
          drawer-toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
          ligger over drawer (z-30). Skjult i CurveBall-modus og når søke-
          overlayet er åpent (begge bruker z-40 og ville ellers stacke). -->
+    <!-- FAB-bunn løftes kun når bunn-arket er åpent (mobil). På desktop er
+         drawer et side-panel, så FAB-en beholder sin bunn og skyves i stedet
+         til venstre for panelet. -->
     <div v-if="!curveball.active.value && !searchOpen"
-         class="absolute right-3 z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom] duration-200"
+         class="absolute z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom,right] duration-200"
+         :class="isDesktop && showControls ? 'right-[21rem]' : 'right-3'"
          :style="{
-           bottom: showControls
+           bottom: (showControls && !isDesktop)
              ? 'calc(45dvh + 0.75rem)'
              : 'calc(env(safe-area-inset-bottom, 0px) + 5rem)'
          }">
@@ -4537,22 +4555,27 @@ onUnmounted(() => {
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
     </div>
 
-    <!-- Kontrollpanel (drawer) -->
-    <Transition name="drawer">
+    <!-- Kontrollpanel (drawer). Desktop (≥768px): høyrestilt fullhøyde side-
+         panel (som illustrasjons-sporet). Mobil: dragbart bunn-ark. -->
+    <Transition :name="isDesktop ? 'drawer-side' : 'drawer'">
       <div v-if="showControls"
-           class="absolute inset-x-0 bottom-0 z-30 backdrop-blur-md bg-zinc-900/92
-                  border-t border-white/10 rounded-t-2xl flex flex-col shadow-2xl"
-           :style="drawer.drawerHeightStyle.value">
-        <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
-             @pointerdown="drawer.onPointerDown"
-             @pointermove="drawer.onPointerMove"
-             @pointerup="drawer.onPointerUp"
-             @pointercancel="drawer.onPointerUp">
-          <div class="pt-2 pb-1 flex justify-center">
+           :class="['absolute z-30 backdrop-blur-md bg-zinc-900/92 flex flex-col shadow-2xl',
+                    isDesktop
+                      ? 'top-0 right-0 bottom-0 w-80 border-l border-white/10'
+                      : 'inset-x-0 bottom-0 border-t border-white/10 rounded-t-2xl']"
+           :style="isDesktop ? {} : drawer.drawerHeightStyle.value">
+        <div class="shrink-0 select-none"
+             :class="isDesktop ? '' : 'touch-none cursor-grab active:cursor-grabbing'"
+             @pointerdown="isDesktop || drawer.onPointerDown($event)"
+             @pointermove="isDesktop || drawer.onPointerMove($event)"
+             @pointerup="isDesktop || drawer.onPointerUp($event)"
+             @pointercancel="isDesktop || drawer.onPointerUp($event)">
+          <div v-if="!isDesktop" class="pt-2 pb-1 flex justify-center">
             <div class="w-10 h-1 rounded-full bg-white/40"
                  :style="{ opacity: drawer.handleOpacity.value }"></div>
           </div>
-          <div class="px-4 pb-2 flex items-center justify-between">
+          <div class="px-4 pb-2 flex items-center justify-between"
+               :class="isDesktop ? 'pt-3' : ''">
             <div class="text-white text-sm font-semibold">Innstillinger</div>
             <button @pointerdown.stop @click.stop="closeDrawer"
                     class="w-8 h-8 -mr-1 rounded-full flex items-center justify-center
@@ -4609,16 +4632,17 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <!-- Tab-bar — horisontalt scrollbar når plassen krever det. -->
-        <div class="shrink-0 px-4 pb-2 flex gap-1.5 overflow-x-auto map-tabs"
+        <!-- Tab-bar — understreket aktiv fane (samme stil som illustrasjons-
+             sporet). Horisontal scroll når labels ikke får plass. -->
+        <div class="shrink-0 mx-4 mb-2 flex border-b border-white/10 overflow-x-auto map-tabs"
              style="scrollbar-width: none;">
           <button v-for="tab in visibleTabs" :key="tab.key"
                   @click="activeTab = tab.key"
-                  class="px-3 py-1.5 rounded-full text-[12px] font-medium whitespace-nowrap shrink-0
-                         active:scale-95 transition border"
+                  class="px-3 py-2.5 text-[10px] uppercase tracking-wider whitespace-nowrap shrink-0
+                         transition-colors"
                   :class="activeTab === tab.key
-                          ? 'bg-slate-200 border-slate-200 text-zinc-900'
-                          : 'bg-white/5 border-white/10 text-white/70'">
+                          ? 'text-white border-b-2 border-slate-200'
+                          : 'text-white/40'">
             {{ tab.label }}
           </button>
         </div>
@@ -5625,6 +5649,9 @@ onUnmounted(() => {
 <style scoped>
 .drawer-enter-active, .drawer-leave-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .drawer-enter-from, .drawer-leave-to       { transform: translateY(100%); }
+/* Desktop: side-panelet glir inn fra høyre i stedet for opp fra bunnen. */
+.drawer-side-enter-active, .drawer-side-leave-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.drawer-side-enter-from, .drawer-side-leave-to       { transform: translateX(100%); }
 /* Skjul scrollbar på tab-strip — fortsatt scrollbar med touch / wheel */
 .map-tabs::-webkit-scrollbar { display: none; }
 /* Søke-overlay — kort fade + svak slide ovenfra */
