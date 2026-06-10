@@ -12,6 +12,7 @@ const DB_VERSION = 1
 
 export const TTL = {
   vern: 30 * 24 * 60 * 60 * 1000,
+  naturtype: 30 * 24 * 60 * 60 * 1000,
   species: 24 * 60 * 60 * 1000,
   wiki: 7 * 24 * 60 * 60 * 1000,
 }
@@ -105,4 +106,9 @@ export async function cacheSet(key, data, ttlMs) {
 /** Nøkkel for verne-oppslag på et grid (~100 m) så nære klikk treffer samme. */
 export function pointKey(lat, lon) {
   return `vern:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
+}
+
+/** Nøkkel for naturtype-oppslag på samme ~100 m-grid. */
+export function naturtypePointKey(lat, lon) {
+  return `naturtype:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
 }

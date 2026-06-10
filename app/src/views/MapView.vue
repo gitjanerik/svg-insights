@@ -27,9 +27,10 @@ import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
 import { fetchLiveWater } from '../lib/nveHydApi.js'
 import { fetchProtectedArea } from '../lib/verneFetcher.js'
+import { fetchNaturtypes } from '../lib/naturtypeFetcher.js'
 import { fetchSpeciesSummary } from '../lib/gbifSpecies.js'
 import { fetchWikiSummary } from '../lib/wikiSummary.js'
-import { cacheGet, cacheSet, pointKey, TTL } from '../lib/protectedAreaCache.js'
+import { cacheGet, cacheSet, pointKey, naturtypePointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace,
@@ -1479,6 +1480,10 @@ let lakeQueryToken = 0
 // area, species, wiki }. species/wiki: 'loading' | objekt | null (utilgjengelig).
 const verneQuery = ref(null)
 let verneQueryToken = 0
+// NiN-naturtype-oppslag ved long-press (uavhengig av verneområde — naturtyper
+// finnes overalt). null = ingen treff/ikke spurt | { status:'done', items:[…] }.
+const naturtypeQuery = ref(null)
+let naturtypeQueryToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
@@ -1723,6 +1728,40 @@ watch(contextMenuPoint, async (p) => {
     if (token === verneQueryToken) verneQuery.value = null
   }
 })
+
+// Long-press → slå opp NiN-naturtype-lokaliteter for punktet (Miljødirektoratet
+// «Naturtyper på land»). Uavhengig av verneområde-oppslaget over: naturtyper er
+// kartlagt i hele landet, ikke bare i verneområder. Cachet 30 dager. Ingen treff
+// (tom liste) eller utilgjengelig → ingen naturtype-seksjon.
+watch(contextMenuPoint, async (p) => {
+  const token = ++naturtypeQueryToken
+  naturtypeQuery.value = null
+  if (!p || !contextMenuOpen.value) return
+  const info = contextMenuInfo.value
+  if (!info?.inside) return
+  try {
+    const key = naturtypePointKey(info.lat, info.lon)
+    let items = await cacheGet(key)
+    if (!items) {
+      items = await fetchNaturtypes(info.lat, info.lon)
+      if (items && items.length) cacheSet(key, items, TTL.naturtype)
+    }
+    if (token !== naturtypeQueryToken) return
+    naturtypeQuery.value = (items && items.length) ? { status: 'done', items } : null
+  } catch {
+    if (token === naturtypeQueryToken) naturtypeQuery.value = null
+  }
+})
+
+// Verdi-klasse for naturtype-badge: «svært høy»/«høy»/«svært viktig» → sterk
+// grønn, «moderat»/«viktig» → gulgrønn, «lav»/«lokalt» → dempet. Ukjent → nøytral.
+function naturtypeVerdiClass(verdi) {
+  const v = String(verdi ?? '').toLowerCase()
+  if (/sv[æa]rt h[øo]y|^h[øo]y|sv[æa]rt viktig/.test(v)) return 'bg-emerald-500/25 text-emerald-100 border-emerald-400/40'
+  if (/moderat|^viktig/.test(v)) return 'bg-lime-500/20 text-lime-100 border-lime-400/35'
+  if (/lav|lokalt/.test(v)) return 'bg-white/8 text-white/60 border-white/15'
+  return 'bg-white/8 text-white/70 border-white/15'
+}
 
 // Arts-/observasjons-telling fra GBIF for verneområde-polygonet. Cachet 24 t på
 // område-ID. Setter species til objekt (treff) eller null (utilgjengelig).
@@ -5646,6 +5685,33 @@ onUnmounted(() => {
                    :title="verneQuery.wiki === 'loading' ? 'Søker i Wikipedia …' : 'Ingen Wikipedia-artikkel funnet'">
                   Wikipedia {{ verneQuery.wiki === 'loading' ? '…' : '—' }}
                 </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- NiN-naturtyper (Miljødirektoratet) — uavhengig av verneområde. -->
+          <div v-if="naturtypeQuery?.status === 'done'" class="px-4 pt-3">
+            <div class="rounded-xl border border-lime-400/25 bg-lime-500/8 p-3 space-y-2">
+              <div class="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0 text-lime-300" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22c4-2 7-6 7-11a7 7 0 0 0-14 0c0 5 3 9 7 11Z"/>
+                  <path d="M12 22V8"/>
+                  <path d="M9 12l3-3 3 3"/>
+                </svg>
+                <div class="text-lime-100 font-semibold text-[12px] uppercase tracking-wide">Naturtype (NiN)</div>
+              </div>
+              <div v-for="(nt, i) in naturtypeQuery.items" :key="nt.id ?? i"
+                   class="space-y-0.5" :class="i > 0 ? 'border-t border-lime-400/12 pt-1.5' : ''">
+                <div class="flex items-baseline gap-2 flex-wrap">
+                  <span class="text-lime-50 text-[13px] font-medium leading-tight">{{ nt.naturtype }}</span>
+                  <span v-if="nt.verdi"
+                        class="px-1.5 py-0.5 rounded text-[10px] border leading-none"
+                        :class="naturtypeVerdiClass(nt.verdi)">{{ nt.verdi }}</span>
+                </div>
+                <div v-if="nt.utforming" class="text-lime-200/70 text-[11px] leading-snug">{{ nt.utforming }}</div>
+                <div v-if="nt.tilstand" class="text-lime-200/55 text-[11px]">Tilstand: {{ nt.tilstand }}</div>
+                <div v-if="nt.navn" class="text-lime-200/45 text-[10px] italic">{{ nt.navn }}</div>
               </div>
             </div>
           </div>
