@@ -64,6 +64,7 @@ export function buildOverpassQuery(bbox) {
   way["highway"~"^(path|track|bridleway|steps)$"];
   way["natural"="water"];
   way["water"];
+  way["natural"="coastline"];
   way["waterway"~"^(stream|river|canal|ditch)$"];
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
@@ -543,6 +544,10 @@ export function buildSvg(elements, bbox, options = {}) {
     skipContoursIfSynthetic = false,
     skipDemSea = false,
     utmBbox = null,                // authoritativ UTM-extent fra kalleren (se under)
+    coastal = null,                // true=kyst (ekte sjø), false=innland, null=ukjent.
+                                   // Settes av createMapFlow (DEM-havflate + OSM-kystlinje/
+                                   // saltvann). Brukes av MapView til å være ærlig om at
+                                   // ~0 m over en innlands-vannflate er en DEM-artefakt.
   } = options
 
   // Lett timing-instrumentering: måler de tunge stegene og returneres som
@@ -1771,6 +1776,7 @@ export function buildSvg(elements, bbox, options = {}) {
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
     demSource: dem?.source ?? null,
+    coastal,                       // kyst vs innland (se options). MapView leser denne.
     demResolutionM: dem?.transform
       ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
       : null,
