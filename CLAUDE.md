@@ -283,9 +283,10 @@ LAYER_ORDER i `mapBuilder.js` følger ISOM 2017-2-stack (bunn → topp): vegetas
    - `app/package.json` (`"version"`)
    - `app/src/version.js` (`APP_VERSION`)
    - `app/public/sw.js` (`CACHE_VERSION`) — kritisk for at mobil-klienten henter ferske assets etter deploy
-3. Vi bumper som patch (8.8.x) som default. Brukeren sier eksplisitt fra ved minor/major.
-4. **Ingen AboutView-oppføring** — git-historikk / PR-titler er endringsloggen.
-5. **Ikke nevn påskeegg** i commit-meldinger eller PR-tekst.
+3. **Hver versjons-bump → ny post øverst i `CHANGELOG.md`** (rot-nivå). OBLIGATORISK ved hver commit/PR som bumper versjon — ikke hopp over det. Format som de eksisterende postene: `## <YYYY-MM-DD> — v<versjon>: <kort tittel>`, så ett avsnitt som forklarer endringen (norsk bokmål), så `---`. Dette håndheves av en PreToolUse-hook (`.claude/hooks/pre-commit-changelog.sh`) som blokkerer en `git commit` der `app/src/version.js` er staget uten at `CHANGELOG.md` også er det. Rene doku-/refactor-PR-er uten versjons-bump trenger ingen post.
+4. Vi bumper som patch (8.8.x) som default. Brukeren sier eksplisitt fra ved minor/major.
+5. **Ingen AboutView-oppføring** — `CHANGELOG.md` + git-historikk/PR-titler er endringsloggen. (Tidligere konvensjon var «git-historikk = endringslogg»; fra og med v10.1.23 vedlikeholdes `CHANGELOG.md` aktivt igjen.)
+6. **Ikke nevn påskeegg** i commit-meldinger eller PR-tekst.
 
 `origin/master` er sannheten — etter merge venter alltid brukeren på en frisk PR fra ny branch basert på `origin/master`. Aldri gjenbruk en branch som allerede er merget.
 
