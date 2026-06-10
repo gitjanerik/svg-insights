@@ -1,0 +1,6 @@
+# Python (tools/)
+__pycache__/
+*.pyc
+
+# Rødliste-eksport (genereres av tools/fetch_redlist_2021.py)
+redlist_2021.csv
