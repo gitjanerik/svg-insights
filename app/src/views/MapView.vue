@@ -29,6 +29,7 @@ import { fetchLiveWater } from '../lib/nveHydApi.js'
 import { fetchProtectedArea } from '../lib/verneFetcher.js'
 import { fetchNaturtypes } from '../lib/naturtypeFetcher.js'
 import { fetchSpeciesSummary } from '../lib/gbifSpecies.js'
+import { summarizeRedListed } from '../lib/redListNo.js'
 import { fetchWikiSummary } from '../lib/wikiSummary.js'
 import { cacheGet, cacheSet, pointKey, naturtypePointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
@@ -1774,6 +1775,12 @@ async function loadVerneSpecies(token, area) {
       sp = await fetchSpeciesSummary(area.rings)
       if (sp) cacheSet(key, sp, TTL.species)
     }
+    // Norsk rødliste: snitt GBIF-artene mot den bundlede Artsdatabanken-lista.
+    // Dvale (returnerer null) hvis bundelen ennå ikke er generert → ingen linje.
+    if (sp?.speciesKeys && !sp.redListNo) {
+      const rl = await summarizeRedListed(sp.speciesKeys)
+      if (rl) sp = { ...sp, redListNo: rl }
+    }
     patchVerne(token, { species: sp ?? null })
   } catch {
     patchVerne(token, { species: null })
@@ -1812,6 +1819,15 @@ function formatVernedato(iso) {
 // Heltall med tusenskille (norsk: mellomrom). 1342 → «1 342».
 function formatCount(n) {
   return Number(n).toLocaleString('nb-NO')
+}
+
+// Rødliste-fordeling → kompakt streng, hopper over tomme kategorier.
+// { CR:2, EN:0, VU:5, NT:4 } → «CR 2 · VU 5 · NT 4».
+function redListBreakdown(byCat) {
+  return ['CR', 'EN', 'VU', 'NT']
+    .filter((c) => byCat?.[c] > 0)
+    .map((c) => `${c} ${byCat[c]}`)
+    .join(' · ')
 }
 
 // Areal: under 1 km² vises med to desimaler (små vann), ellers heltall/én desimal.
@@ -5654,6 +5670,14 @@ onUnmounted(() => {
                     <span class="text-emerald-50 tabular-nums">
                       {{ formatCount(verneQuery.species.speciesCount) }}{{ verneQuery.species.speciesCapped ? '+' : '' }}
                       <span class="text-emerald-200/55"> · {{ formatCount(verneQuery.species.observationCount) }} obs.</span>
+                    </span>
+                  </div>
+                  <div v-if="verneQuery.species.redListNo && verneQuery.species.redListNo.count > 0"
+                       class="flex items-baseline gap-2">
+                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
+                    <span class="text-rose-200 tabular-nums">
+                      {{ formatCount(verneQuery.species.redListNo.count) }} arter
+                      <span class="text-rose-200/55"> · {{ redListBreakdown(verneQuery.species.redListNo.byCategory) }}</span>
                     </span>
                   </div>
                 </template>

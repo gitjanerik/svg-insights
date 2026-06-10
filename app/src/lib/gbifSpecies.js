@@ -77,11 +77,16 @@ export function ringsToBboxWkt(rings) {
   return `POLYGON((${minX} ${minY}, ${maxX} ${minY}, ${maxX} ${maxY}, ${minX} ${maxY}, ${minX} ${minY}))`
 }
 
-/** Antall distinkte arter + om facet ble capet, fra en GBIF-respons. */
+/**
+ * Antall distinkte arter, om facet ble capet, og selve nøkkel-lista fra en
+ * GBIF-respons. `keys` er GBIF-backbone speciesKeys — samme nøkler som
+ * checklist-`nubKey`, så de kan snittes direkte mot den norske rødliste-bundelen.
+ */
 export function parseSpeciesFacet(json) {
   const facet = json?.facets?.find((f) => f.field === 'SPECIES_KEY' || f.field === 'speciesKey')
   const counts = facet?.counts ?? []
-  return { speciesCount: counts.length, capped: counts.length >= SPECIES_FACET_LIMIT }
+  const keys = counts.map((c) => Number(c?.name)).filter(Number.isFinite)
+  return { speciesCount: counts.length, capped: counts.length >= SPECIES_FACET_LIMIT, keys }
 }
 
 function gbifUrl(wkt) {
@@ -101,7 +106,8 @@ async function gbifFetch(url, signal) {
  * @param {Array<Array<[number,number]>>} rings  [[lon,lat],...] (største først)
  * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
  * @returns {Promise<{
- *   observationCount: number, speciesCount: number, speciesCapped: boolean
+ *   observationCount: number, speciesCount: number, speciesCapped: boolean,
+ *   speciesKeys: number[]
  * } | null>}
  */
 export async function fetchSpeciesSummary(rings, opts = {}) {
@@ -136,6 +142,7 @@ export async function fetchSpeciesSummary(rings, opts = {}) {
       observationCount: Number(all?.count) || 0,
       speciesCount: allSp.speciesCount,
       speciesCapped: allSp.capped,
+      speciesKeys: allSp.keys,
     }
   } catch (e) {
     if (signal?.aborted || ctrl.signal.aborted) return null
