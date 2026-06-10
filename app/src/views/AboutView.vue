@@ -79,7 +79,7 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Turkart — ISOM-inspirert pipeline</h3>
         <p class="text-sm text-white/65 leading-relaxed">
           Turkart-funksjonen lager print-kvalitets sportskart inspirert av ISOM 2017-2-standarden
-          ved å kombinere åpne norske data fra Kartverket og OpenStreetMap. Hele rendringen er
+          ved å kombinere åpne norske data fra Kartverket, NVE og OpenStreetMap. Hele rendringen er
           ren SVG med mm-baserte streker — ingen kart-engine.
         </p>
 
@@ -89,6 +89,8 @@ const TABS = [
           <li><strong class="text-white/75">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
           <li><strong class="text-white/75">Kartverket DTM 1m/10m</strong> via WCS — terrengmodell for høydekurver og stupkanter</li>
           <li><strong class="text-white/75">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
+          <li><strong class="text-white/75">Kartverket Sjøkart (Dybdedata)</strong> via WFS — dybdeareal, sjømerker og fyr på kystkart</li>
+          <li><strong class="text-white/75">NVE</strong> via NVE API + HydAPI — innsjøers dyp/areal/volum, vannflate-høyde og sanntids vannstand (long-press på vann)</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 

@@ -23,12 +23,14 @@ const IDLE_TIMEOUT_MS = 2 * 60 * 1000   // 2 min uten aktivitet → slipp locken
 const ACTIVITY_EVENTS = ['pointerdown', 'touchstart', 'keydown', 'wheel']
 
 function readSetting() {
+  // Opt-in (v10.1.24): default AV — brukeren slår «hold skjerm våken» på selv
+  // i Innstillinger. Kun lagret 'true' aktiverer den.
   try {
     const v = localStorage.getItem(STORAGE_KEY)
-    if (v === null) return true   // default PÅ
+    if (v === null) return false   // default AV
     return v === 'true'
   } catch {
-    return true
+    return false
   }
 }
 
