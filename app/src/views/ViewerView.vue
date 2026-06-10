@@ -17,6 +17,7 @@ import {
 } from '../lib/fillEffects.js'
 import { useHalftoneGame } from '../composables/useHalftoneGame.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
+import { useResizablePanel } from '../composables/useResizablePanel.js'
 import SolarSystemSetupModal from '../components/SolarSystemSetupModal.vue'
 
 const router = useRouter()
@@ -243,6 +244,11 @@ const drawer = useDraggableDrawer({
   minimizedPeek: 28,      // just the handle strip remains visible
   snapThreshold: 1 / 3,   // magnet kicks in past 1/3 travel
 })
+// Desktop: kontroll-panelet har dra-bar venstrekant (min 360px, maks 50vw,
+// bredde lagret i localStorage). Panelet er en flex-søsken, så lerretet
+// (flex-1) krymper automatisk når panelet vokser — resetZoom fyller dermed
+// alltid den tilgjengelige plassen.
+const panel = useResizablePanel('viewer-panel-width')
 
 // Reset drawer to expanded whenever the panel re-opens so the user doesn't
 // return to a minimised state they forgot about.
@@ -813,9 +819,20 @@ onMounted(() => {
         <div v-if="showPanel && !solarSystem"
           :class="[
             'bg-[#111118] border-white/5 overflow-hidden flex flex-col shrink-0',
-            isMobileView ? 'w-full border-t' : 'w-72 h-auto border-l',
+            isMobileView ? 'w-full border-t' : 'h-auto border-l relative',
           ]"
-          :style="isMobileView ? drawer.drawerHeightStyle.value : {}">
+          :style="isMobileView
+                    ? drawer.drawerHeightStyle.value
+                    : { width: panel.width.value + 'px', transition: panel.isResizing.value ? 'none' : undefined }">
+
+          <!-- Desktop: dra-bar venstrekant for å justere panelbredden (360px–50vw). -->
+          <div v-if="!isMobileView"
+               class="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 z-10 cursor-col-resize group"
+               @pointerdown="panel.onResizeStart($event)">
+            <div class="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-white/10
+                        group-hover:bg-sky-400/60 transition-colors"
+                 :class="panel.isResizing.value ? 'bg-sky-400/80' : ''"></div>
+          </div>
 
           <!-- Drawer handle — only on mobile. Drag only; tapping does nothing. -->
           <div v-if="isMobileView"
