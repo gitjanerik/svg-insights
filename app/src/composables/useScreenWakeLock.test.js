@@ -30,9 +30,18 @@ afterEach(() => {
 })
 
 describe('useScreenWakeLock — inaktivitets-timer', () => {
+  it('default er AV (opt-in) — start() uten enabled tar ingen lock', async () => {
+    const wl = useScreenWakeLock({ idleTimeoutMs: 1000 })
+    expect(wl.enabled.value).toBe(false)
+    wl.start()
+    await flush()
+    expect(requestSpy).not.toHaveBeenCalled()
+    expect(wl.active.value).toBe(false)
+  })
+
   it('tar wake-lock ved start når enabled', async () => {
     const wl = useScreenWakeLock({ idleTimeoutMs: 1000 })
-    expect(wl.enabled.value).toBe(true)
+    wl.enabled.value = true   // opt-in
     wl.start()
     await flush()
     expect(requestSpy).toHaveBeenCalledWith('screen')
@@ -41,6 +50,7 @@ describe('useScreenWakeLock — inaktivitets-timer', () => {
 
   it('slipper locken etter idle-timeout uten aktivitet', async () => {
     const wl = useScreenWakeLock({ idleTimeoutMs: 1000 })
+    wl.enabled.value = true
     wl.start()
     await flush()
     expect(wl.active.value).toBe(true)
@@ -53,6 +63,7 @@ describe('useScreenWakeLock — inaktivitets-timer', () => {
 
   it('poke re-acquirer locken etter idle-slipp', async () => {
     const wl = useScreenWakeLock({ idleTimeoutMs: 1000 })
+    wl.enabled.value = true
     wl.start()
     await flush()
     vi.advanceTimersByTime(1000)
@@ -67,6 +78,7 @@ describe('useScreenWakeLock — inaktivitets-timer', () => {
 
   it('poke fornyer timeren så locken IKKE slippes ved aktivitet', async () => {
     const wl = useScreenWakeLock({ idleTimeoutMs: 1000 })
+    wl.enabled.value = true
     wl.start()
     await flush()
     // Aktivitet rett før timeout → timer nullstilles

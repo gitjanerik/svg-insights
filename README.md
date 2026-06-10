@@ -1,146 +1,183 @@
 # SVG Insights
 
-Mobilapp med to hovedfunksjoner: konverter bilder til interaktive SVG-strektegninger, og lag din egen webfont med egen .otf-eksport.
+Vue 3-mobilapp med tre hovedfunksjoner: konverter bilder til interaktive
+SVG-strektegninger, lag din egen webfont med `.otf`-eksport, og generer
+ISOM-inspirerte turkart fra åpne norske data. Alt kjører klient-side — ingen
+backend, ingen kart-engine.
 
 **Live demo:** https://gitjanerik.github.io/svg-insights/
 
+Gjeldende versjon er autoritativ i [`app/src/version.js`](app/src/version.js).
+
 ## Funksjoner
 
-### Lag SVG-tegning
+### 1. Lag SVG-tegning
 
-- **Bilde til SVG** — 12-trinns bildeprosesseringspipeline med Canny-kantdeteksjon
-- **Kontrastforbedring** — Histogram-equalization som forbehandling
-- **Multi-skala kantdeteksjon** — Kombinerer kanter fra tre sigma-nivaer (0.7, 1.4, 2.8)
-- **Luminans-konturer** — Iso-luminans grenselinjer for indre detaljer
-- **Skravering/kryssskravering** — Hatch-linjer i morke omrader for dybde
-- **Hudtone-deteksjon** — YCbCr-basert klassifisering av hudregioner
-- **Minimum 1000 vektorer** — Adaptiv detaljering hvis under terskel
-- **3D-visning** — Utforsk SVG med gyroskop-parallakse og pinch-zoom
-- **Wireframe-demo** — Parametrisk 3D menneskefigur med ansiktstrekk
+Konverterer et foto til en interaktiv SVG-strektegning via en 12-trinns
+bildeprosesseringspipeline (ren JavaScript, ingen bildebibliotek).
 
-### Lag webfont
+- **Multi-skala Canny-kantdeteksjon** — kombinerer kanter ved sigma 0.7 / 1.4 / 2.8
+- **Luminans-konturer** — iso-luminans-grenselinjer for indre detaljer
+- **Skravering / kryssskravering** i mørke regioner for dybde
+- **Hudtone-deteksjon** (YCbCr) og adaptiv detaljering (min. 1000 vektorer)
+- **Rasterpunkt-modus** (halftone) med interaktive modi: Magnet, Antistoff, Sort hull
+- **3D-visning** med pinch-zoom
+
+### 2. Lag webfont
+
+Genererer en egen `.otf`-font basert på en valgt Google-font som inspirasjon.
 
 - **24 kuraterte Google-fonter** som utgangspunkt (serif, sans, håndskrift)
-- **97 glyfer per font** (A–Å, a–å, 0–9, tegnsetting)
-- **Bezier-editor** med anker-drag, kontrollhåndtak, undo/redo
+- **Glyf-for-glyf Bezier-editor** med anker-drag, kontrollhåndtak, undo/redo
 - **Kvikk-handlinger**: gjør myk, rett, forenkle, tykkere, tynnere
-- **Foto-til-glyf**: ta bilde av en enkelt bokstav og spor konturen
-- **Hjørne-bevisst** kurve-algoritme med anti-støy-filter
-- **Live forhåndsvisning** via FontFace API
-- **.otf-eksport** via opentype.js
+- **Tegne-/pensel-modus** med boolean-union av strøk (`polygon-clipping`)
+- **Foto-til-glyf**: ta bilde av en enkeltbokstav og spor konturen
+- **Live forhåndsvisning** via FontFace API, **.otf-eksport** via opentype.js
+- **Headless kvalitetstester** (`npm run test:fonts`) → HTML-rapport
+
+### 3. Vis turkart
+
+ISOM 2017-2-inspirerte sportskart bygget fra åpne norske data — print-kvalitets
+SVG med mm-baserte streker.
+
+- **Datadrevet ISOM-katalog** (vegetasjon, vann, konturer, veier, bygninger, sjø-POI)
+- **Høydekurver** fra Kartverket DTM (d3-contour marching squares → Chaikin → DP)
+- **Vegetasjons-klassifisering** fra CHM = DOM − DTM (ISOM 405–408)
+- **Stupkanter** via Zhang-Suen skeletonization av bratte helninger
+- **Sjø/kyst** DEM-derivert med ekte dybdedata fra Kartverket Sjøkart
+- **Innsjø-fakta** (dyp/areal/volum + sanntids vannstand) fra NVE ved long-press
+- **Auto-kart** som bygger nabo-utsnitt sømløst når du panorerer (opt-in)
+- **A-format-utsnitt** klart for print/PDF/SVG-eksport
+- **GPS-prikk, kompass, måling, annotering og GPS-sporing** i visningen
+
+> Appen inneholder også **CurveInvaders**, et lite kart-basert mini-spill
+> (kodenavn CurveBall internt).
 
 ## Teknologi
 
 | Komponent | Teknologi |
 |-----------|-----------|
 | Rammeverk | Vue 3 (Composition API, `<script setup>`) |
-| Bygg | Vite 8 |
-| Styling | Tailwind CSS 4 |
-| Ruting | Vue Router 4 |
-| Testing | Vitest |
-| Hosting | GitHub Pages |
+| Bygg | Vite |
+| Styling | Tailwind CSS 4 (`@import "tailwindcss"`, ingen config-fil) |
+| Ruting | Vue Router 4 (`createWebHistory`) |
+| Testing | Vitest (372 tester) + headless font-kvalitetstester |
+| Lagring | IndexedDB (kart), localStorage (innstillinger) |
+| Offline | PWA med service worker (`app/public/sw.js`) |
+| Hosting | GitHub Pages (auto-deploy via GitHub Actions) |
 
-Ingen eksterne bildebehandlingsbiblioteker — alle algoritmer er implementert i ren JavaScript med typed arrays.
+Tredjeparts-bibliotek brukes kun der ren JS ikke strekker til:
+
+| Bibliotek | Brukes til |
+|-----------|------------|
+| `d3-contour` | Høydekurver fra DTM (marching squares) |
+| `geotiff.js` | Parsing av GeoTIFF fra Kartverket WCS (lazy-loaded) |
+| `polygon-clipping` | Boolean-union (brush-glyfer, ISOM 522 bymasse) |
+| `opentype.js` | `.otf`-fontbygging (lazy-loaded) |
+| `jsPDF` / `html2canvas` | PDF-/PNG-eksport av kart (lazy-loaded) |
+
+## Datakilder (turkart)
+
+Alle åpne (CC BY 4.0 / ODbL). Kartverket WCS/WFS støtter CORS, så ekte data
+hentes både i CI og klient-side.
+
+- **OpenStreetMap** via Overpass API — stier, veier, vann, bygninger, stedsnavn
+- **Kartverket N50 Kartdata** (WFS) — Havflate, Innsjø, ElvBekk
+- **Kartverket DTM/DOM** (WCS) — terreng-/overflatemodell for konturer og vegetasjon
+- **Kartverket Sjøkart Dybdedata** (WFS) — dybdeareal, sjømerker, fyr
+- **NVE** (NVE API + HydAPI) — innsjø-dyp/-areal/-volum og sanntids vannstand
+- **Nominatim** (OSM) — stedssøk i kart-velgeren
 
 ## Prosjektstruktur
 
 ```
-SVGInsights/
+svg-insights/
   app/
+    public/
+      sw.js                    # Service worker (offline / PWA-cache)
+      maps/vardasen.svg        # Innebygd demo-turkart (bygget i CI fra ekte WCS)
     src/
       lib/
-        imageToSvg.js          # Kjerne-pipeline: bilde -> SVG (12 trinn)
-        imageToSvg.test.js     # 67 enhetstester
-        humanWireframe.js      # Parametrisk 3D wireframe-generator
-        humanWireframe.test.js # Wireframe-tester
+        imageToSvg.js          # SVG-spor: bilde → SVG (12-trinns pipeline)
+        pathFilters.js         # SVG-transformer + halftone (string-basert)
+        colorization.js        # Fargelegging av strektegninger
+        curveFit.js            # Font-spor: hjørne-bevisst kurve-tilpasning
+        canvasGlyphRenderer.js # Contour-tracing for foto-til-glyf
+        fontBuilder.js         # .otf-eksport (opentype.js)
+        glyphUnion.js          # Boolean-union av glyf-ringer
+        mapBuilder.js          # Kart-spor: hovedpipeline + buildSvg()
+        createMapFlow.js       # Orkestrering av kart-bygging (Overpass+N50+DEM)
+        symbolizer.js          # ISOM-klassifisering + defs/CSS
+        isomCatalog.json       # Datadrevet ISOM-katalog
+        dem.js / demFetcher.js # Høydekurver, stupkanter, WCS-henting
+        canopyHeight.js        # DOM-fetch + CHM + vegetasjons-klassifisering
+        seaFromDem.js / sjokartFetcher.js / marineTopology.js  # Sjø/kyst
+        n50Fetcher.js                   # N50-vann (Havflate/Innsjø/ElvBekk)
+        nveLakeFetcher.js / nveHydApi.js # NVE innsjø-data + sanntids vannstand
+        printExport.js         # SVG/PNG/PDF/print-eksport
+        mapStorage.js          # IndexedDB-wrapper
       composables/
-        useDeviceMotion.js     # Gyroskop/enhetsbevegelsessporing
-        usePinchZoom.js        # Multi-touch pinch-zoom + pan
+        usePinchZoom.js        # Pinch/pan/rotate + mus-pan (desktop)
+        useUserPosition.js     # GPS via watchPosition
+        useCompass.js          # DeviceOrientation
+        useScreenWakeLock.js   # Hold skjerm våken (opt-in)
+        useHalftoneGame.js     # Interaktivt rasterlag + solsystem-modus
+        useFontProject.js / useGlyphEditor.js   # Font-tilstand + editor
       views/
-        HomeView.vue           # Landingsside
-        CaptureView.vue        # Kamera + bildebehandling
-        ViewerView.vue         # 3D interaktiv SVG-visning
-        WireframeTestView.vue  # Wireframe-demo
-      App.vue                  # Rot-komponent med ruter
-      router.js                # Vue Router-konfigurasjon
-      main.js                  # App-initialisering
-      style.css                # Tailwind CSS import
-    package.json
-    vite.config.js
+        HomeView.vue           # Portal (tre kort)
+        CaptureView.vue / ViewerView.vue        # SVG-spor
+        FontChooserView.vue / FontEditorView.vue / FontPreviewView.vue
+        MapHomeView.vue / MapPickerView.vue / MapView.vue   # Kart-spor
+        AboutView.vue          # Info / datakilder / pipeline
+      version.js               # APP_VERSION (autoritativ)
+      router.js / main.js / App.vue
+    scripts/
+      build-vardasen-svg.js    # CI-script: bygg demo-kart fra ekte WCS
+    tests/font-quality/        # Headless font-kvalitets-harness
+  .github/workflows/
+    build-vardasen-map.yml     # Bygg demo-kart + deploy til gh-pages
 ```
+
+Tester ligger ved siden av kildekoden (`*.test.js`).
 
 ## Kom i gang
 
 ```bash
 cd app
 npm install
-npm run dev      # Utviklingsserver pa port 5173
-npm run test     # Kjor alle tester
-npm run build    # Produksjonsbygg til dist/
-```
-
-## Bildeprosesseringspipeline
-
-Fullstendig pipeline fra bilde til SVG med 12 trinn:
-
-```
-Bilde
-  |
-  v
-1. loadImageToCanvas        — Skalerer til maks 600px
-  |
-  v
-2. toGrayscale              — BT.601 luminans (0.299R + 0.587G + 0.114B)
-  |
-  v
-3. histogramEqualization    — Kontrastforbedring via CDF-mapping
-  |
-  v
-4. multiScaleCanny          — Kantdeteksjon ved sigma 0.7, 1.4, 2.8
-  |  (gaussianBlur -> sobelWithDirection -> nonMaxSuppression -> hysteresisThreshold) x3
-  |  Resultater OR-merges
-  |
-  v
-5. traceEdgeChains          — Retningsbevisst konturfoljing (8-connected)
-  |
-  v
-6. bridgeGaps               — Kobler fragmenterte kant-endepunkter (maks 3px)
-  |
-  v
-7. simplifyPath             — Ramer-Douglas-Peucker linjeforenkling
-  |
-  v
-8. traceLuminanceContours   — Grenselinjer ved 5 lysstyrke-nivaer
-  |
-  v
-9. generateHatching         — Horisontale + diagonale linjer i morke regioner
-  |
-  v
-10. detectSkinRegions       — YCbCr hudtone-klassifisering
-  |
-  v
-11. pathsToSvgD             — Polyline eller Catmull-Rom -> Bezier-kurver
-  |
-  v
-12. Adaptiv detaljering     — Legger til konturer/skravering hvis < 1000 vektorer
-  |
-  v
-SVG med grupperte lag:
-  <g class="edges">       — Hovedkanter (opacity 1.0)
-  <g class="contours">    — Luminans-konturer (opacity 0.5)
-  <g class="hatching">    — Skravering (opacity 0.35)
+npm run dev         # Utviklingsserver på port 5173
+npm run test        # Kjør Vitest-tester
+npm run test:fonts  # Headless font-kvalitetstester → HTML-rapport
+npm run build       # Produksjonsbygg til dist/
 ```
 
 ## Deploy
 
-Appen er deployet til GitHub Pages via `gh-pages`-branchen:
+Auto-deploy via GitHub Actions: hver push til `master` trigger
+[`.github/workflows/build-vardasen-map.yml`](.github/workflows/build-vardasen-map.yml),
+som:
 
-```bash
-cd app
-npm run build
-touch dist/.nojekyll
-cp dist/index.html dist/404.html
-# Push dist/ innhold til gh-pages-branchen
+1. Bygger det innebygde Vardåsen-demokartet fra ekte Kartverket WCS (CI har
+   full nettverkstilgang),
+2. kjører `npm run build`, og
+3. kopierer `dist/` inn i en `gh-pages`-worktree og pusher.
+
+**Slik deployer du:** push til `master` — live i løpet av ~2 min. Ikke deploy
+manuelt; workflowen eier `gh-pages`.
+
+Vite er konfigurert med `base: '/svg-insights/'`, og Vue Router bruker
+`import.meta.env.BASE_URL` som base-path.
+
+## Bildeprosesseringspipeline (SVG-sporet)
+
+```
+Bilde
+ → loadImageToCanvas (maks 600px) → toGrayscale (BT.601)
+ → histogramEqualization → multiScaleCanny (σ 0.7/1.4/2.8, OR-merge)
+ → traceEdgeChains → bridgeGaps → simplifyPath (Ramer-Douglas-Peucker)
+ → traceLuminanceContours → generateHatching → detectSkinRegions
+ → pathsToSvgD (Catmull-Rom → Bezier) → adaptiv detaljering (< 1000 vektorer)
+ → SVG med grupperte lag: <g class="edges|contours|hatching">
 ```
 
-Vite er konfigurert med `base: '/svg-insights/'` og Vue Router bruker `import.meta.env.BASE_URL` som base-path.
+Alle trinn er eksportert individuelt slik at de kan enhetstestes.

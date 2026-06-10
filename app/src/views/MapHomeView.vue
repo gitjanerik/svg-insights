@@ -237,23 +237,43 @@ async function onSelectSearchResult(r) {
     <!-- Innhold -->
     <div class="flex-1 px-4 pt-4 pb-32 overflow-y-auto">
 
-      <!-- Søkefelt — KISS-snarvei: velg sted → bygg straks 4 × 4 km, 20 m
-           ekvidistanse-kart (samme oppsett som «Lag kart der jeg er»). For
-           finjustering av størrelse/ekvidistanse, se «Flere valg» under. -->
-      <div class="relative z-20 mb-3">
+      <!-- Søkefelt med integrert GPS-knapp (v10.1.24). Søk = hovedflyten: velg
+           et sted → bygg straks et A-format-kart. Den grønne pin-knappen til
+           høyre er en forlengelse av feltet og lager kart der du står (GPS).
+           Hjelpeteksten under forklarer knappen siden pin-ikonet alene ikke er
+           helt selvforklarende. Den tidligere store grønne CTA-en er fjernet —
+           den dominerte over søkefeltet. -->
+      <div class="relative z-20 mb-1.5">
         <div class="relative">
-          <svg viewBox="0 0 24 24" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
+          <svg viewBox="0 0 24 24" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/50"
                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
           </svg>
           <input v-model="query" type="search" autocomplete="off" autocorrect="off"
                  placeholder="Søk etter sted, postnummer eller adresse"
-                 class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
-                        text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
-                        focus:border-slate-300/50 transition" />
+                 :class="['w-full pl-11 py-3.5 rounded-xl bg-white/[0.06] border text-[15px]',
+                          'placeholder-white/35 focus:outline-none focus:bg-white/[0.1]',
+                          'focus:border-emerald-300/40 focus:ring-2 focus:ring-emerald-400/15 transition',
+                          supportsGeolocation ? 'pr-14 border-white/20' : 'pr-3 border-white/20']" />
+          <!-- Søke-spinner (forskjøvet til venstre for GPS-knappen) -->
           <div v-if="isSearching"
-               class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15
-                      border-t-white/70 rounded-full animate-spin" />
+               :class="['absolute top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-white/15',
+                        'border-t-white/70 rounded-full animate-spin',
+                        supportsGeolocation ? 'right-[3.4rem]' : 'right-3.5']" />
+          <!-- Integrert GPS-knapp: lag kart der jeg er -->
+          <button v-if="supportsGeolocation"
+                  @click="onCreateHere"
+                  :disabled="buildingOnTheFly"
+                  aria-label="Lag kart der jeg står (GPS)"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg
+                         bg-emerald-500 text-white flex items-center justify-center
+                         shadow-md active:scale-95 transition disabled:opacity-60">
+            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="11" r="3"/>
+              <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
+            </svg>
+          </button>
         </div>
 
         <!-- Søkeresultater -->
@@ -272,36 +292,19 @@ async function onSelectSearchResult(r) {
             </button>
           </div>
         </Transition>
-
-        <div v-if="searchError" class="mt-2 text-[11px] text-slate-300">{{ searchError }}</div>
       </div>
 
-      <!-- Snarvei: lag kart der jeg er. Krever GPS-tillatelse ved tap.
-           4 × 4 km, 20 m ekvidistanse, åpnes med GPS-posisjon midt i kartet. -->
-      <button v-if="supportsGeolocation"
-              @click="onCreateHere"
-              :disabled="buildingOnTheFly"
-              class="w-full mb-4 rounded-xl p-4 flex items-center gap-4 text-left
-                     bg-emerald-500/15 border border-emerald-300/35
-                     active:bg-emerald-500/25 active:scale-[0.99] transition
-                     disabled:opacity-60 disabled:active:scale-100">
-        <div class="shrink-0 w-11 h-11 rounded-lg bg-emerald-500/25 border border-emerald-300/35
-                    flex items-center justify-center text-emerald-200">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="11" r="3"/>
-            <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
-          </svg>
-        </div>
-        <div class="flex-1">
-          <div class="text-white font-medium">Lag kart der jeg er</div>
-          <div class="text-[12px] text-white/65 mt-0.5">4 × 4 km · 20 m ekvidistanse · GPS</div>
-        </div>
-        <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/50" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="9 18 15 12 9 6"/>
+      <!-- Hjelpetekst som forklarer den integrerte GPS-knappen. -->
+      <div v-if="supportsGeolocation"
+           class="mb-4 px-1 text-[11.5px] text-white/45 flex items-center gap-1.5 leading-snug">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-emerald-300/80 shrink-0" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="11" r="3"/>
+          <path d="M12 21 c-5 -8 -7 -11 -7 -14 a7 7 0 0 1 14 0 c0 3 -2 6 -7 14 z"/>
         </svg>
-      </button>
+        <span>Søk etter et sted — eller trykk den grønne knappen for å lage kart der du står.</span>
+      </div>
+      <div v-if="searchError" class="-mt-2 mb-4 px-1 text-[11px] text-slate-300">{{ searchError }}</div>
 
       <!-- «Flere valg» — diskret inngang til full picker (MapPickerView) for
            de som vil finjustere størrelse / ekvidistanse / utsnitt. Tidligere

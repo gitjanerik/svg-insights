@@ -221,16 +221,26 @@ const BUILTIN = {
 // 'spor' er et klient-side syntetisk lag (ikke fra mapBuilder). Relieff
 // (hillshade) er ikke lenger en lag-toggle her — det styres av relieff-
 // knotten i FAB-stacken (se STROKE_STEPS/RELIEF_STEPS lenger ned).
+// Rekkefølge = hvordan toggles vises i drawer-en (IKKE render-z-order, som
+// styres av LAYER_ORDER i mapBuilder). v10.1.24: de tre mest brukte øverst
+// (sti, høydekurver, vann), navne-lagene samlet mot slutten, og de sære
+// vinter-tingene (heistrasé, slalombakke) aller sist.
 const LAYERS = [
+  // Mest brukt — øverst.
+  { key: 'sti',        label: 'Sti' },
+  { key: 'kontur',     label: 'Høydekurver' },
+  { key: 'vann',       label: 'Vann' },
+  // Terreng / natur.
   { key: 'skog',       label: 'Skog' },
   { key: 'aapen',      label: 'Åpen mark' },
   { key: 'aker',       label: 'Åker' },
   { key: 'myr',        label: 'Myr' },
-  { key: 'vann',       label: 'Vann' },
   { key: 'bekk',       label: 'Bekk' },
   { key: 'strand',     label: 'Strand' },
-  { key: 'kontur',     label: 'Høydekurver' },
   { key: 'naturreservat', label: 'Naturreservat' },
+  { key: 'stein',      label: 'Stein / skjær' },
+  { key: 'stupkant',   label: 'Stupkant' },
+  // Bebyggelse / infrastruktur.
   { key: 'bygning',    label: 'Hus og hytter' },
   { key: 'bymasse',    label: 'Tett bebyggelse' },
   { key: 'kirke',      label: 'Kirker' },
@@ -241,14 +251,10 @@ const LAYERS = [
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'tog',        label: 'Jernbane' },
-  { key: 'sti',        label: 'Sti' },
   { key: 'lysloype',   label: 'Lysløype' },
-  { key: 'heistrase',  label: 'Heistrasé' },
-  { key: 'slalombakke', label: 'Slalombakke' },
-  { key: 'stein',      label: 'Stein / skjær' },
-  { key: 'trig',       label: 'Trigpunkter' },
-  { key: 'stupkant',   label: 'Stupkant' },
   { key: 'linje',      label: 'Gjerde / kraft' },
+  { key: 'trig',       label: 'Trigpunkter' },
+  // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
   // Stedsnavn delt i tre viktighets-nivåer (v9.1.20) — egne lag så de kan
   // toggles hver for seg (f.eks. landsby av, by på).
@@ -256,6 +262,9 @@ const LAYERS = [
   { key: 'stedsnavn-mid',   label: 'Landsby / bydel' },
   { key: 'stedsnavn-minor', label: 'Grend / gård' },
   { key: 'spor',       label: 'GPS-spor' },
+  // Sære vinter-ting — aller sist.
+  { key: 'heistrase',  label: 'Heistrasé' },
+  { key: 'slalombakke', label: 'Slalombakke' },
   // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
   // drikkevann) + kai/molo/fareområde (data-layer 'sjo-poi'). Rendres i en
   // egen gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —
@@ -376,7 +385,7 @@ const showControls = ref(false)
 // Aktiv fane huskes i localStorage så drawer åpner tilbake i samme kontekst.
 const ACTIVE_TAB_KEY = 'svg-insights-mapview-active-tab'
 const ALL_TABS = [
-  { key: 'lag',         label: 'Lag' },
+  { key: 'lag',         label: 'Kartlag' },
   { key: 'tema',        label: 'Tema' },
   { key: 'annotering',  label: 'Annotering', userOnly: true },
   { key: 'maaling',     label: 'Måling' },
@@ -2670,17 +2679,19 @@ const PREFETCH_THRESHOLD = 0.5    // andel der bakgrunns-bygging starter
 const PREFETCH_MATCH_TOL_FRAC = 0.25  // hvor nær gjettet må være (× halv-bredde)
 // Auto-kart: default PÅ og «skjult» fra v9.3.38 — ingen FAB lenger, styres via
 // en bryter i Innstillinger-fanen. Valget huskes i localStorage på tvers av
-// økter (default PÅ når nøkkelen mangler). Trigger-rammen tegnes ikke lenger
-// (SHOW_AUTO_MAP_FRAME=false) så funksjonen jobber stille i bakgrunnen.
+// økter (default AV — opt-in: brukeren slår det på i Innstillinger).
+// Trigger-rammen tegnes ikke lenger (SHOW_AUTO_MAP_FRAME=false) så funksjonen
+// jobber stille i bakgrunnen når den er på.
 const AUTO_MAP_PREF_KEY = 'svg-insights-automap-enabled'
 const SHOW_AUTO_MAP_FRAME = false
 function loadAutoMapPref() {
-  try { return localStorage.getItem(AUTO_MAP_PREF_KEY) !== '0' } catch { return true }
+  // Opt-in (v10.1.24): kun PÅ når brukeren eksplisitt har slått det på ('1').
+  try { return localStorage.getItem(AUTO_MAP_PREF_KEY) === '1' } catch { return false }
 }
 function saveAutoMapPref(on) {
   try { localStorage.setItem(AUTO_MAP_PREF_KEY, on ? '1' : '0') } catch { /* noop */ }
 }
-const autoMapEnabled = ref(loadAutoMapPref()) // default PÅ, persistert
+const autoMapEnabled = ref(loadAutoMapPref()) // default AV (opt-in), persistert
 const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
 const autoMapToast = ref('')      // transient melding (på/av, offline, flyttet)
@@ -3079,25 +3090,40 @@ function mapSvgMarkupForExport() {
   clone.querySelector('#ghost-tiles')?.remove()
   return clone.outerHTML
 }
+// Hvilken eksport som kjører nå ('' | 'svg' | 'png' | 'pdf' | 'print'). Brukes
+// til å vise spinner på den aktive knappen og deaktivere de andre — PNG/PDF
+// bruker noen sekunder (canvas-render + lazy jsPDF), så uten dette virket appen
+// «død» mellom trykk og nedlasting. nextTick før det tunge arbeidet så spinneren
+// rekker å males (gjelder også den synkrone SVG-blob-en).
+const exporting = ref('')
+const filenameBase = () => mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
+async function runExport(type, fn) {
+  if (exporting.value) return
+  const m = mapSvgMarkupForExport()
+  if (!m) return
+  exporting.value = type
+  try {
+    await nextTick()
+    await fn(m)
+  } catch (e) {
+    console.error('Eksport feilet:', e)
+    autoMapToast.value = 'Eksport feilet — prøv igjen'
+    setTimeout(() => { if (autoMapToast.value.startsWith('Eksport')) autoMapToast.value = '' }, 3000)
+  } finally {
+    exporting.value = ''
+  }
+}
 function onExportSvg() {
-  const m = mapSvgMarkupForExport()
-  if (!m) return
-  exportSvgFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.svg`)
+  runExport('svg', (m) => exportSvgFile(m, `${filenameBase()}.svg`))
 }
-async function onExportPng() {
-  const m = mapSvgMarkupForExport()
-  if (!m) return
-  await exportPngFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.png`, { dpi: 300 })
+function onExportPng() {
+  runExport('png', (m) => exportPngFile(m, `${filenameBase()}.png`, { dpi: 300 }))
 }
-async function onExportPdf() {
-  const m = mapSvgMarkupForExport()
-  if (!m) return
-  await exportPdfFile(m, `${mapTitle.value.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.pdf`, { dpi: 300 })
+function onExportPdf() {
+  runExport('pdf', (m) => exportPdfFile(m, `${filenameBase()}.pdf`, { dpi: 300 }))
 }
 function onPrint() {
-  const m = mapSvgMarkupForExport()
-  if (!m) return
-  printDocument(m, { title: mapTitle.value })
+  runExport('print', (m) => printDocument(m, { title: mapTitle.value }))
 }
 
 async function loadMap({ silent = false } = {}) {
@@ -4287,11 +4313,32 @@ onUnmounted(() => {
          stier og detaljer fylles inn i bakgrunnen (Overpass laster). -->
     <Transition name="chip-fade">
       <div v-if="fillingInDetails && !curveball.active.value && !searchOpen"
-           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-2xl
-                  bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
+           class="absolute top-16 left-1/2 -translate-x-1/2 z-30 pl-2 pr-3.5 py-1.5 rounded-2xl
+                  bg-zinc-950/90 text-white text-[12.5px] font-medium shadow-lg backdrop-blur
                   flex items-center gap-2 pointer-events-none border border-white/10">
-        <span class="w-3.5 h-3.5 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
-        <span>Fyller inn stier og detaljer …</span>
+        <!-- Animert «landmåler»-ikon: topo-konturer tegnes inn mens en gul
+             sveipelinje roterer over kartet (SMIL) — eye candy som matcher at
+             kartet tegnes ferdig i bakgrunnen. -->
+        <svg viewBox="0 0 32 32" class="w-7 h-7 shrink-0" fill="none" aria-hidden="true">
+          <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="10.5" stroke="#7dd3fc" stroke-width="1.6"
+                  stroke-dasharray="66" stroke-linecap="round" opacity="0.9">
+            <animate attributeName="stroke-dashoffset" values="66;0;0;66" dur="2.4s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="16" cy="16" r="6" stroke="#34d399" stroke-width="1.6"
+                  stroke-dasharray="38" stroke-linecap="round" opacity="0.9">
+            <animate attributeName="stroke-dashoffset" values="38;0;0;38" dur="2.4s" begin="0.3s" repeatCount="indefinite"/>
+          </circle>
+          <g>
+            <line x1="16" y1="16" x2="16" y2="3.5" stroke="#fbbf24" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>
+            <circle cx="16" cy="3.5" r="1.7" fill="#fbbf24"/>
+            <animateTransform attributeName="transform" type="rotate" from="0 16 16" to="360 16 16" dur="1.8s" repeatCount="indefinite"/>
+          </g>
+          <circle cx="16" cy="16" r="1.8" fill="#fff">
+            <animate attributeName="r" values="1.4;2.4;1.4" dur="1.4s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+        <span>Tegner inn stier og detaljer …</span>
       </div>
     </Transition>
 
@@ -5001,25 +5048,37 @@ onUnmounted(() => {
             </div>
 
             <div class="grid grid-cols-2 gap-2 mb-3">
-              <button @click="onExportSvg"
+              <button @click="onExportSvg" :disabled="!!exporting"
                       class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                             text-[11px] active:scale-[0.98]">
-                Lagre .svg
+                             text-[11px] active:scale-[0.98] disabled:opacity-50
+                             flex items-center justify-center gap-1.5">
+                <span v-if="exporting === 'svg'"
+                      class="w-3 h-3 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+                {{ exporting === 'svg' ? 'Lagrer …' : 'Lagre .svg' }}
               </button>
-              <button @click="onExportPng"
+              <button @click="onExportPng" :disabled="!!exporting"
                       class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                             text-[11px] active:scale-[0.98]">
-                Lagre .png (300 dpi)
+                             text-[11px] active:scale-[0.98] disabled:opacity-50
+                             flex items-center justify-center gap-1.5">
+                <span v-if="exporting === 'png'"
+                      class="w-3 h-3 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+                {{ exporting === 'png' ? 'Lager PNG …' : 'Lagre .png (300 dpi)' }}
               </button>
-              <button @click="onExportPdf"
+              <button @click="onExportPdf" :disabled="!!exporting"
                       class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                             text-[11px] active:scale-[0.98]">
-                Lagre som PDF
+                             text-[11px] active:scale-[0.98] disabled:opacity-50
+                             flex items-center justify-center gap-1.5">
+                <span v-if="exporting === 'pdf'"
+                      class="w-3 h-3 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+                {{ exporting === 'pdf' ? 'Lager PDF …' : 'Lagre som PDF' }}
               </button>
-              <button @click="onPrint"
+              <button @click="onPrint" :disabled="!!exporting"
                       class="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white/75
-                             text-[11px] active:scale-[0.98]">
-                Skriv ut
+                             text-[11px] active:scale-[0.98] disabled:opacity-50
+                             flex items-center justify-center gap-1.5">
+                <span v-if="exporting === 'print'"
+                      class="w-3 h-3 rounded-full border-2 border-white/25 border-t-white/80 animate-spin shrink-0"></span>
+                {{ exporting === 'print' ? 'Forbereder …' : 'Skriv ut' }}
               </button>
             </div>
 
