@@ -237,6 +237,23 @@ async function onSelectSearchResult(r) {
     <!-- Innhold -->
     <div class="flex-1 px-4 pt-4 pb-32 overflow-y-auto">
 
+      <!-- Seksjons-overskrift «Lag nytt kart» (matcher «Innebygd»/«Mine kart»-
+           etikettene under). «Flere valg» (full picker) ligger som en høyrestilt
+           handling her i stedet for en løs knapp mellom seksjonene. -->
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-white/45 text-[11px] uppercase tracking-wide">Lag nytt kart</div>
+        <button @click="router.push('/kart/nytt')"
+                class="text-[11px] font-medium text-white/55 active:text-white/85
+                       flex items-center gap-1 transition">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/>
+            <line x1="4" y1="18" x2="20" y2="18"/>
+          </svg>
+          Flere valg
+        </button>
+      </div>
+
       <!-- Søkefelt med integrert GPS-knapp (v10.1.24). Søk = hovedflyten: velg
            et sted → bygg straks et A-format-kart. Den grønne pin-knappen til
            høyre er en forlengelse av feltet og lager kart der du står (GPS).
@@ -305,22 +322,6 @@ async function onSelectSearchResult(r) {
         <span>Søk etter et sted — eller trykk den grønne knappen for å lage kart der du står.</span>
       </div>
       <div v-if="searchError" class="-mt-2 mb-4 px-1 text-[11px] text-slate-300">{{ searchError }}</div>
-
-      <!-- «Flere valg» — diskret inngang til full picker (MapPickerView) for
-           de som vil finjustere størrelse / ekvidistanse / utsnitt. Tidligere
-           den fremtredende «Lag nytt turkart»-CTA-en; nå nedtonet siden søket
-           øverst dekker hovedflyten. -->
-      <button @click="router.push('/kart/nytt')"
-              class="w-full mb-4 px-3 py-2 rounded-lg text-[12px] font-medium
-                     text-white/55 active:text-white/80 active:bg-white/[0.04]
-                     transition flex items-center justify-center gap-1.5">
-        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/>
-          <line x1="4" y1="18" x2="20" y2="18"/>
-        </svg>
-        Flere valg
-      </button>
 
       <!-- Innebygde kart -->
       <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
