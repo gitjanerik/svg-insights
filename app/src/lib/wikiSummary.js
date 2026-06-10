@@ -9,6 +9,23 @@ const WIKI_HOSTS = [
   import.meta.env?.VITE_WIKI_EN_URL ?? 'https://en.wikipedia.org',
 ]
 
+function norm(s) {
+  return String(s ?? '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+// Aksepter et Wikipedia-treff bare når artikkeltittelen faktisk samsvarer med
+// oppslaget. KRITISK: å/ø/æ holdes DISTINKT fra a/o/ae — ellers matcher
+// «Mardalen» (naturreservat) feilaktig artikkelen «Mårdalen» (et etternavn).
+// Tillater at navnet bærer en verneform-suffiks (… naturreservat) eller at
+// artikkelen har en parentes-disambiguering.
+export function titleMatches(query, articleTitle) {
+  const strip = /\s+(naturreservat|nasjonalpark|landskapsvernområde|verneområde|biotopvernområde)$/
+  const q = norm(query).replace(strip, '')
+  const t = norm(articleTitle).replace(/\s*\([^)]*\)\s*$/, '').replace(strip, '')
+  if (!q || !t) return false
+  return t === q || t.startsWith(q + ' ') || q.startsWith(t + ' ')
+}
+
 async function fetchSummaryFrom(host, title, signal) {
   const url = `${host}/api/rest_v1/page/summary/${encodeURIComponent(title)}`
   const res = await fetch(url, { signal, headers: { accept: 'application/json' } })
@@ -16,6 +33,8 @@ async function fetchSummaryFrom(host, title, signal) {
   const json = await res.json()
   // Tomme treff / flertydige sider gir ikke en brukbar ingress.
   if (!json || json.type === 'disambiguation') return null
+  // Avvis feil-treff (redirect/normalisering til et annet ord, f.eks. å↔a).
+  if (!titleMatches(title, json.title ?? title)) return null
   const extract = (json.extract ?? '').trim()
   if (!extract) return null
   return {

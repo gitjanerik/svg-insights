@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ringsToWkt, ringsToBboxWkt, parseSpeciesFacet } from './gbifSpecies.js'
+import { ringsToWkt, ringsToBboxWkt, parseSpeciesFacet, pointBboxWkt } from './gbifSpecies.js'
 
 describe('ringsToWkt', () => {
   it('bygger en lukket CCW POLYGON fra en CW-ring', () => {
@@ -34,6 +34,40 @@ describe('ringsToWkt', () => {
     expect(ringsToWkt([])).toBeNull()
     expect(ringsToWkt([[[0, 0], [1, 1]]])).toBeNull()
     expect(ringsToWkt(null)).toBeNull()
+  })
+
+  it('returnerer null for projiserte koordinater (UTM-meter, ikke grader)', () => {
+    // Naturbase/WFS kan levere EPSG:25833-meter tross sr=4326 → ugyldig WKT.
+    const utm = [[112000, 6934000], [113000, 6934000], [113000, 6935000], [112000, 6935000]]
+    expect(ringsToWkt([utm])).toBeNull()
+    expect(ringsToBboxWkt([utm])).toBeNull()
+  })
+})
+
+describe('pointBboxWkt', () => {
+  it('lager en CCW-bbox i grader rundt punktet', () => {
+    const wkt = pointBboxWkt(62.478, 8.105, 4)
+    expect(wkt).toMatch(/^POLYGON\(\(/)
+    const coords = wkt.slice('POLYGON(('.length, -2).split(', ').map((s) => s.split(' ').map(Number))
+    // lukket ring, alle innenfor grader, og rimelig liten utstrekning
+    expect(coords[0]).toEqual(coords[coords.length - 1])
+    for (const [lon, lat] of coords) {
+      expect(Math.abs(lon)).toBeLessThanOrEqual(180)
+      expect(Math.abs(lat)).toBeLessThanOrEqual(90)
+    }
+  })
+  it('klamper arealet så boksen verken blir for liten eller enorm', () => {
+    const tiny = pointBboxWkt(60, 10, 0.0001)
+    const huge = pointBboxWkt(60, 10, 100000)
+    const span = (w) => {
+      const ys = w.slice('POLYGON(('.length, -2).split(', ').map((s) => Number(s.split(' ')[1]))
+      return Math.max(...ys) - Math.min(...ys)
+    }
+    expect(span(tiny)).toBeGreaterThan(0)
+    expect(span(huge)).toBeLessThan(0.2) // < ~10 km halv-side i grader
+  })
+  it('returnerer null uten gyldig punkt', () => {
+    expect(pointBboxWkt(NaN, 10, 1)).toBeNull()
   })
 })
 
