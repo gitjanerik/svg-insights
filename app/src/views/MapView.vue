@@ -36,7 +36,8 @@ import { fetchSpeciesSummary } from '../lib/gbifSpecies.js'
 import { summarizeRedListed } from '../lib/redListNo.js'
 import { groupSpecies } from '../lib/speciesGroups.js'
 import { fetchWikiSummary } from '../lib/wikiSummary.js'
-import { cacheGet, cacheSet, pointKey, naturtypePointKey, TTL } from '../lib/protectedAreaCache.js'
+import { fetchNearestWikiPlace } from '../lib/wikiPlace.js'
+import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace,
@@ -1731,6 +1732,10 @@ const expandedRedCat = ref(null)
 // finnes overalt). null = ingen treff/ikke spurt | { status:'done', items:[…] }.
 const naturtypeQuery = ref(null)
 let naturtypeQueryToken = 0
+// Nærmeste Wikipedia-sted (geosearch) ved long-press — uavhengig av verneområde.
+// null = ikke spurt | { status:'loading' } | { status:'done', place } | { status:'empty' }.
+const placeWikiQuery = ref(null)
+let placeWikiToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
@@ -2003,6 +2008,42 @@ watch(contextMenuPoint, async (p) => {
   } catch {
     if (token === naturtypeQueryToken) naturtypeQuery.value = null
   }
+})
+
+// Long-press hvor som helst → nærmeste Wikipedia-sted (geosearch). Gir fakta om
+// innsjø/fjelltopp/grend/elv/stedsnavn også UTENFOR verneområder. Cachet 7 dager
+// på ~100 m-grid. Ingen treff/utilgjengelig → ingen sted-seksjon. Kjører også
+// utenfor kart-bounds (koordinaten er gyldig uansett).
+watch(contextMenuPoint, async (p) => {
+  const token = ++placeWikiToken
+  placeWikiQuery.value = null
+  if (!p || !contextMenuOpen.value) return
+  const info = contextMenuInfo.value
+  if (!info) return
+  placeWikiQuery.value = { status: 'loading' }
+  try {
+    const key = placePointKey(info.lat, info.lon)
+    let place = await cacheGet(key)
+    if (!place) {
+      place = await fetchNearestWikiPlace(info.lat, info.lon)
+      if (place) cacheSet(key, place, TTL.wiki)
+    }
+    if (token !== placeWikiToken) return
+    placeWikiQuery.value = place ? { status: 'done', place } : { status: 'empty' }
+  } catch {
+    if (token === placeWikiToken) placeWikiQuery.value = { status: 'empty' }
+  }
+})
+
+// Sted-kortet vises kun når geosearch fant en artikkel, og IKKE når den er
+// identisk med verneområdets egen Wikipedia-lenke (unngå duplikat).
+const placeWikiCard = computed(() => {
+  if (placeWikiQuery.value?.status !== 'done') return null
+  const place = placeWikiQuery.value.place
+  const w = verneQuery.value?.wiki
+  const verneUrl = (w && w !== 'loading') ? w.url : null
+  if (verneUrl && place.url && verneUrl === place.url) return null
+  return place
 })
 
 // Verdi-klasse for naturtype-badge: «svært høy»/«høy»/«svært viktig» → sterk
@@ -6100,6 +6141,37 @@ onUnmounted(() => {
                    :title="verneQuery.wiki === 'loading' ? 'Søker i Wikipedia …' : 'Ingen Wikipedia-artikkel funnet'">
                   Wikipedia {{ verneQuery.wiki === 'loading' ? '…' : '—' }}
                 </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Nærmeste sted med Wikipedia-artikkel (geosearch) — uavhengig av
+               verneområde. Fakta om innsjø/fjelltopp/grend/elv/stedsnavn. -->
+          <div v-if="placeWikiCard" class="px-4 pt-3">
+            <div class="rounded-xl border border-sky-400/25 bg-sky-500/8 p-3 space-y-2">
+              <div class="flex items-start gap-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 mt-0.5 shrink-0 text-sky-300" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+                  <circle cx="12" cy="10" r="3"/>
+                </svg>
+                <div class="min-w-0 flex-1">
+                  <div class="text-sky-100 font-semibold text-[13px] leading-tight">
+                    {{ placeWikiCard.title }}
+                  </div>
+                  <div v-if="placeWikiCard.distanceM != null" class="text-sky-200/70 text-[11px] tabular-nums">
+                    {{ formatDistanceM(placeWikiCard.distanceM) }} herfra
+                  </div>
+                </div>
+              </div>
+              <div v-if="placeWikiCard.extract" class="text-[12px] text-sky-50/80 leading-snug">
+                {{ placeWikiCard.extract }}
+              </div>
+              <div v-if="placeWikiCard.url" class="pt-0.5">
+                <a :href="placeWikiCard.url" target="_blank" rel="noopener"
+                   class="inline-block px-2.5 py-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 text-sky-100 text-[11px]">
+                  Wikipedia ↗
+                </a>
               </div>
             </div>
           </div>

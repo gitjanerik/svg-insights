@@ -4,7 +4,7 @@
 // artikkel finnes. Prøver norsk Wikipedia først, faller tilbake til engelsk.
 // CORS er aktivert på REST-summary-endepunktet. Feiler/mangler → null.
 
-const WIKI_HOSTS = [
+export const WIKI_HOSTS = [
   import.meta.env?.VITE_WIKI_NO_URL ?? 'https://no.wikipedia.org',
   import.meta.env?.VITE_WIKI_EN_URL ?? 'https://en.wikipedia.org',
 ]

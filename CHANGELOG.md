@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.13: Wikipedia-fakta om nærmeste sted ved long-press (overalt)
+
+Long-press hvor som helst på kartet — ikke bare i de grønne verneområdene — slår nå opp nærmeste geotaggede Wikipedia-artikkel og viser et faktakort: tittel, avstand herfra, en kort ingress og en Wikipedia-lenke. Gir kjapp kontekst om en innsjø, fjelltopp, grend, elv eller et stedsnavn. Bruker MediaWiki Action API-ets geosearch-generator (`lib/wikiPlace.js`) i ett CORS-vennlig kall (`origin=*`) som henter ingress + koordinater i samme forespørsel; norsk Wikipedia først, engelsk som fallback. Nærmeste artikkel med ingress foretrekkes, avstand regnes med haversine, og kortet skjules om treffet er identisk med verneområdets egen Wikipedia-lenke. Cachet 7 dager på ~100 m-grid. Merk: dette er nærmeste *artikkel* og kan avvike fra «Nærmest»-radens nærmeste *kartlabel*.
+
+---
+
 ## 2026-06-11 — v10.2.12: «Rødliste 2021» omdøpt til «Observerte rødlistearter»
 
 Rødliste-seksjonen i verneområde-kortet het «Rødliste 2021» og leste seg naturlig som vernegrunnlaget/verneforskriften — artene området er fredet for. Det er den ikke: lista er GBIF-observerte arter innenfor verneområde-polygonet, snittet mot Norsk rødliste 2021. Derfor kunne en streif-observasjon som lomvi (CR) dukke opp på en innlands-øy i Holsfjorden, og temperate planter (ask, flarkstarr) bekreftet at funnene var fra rett sted (Lier), ikke Svalbard. Overskriften er nå «Observerte rødlistearter» (full bredde, kategori-chips de-indentert under), så det er tydelig at det er funn i området — ikke en liste over vernemål.
