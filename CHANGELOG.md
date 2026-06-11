@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.12: «Rødliste 2021» omdøpt til «Observerte rødlistearter»
+
+Rødliste-seksjonen i verneområde-kortet het «Rødliste 2021» og leste seg naturlig som vernegrunnlaget/verneforskriften — artene området er fredet for. Det er den ikke: lista er GBIF-observerte arter innenfor verneområde-polygonet, snittet mot Norsk rødliste 2021. Derfor kunne en streif-observasjon som lomvi (CR) dukke opp på en innlands-øy i Holsfjorden, og temperate planter (ask, flarkstarr) bekreftet at funnene var fra rett sted (Lier), ikke Svalbard. Overskriften er nå «Observerte rødlistearter» (full bredde, kategori-chips de-indentert under), så det er tydelig at det er funn i området — ikke en liste over vernemål.
+
+---
+
 ## 2026-06-11 — v10.2.11: Wikipedia-lenke for verneområde treffer riktig artikkel
 
 Long-press på et verneområde slo opp Wikipedia på det bare navnet, så «Storøya biotopvernområde» i Holsfjorden lenket til artikkelen om øya Storøya på Svalbard (samme navn, helt annen sak). Nå bygger `fetchWikiSummary` kandidat-titler i synkende spesifisitet: det fulle offisielle navnet (navn + verneform, f.eks. «Storøya biotopvernområde») prøves før det bare navnet. Naturbase-verneformen («Biotopvern», «Naturreservat» …) kartlegges til ordet Wikipedia faktisk bruker i tittelen. Bare-navn-fallbacken godtas dessuten kun når artikkelen faktisk handler om vern — ellers droppes treffet, så vi aldri lenker til feil øy/sted med samme navn. Cache-nøkkelen inkluderer nå verneform, så gamle feil-treff lagret under bart navn forbi-caches.

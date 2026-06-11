@@ -6029,21 +6029,23 @@ onUnmounted(() => {
                   <span class="text-emerald-50/90 truncate">{{ verneQuery.area.forvaltning }}</span>
                 </div>
 
-                <!-- Rødliste 2021 (Artsdatabanken). Trykk en kategori (CR/EN/VU/NT)
-                     for å folde ut hvilke arter den dekker, gruppert etter dyre-/
-                     plantegruppe. GBIF-arts-/observasjons-tellinga er bevisst skjult
-                     (faceten toppes på 500, så «500+» gjelder nesten alle områder). -->
+                <!-- Observerte rødlistearter: arter med GBIF-funn innenfor
+                     verneområde-polygonet, snittet mot Norsk rødliste 2021.
+                     IKKE vernegrunnlaget/verneforskriften — derfor kan streif-
+                     observasjoner (f.eks. en lomvi på en innlands-øy) dukke opp.
+                     Trykk en kategori (CR/EN/VU/NT) for å folde ut artene,
+                     gruppert etter dyre-/plantegruppe. -->
                 <div v-if="verneQuery.species === 'loading'" class="flex items-baseline gap-2">
-                  <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
+                  <span class="text-emerald-200/55 w-20 shrink-0">Rødlistet</span>
                   <span class="text-emerald-200/50">vurderer arter …</span>
                 </div>
                 <template v-else-if="verneQuery.species && verneQuery.species.redListNo && verneQuery.species.redListNo.count > 0">
                   <div class="flex items-baseline gap-2">
-                    <span class="text-emerald-200/55 w-20 shrink-0">Rødliste 2021</span>
-                    <span class="text-rose-200 tabular-nums">{{ formatCount(verneQuery.species.redListNo.count) }} arter</span>
+                    <span class="text-emerald-200/70 font-medium">Observerte rødlistearter</span>
+                    <span class="text-rose-200 tabular-nums shrink-0">· {{ formatCount(verneQuery.species.redListNo.count) }}</span>
                   </div>
                   <!-- Klikkbare kategori-chips -->
-                  <div class="flex flex-wrap gap-1.5 pl-[88px]">
+                  <div class="flex flex-wrap gap-1.5">
                     <button v-for="c in redListCats(verneQuery.species.redListNo.byCategory)" :key="c.code"
                             type="button" :title="c.label" @click="toggleRedCat(c.code)"
                             class="px-2 py-0.5 rounded-md border text-[11px] tabular-nums transition"
@@ -6052,7 +6054,7 @@ onUnmounted(() => {
                     </button>
                   </div>
                   <!-- Utvidet, gruppert artsliste for valgt kategori -->
-                  <div v-if="expandedRedCat" class="pl-[88px] pr-1 pt-1 space-y-2">
+                  <div v-if="expandedRedCat" class="pr-1 pt-1 space-y-2">
                     <div v-for="grp in redListGroups(verneQuery.species.redListNo, expandedRedCat)" :key="grp.group">
                       <div class="text-emerald-200/70 text-[11px] font-medium">
                         {{ grp.group }} <span class="text-emerald-200/40">· {{ grp.species.length }}</span>
@@ -6071,8 +6073,8 @@ onUnmounted(() => {
                   </div>
                 </template>
                 <div v-else-if="verneQuery.species" class="flex items-baseline gap-2">
-                  <span class="text-emerald-200/55 w-20 shrink-0">Rødliste</span>
-                  <span class="text-emerald-200/50">ingen rødlistearter registrert</span>
+                  <span class="text-emerald-200/55 w-20 shrink-0">Rødlistet</span>
+                  <span class="text-emerald-200/50">ingen observerte rødlistearter</span>
                 </div>
               </div>
 
