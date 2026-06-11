@@ -393,9 +393,14 @@ export async function buildMapFromCenter({
       contourIntervalM: equidistanceM,
       scaleDenom: 10000,
       skipContoursIfSynthetic: true,
-      // DEM-sjø ALLTID på når DEM er ekte. Øy-overlay (ISOM 001) dekker
-      // «smitter inn på lavtliggende øyer»-tilfeller.
-      skipDemSea: false,
+      // DEM-sjø KUN på kystnære kart (coastal = DEM-havflate + OSM-saltvann).
+      // Innlands leser NHM_DTM både innsjø-flater (ingen LiDAR-retur over vann)
+      // OG nodata som ~0 m, så buildSeaFromDem ville klassifisere hele kartet
+      // som «sjø» og flomme tørt land blått (Hattfjelldal/Børgefjell-saken —
+      // stier og ruter gikk tvers over den falske sjøen). Innlands-vann kommer
+      // fra NVE/N50/OSM-vektor i stedet (ekte innsjø-geometri). Samme coastal-
+      // gate styrer allerede Sjøkart-WFS og 5 m-DEM-oppgraderingen.
+      skipDemSea: !coastal,
       coastal,                       // kyst vs innland → meta.coastal (MapView høyde-ærlighet)
     }, { signal }))
 
@@ -425,7 +430,10 @@ export async function buildMapFromCenter({
           contourIntervalM: equidistanceM,
           scaleDenom: 10000,
           skipContoursIfSynthetic: true,
-          skipDemSea: false,
+          // Terreng-preview hopper over DEM-sjø: coastal-signalet er ikke
+          // tilgjengelig billig her (krever Overpass), og en innlands-flom skal
+          // ikke blinke til. Full-bygget fyller inn riktig vann straks det er klart.
+          skipDemSea: true,
         }, { signal }))
         throwIfAborted()
         const entry = buildEntry(
