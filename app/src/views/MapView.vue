@@ -3155,7 +3155,7 @@ function autoMapBuildOpts(centerSvg) {
 // Forwarde tilstand til det nye kartet via sessionStorage (consume-on-read):
 // tema + lag, faktisk GPS-status, at auto-modus forblir PÅ, at kartet er auto-
 // generert, bevart zoom/rotasjon, og «flyttet sentrum»-toast.
-function writeAutoMapPrefs(id) {
+function writeAutoMapPrefs(id, resumeRecording = false) {
   try {
     sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
       theme: currentTheme.value,
@@ -3166,6 +3166,7 @@ function writeAutoMapPrefs(id) {
       scale: scale.value,
       rotation: rotation.value,
       movedCenterToast: true,
+      resumeRecording,   // gjenoppta GPS-opptak på den nye flisa (se triggerAutoMap)
     }))
   } catch { /* noop */ }
 }
@@ -3326,7 +3327,14 @@ async function triggerAutoMap(centerSvg) {
       })
       id = r.id
     }
-    writeAutoMapPrefs(id)
+    // GPS-spor er per MapView-instans og dør når navigasjonen river denne av.
+    // Avslutt opptaket deterministisk NÅ (finaliserer + persist til forrige flis,
+    // som er beskyttet mot pruning via protectIds under) og be det nye kartet
+    // gjenoppta opptaket som et nytt spor-segment. Uten dette stanset sporingen
+    // stille ved hvert auto-kart-bytte.
+    const wasRecording = tracker.isRecording.value
+    if (wasRecording) await tracker.stopRecording()
+    writeAutoMapPrefs(id, wasRecording)
     // Tile-cache (step 1): tidligere slettet vi forrige auto-kart her for å
     // unngå opphopning — men da kunne man ikke «scrolle tilbake». Nå BEHOLDER
     // vi flisene og lar pruneAutoTiles kappe de fjerneste (fra det nye senteret)
@@ -3513,6 +3521,7 @@ async function loadMap({ silent = false } = {}) {
     let pendingRestoreView = null   // {scale, rotation} — bevar visning over hopp
     let pendingPromoteView = null   // {x, y, scale, rotation} — mosaikk-promotering
     let pendingMovedToast = false
+    let pendingResumeRecording = false   // gjenoppta GPS-opptak etter auto-kart-bytte
     try {
       const k = `mapview-init-prefs:${mapId.value}`
       const raw = sessionStorage.getItem(k)
@@ -3522,6 +3531,7 @@ async function loadMap({ silent = false } = {}) {
         if (prefs.theme) currentTheme.value = prefs.theme
         if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
         if (prefs.autoStartGps) pendingAutoStartGps = true
+        if (prefs.resumeRecording) pendingResumeRecording = true
         // v9.3.38: auto-kart styres nå av localStorage-preferansen (default PÅ),
         // ikke av per-kart session-prefs — så vi overstyrer ikke autoMapEnabled her.
         // Mosaikk-promotering setter isAutoMap eksplisitt (true/false) så å
@@ -3566,6 +3576,10 @@ async function loadMap({ silent = false } = {}) {
     renderAnnotations()
     await tracker.load()
     renderTracks()
+    // Gjenoppta GPS-opptak etter et auto-kart-bytte. userPos.start() er allerede
+    // kalt over (pendingAutoStartGps) og setter isWatching synkront, så
+    // startRecording() lykkes. Sporet fortsetter som et nytt segment på denne flisa.
+    if (pendingResumeRecording && userPos.isWatching) tracker.startRecording()
     applyUprightLabels()
     renderMeasure()
     // Hill-shading (med innbakt knaus-relieff) er default ON — fire-and-forget.
@@ -4295,6 +4309,27 @@ const showOutsideMapBanner = computed(() =>
 function dismissOutsideMap() { outsideMapDismissed.value = true }
 watch(() => userPos.isOutsideMap, (out) => { if (!out) outsideMapDismissed.value = false })
 
+// Forvarsel når GPS-prikken nærmer seg kartkanten: tips om at auto-kart kan lage
+// nye utsnitt automatisk. Vises kun når auto-kart er AV — når PÅ håndteres byttet
+// stille i bakgrunnen, ingen grunn til å mase. Margin = 15 % av minste kart-
+// dimensjon (≈150–250 m for typiske 1–2 km kart) → nok forvarsel i gangfart.
+// Dismissible per sesjon, resettes når man igjen er trygt innenfor kartet.
+const EDGE_WARN_FRAC = 0.15
+const userNearMapEdge = computed(() => {
+  const m = meta.value
+  if (!m || !userPos.isWatching || userPos.svgX == null || userPos.svgY == null ||
+      userPos.isOutsideMap) return false
+  const margin = EDGE_WARN_FRAC * Math.min(m.widthM, m.heightM)
+  return userPos.svgX < margin || userPos.svgX > m.widthM - margin ||
+         userPos.svgY < margin || userPos.svgY > m.heightM - margin
+})
+const edgeHintDismissed = ref(false)
+const showEdgeAutoMapHint = computed(() =>
+  userNearMapEdge.value && !autoMapEnabled.value && !edgeHintDismissed.value
+)
+function dismissEdgeHint() { edgeHintDismissed.value = true }
+watch(userNearMapEdge, (near) => { if (!near) edgeHintDismissed.value = false })
+
 // Screen Wake Lock — holder skjermen våken når brukeren bruker kartet til
 // orientering ute. Persisteres i localStorage (default PÅ). Re-requestes
 // automatisk når fanen blir synlig igjen siden browseren alltid slipper
@@ -4814,6 +4849,35 @@ onUnmounted(() => {
              stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
           <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
         </svg>
+      </button>
+    </div>
+
+    <!-- Forvarsel ved kartkant: GPS-prikken nærmer seg kanten og auto-kart er av.
+         Tipser om at auto-kart kan lage nye utsnitt automatisk, med én-trykks
+         aktivering. -->
+    <div v-else-if="!loading && showEdgeAutoMapHint"
+         class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[92%]
+                rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
+                text-white text-[12px] shadow-lg p-3 transition-[left] duration-200"
+         :style="mapCenterStyle">
+      <div class="flex items-start gap-2">
+        <div class="flex-1 leading-snug">
+          Du nærmer deg kartkanten. Slå på auto-kart, så lages nye kart automatisk
+          når du går videre.
+        </div>
+        <button @click="dismissEdgeHint" aria-label="Skjul tips"
+                class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
+                       text-white/90 active:scale-90 active:bg-white/10 shrink-0">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <button @click="toggleAutoMap"
+              class="mt-2 w-full px-3 py-1.5 rounded-md bg-white/15 border border-white/25
+                     text-white text-[12px] font-medium active:scale-[0.98]">
+        Slå på auto-kart
       </button>
     </div>
 
