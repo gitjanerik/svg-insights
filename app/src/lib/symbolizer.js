@@ -517,7 +517,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
           // bytter åker-fyllet, ikke bare solid-fyll-koder. Settes ved
           // applyTheme() i MapView; default (lys/ISOM) bruker pattern.
           props.push(`fill: var(--iso-${code}-fill, url(#${patternIds.get(def.fill.pattern)}))`)
-          // v10.3.0 — Perf: pattern-tiles re-rastreres per frame under
+          // v10.2.9 — Perf: pattern-tiles re-rastreres per frame under
           // pinch-zoom (dyrest av alle fyll på mobil-GPU). Under aktiv gest
           // (.is-zooming) byttes mønsteret til flat farge: mønsterets
           // background-farge der den finnes (kratt/halv-åpen/hugst/522/

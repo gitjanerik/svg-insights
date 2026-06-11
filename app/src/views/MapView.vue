@@ -719,7 +719,7 @@ watch([scale, translateX, translateY, rotation], clampPan)
 // re-tessellerer ikke i device-piksler per frame, og kartet får ~3-5×
 // frame-rate-gevinst på store kart. Strokene "skalerer med" mens du zoomer
 // (visuelt OK i 200 ms), og snapper tilbake til riktig bredde når gesten er over.
-// Gest-perf-modus (.is-zooming + relieff-skjuling + solid dash). v10.3.0:
+// Gest-perf-modus (.is-zooming + relieff-skjuling + solid dash). v10.2.9:
 // gjenopprettingen ved gest-slutt utsettes ~120 ms så den dyre snap-back-
 // repainten (non-scaling-stroke-retessellering + dash + relieff-blend) ikke
 // lander på samme frame som compositorens siste re-raster — og en ny gest
@@ -3925,7 +3925,7 @@ function setupHostSvg(sourceRoot) {
   for (const child of Array.from(sourceRoot.childNodes)) {
     svg.appendChild(child.cloneNode(true))
   }
-  // v10.3.0 (perf): detalj-lagene (data-detail="1": dybdepunkt/dybdekurve)
+  // v10.2.9 (perf): detalj-lagene (data-detail="1": dybdepunkt/dybdekurve)
   // er usynlige på hovedkartet (display:none) men kostet likevel parse,
   // style-recalc og deep-clone ved hver buildDetailInset. Løft dem UT av
   // live-DOM-en og hold dem i en modul-ref — inset-en (eneste konsument)

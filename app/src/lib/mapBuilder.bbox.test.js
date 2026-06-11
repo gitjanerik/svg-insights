@@ -3,7 +3,7 @@ import { buildSvg } from './mapBuilder.js'
 import { syntheticDEM } from './dem.js'
 import { CELL_M } from './spatialBucket.js'
 
-// v10.3.0 — romlig bucketing + data-bbox-emisjon.
+// v10.2.9 — romlig bucketing + data-bbox-emisjon.
 // Bygger et lite syntetisk kart og regex-asserter på output-strengen
 // (samme mønster som mapBuilder.progressive.test.js — ingen DOM).
 
@@ -69,7 +69,7 @@ const elements = [
 
 const { svg } = buildSvg(elements, bbox, { dem: dem(), contourIntervalM: 20 })
 
-describe('buildSvg romlig bucketing + data-bbox (v10.3.0)', () => {
+describe('buildSvg romlig bucketing + data-bbox (v10.2.9)', () => {
   it('to skog-polygoner langt fra hverandre → to bucket-paths med ikke-overlappende data-bbox', () => {
     const paths = pathsInIso(svg, '406')
     expect(paths.length).toBe(2)

@@ -1030,7 +1030,7 @@ export function buildSvg(elements, bbox, options = {}) {
       // (data-name) og inline-stylede features (f.eks. ISOM 307 dybdeareal)
       // emitteres fortsatt standalone så søk og per-feature-fyll fungerer.
       const standalonePaths = []
-      // v10.3.0: merge-signaturen inkluderer grid-celle (spatialBucket.cellKeyFor)
+      // v10.2.9: merge-signaturen inkluderer grid-celle (spatialBucket.cellKeyFor)
       // så hver merged path får små, reelle bounds — nettleserens raster-tile-
       // culling og MapViews viewport-culling (data-bbox) virker da per celle i
       // stedet for aldri (mega-path med bounds = hele kartet).
@@ -1271,7 +1271,7 @@ export function buildSvg(elements, bbox, options = {}) {
       // en ny subpath i SVG, så visuelt resultat er identisk men DOM-tallet
       // synker drastisk (stier ~3-5k → få noder). Stroke-effekter (linecap,
       // dasharray) er sub-path-agnostiske og forblir korrekte.
-      // v10.3.0: merging skjer per grid-celle (hel way per celle, aldri
+      // v10.2.9: merging skjer per grid-celle (hel way per celle, aldri
       // splitting — bevarer dash-fase og linecaps) så hver path får små
       // bounds + data-bbox. Map bevarer insertion-order → casing- og
       // overlay-passet (to-fase veier) produserer identiske bucket-sett.
@@ -1399,7 +1399,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // ende av kartet (rapportert v6.20.0, fikset v6.20.1).
   const demProject = ([x, y]) => [x, y]
 
-  // v10.3.0: konturer buckets per grid-celle (hel kontur per celle, samme
+  // v10.2.9: konturer buckets per grid-celle (hel kontur per celle, samme
   // regel som polygon/linje-merging) så hver kontur-path får data-bbox og
   // reelle bounds. Lange index-konturer får store bbokser og culles sjelden
   // — akseptert; geometri splittes ikke.
@@ -1634,7 +1634,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const krx = 0.6 * symUnit
   const kry = 0.4 * symUnit
   const kdy = 0.4 * symUnit                          // halvmånens y-offset (0.4 i symbolet)
-  // v10.3.0: knaus-halvmånene buckets per grid-celle (de er 1–2 m hver, så
+  // v10.2.9: knaus-halvmånene buckets per grid-celle (de er 1–2 m hver, så
   // celle-tildeling er triviell) — én path per celle med data-bbox i stedet
   // for én kart-dekkende merged path.
   const knausBuckets = new Map()  // cellKey → { ds: [], bbox }
