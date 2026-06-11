@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.14: Wikipedia oppført som datakilde i About-siden
+
+About-sidens datakilde-liste for turkart nevnte ikke Wikipedia, selv om vi henter både verneområde-ingress (REST-summary) og nærmeste geotaggede sted (Action API geosearch) derfra ved long-press. Lagt til en Wikipedia-linje, og header-en justert fra «(alle CC BY 4.0 / ODbL)» til «(CC BY 4.0 / ODbL; Wikipedia CC BY-SA)» siden Wikipedia-tekst har en annen lisens enn de øvrige kildene.
+
+---
+
 ## 2026-06-11 — v10.2.13: Wikipedia-fakta om nærmeste sted ved long-press (overalt)
 
 Long-press hvor som helst på kartet — ikke bare i de grønne verneområdene — slår nå opp nærmeste geotaggede Wikipedia-artikkel og viser et faktakort: tittel, avstand herfra, en kort ingress og en Wikipedia-lenke. Gir kjapp kontekst om en innsjø, fjelltopp, grend, elv eller et stedsnavn. Bruker MediaWiki Action API-ets geosearch-generator (`lib/wikiPlace.js`) i ett CORS-vennlig kall (`origin=*`) som henter ingress + koordinater i samme forespørsel; norsk Wikipedia først, engelsk som fallback. Nærmeste artikkel med ingress foretrekkes, avstand regnes med haversine, og kortet skjules om treffet er identisk med verneområdets egen Wikipedia-lenke. Cachet 7 dager på ~100 m-grid. Merk: dette er nærmeste *artikkel* og kan avvike fra «Nærmest»-radens nærmeste *kartlabel*.

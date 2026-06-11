@@ -83,7 +83,7 @@ const TABS = [
           ren SVG med mm-baserte streker — ingen kart-engine.
         </p>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (alle CC BY 4.0 / ODbL)</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (CC BY 4.0 / ODbL; Wikipedia CC BY-SA)</h4>
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn, øy-overlay</li>
           <li><strong class="text-white/75">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
@@ -91,6 +91,7 @@ const TABS = [
           <li><strong class="text-white/75">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
           <li><strong class="text-white/75">Kartverket Sjøkart (Dybdedata)</strong> via WFS — dybdeareal, sjømerker og fyr på kystkart</li>
           <li><strong class="text-white/75">NVE</strong> via NVE API + HydAPI — innsjøers dyp/areal/volum, vannflate-høyde og sanntids vannstand (long-press på vann)</li>
+          <li><strong class="text-white/75">Wikipedia</strong> via REST-summary + Action API geosearch — ingress om verneområder og nærmeste geotaggede sted (innsjø, topp, grend, elv) ved long-press</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 
