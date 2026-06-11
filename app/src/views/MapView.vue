@@ -1975,7 +1975,7 @@ watch(contextMenuPoint, async (p) => {
     if (!area) { verneQuery.value = null; return }
     verneQuery.value = { status: 'done', area, species: 'loading', wiki: 'loading' }
     loadVerneSpecies(token, area, info.lat, info.lon)
-    loadVerneWiki(token, area.navn)
+    loadVerneWiki(token, area)
   } catch {
     if (token === verneQueryToken) verneQuery.value = null
   }
@@ -2039,13 +2039,18 @@ async function loadVerneSpecies(token, area, lat, lon) {
   }
 }
 
-// Wikipedia-ingress for verneområde-navnet. Cachet 7 dager på navn.
-async function loadVerneWiki(token, navn) {
-  const key = `wiki:${navn}`
+// Wikipedia-ingress for verneområdet. Slår opp på fullt navn (navn + verneform)
+// før bart navn, så vi treffer «Storøya biotopvernområde» og ikke øya på
+// Svalbard. Cachet 7 dager på navn + verneform (nøkkelen forbi-cacher gamle
+// feil-treff lagret under bart navn).
+async function loadVerneWiki(token, area) {
+  const navn = area?.navn
+  if (!navn) { patchVerne(token, { wiki: null }); return }
+  const key = `wiki:${navn}|${area.verneform ?? ''}`
   try {
     let wiki = await cacheGet(key)
     if (!wiki) {
-      wiki = await fetchWikiSummary(navn)
+      wiki = await fetchWikiSummary(navn, { verneform: area.verneform })
       if (wiki) cacheSet(key, wiki, TTL.wiki)
     }
     patchVerne(token, { wiki: wiki ?? null })

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.11: Wikipedia-lenke for verneområde treffer riktig artikkel
+
+Long-press på et verneområde slo opp Wikipedia på det bare navnet, så «Storøya biotopvernområde» i Holsfjorden lenket til artikkelen om øya Storøya på Svalbard (samme navn, helt annen sak). Nå bygger `fetchWikiSummary` kandidat-titler i synkende spesifisitet: det fulle offisielle navnet (navn + verneform, f.eks. «Storøya biotopvernområde») prøves før det bare navnet. Naturbase-verneformen («Biotopvern», «Naturreservat» …) kartlegges til ordet Wikipedia faktisk bruker i tittelen. Bare-navn-fallbacken godtas dessuten kun når artikkelen faktisk handler om vern — ellers droppes treffet, så vi aldri lenker til feil øy/sted med samme navn. Cache-nøkkelen inkluderer nå verneform, så gamle feil-treff lagret under bart navn forbi-caches.
+
+---
+
 ## 2026-06-11 — v10.2.10: Søketreff på punkt-POI markertes i kartets NV-hjørne
 
 Søk på navngitte punkt-POI-er (togholdeplasser, parkering, sjø-POI) plasserte highlight-ringen i kartets nordvest-hjørne i stedet for på selve punktet — rapportert som «Bondivann»-buggen (togholdeplassen i Asker markertes på (0,0)). Rotårsak i søkeindeksens `elementPosition`: punkt-grupper som `<g data-name="…" transform="translate(x,y)"><use x="-3mm" …>` bærer hele posisjonen i sin EGEN transform, og bbox-senteret er ≈ (0,0) i gruppens lokale rom — men kun foreldre-translates ble akkumulert, aldri elementets egen. Nå inkluderes egen-translate (sameksisterer med upright-rotasjon i samme transform-attributt), med enhetstester på stub-elementer som speiler mapBuilder-markupen.
