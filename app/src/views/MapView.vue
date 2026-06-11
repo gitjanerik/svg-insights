@@ -22,6 +22,10 @@ import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
 import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES, tileOffset, rectOverlapFraction } from '../lib/tileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
+import {
+  viewRectSvg, expandRect, rectContains, buildCullIndex,
+  needsRecull, computeCullDiff, parseBboxAttr,
+} from '../lib/viewportCull.js'
 import { svgToWgs84 } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -715,10 +719,15 @@ watch([scale, translateX, translateY, rotation], clampPan)
 // re-tessellerer ikke i device-piksler per frame, og kartet får ~3-5×
 // frame-rate-gevinst på store kart. Strokene "skalerer med" mens du zoomer
 // (visuelt OK i 200 ms), og snapper tilbake til riktig bredde når gesten er over.
-watch(isGesturing, (g) => {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  if (g) svg.classList.add('is-zooming')
+// Gest-perf-modus (.is-zooming + relieff-skjuling + solid dash). v10.2.9:
+// gjenopprettingen ved gest-slutt utsettes ~120 ms så den dyre snap-back-
+// repainten (non-scaling-stroke-retessellering + dash + relieff-blend) ikke
+// lander på samme frame som compositorens siste re-raster — og en ny gest
+// innen vinduet kansellerer den helt (rask pinch-pinch-pinch betaler én
+// gjenoppretting, ikke tre).
+let gestureRestoreTimer = null
+function setGesturePerfMode(svg, on) {
+  if (on) svg.classList.add('is-zooming')
   else svg.classList.remove('is-zooming')
   // v9.1.14 — Perf: skjul relieff-bildet under aktiv gest. Et fullkart-
   // <image> med mix-blend-mode må re-komponeres mot bakgrunnen hver frame
@@ -728,7 +737,7 @@ watch(isGesturing, (g) => {
   // OG mosaikk-spøkelsenes relieff (image[data-ghost-relief]), ellers «henger»
   // nabofliser igjen med relieff mens aktiv-flisa flater ut → visuell ulikhet.
   const reliefImgs = svg.querySelectorAll('#hillshade-layer, #ghost-tiles image[data-ghost-relief]')
-  for (const hs of reliefImgs) hs.style.visibility = g ? 'hidden' : ''
+  for (const hs of reliefImgs) hs.style.visibility = on ? 'hidden' : ''
   // v9.1.15 — Perf: stiplet strek (sti 505-508, gjerde/kraft, jernbane osv)
   // er den desidert dyreste å rastere på mobil-GPU under gest — på et 10 km-
   // kart blir den merge-de sti-pathen tusenvis av dash-segmenter som
@@ -737,7 +746,22 @@ watch(isGesturing, (g) => {
   // Inline style overstyrer den katalog-genererte data-iso-CSS-en. Gjelder
   // også spøkelses-flisene (data-ghost-layer) av samme grunn.
   const paths = svg.querySelectorAll('[data-layer] path, [data-ghost-layer] path')
-  for (const p of paths) p.style.strokeDasharray = g ? 'none' : ''
+  for (const p of paths) p.style.strokeDasharray = on ? 'none' : ''
+}
+watch(isGesturing, (g) => {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  if (gestureRestoreTimer) { clearTimeout(gestureRestoreTimer); gestureRestoreTimer = null }
+  if (g) {
+    setGesturePerfMode(svg, true)
+  } else {
+    gestureRestoreTimer = setTimeout(() => {
+      gestureRestoreTimer = null
+      // Re-query: en silent re-render kan ha byttet SVG-en i mellomtiden.
+      const cur = svgHostRef.value?.querySelector('svg')
+      if (cur && !isGesturing.value) setGesturePerfMode(cur, false)
+    }, 120)
+  }
 })
 
 // v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine
@@ -994,6 +1018,10 @@ function selectSearchResult(r) {
   if (r.el) {
     forcedVisibleNameEls.add(r.el)
     r.el.classList.remove('name-lod-off')
+    // Treffet kan også være viewport-cullet (utenfor utsnittet) — panTo
+    // flytter dit og recull viser det, men fjern klassen alt nå så
+    // highlighten aldri peker på et usynlig element.
+    r.el.classList.remove('vp-cull')
   }
   if (meta.value) {
     panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
@@ -1148,6 +1176,153 @@ function scheduleNameLOD() {
 // Re-beregn LOD når utsnittet endrer seg (zoom/pan/rotasjon, gest eller
 // programmatisk). Debouncet så en pågående gest ikke beregner per frame.
 watch([scale, translateX, translateY, rotation], scheduleNameLOD)
+
+// ── Viewport-culling: skjul vektorer utenfor utsnittet («out of sight,
+// out of mind») ─────────────────────────────────────────────────────────────
+// Pan/zoom er en CSS-transform på composited wrapper, så gevinsten ligger
+// IKKE i selve panningen (compositor flytter ferdig tekstur) men i re-raster:
+// pinch-zoom, gest-slutt-repaint (non-scaling-stroke/dash snapper tilbake),
+// lag-toggles og raster-minne. Cull-rekta er viewporten ekspandert med raus
+// margin, så normale pans avdekker allerede-synlig innhold momentant uten JS;
+// re-beregning skjer kun når utsnittet rømmer forrige margin (hysterese i
+// needsRecull) — og aldri midt i en gest (kjøres på gest-slutt, der framen
+// uansett betaler for snap-back-repainten).
+//
+// Skjules med klasse `vp-cull` (CSS nederst i fila, IKKE i symbolizer-CSS-en
+// inni SVG-en — så eksport/print alltid viser alt, samme kontrakt som
+// .name-lod-off). Per-element-klasse kolliderer aldri med applyLayerVisibility
+// (som setter style.display på hele lag-grupper): et element vises kun når
+// laget er på OG det ikke er cullet OG ikke LOD-skjult.
+//
+// Kill switch: localStorage 'vp-cull-off' = '1'. Debug-tint (vis i rødt i
+// stedet for å skjule): localStorage 'cull-debug' = '1'.
+const cullDisabled = (() => { try { return localStorage.getItem('vp-cull-off') === '1' } catch { return false } })()
+const cullDebugTint = (() => { try { return localStorage.getItem('cull-debug') === '1' } catch { return false } })()
+let cullIndex = null
+let cullPrevVisible = null
+let cullPrevState = null
+let cullTimer = null
+const cullStats = ref({ indexed: 0, culled: 0, ms: 0 })
+
+function resetViewportCull() {
+  cullIndex = null
+  cullPrevVisible = null
+  cullPrevState = null
+  cullStats.value = { indexed: 0, culled: 0, ms: 0 }
+}
+
+// Bygg rbush-indeksen fra den aktive flisas SVG-DOM. Billige bbokser uten
+// getBBox() (som tvinger layout): data-bbox-attributtet (Fase B, eksakt),
+// ellers punkt + raus pad fra translate-grupper og text-x/y. Elementer uten
+// noen av delene indekseres ikke = culles aldri (graceful for gamle lagrede
+// kart). Spøkelses-fliser har data-ghost-layer, ikke data-layer, så
+// `[data-layer]`-scopingen holder dem (og user-layer/overlays) utenfor.
+function buildCullDomIndex() {
+  resetViewportCull()
+  if (cullDisabled) return
+  const svg = svgHostRef.value?.querySelector('svg')
+  const m = meta.value
+  if (!svg || !m) return
+  if (cullDebugTint) svg.classList.add('cull-debug-tint')
+  // Pad for punkt-indekserte elementer: skal dekke symbolets/tekstens visuelle
+  // utstrekning i meter. Labels skalerer med kartstørrelse (labelScale i
+  // symbolizer ∝ widthM/4000), så padden gjør det også. Raus pad koster bare
+  // litt culling-effektivitet — for liten pad gir synlig popping i kanten.
+  const padM = Math.max(80, m.widthM * 0.03)
+  const entries = []
+  const seen = new Set()
+  const pushEntry = (el, rect) => {
+    if (seen.has(el)) return
+    seen.add(el)
+    entries.push({ ...rect, el })
+  }
+  const translatePoint = (el) => {
+    const mt = /translate\(\s*(-?[\d.]+)[ ,]\s*(-?[\d.]+)\s*\)/.exec(el.getAttribute('transform') ?? '')
+    return mt ? { x: Number(mt[1]), y: Number(mt[2]) } : null
+  }
+  // 1) Eksakte bbokser fra mapBuilder (Fase B): bucket-paths + standalone-paths.
+  for (const el of svg.querySelectorAll('[data-layer] [data-bbox]')) {
+    const rect = parseBboxAttr(el.getAttribute('data-bbox'))
+    if (rect) pushEntry(el, rect)
+  }
+  // 2) Punkt-symboler i translate-grupper (parkering, holdeplass, sjø-POI,
+  //    hule/gruve/trig/kirke/bom etter posisjons-fiksen) + navn-grupper.
+  for (const el of svg.querySelectorAll('[data-layer] g[transform^="translate"]')) {
+    if (seen.has(el)) continue
+    // Hopp over grupper inni allerede-indekserte elementer (data-bbox-foreldre).
+    if (el.parentElement?.closest?.('[data-bbox]')) continue
+    const p = translatePoint(el)
+    if (p) pushEntry(el, { minX: p.x - padM, minY: p.y - padM, maxX: p.x + padM, maxY: p.y + padM })
+  }
+  // 3) Frittstående tekst-labels (stedsnavn, vann-navn, kontur-tall, dybde).
+  for (const el of svg.querySelectorAll('[data-layer] text')) {
+    if (seen.has(el)) continue
+    // Tekst inni en allerede-indeksert gruppe følger gruppens synlighet.
+    let anc = el.parentElement, covered = false
+    while (anc && anc !== svg) { if (seen.has(anc)) { covered = true; break } anc = anc.parentElement }
+    if (covered) continue
+    const x = Number(el.getAttribute('x'))
+    const y = Number(el.getAttribute('y'))
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+    pushEntry(el, { minX: x - padM, minY: y - padM, maxX: x + padM, maxY: y + padM })
+  }
+  if (!entries.length) return
+  cullIndex = buildCullIndex(entries)
+  cullStats.value = { indexed: entries.length, culled: 0, ms: 0 }
+}
+
+function applyViewportCull(force = false) {
+  if (cullDisabled || !cullIndex) return
+  const m = meta.value
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!m || !wrap || !wrap.width || !wrap.height || !svg) return
+  const t0 = performance.now()
+  const view = viewRectSvg({
+    w: wrap.width, h: wrap.height, widthM: m.widthM, heightM: m.heightM,
+    scale: scale.value, rotation: rotation.value,
+    tx: translateX.value, ty: translateY.value,
+  })
+  if (!view) return
+  if (!force && !needsRecull(cullPrevState, view, scale.value)) return
+  const expanded = expandRect(view)
+  // Utzoomet: dekker cull-rekta hele kartet (og gjorde det også sist), er
+  // ingenting cullet og ingenting å gjøre — null arbeid ved oversikts-zoom.
+  const mapRect = { minX: 0, minY: 0, maxX: m.widthM, maxY: m.heightM }
+  if (rectContains(expanded, mapRect) && cullPrevState?.coveredAll &&
+      cullPrevVisible && cullPrevVisible.size === cullStats.value.indexed) {
+    cullPrevState = { viewRect: view, expandedRect: expanded, scale: scale.value, coveredAll: true }
+    return
+  }
+  const { show, hide, visible } = computeCullDiff(cullIndex, expanded, cullPrevVisible)
+  cullPrevVisible = visible
+  cullPrevState = {
+    viewRect: view, expandedRect: expanded, scale: scale.value,
+    coveredAll: rectContains(expanded, mapRect),
+  }
+  if (show.length || hide.length) {
+    requestAnimationFrame(() => {
+      for (const el of show) el.classList.remove('vp-cull')
+      for (const el of hide) el.classList.add('vp-cull')
+    })
+  }
+  cullStats.value = {
+    indexed: cullStats.value.indexed,
+    culled: Math.max(0, cullStats.value.indexed - visible.size),
+    ms: Math.round((performance.now() - t0) * 10) / 10,
+  }
+}
+
+function scheduleViewportCull() {
+  if (cullTimer) clearTimeout(cullTimer)
+  cullTimer = setTimeout(() => {
+    // Aldri midt i en gest: en klasse-toggle der ville tvinge en unødig paint-
+    // invalidasjon. Gest-slutt-watcheren tar den i stedet.
+    if (!isGesturing.value) applyViewportCull()
+  }, 120)
+}
+watch([scale, translateX, translateY, rotation], scheduleViewportCull)
+watch(isGesturing, (g) => { if (!g) applyViewportCull() })
 
 // Pulsering tegnes som SVG-circle i et eget overlay-lag, lik annoteringer.
 // Holder konstant skjerm-størrelse ved å konvertere CSS-px til user-units via
@@ -1559,6 +1734,10 @@ let naturtypeQueryToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
+// Detalj-lag (data-detail="1") løftet UT av hovedkartets DOM i setupHostSvg
+// (perf — de er usynlige der men kostet parse/recalc/clone). Inset-en kloner
+// inn herfra. Erstattes ved hver setupHostSvg (nytt kart = nye noder).
+let detachedDetailLayers = []
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -2106,12 +2285,25 @@ function buildDetailInset() {
     }
     svg.appendChild(child.cloneNode(true))
   }
+  // Detalj-lagene (dybdepunkt/dybdekurve) lever ikke lenger i hovedkartets
+  // DOM (detachet i setupHostSvg for perf) — klon dem inn fra modul-refen.
+  for (const g of detachedDetailLayers) {
+    svg.appendChild(g.cloneNode(true))
+  }
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
   // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
   for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"]')) {
     g.style.display = ''
     for (const el of g.querySelectorAll('*')) el.style.display = ''
+  }
+
+  // Klonene arver klasse-skjuling fra hovedkartet: vp-cull (viewport-culling)
+  // og name-lod-off (navn-LOD) bruker begge display:none !important som
+  // inline-style-nullingen over IKKE kan overstyre. Inset-en er en detalj-
+  // lupe — her skal alt som finnes i vinduet vises.
+  for (const el of svg.querySelectorAll('.vp-cull, .name-lod-off')) {
+    el.classList.remove('vp-cull', 'name-lod-off')
   }
 
   // Vis ALLE navn i inset-en (på land er det rikelig plass ved denne zoomen):
@@ -3596,6 +3788,10 @@ async function loadMap({ silent = false } = {}) {
     // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
     // utsnitt). Kjøres synkront her; videre på zoom/pan via watch.
     applyNameLOD()
+    // Viewport-culling: bygg rbush-indeks fra fersk SVG-DOM og kjør første
+    // pass (force — ingen prevState å hysterese mot).
+    buildCullDomIndex()
+    applyViewportCull(true)
     // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
     maybeHighlightFromQuery()
     // Auto-kart: gjenopprett visning + ramme etter et trigget hopp. Bevart
@@ -3703,6 +3899,9 @@ function setupHostSvg(sourceRoot) {
   const ns = 'http://www.w3.org/2000/svg'
   const host = svgHostRef.value
   host.replaceChildren()
+  // Ny SVG-DOM → element-referansene i culling-indeksen er foreldede.
+  // Indeksen bygges på nytt etter at lasting er ferdig (buildCullDomIndex).
+  resetViewportCull()
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', sourceRoot.getAttribute('viewBox'))
   svg.setAttribute('xmlns', ns)
@@ -3725,6 +3924,16 @@ function setupHostSvg(sourceRoot) {
   // [data-layer="vann"] (eller første overlay-lag).
   for (const child of Array.from(sourceRoot.childNodes)) {
     svg.appendChild(child.cloneNode(true))
+  }
+  // v10.2.9 (perf): detalj-lagene (data-detail="1": dybdepunkt/dybdekurve)
+  // er usynlige på hovedkartet (display:none) men kostet likevel parse,
+  // style-recalc og deep-clone ved hver buildDetailInset. Løft dem UT av
+  // live-DOM-en og hold dem i en modul-ref — inset-en (eneste konsument)
+  // appender kloner derfra i stedet.
+  detachedDetailLayers = []
+  for (const g of svg.querySelectorAll('[data-detail="1"]')) {
+    detachedDetailLayers.push(g)
+    g.remove()
   }
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
@@ -5537,6 +5746,14 @@ onUnmounted(() => {
               <span class="text-white/45 text-[11px]">Auto-fliser i cache</span>
               <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ MAX_AUTO_TILES }}</span>
             </div>
+            <!-- Viewport-culling: hvor mange indekserte elementer som er skjult
+                 utenfor utsnittet akkurat nå + siste cull-beregning i ms. -->
+            <div v-if="cullStats.indexed" class="flex items-baseline justify-between gap-2 mb-2 px-1">
+              <span class="text-white/45 text-[11px]">Viewport-culling</span>
+              <span class="text-white/55 text-[11px] tabular-nums">
+                {{ cullStats.culled }} / {{ cullStats.indexed }} skjult · {{ cullStats.ms }} ms
+              </span>
+            </div>
             <button @click="diagnose = !diagnose"
                     class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
                     :class="diagnose
@@ -6233,7 +6450,17 @@ onUnmounted(() => {
       scope), så scoped-regler treffer den ikke. Navn-LOD-en (applyNameLOD)
      setter .name-lod-off på overflødige stedsnavn-tekster i tette utsnitt.
      Regelen lever her — ikke i symbolizer-CSS-en inni SVG-en — så den IKKE
-     følger med ved SVG-eksport/print (der vil vi ha alle navn). -->
+     følger med ved SVG-eksport/print (der vil vi ha alle navn).
+     Samme kontrakt for .vp-cull (viewport-culling, applyViewportCull):
+     skjult på skjerm, alltid med i eksport. Med localStorage 'cull-debug'
+     vises cullede elementer i stedet halvgjennomsiktig rosa (visuell
+     verifisering på enhet: pan rundt og SE hva som culles). -->
 <style>
 .isom-map .name-lod-off { display: none !important; }
+.isom-map .vp-cull { display: none !important; }
+.isom-map.cull-debug-tint .vp-cull {
+  display: revert !important;
+  opacity: 0.25 !important;
+  fill: #e11d48 !important;
+}
 </style>

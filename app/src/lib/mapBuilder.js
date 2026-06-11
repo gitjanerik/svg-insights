@@ -26,6 +26,7 @@ import {
 } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP } from './pathUtils.js'
+import { bboxOfPoints, unionBbox, cellKeyFor, bboxAttr } from './spatialBucket.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import polygonClipping from 'polygon-clipping'
@@ -604,8 +605,11 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  const pathFromGeometry = (geom, close = false, simplifyToleranceM = 0) => {
-    if (!geom || geom.length === 0) return ''
+  // Som pathFromGeometry, men returnerer også featurens bbox (beregnet fra
+  // post-simplify-punktene — gratis, de er allerede i hånden). Bboksen driver
+  // romlig bucketing + data-bbox-emisjon (se spatialBucket.js).
+  const pathAndBboxFromGeometry = (geom, close = false, simplifyToleranceM = 0) => {
+    if (!geom || geom.length === 0) return { d: '', bbox: null }
     let pts = geom.map(g => {
       const p = project(g.lat, g.lon)
       return [p.x, p.y]
@@ -613,14 +617,16 @@ export function buildSvg(elements, bbox, options = {}) {
     if (simplifyToleranceM > 0 && pts.length > 3) {
       pts = simplifyDP(pts, simplifyToleranceM)
     }
-    if (pts.length === 0) return ''
+    if (pts.length === 0) return { d: '', bbox: null }
     let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
     for (let i = 1; i < pts.length; i++) {
       d += `L${fmt(pts[i][0])},${fmt(pts[i][1])}`
     }
     if (close) d += 'Z'
-    return d
+    return { d, bbox: bboxOfPoints(pts) }
   }
+  const pathFromGeometry = (geom, close = false, simplifyToleranceM = 0) =>
+    pathAndBboxFromGeometry(geom, close, simplifyToleranceM).d
 
   // Beregn approksimert polygon-areal i m² for et OSM-way
   const polygonAreaM2 = (geom) => {
@@ -1024,15 +1030,21 @@ export function buildSvg(elements, bbox, options = {}) {
       // (data-name) og inline-stylede features (f.eks. ISOM 307 dybdeareal)
       // emitteres fortsatt standalone så søk og per-feature-fyll fungerer.
       const standalonePaths = []
-      const groups = new Map()  // sig (src|isSmall) → { ds: [], src, isSmall }
-      const pushToGroup = (d, src, isSmall) => {
-        const sig = `${src}|${isSmall ? '1' : '0'}`
+      // v10.2.9: merge-signaturen inkluderer grid-celle (spatialBucket.cellKeyFor)
+      // så hver merged path får små, reelle bounds — nettleserens raster-tile-
+      // culling og MapViews viewport-culling (data-bbox) virker da per celle i
+      // stedet for aldri (mega-path med bounds = hele kartet).
+      const groups = new Map()  // sig (src|isSmall|celle) → { ds: [], src, isSmall, bbox }
+      const pushToGroup = (d, src, isSmall, bbox) => {
+        const sig = `${src}|${isSmall ? '1' : '0'}|${cellKeyFor(bbox)}`
         let g = groups.get(sig)
-        if (!g) { g = { ds: [], src, isSmall }; groups.set(sig, g) }
+        if (!g) { g = { ds: [], src, isSmall, bbox: null }; groups.set(sig, g) }
         g.ds.push(d)
+        g.bbox = unionBbox(g.bbox, bbox)
       }
       for (const el of els) {
         let d = ''
+        let bbox = null
         let src = el._source ?? (el._mergedRings ? 'merged' : el.type)
         let isSmall = false
         const name = el.tags?.name ?? el.tags?.navn ?? ''
@@ -1043,6 +1055,7 @@ export function buildSvg(elements, bbox, options = {}) {
           for (let pi = 0; pi < el._mergedRings.length; pi++) {
             const polygon = el._mergedRings[pi]
             const ringPaths = []
+            let polyBbox = null
             for (let ring of polygon) {
               if (ring.length < 3) continue
               if (filter.simplifyM > 0 && ring.length > 3) {
@@ -1053,11 +1066,12 @@ export function buildSvg(elements, bbox, options = {}) {
               for (let i = 1; i < ring.length; i++) rd += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
               rd += 'Z'
               ringPaths.push(rd)
+              polyBbox = unionBbox(polyBbox, bboxOfPoints(ring))
             }
             if (ringPaths.length > 0) {
               // Merged-water beholder data-name så søk på innsjø-navn fungerer.
               standalonePaths.push(
-                `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd" data-src="merged" data-name="${xmlEscape(name)}"/>`
+                `    <path d="${ringPaths.join(' ')}" fill-rule="evenodd"${bboxAttr(polyBbox, fmt)} data-src="merged" data-name="${xmlEscape(name)}"/>`
               )
             }
           }
@@ -1081,6 +1095,7 @@ export function buildSvg(elements, bbox, options = {}) {
             if (!c) continue
             const half = 6.5
             d = `M${fmt(c.x - half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y - half)}L${fmt(c.x + half)},${fmt(c.y + half)}L${fmt(c.x - half)},${fmt(c.y + half)}Z`
+            bbox = { minX: c.x - half, minY: c.y - half, maxX: c.x + half, maxY: c.y + half }
             isSmall = true
           } else if (code === '551') {
             // Kai/brygge/molo: Sjøkart-WFS gir forvridde ringer med mye støy.
@@ -1095,8 +1110,11 @@ export function buildSvg(elements, bbox, options = {}) {
             d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
             for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
             d += 'Z'
+            bbox = bboxOfPoints(ring)
           } else {
-            d = pathFromGeometry(el.geometry, true, filter.simplifyM)
+            const r = pathAndBboxFromGeometry(el.geometry, true, filter.simplifyM)
+            d = r.d
+            bbox = r.bbox
           }
         } else if (el.type === 'relation' && el.members) {
           // OSM multipolygon: outer/inner-rings er splittet over flere
@@ -1117,8 +1135,11 @@ export function buildSvg(elements, bbox, options = {}) {
           }
           const subpaths = []
           for (const ring of [...outerRings, ...innerRings]) {
-            const sd = pathFromGeometry(ring, true, filter.simplifyM)
-            if (sd) subpaths.push(sd)
+            const r = pathAndBboxFromGeometry(ring, true, filter.simplifyM)
+            if (r.d) {
+              subpaths.push(r.d)
+              bbox = unionBbox(bbox, r.bbox)
+            }
           }
           d = subpaths.join(' ')
         }
@@ -1135,6 +1156,8 @@ export function buildSvg(elements, bbox, options = {}) {
           const clipped = clipPolygonToSea([ring], authoritativeSea)
           if (clipped.length === 0) continue   // dybdeareal helt på land → dropp
           d = multiPolygonToPathD(clipped, fmt)
+          bbox = null
+          for (const poly of clipped) for (const r of poly) bbox = unionBbox(bbox, bboxOfPoints(r))
         }
         if (d) {
           // ISOM 307 (Sjøkart dybdeareal): per-polygon fill basert på
@@ -1163,19 +1186,19 @@ export function buildSvg(elements, bbox, options = {}) {
           // path-bucket per (data-src, isSmall).
           if (inlineStyle || dybdeAttr || name) {
             standalonePaths.push(
-              `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+              `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
             )
           } else {
-            pushToGroup(d, src, isSmall)
+            pushToGroup(d, src, isSmall, bbox)
           }
         }
       }
-      // Bygg grupperte paths fra buckets
+      // Bygg grupperte paths fra buckets (én per stil × grid-celle)
       const groupedPaths = []
       for (const g of groups.values()) {
         const smallAttr = g.isSmall ? ' data-small="yes"' : ''
         groupedPaths.push(
-          `    <path d="${g.ds.join(' ')}" fill-rule="evenodd"${smallAttr} data-src="${xmlEscape(String(g.src))}"/>`
+          `    <path d="${g.ds.join(' ')}" fill-rule="evenodd"${smallAttr}${bboxAttr(g.bbox, fmt)} data-src="${xmlEscape(String(g.src))}"/>`
         )
       }
       const pathElements = [...groupedPaths, ...standalonePaths]
@@ -1200,14 +1223,16 @@ export function buildSvg(elements, bbox, options = {}) {
         // alltid separate <line>-elementer.
         const dsNormal = []
         const dsTunnel = []
+        let bbNormal = null
+        let bbTunnel = null
         const entrances = []
         const TICK_HALF_M = 6  // 12 m total = ~1.2 mm @ 1:10 000
         for (const el of els) {
-          const d = pathFromGeometry(el.geometry, false, tol)
+          const { d, bbox } = pathAndBboxFromGeometry(el.geometry, false, tol)
           if (!d) continue
           const isTunnel = !!el.tags?.tunnel && el.tags.tunnel !== 'no'
-          if (isTunnel) dsTunnel.push(d)
-          else dsNormal.push(d)
+          if (isTunnel) { dsTunnel.push(d); bbTunnel = unionBbox(bbTunnel, bbox) }
+          else { dsNormal.push(d); bbNormal = unionBbox(bbNormal, bbox) }
           if (isTunnel && el.geometry && el.geometry.length >= 2) {
             const g = el.geometry
             const p0 = project(g[0].lat, g[0].lon)
@@ -1222,13 +1247,16 @@ export function buildSvg(elements, bbox, options = {}) {
           }
         }
         const pathParts = []
+        // Jernbane buckets ikke (fast 4 paths, sparsom) — men hel-utstreknings-
+        // data-bbox er gratis og lar viewport-culling droppe den når toglinja
+        // er helt utenfor utsnittet.
         if (dsNormal.length) {
-          pathParts.push(`    <path d="${dsNormal.join(' ')}"/>`)
-          pathParts.push(`    <path d="${dsNormal.join(' ')}" class="overlay"/>`)
+          pathParts.push(`    <path d="${dsNormal.join(' ')}"${bboxAttr(bbNormal, fmt)}/>`)
+          pathParts.push(`    <path d="${dsNormal.join(' ')}" class="overlay"${bboxAttr(bbNormal, fmt)}/>`)
         }
         if (dsTunnel.length) {
-          pathParts.push(`    <path d="${dsTunnel.join(' ')}" data-tunnel="yes"/>`)
-          pathParts.push(`    <path d="${dsTunnel.join(' ')}" class="overlay" data-tunnel="yes"/>`)
+          pathParts.push(`    <path d="${dsTunnel.join(' ')}" data-tunnel="yes"${bboxAttr(bbTunnel, fmt)}/>`)
+          pathParts.push(`    <path d="${dsTunnel.join(' ')}" class="overlay" data-tunnel="yes"${bboxAttr(bbTunnel, fmt)}/>`)
         }
         for (const e of entrances) {
           const px = -e.uy, py = e.ux
@@ -1238,13 +1266,26 @@ export function buildSvg(elements, bbox, options = {}) {
         }
         return `  <g data-layer="${cat}" data-iso="${code}">\n${pathParts.join('\n')}\n  </g>\n`
       }
-      const paths = els.map(el => pathFromGeometry(el.geometry, false, tol)).filter(Boolean)
       // v8.10.4: alle linjer i samme code/phase deler stil → kombinér til
-      // én stor <path d="..."> i stedet for N enkelt-paths. Hver M starter
+      // stor <path d="..."> i stedet for N enkelt-paths. Hver M starter
       // en ny subpath i SVG, så visuelt resultat er identisk men DOM-tallet
-      // synker drastisk (stier ~3-5k → 1 node). Stroke-effekter (linecap,
+      // synker drastisk (stier ~3-5k → få noder). Stroke-effekter (linecap,
       // dasharray) er sub-path-agnostiske og forblir korrekte.
-      const combinedD = paths.join(' ')
+      // v10.2.9: merging skjer per grid-celle (hel way per celle, aldri
+      // splitting — bevarer dash-fase og linecaps) så hver path får små
+      // bounds + data-bbox. Map bevarer insertion-order → casing- og
+      // overlay-passet (to-fase veier) produserer identiske bucket-sett.
+      const cellBuckets = new Map()  // cellKey → { ds: [], bbox }
+      for (const el of els) {
+        const { d, bbox } = pathAndBboxFromGeometry(el.geometry, false, tol)
+        if (!d) continue
+        const key = cellKeyFor(bbox)
+        let b = cellBuckets.get(key)
+        if (!b) { b = { ds: [], bbox: null }; cellBuckets.set(key, b) }
+        b.ds.push(d)
+        b.bbox = unionBbox(b.bbox, bbox)
+      }
+      const lineBuckets = [...cellBuckets.values()]
       // v8.1.0: koder som har overlayStroke (f.eks. veier 501-503) får dual
       // path: base = casing (sort, breiere), overlay = farget fyll (smalere,
       // på toppen). CSS i symbolizer.js styler `path.overlay` separat. Gir
@@ -1259,14 +1300,20 @@ export function buildSvg(elements, bbox, options = {}) {
         // emitteres separat som casing- og overlay-pass over flere koder,
         // bryter call-site dette opp slik at sorte omriss ikke stacker
         // oppå nabosegmentets fargefyll i kryss. Default 'both' beholder
-        // gammel atferd for andre koder.
+        // gammel atferd for andre koder. Casing + overlay emitteres fra
+        // samme bucket-liste så tvilling-pathene deler identisk data-bbox
+        // og culles sammen.
         const lines = []
-        if (phase !== 'overlay' && combinedD) lines.push(`    <path d="${combinedD}"/>`)
-        if (phase !== 'casing' && combinedD) lines.push(`    <path d="${combinedD}" class="overlay"/>`)
+        if (phase !== 'overlay') {
+          for (const b of lineBuckets) lines.push(`    <path d="${b.ds.join(' ')}"${bboxAttr(b.bbox, fmt)}/>`)
+        }
+        if (phase !== 'casing') {
+          for (const b of lineBuckets) lines.push(`    <path d="${b.ds.join(' ')}" class="overlay"${bboxAttr(b.bbox, fmt)}/>`)
+        }
         return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
       }
-      const pathLine = combinedD ? `    <path d="${combinedD}"/>` : ''
-      return `  <g data-layer="${cat}" data-iso="${code}">\n${pathLine}\n  </g>\n`
+      const pathLines = lineBuckets.map(b => `    <path d="${b.ds.join(' ')}"${bboxAttr(b.bbox, fmt)}/>`)
+      return `  <g data-layer="${cat}" data-iso="${code}">\n${pathLines.join('\n')}\n  </g>\n`
     }
     return ''
   }
@@ -1352,21 +1399,33 @@ export function buildSvg(elements, bbox, options = {}) {
   // ende av kartet (rapportert v6.20.0, fikset v6.20.1).
   const demProject = ([x, y]) => [x, y]
 
-  const contourMinorPaths = []
-  const contourIndexPaths = []
+  // v10.2.9: konturer buckets per grid-celle (hel kontur per celle, samme
+  // regel som polygon/linje-merging) så hver kontur-path får data-bbox og
+  // reelle bounds. Lange index-konturer får store bbokser og culles sjelden
+  // — akseptert; geometri splittes ikke.
+  const contourMinorBuckets = new Map()  // cellKey → { ds: [], bbox }
+  const contourIndexBuckets = new Map()
   const contourLabels = []
+  const pushContour = (buckets, d, bbox) => {
+    const key = cellKeyFor(bbox)
+    let b = buckets.get(key)
+    if (!b) { b = { ds: [], bbox: null }; buckets.set(key, b) }
+    b.ds.push(d)
+    b.bbox = unionBbox(b.bbox, bbox)
+  }
   for (const f of demFeatures.contours.features) {
     const projected = f.coordinates.map(demProject)
     // v9.3.37: åpne kontur-løp (splittet mot periferi-void-masken i dem.js)
     // skal IKKE lukkes med Z — ellers trekkes en korde tvers over voidet.
     const d = polylineToPath(projected, f.closed !== false)
+    const bbox = bboxOfPoints(projected)
     if (f.isIndex) {
-      contourIndexPaths.push(d)
+      pushContour(contourIndexBuckets, d, bbox)
       // Legg på elevasjons-tall midt på kurven (forenklet — bare første punkt)
       const mid = projected[Math.floor(projected.length / 2)]
       contourLabels.push({ x: mid[0], y: mid[1], elev: Math.round(f.elevation) })
     } else {
-      contourMinorPaths.push(d)
+      pushContour(contourMinorBuckets, d, bbox)
     }
   }
 
@@ -1575,30 +1634,45 @@ export function buildSvg(elements, bbox, options = {}) {
   const krx = 0.6 * symUnit
   const kry = 0.4 * symUnit
   const kdy = 0.4 * symUnit                          // halvmånens y-offset (0.4 i symbolet)
-  const knauserD = (demFeatures.knauser ?? []).map(k => {
+  // v10.2.9: knaus-halvmånene buckets per grid-celle (de er 1–2 m hver, så
+  // celle-tildeling er triviell) — én path per celle med data-bbox i stedet
+  // for én kart-dekkende merged path.
+  const knausBuckets = new Map()  // cellKey → { ds: [], bbox }
+  for (const k of (demFeatures.knauser ?? [])) {
     const [x, y] = demProject([k.x, k.y])
-    return `M${fmt(x - krx)} ${fmt(y + kdy)}A${fmt(krx)} ${fmt(kry)} 0 0 0 ${fmt(x + krx)} ${fmt(y + kdy)}`
-  }).join('')
+    const d = `M${fmt(x - krx)} ${fmt(y + kdy)}A${fmt(krx)} ${fmt(kry)} 0 0 0 ${fmt(x + krx)} ${fmt(y + kdy)}`
+    const bbox = { minX: x - krx, minY: y - kry + kdy, maxX: x + krx, maxY: y + kry + kdy }
+    const key = cellKeyFor(bbox)
+    let b = knausBuckets.get(key)
+    if (!b) { b = { ds: [], bbox: null }; knausBuckets.set(key, b) }
+    b.ds.push(d)
+    b.bbox = unionBbox(b.bbox, bbox)
+  }
   // Knauser maskeres også av vann — DEM-deriverte punkt-symboler skal ikke
   // ligge oppå en innsjø (samme begrunnelse som stupkanter/konturer).
-  const knauserLayerSvg = knauserD
-    ? `  <g data-layer="stein" data-iso="213"><path d="${knauserD}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"/></g>\n`
+  const knauserLayerSvg = knausBuckets.size
+    ? `  <g data-layer="stein" data-iso="213">${[...knausBuckets.values()].map(b =>
+        `<path d="${b.ds.join('')}" fill="none" stroke="#7f4f24" stroke-width="0.12mm"${bboxAttr(b.bbox, fmt)}/>`).join('')}</g>\n`
     : ''
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
+  // Posisjon via transform=translate(...) i user-units (meter) — å skrive
+  // x="<meter>mm" tolkes som ~3.78× user-units pr mm (CSS-spec), så symbolet
+  // havnet langt unna der project() ga oss. Samme fix som parkering (v8.10.x);
+  // gjelder hule/gruve/trig/kirke/bom.
   const huleSvg = huler.map(el => {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('hule')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/></g>`
   }).filter(Boolean).join('\n')
 
   const gruveSvg = gruver.map(el => {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('gruve')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Trigonometrisk punkt (ISOM 113): trekant-symbol 1.6mm
@@ -1606,7 +1680,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('trigpunkt')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.8)}mm" y="${fmt(p.y - 0.8)}mm" width="1.6mm" height="1.6mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Kirke (ISOM 532-derivert): hytte-stil rektangulær ramme med kors 2.6mm.
@@ -1622,7 +1696,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const sid = symbolIds.get('kirke')
     if (!sid) return ''
     const half = kirkeSize / 2
-    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Utfartsparkering (ISOM 534-derivert): blå P-symbol 7.2mm (300% av v8.10.2-
@@ -1670,7 +1744,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const sid = symbolIds.get('bom')
     if (!sid) return ''
     const half = bomSize / 2
-    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${bomSize}mm" height="${bomSize}mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${bomSize}mm" height="${bomSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Fase 3: marine / padle-POI (fyr, sjømerker, skjær, landingssteder,
@@ -1922,10 +1996,12 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const labelLayer = labelSvg()
 
-  const contourLayerSvg = (contourMinorPaths.length || contourIndexPaths.length)
+  const contourBucketPaths = (buckets) =>
+    [...buckets.values()].map(b => `<path d="${b.ds.join(' ')}"${bboxAttr(b.bbox, fmt)} />`).join('')
+  const contourLayerSvg = (contourMinorBuckets.size || contourIndexBuckets.size)
     ? `  <g data-layer="kontur">\n` +
-      `    <g data-iso="101"><path d="${contourMinorPaths.join(' ')}" /></g>\n` +
-      `    <g data-iso="102"><path d="${contourIndexPaths.join(' ')}" /></g>\n` +
+      `    <g data-iso="101">${contourBucketPaths(contourMinorBuckets)}</g>\n` +
+      `    <g data-iso="102">${contourBucketPaths(contourIndexBuckets)}</g>\n` +
       (contourLabels.length
         ? `    <g data-label="kontur-tall">\n${contourLabels.slice(0, 80).map(l =>
             `      <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle">${l.elev}</text>`).join('\n')}\n    </g>\n`

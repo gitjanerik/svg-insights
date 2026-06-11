@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.9: Viewport-culling + romlig SVG-bucketing for mobil-ytelse
+
+Stor ytelsespakke for kart-rendering på mobil («out of sight, out of mind»). (1) Viewport-culling: en rbush-indeks over kart-elementenes bbokser skjuler vektorer utenfor synlig utsnitt + raus margin (klasse `vp-cull`, eksport-trygg som navn-LOD-en), med hysterese så panorering avdekker innhold momentant uten JS-arbeid og re-beregning aldri skjer midt i en gest. Kill switch: localStorage `vp-cull-off`; visuell debug-tint: `cull-debug`; teller i drawer-ens Debug-seksjon. (2) Romlig bucketing i mapBuilder: de kart-dekkende «mega-pathene» fra v8.10.4-mergingen deles nå per 1024 m grid-celle (hel feature per celle, aldri geometri-splitting) og alle paths emitterer `data-bbox` — så både nettleserens egen raster-tile-culling og viewport-cullingen får små, reelle bounds. Painter's order, lag-toggles og temaer er urørt; gamle lagrede kart degraderer til ingen culling. (3) Detalj-lagene (dybdepunkt/dybdekurve) løftes ut av hovedkartets DOM og klones kun inn i long-press-inset-en. (4) Gest-slutt-gjenopprettingen utsettes 120 ms (kanselleres av ny gest) og mønster-fyll (myr/kratt/åker/bymasse) flates til solid farge under aktiv pinch. Bonus-fix: hule-, gruve-, trigpunkt-, kirke- og bom-symboler var feilplassert (mm-tolkning av meter-koordinater) og posisjoneres nå korrekt via translate-wrapper; navn-LOD-skjulte navn vises nå riktig i detalj-inset-en.
+
+---
+
 ## 2026-06-11 — v10.2.8: GPS-spor overlever auto-kart-bytte + kant-varsel
 
 GPS-sporing stanset stille hver gang auto-kart lastet inn et nytt utsnitt, og sporet ble ikke skikkelig lagret. Årsaken var at både GPS-en og spor-opptakeren er knyttet til MapView-instansen, som rives ned når navigasjonen bytter kart-flis — det aktive opptaket døde med den gamle instansen og fortsatte aldri på den nye. Nå avsluttes opptaket deterministisk rett før byttet (sporet finaliseres og lagres på forrige flis, som er beskyttet mot opprydding), og det nye kartet gjenopptar opptaket automatisk som et nytt spor-segment. Et sammenhengende gåtur deles dermed i ett segment per flis — iboende i at spor lagres per kart. I tillegg får brukeren nå et diskret varsel når GPS-prikken nærmer seg kartkanten og auto-kart er av, med én-trykks «Slå på auto-kart» så nye utsnitt lages automatisk når man går videre.
