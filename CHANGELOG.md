@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-06-11 — v10.2.15: Komplett long-press-datakilder i About-siden
+
+About-sidens datakilde-liste manglet hele long-press-oppslags-settet. Lagt til Naturbase (Miljødirektoratet, verneområde-metadata), GBIF (observerte arter i polygonet), Artsdatabanken Norsk rødliste for arter 2021 (lokal CSV-bundel bygget inn ved CI og snittet mot GBIF-artene), og NiN naturtyper (Miljødirektoratet). Nå speiler lista alt appen faktisk henter — både kart-rendringen og long-press-fakta.
+
+---
+
+## 2026-06-11 — v10.2.14: Wikipedia oppført som datakilde i About-siden
+
+About-sidens datakilde-liste for turkart nevnte ikke Wikipedia, selv om vi henter både verneområde-ingress (REST-summary) og nærmeste geotaggede sted (Action API geosearch) derfra ved long-press. Lagt til en Wikipedia-linje, og header-en justert fra «(alle CC BY 4.0 / ODbL)» til «(CC BY 4.0 / ODbL; Wikipedia CC BY-SA)» siden Wikipedia-tekst har en annen lisens enn de øvrige kildene.
+
+---
+
+## 2026-06-11 — v10.2.13: Wikipedia-fakta om nærmeste sted ved long-press (overalt)
+
+Long-press hvor som helst på kartet — ikke bare i de grønne verneområdene — slår nå opp nærmeste geotaggede Wikipedia-artikkel og viser et faktakort: tittel, avstand herfra, en kort ingress og en Wikipedia-lenke. Gir kjapp kontekst om en innsjø, fjelltopp, grend, elv eller et stedsnavn. Bruker MediaWiki Action API-ets geosearch-generator (`lib/wikiPlace.js`) i ett CORS-vennlig kall (`origin=*`) som henter ingress + koordinater i samme forespørsel; norsk Wikipedia først, engelsk som fallback. Nærmeste artikkel med ingress foretrekkes, avstand regnes med haversine, og kortet skjules om treffet er identisk med verneområdets egen Wikipedia-lenke. Cachet 7 dager på ~100 m-grid. Merk: dette er nærmeste *artikkel* og kan avvike fra «Nærmest»-radens nærmeste *kartlabel*.
+
+---
+
+## 2026-06-11 — v10.2.12: «Rødliste 2021» omdøpt til «Observerte rødlistearter»
+
+Rødliste-seksjonen i verneområde-kortet het «Rødliste 2021» og leste seg naturlig som vernegrunnlaget/verneforskriften — artene området er fredet for. Det er den ikke: lista er GBIF-observerte arter innenfor verneområde-polygonet, snittet mot Norsk rødliste 2021. Derfor kunne en streif-observasjon som lomvi (CR) dukke opp på en innlands-øy i Holsfjorden, og temperate planter (ask, flarkstarr) bekreftet at funnene var fra rett sted (Lier), ikke Svalbard. Overskriften er nå «Observerte rødlistearter» (full bredde, kategori-chips de-indentert under), så det er tydelig at det er funn i området — ikke en liste over vernemål.
+
+---
+
+## 2026-06-11 — v10.2.11: Wikipedia-lenke for verneområde treffer riktig artikkel
+
+Long-press på et verneområde slo opp Wikipedia på det bare navnet, så «Storøya biotopvernområde» i Holsfjorden lenket til artikkelen om øya Storøya på Svalbard (samme navn, helt annen sak). Nå bygger `fetchWikiSummary` kandidat-titler i synkende spesifisitet: det fulle offisielle navnet (navn + verneform, f.eks. «Storøya biotopvernområde») prøves før det bare navnet. Naturbase-verneformen («Biotopvern», «Naturreservat» …) kartlegges til ordet Wikipedia faktisk bruker i tittelen. Bare-navn-fallbacken godtas dessuten kun når artikkelen faktisk handler om vern — ellers droppes treffet, så vi aldri lenker til feil øy/sted med samme navn. Cache-nøkkelen inkluderer nå verneform, så gamle feil-treff lagret under bart navn forbi-caches.
+
+---
+
 ## 2026-06-11 — v10.2.10: Søketreff på punkt-POI markertes i kartets NV-hjørne
 
 Søk på navngitte punkt-POI-er (togholdeplasser, parkering, sjø-POI) plasserte highlight-ringen i kartets nordvest-hjørne i stedet for på selve punktet — rapportert som «Bondivann»-buggen (togholdeplassen i Asker markertes på (0,0)). Rotårsak i søkeindeksens `elementPosition`: punkt-grupper som `<g data-name="…" transform="translate(x,y)"><use x="-3mm" …>` bærer hele posisjonen i sin EGEN transform, og bbox-senteret er ≈ (0,0) i gruppens lokale rom — men kun foreldre-translates ble akkumulert, aldri elementets egen. Nå inkluderes egen-translate (sameksisterer med upright-rotasjon i samme transform-attributt), med enhetstester på stub-elementer som speiler mapBuilder-markupen.

@@ -112,3 +112,8 @@ export function pointKey(lat, lon) {
 export function naturtypePointKey(lat, lon) {
   return `naturtype:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
 }
+
+/** Nøkkel for nærmeste Wikipedia-sted (geosearch) på samme ~100 m-grid. */
+export function placePointKey(lat, lon) {
+  return `wikiplace:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
+}
