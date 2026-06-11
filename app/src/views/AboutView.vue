@@ -91,6 +91,10 @@ const TABS = [
           <li><strong class="text-white/75">Kartverket DOM 1m/10m</strong> via WCS — overflatemodell for vegetasjons-tetthet</li>
           <li><strong class="text-white/75">Kartverket Sjøkart (Dybdedata)</strong> via WFS — dybdeareal, sjømerker og fyr på kystkart</li>
           <li><strong class="text-white/75">NVE</strong> via NVE API + HydAPI — innsjøers dyp/areal/volum, vannflate-høyde og sanntids vannstand (long-press på vann)</li>
+          <li><strong class="text-white/75">Naturbase (Miljødirektoratet)</strong> via ArcGIS REST — verneområde-metadata (navn, verneform, vernedato, areal, forvaltning) ved long-press</li>
+          <li><strong class="text-white/75">GBIF</strong> via Occurrence API — arter observert innenfor verneområde-polygonet</li>
+          <li><strong class="text-white/75">Artsdatabanken — Norsk rødliste for arter 2021</strong> — lokal CSV-bundel bygget inn ved CI og snittet mot GBIF-artene (long-press på verneområde)</li>
+          <li><strong class="text-white/75">NiN naturtyper (Miljødirektoratet)</strong> via ArcGIS REST — kartlagte naturtyper ved long-press</li>
           <li><strong class="text-white/75">Wikipedia</strong> via REST-summary + Action API geosearch — ingress om verneområder og nærmeste geotaggede sted (innsjø, topp, grend, elv) ved long-press</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.15: Komplett long-press-datakilder i About-siden
+
+About-sidens datakilde-liste manglet hele long-press-oppslags-settet. Lagt til Naturbase (Miljødirektoratet, verneområde-metadata), GBIF (observerte arter i polygonet), Artsdatabanken Norsk rødliste for arter 2021 (lokal CSV-bundel bygget inn ved CI og snittet mot GBIF-artene), og NiN naturtyper (Miljødirektoratet). Nå speiler lista alt appen faktisk henter — både kart-rendringen og long-press-fakta.
+
+---
+
 ## 2026-06-11 — v10.2.14: Wikipedia oppført som datakilde i About-siden
 
 About-sidens datakilde-liste for turkart nevnte ikke Wikipedia, selv om vi henter både verneområde-ingress (REST-summary) og nærmeste geotaggede sted (Action API geosearch) derfra ved long-press. Lagt til en Wikipedia-linje, og header-en justert fra «(alle CC BY 4.0 / ODbL)» til «(CC BY 4.0 / ODbL; Wikipedia CC BY-SA)» siden Wikipedia-tekst har en annen lisens enn de øvrige kildene.
