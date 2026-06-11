@@ -17,6 +17,14 @@
 
 const CATEGORIES = ['CR', 'EN', 'VU', 'NT']
 
+// Bundelen kan ha to formater: gammelt flatt (key → "EN") og nytt beriket
+// (key → { c, s, n?, g }). Les kategorien uavhengig av format. Det gamle formatet
+// teller fortsatt korrekt, men gir ingen artsnavn/-gruppe (graceful degradering til
+// CI har regenerert den berikede bundelen).
+function catOf(v) {
+  return typeof v === 'string' ? v : v?.c
+}
+
 // Lazy, én gang pr økt. null = ikke lastet ennå; {} = lastet men tom/utilgjengelig.
 let lookupPromise = null
 
@@ -52,7 +60,7 @@ export function countRedListed(speciesKeys, lookup) {
   let count = 0
   if (!Array.isArray(speciesKeys) || !lookup) return { count, byCategory }
   for (const key of speciesKeys) {
-    const cat = lookup[key]
+    const cat = catOf(lookup[key])
     if (cat && CATEGORIES.includes(cat)) {
       byCategory[cat] += 1
       count += 1
@@ -62,14 +70,50 @@ export function countRedListed(speciesKeys, lookup) {
 }
 
 /**
+ * Som countRedListed, men returnerer i tillegg selve artene med navn og artsgruppe
+ * (krever den berikede bundelen — gammelt flatt format gir tom `species`-liste).
+ * Ren funksjon — testbar uten nett.
+ *
+ * @param {number[]} speciesKeys
+ * @param {Record<string|number, string|{c:string,s?:string,n?:string,g?:string}>} lookup
+ * @returns {{ count: number, byCategory: Record<string, number>,
+ *             species: Array<{key:number,category:string,sci:string,vern:string,group:string}> }}
+ */
+export function collectRedListed(speciesKeys, lookup) {
+  const byCategory = { CR: 0, EN: 0, VU: 0, NT: 0 }
+  const species = []
+  let count = 0
+  if (!Array.isArray(speciesKeys) || !lookup) return { count, byCategory, species }
+  for (const key of speciesKeys) {
+    const v = lookup[key]
+    const cat = catOf(v)
+    if (cat && CATEGORIES.includes(cat)) {
+      byCategory[cat] += 1
+      count += 1
+      if (v && typeof v === 'object') {
+        species.push({
+          key: Number(key),
+          category: cat,
+          sci: v.s ?? '',
+          vern: v.n ?? '',
+          group: v.g ?? '',
+        })
+      }
+    }
+  }
+  return { count, byCategory, species }
+}
+
+/**
  * Bekvemmelighet: last bundelen og tell på én gang. Returnerer null når
  * bundelen er i dvale (ingen data) så kalleren kan skille «ingen rødlistede»
  * fra «rødliste utilgjengelig».
  * @param {number[]} speciesKeys
- * @returns {Promise<{ count: number, byCategory: Record<string, number> } | null>}
+ * @returns {Promise<{ count: number, byCategory: Record<string, number>,
+ *                     species: Array } | null>}
  */
 export async function summarizeRedListed(speciesKeys) {
   const lookup = await loadRedList()
   if (!lookup || Object.keys(lookup).length === 0) return null
-  return countRedListed(speciesKeys, lookup)
+  return collectRedListed(speciesKeys, lookup)
 }

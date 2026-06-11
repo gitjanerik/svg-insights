@@ -9,7 +9,10 @@
 // eneste vi trenger GBIF til er å oversette artsnavn → backbone speciesKey
 // (/species/match). Det skjer her ved bygg (CI), ikke ved klikk.
 //
-// Resultat: { gbif-backbone-speciesKey: "CR"|"EN"|"VU"|"NT" }.
+// Resultat: { gbif-backbone-speciesKey: { c: kategori, s: vitenskapsnavn,
+//             n?: norsk navn, g: artsgruppe } }. Navn + artsgruppe (Artsdatabankens
+// speciesGroup) følger med så klienten kan liste HVILKE arter og gruppere dem etter
+// dyre-/plantegruppe — ikke bare telle dem.
 //
 // OPPDATERING TIL NESTE UTGAVE (f.eks. 2027): erstatt tools/redlist-2021.csv med
 // den nye Artsdatabanken-eksporten (samme kolonner) — workflowen bygger om
@@ -75,42 +78,58 @@ function build() {
   const rows = parseCsv(readFileSync(SRC, 'utf-8'))
   const header = rows[0].map((h) => h.trim())
   const col = (name) => header.indexOf(name)
-  const ci = { name: col('scientificName'), cat: col('redListCategory'), area: col('assessmentArea') }
+  const ci = {
+    name: col('scientificName'),
+    vern: col('vernacularName'),
+    cat: col('redListCategory'),
+    group: col('speciesGroup'),
+    area: col('assessmentArea'),
+  }
   if (ci.name < 0 || ci.cat < 0) throw new Error(`Mangler kolonner i ${SRC} (header: ${header})`)
 
-  // Unike artsnavn (Norge) med høyeste rødliste-kategori.
-  const nameToCat = new Map()
+  // Unike artsnavn (Norge) med høyeste rødliste-kategori + norsk navn + artsgruppe.
+  const nameToRec = new Map()
   for (const r of rows.slice(1)) {
     if (ci.area >= 0 && r[ci.area] !== 'Norge') continue
     const cat = normCat(r[ci.cat])
     if (!KEEP.has(cat)) continue
     const name = (r[ci.name] || '').trim()
     if (!name) continue
-    const prev = nameToCat.get(name)
-    if (!prev || SEVERITY[cat] > SEVERITY[prev]) nameToCat.set(name, cat)
+    const prev = nameToRec.get(name)
+    if (!prev || SEVERITY[cat] > SEVERITY[prev.cat]) {
+      nameToRec.set(name, {
+        cat,
+        vern: ci.vern >= 0 ? (r[ci.vern] || '').trim() : '',
+        group: ci.group >= 0 ? (r[ci.group] || '').trim() : '',
+      })
+    }
   }
-  console.log(`Rødlistede arter (Norge, CR/EN/VU/NT) i kilden: ${nameToCat.size}`)
-  return nameToCat
+  console.log(`Rødlistede arter (Norge, CR/EN/VU/NT) i kilden: ${nameToRec.size}`)
+  return nameToRec
 }
 
 async function main() {
-  const nameToCat = build()
-  const names = [...nameToCat.keys()]
+  const nameToRec = build()
+  const names = [...nameToRec.keys()]
   const lookup = {}
   let matched = 0, nomatch = 0
-  const setKey = (key, cat) => {
+  const setKey = (key, rec, sci) => {
     const prev = lookup[key]
-    if (!prev || SEVERITY[cat] > SEVERITY[prev]) lookup[key] = cat
+    if (!prev || SEVERITY[rec.cat] > SEVERITY[prev.c]) {
+      const entry = { c: rec.cat, s: sci, g: rec.group }
+      if (rec.vern) entry.n = rec.vern
+      lookup[key] = entry
+    }
   }
   await mapLimit(names, CONCURRENCY, async (name) => {
     const key = await matchSpeciesKey(name)
     if (key == null) { nomatch++; return }
     matched++
-    setKey(key, nameToCat.get(name))
+    setKey(key, nameToRec.get(name), name)
   })
 
   const byCat = { CR: 0, EN: 0, VU: 0, NT: 0 }
-  for (const c of Object.values(lookup)) byCat[c]++
+  for (const v of Object.values(lookup)) byCat[v.c]++
   console.log(`GBIF-match: ${matched} treff, ${nomatch} uten treff.`)
   console.log(`Unike GBIF-nøkler i bundelen: ${Object.keys(lookup).length}`)
   console.log(`  CR ${byCat.CR}  EN ${byCat.EN}  VU ${byCat.VU}  NT ${byCat.NT}`)
