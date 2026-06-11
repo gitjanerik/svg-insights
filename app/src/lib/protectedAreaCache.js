@@ -113,7 +113,8 @@ export function naturtypePointKey(lat, lon) {
   return `naturtype:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
 }
 
-/** Nøkkel for nærmeste Wikipedia-sted (geosearch) på samme ~100 m-grid. */
+/** Nøkkel for nærmeste Wikipedia-sted (geosearch + navne-søk) på ~100 m-grid.
+ *  v2-navnerom: invaliderer gamle treff fra ren-geosearch-utgaven. */
 export function placePointKey(lat, lon) {
-  return `wikiplace:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
+  return `wikiplace2:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
 }

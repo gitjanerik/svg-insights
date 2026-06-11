@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.16: Nærmeste-sted-kortet finner innsjøer og navngitte features
+
+Det blå «nærmeste sted»-kortet bommet på store, navngitte features: long-press på Glitre (Finnemarkas største innsjø) viste nabohytta Svarvestolen (2,95 km), og Bondivannet viste «Bondi skole». To rotårsaker: (1) geosearch rangerer på ett PUNKT-koordinat, så en stor innsjøs senterpunkt taper mot et nærmere lite punkt; (2) norsk bestemt/ubestemt form og parentes-disambiguering brøt navne-matchingen («Bondivannet»≠«Bondivann», «Glitre»≠«Glitre (innsjø)»). Løsning: `wikiPlace.js` kombinerer nå geosearch med et navn-søk drevet av nærmeste kartlabel — det disambiguerer flere likelydende steder på koordinat-nærhet og foretrekker navne-treffet når geosearch ikke landet på det navngitte stedet. Ny `placeNameMatches` håndterer vann/vatn/tjern-varianter og bestemt form (-et/-ene), med koordinat-verifisering (≤ 8 km) som sikkerhetsnett. Flertydige (disambiguation) sider hoppes over. Cache-navnerommet er bumpet (`wikiplace2:`) så gamle feil-treff ikke serveres.
+
+---
+
 ## 2026-06-11 — v10.2.15: Komplett long-press-datakilder i About-siden
 
 About-sidens datakilde-liste manglet hele long-press-oppslags-settet. Lagt til Naturbase (Miljødirektoratet, verneområde-metadata), GBIF (observerte arter i polygonet), Artsdatabanken Norsk rødliste for arter 2021 (lokal CSV-bundel bygget inn ved CI og snittet mot GBIF-artene), og NiN naturtyper (Miljødirektoratet). Nå speiler lista alt appen faktisk henter — både kart-rendringen og long-press-fakta.

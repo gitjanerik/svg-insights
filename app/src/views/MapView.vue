@@ -2025,7 +2025,9 @@ watch(contextMenuPoint, async (p) => {
     const key = placePointKey(info.lat, info.lon)
     let place = await cacheGet(key)
     if (!place) {
-      place = await fetchNearestWikiPlace(info.lat, info.lon)
+      // Nærmeste kartlabel (f.eks. «Glitre», «Bondivannet») som navne-hint, så
+      // navn-søket kan disambiguere store features og bestemt/ubestemt form.
+      place = await fetchNearestWikiPlace(info.lat, info.lon, { hintName: info.place?.name })
       if (place) cacheSet(key, place, TTL.wiki)
     }
     if (token !== placeWikiToken) return

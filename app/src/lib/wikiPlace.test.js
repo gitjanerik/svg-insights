@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNearestPlace, haversineM } from './wikiPlace.js'
+import { parseNearestPlace, parseNamedNearest, placeNameMatches, haversineM } from './wikiPlace.js'
 
 describe('haversineM', () => {
   it('gir ~0 for samme punkt', () => {
@@ -64,5 +64,85 @@ describe('parseNearestPlace', () => {
     const r = parseNearestPlace(json, lat, lon)
     expect(r.distanceM).toBeNull()
     expect(r.title).toBe('Uten koord')
+  })
+
+  it('hopper over flertydige (disambiguation) sider', () => {
+    const json = { query: { pages: [
+      { index: 1, title: 'Glitre', pageprops: { disambiguation: '' },
+        coordinates: [{ lat: 59.911, lon: 10.301 }], fullurl: 'd' },
+      { index: 2, title: 'Glitre (innsjø)', extract: 'En innsjø.',
+        coordinates: [{ lat: 59.92, lon: 10.31 }], fullurl: 'u' },
+    ] } }
+    const r = parseNearestPlace(json, lat, lon)
+    expect(r.title).toBe('Glitre (innsjø)')
+  })
+})
+
+describe('placeNameMatches', () => {
+  it('matcher bestemt/ubestemt form for innsjøer (Bondivannet ~ Bondivann)', () => {
+    expect(placeNameMatches('Bondivannet', 'Bondivann')).toBe(true)
+    expect(placeNameMatches('Storvatnet', 'Storvatn')).toBe(true)
+    expect(placeNameMatches('Langtjernet', 'Langtjern')).toBe(true)
+    expect(placeNameMatches('Fjellet', 'Fjell')).toBe(true)
+  })
+  it('matcher parentes-disambiguering (Glitre ~ Glitre (innsjø))', () => {
+    expect(placeNameMatches('Glitre', 'Glitre (innsjø)')).toBe(true)
+  })
+  it('avviser urelaterte navn', () => {
+    expect(placeNameMatches('Bondivannet', 'Bondi skole')).toBe(false)
+    expect(placeNameMatches('Glitre', 'Svarvestolen')).toBe(false)
+  })
+})
+
+describe('parseNamedNearest', () => {
+  const lat = 59.86, lon = 10.06
+
+  it('velger tittel-matchende innen rekkevidde, disambiguerer på avstand', () => {
+    // To «Glitre»-innsjøer; vi står ved den ene.
+    const json = { query: { pages: [
+      { title: 'Glitre (innsjø)', extract: 'Innsjø i Finnemarka.',
+        coordinates: [{ lat: 59.865, lon: 10.065 }], fullurl: 'finnemarka' },
+      { title: 'Glitre (Nittedal)', extract: 'Innsjø ved Oslo.',
+        coordinates: [{ lat: 60.10, lon: 10.90 }], fullurl: 'nittedal' },
+    ] } }
+    const r = parseNamedNearest(json, lat, lon, 'Glitre')
+    expect(r.url).toBe('finnemarka')
+  })
+
+  it('matcher bestemt form mot ubestemt artikkel (Bondivannet → Bondivann)', () => {
+    const json = { query: { pages: [
+      { title: 'Bondivann', extract: 'Innsjø i Asker.',
+        coordinates: [{ lat: 59.8185, lon: 10.436 }], fullurl: 'bondivann' },
+      { title: 'Bondi skole (Asker)', extract: 'En barneskole.',
+        coordinates: [{ lat: 59.823, lon: 10.44 }], fullurl: 'skole' },
+    ] } }
+    const r = parseNamedNearest(json, 59.81806, 10.43574, 'Bondivannet')
+    expect(r.title).toBe('Bondivann')
+  })
+
+  it('godtar et entydig ugeotagget navne-treff (best effort)', () => {
+    const json = { query: { pages: [
+      { title: 'Bondivann', extract: 'Innsjø.', fullurl: 'b' },
+    ] } }
+    const r = parseNamedNearest(json, 59.81806, 10.43574, 'Bondivannet')
+    expect(r.title).toBe('Bondivann')
+    expect(r.distanceM).toBeNull()
+  })
+
+  it('avviser når flere ugeotaggede kandidater er flertydige', () => {
+    const json = { query: { pages: [
+      { title: 'Glitre (innsjø)', extract: 'a', fullurl: 'a' },
+      { title: 'Glitre (Nittedal)', extract: 'b', fullurl: 'b' },
+    ] } }
+    expect(parseNamedNearest(json, lat, lon, 'Glitre')).toBeNull()
+  })
+
+  it('avviser geotaggede treff utenfor maks-avstand', () => {
+    const json = { query: { pages: [
+      { title: 'Glitre (innsjø)', extract: 'langt unna',
+        coordinates: [{ lat: 61.0, lon: 11.0 }], fullurl: 'fjern' },
+    ] } }
+    // Eneste kandidat, men >8 km unna og geotagget → ikke entydig-ugeotagget-regel.
+    expect(parseNamedNearest(json, lat, lon, 'Glitre')).toBeNull()
   })
 })
