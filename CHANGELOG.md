@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-06-11 — v10.2.7: CurveInvaders på sentrert kvadratisk utsnitt + relieff av
+## 2026-06-11 — v10.2.8: GPS-spor overlever auto-kart-bytte + kant-varsel
+
+GPS-sporing stanset stille hver gang auto-kart lastet inn et nytt utsnitt, og sporet ble ikke skikkelig lagret. Årsaken var at både GPS-en og spor-opptakeren er knyttet til MapView-instansen, som rives ned når navigasjonen bytter kart-flis — det aktive opptaket døde med den gamle instansen og fortsatte aldri på den nye. Nå avsluttes opptaket deterministisk rett før byttet (sporet finaliseres og lagres på forrige flis, som er beskyttet mot opprydding), og det nye kartet gjenopptar opptaket automatisk som et nytt spor-segment. Et sammenhengende gåtur deles dermed i ett segment per flis — iboende i at spor lagres per kart. I tillegg får brukeren nå et diskret varsel når GPS-prikken nærmer seg kartkanten og auto-kart er av, med én-trykks «Slå på auto-kart» så nye utsnitt lages automatisk når man går videre.
+
+---
 
 CurveInvaders ble designet for kvadratiske kart, men A-format (portrett, for A4-utskrift) er nå default for nye turkart. Midlertidig spiller spillet derfor på det STØRSTE MULIGE SENTRERTE KVADRATISKE utsnittet i stedet for hele rektangelet. Løsningen rører ikke fysikk-motoren (`useCurveBall.js`): en ny `cropDem()` i `demSampling.js` klipper DEM-en til det sentrerte kvadratet (spillet jobber i 0..Sm-koord mot utklippet), `CurveBallLayer` translaterer alt innholdet tilbake til kartets senter via en `offset`-prop, `updateMapRect` regner flipper-rektangelet som kvadratets skjerm-rekt, og kart-annoteringer flyttes inn i spill-koord (de utenfor kvadratet droppes). Offset-en snappes til DEM-celle-grenser så fysikk-DEM, render-translate og annoterings-shift refererer nøyaktig samme grid-celler — Red Curves-konturene og ball-fysikken flukter eksakt med kartets eget kontur-lag/terreng. Kvadratiske kart får offset (0,0) → byte-identisk med før. I tillegg: relieff (hillshade) slås MIDLERTIDIG helt av mens spillet kjører for et renere spillbrett — brukerens valgte relieff-nivå røres ikke og restaureres når spillet avsluttes.
 
