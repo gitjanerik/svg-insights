@@ -182,11 +182,21 @@ const cbViewBox = computed(() => {
 const cbSquare = computed(() => {
   if (!meta.value) return null
   const Sm = Math.min(meta.value.widthM, meta.value.heightM)
-  return {
-    Sm,
-    offX: (meta.value.widthM - Sm) / 2,
-    offY: (meta.value.heightM - Sm) / 2,
+  let offX = (meta.value.widthM - Sm) / 2
+  let offY = (meta.value.heightM - Sm) / 2
+  // ESSENSIELT: snap offset-en til DEM-celle-grenser. cropDem klipper på hele
+  // celler (round), så hvis render-offset-en var den eksakte geometriske
+  // midten kunne fysikk-DEM og det tegnede spill-laget avvike med opptil en
+  // halv celle (~12,5 m på 25 m-DTM) — da flukter ikke Red Curves-konturene
+  // og ball-fysikken med kartets eget kontur-lag/terreng. Med snappet offset
+  // refererer DEM-utklipp, render-translate og annoterings-shift NØYAKTIG
+  // samme grid-celler, og kurvene ligger flush med terrenget.
+  const t = storedDem.value?.transform
+  if (t?.pixelWidth > 0 && t?.pixelHeight > 0) {
+    offX = Math.round(offX / t.pixelWidth) * t.pixelWidth
+    offY = Math.round(offY / t.pixelHeight) * t.pixelHeight
   }
+  return { Sm, offX, offY }
 })
 const cbOffset = computed(() =>
   cbSquare.value ? { x: cbSquare.value.offX, y: cbSquare.value.offY } : { x: 0, y: 0 })
