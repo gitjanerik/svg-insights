@@ -3,6 +3,7 @@ import {
   sampleElevation,
   sampleGradient,
   findHighestPoint,
+  cropDem,
   packDem,
   unpackDem,
 } from './demSampling.js'
@@ -156,6 +157,47 @@ describe('findHighestPoint', () => {
   it('returns null if all values are noData', () => {
     const dem = makeDem([-9999, -9999, -9999, -9999], { cols: 2, rows: 2 })
     expect(findHighestPoint(dem)).toBeNull()
+  })
+})
+
+describe('cropDem', () => {
+  // 4×4-grid, pixelWidth=10 → 40×40 m kart.
+  const full = makeDem([
+    0, 1, 2, 3,
+    4, 5, 6, 7,
+    8, 9, 10, 11,
+    12, 13, 14, 15,
+  ])
+
+  it('extracts a centered 2×2 sub-grid with its own origin', () => {
+    // Sentrert 20×20 m kvadrat → offset (10,10), 2×2 celler fra (col1,row1).
+    const sub = cropDem(full, 10, 10, 20)
+    expect(sub.cols).toBe(2)
+    expect(sub.rows).toBe(2)
+    expect(Array.from(sub.data)).toEqual([5, 6, 9, 10])
+    // sample(0,0) på utklippet == sample(10,10) på kilden == 5.
+    expect(sampleElevation(sub, 0, 0)).toBe(5)
+    expect(sampleElevation(full, 10, 10)).toBe(5)
+  })
+
+  it('keeps pixel size so meter-coords still map correctly', () => {
+    const sub = cropDem(full, 10, 10, 20)
+    expect(sub.transform.pixelWidth).toBe(10)
+    expect(sub.transform.pixelHeight).toBe(10)
+    // sample(10,10) på utklippet == sample(20,20) på kilden == 10.
+    expect(sampleElevation(sub, 10, 10)).toBe(10)
+  })
+
+  it('clamps the window to the grid extent', () => {
+    // Be om mer enn kartet rommer → klippes til tilgjengelige celler.
+    const sub = cropDem(full, 20, 20, 100)
+    expect(sub.cols).toBe(2)
+    expect(sub.rows).toBe(2)
+    expect(Array.from(sub.data)).toEqual([10, 11, 14, 15])
+  })
+
+  it('returns the source DEM unchanged when the window degenerates', () => {
+    expect(cropDem(full, 40, 40, 10)).toBe(full)
   })
 })
 
