@@ -18,6 +18,7 @@
 import { fetchOverpass, bboxFromCenter, viewportAspect } from './mapBuilder.js'
 import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
+import { fetchNveLakePolygons } from './nveLakeFetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
@@ -246,6 +247,14 @@ export async function buildMapFromCenter({
     console.warn('N50-vann ikke tilgjengelig:', e.message)
     return []
   }))
+  // NVE innsjø-flater: CORS-pålitelig autoritativ innlands-vannkilde. Brukes
+  // når N50-WFS svikter klient-side (vanlig på mobil) — uten den faller vi
+  // tilbake til rå OSM-vann som flommer ut over land på store norske innsjøer
+  // (Røssvatnet, Namsvatnet osv.). Feiler aldri hardt → [].
+  const nveLakesP = timeAsync('nve', fetchNveLakePolygons(bbox, { signal }).catch(e => {
+    console.warn('NVE-innsjø ikke tilgjengelig:', e?.message ?? e)
+    return []
+  }))
 
   // ── Kyst-deteksjon: DEM-havflate OG ekte saltvann i OSM ───────────────
   // DEM-en alene kan ikke skille sjø fra en innlands-vannflate (begge ~0 m).
@@ -329,7 +338,7 @@ export async function buildMapFromCenter({
 
   // Full bygging: vent på alle kilder, slå sammen, bygg full SVG (worker).
   const assembleAndBuildFull = async () => {
-    const [osmData, n50Water, dem, sjokart] = await Promise.all([overpassP, n50P, demPromise, sjokartPromise])
+    const [osmData, n50Water, nveLakes, dem, sjokart] = await Promise.all([overpassP, n50P, nveLakesP, demPromise, sjokartPromise])
     const sjokartElements = sjokartToElements(sjokart)
 
     const n50HasFreshwater = n50Water.some(el =>
@@ -339,6 +348,11 @@ export async function buildMapFromCenter({
     const n50HasSea = n50Water.some(el =>
       el.tags?.water === 'sea' || el.tags?.salt === 'yes'
     )
+    // NVE leverer kun innsjø-FLATER (ikke elver/sjø). Er den tilgjengelig, er
+    // den autoritativ for ferskvanns-POLYGONER → undertrykk OSM-innsjøer helt
+    // (også navngitte: nettopp store, navngitte innsjøer som Røssvatnet er der
+    // mistagget og flommer). OSM-elver (waterway) beholdes — NVE har dem ikke.
+    const nveHasLakes = nveLakes.length > 0
 
     const elements = osmData.elements.filter(el => {
       const tags = el.tags ?? {}
@@ -347,6 +361,8 @@ export async function buildMapFromCenter({
                              tags.place === 'sea' || tags.place === 'ocean'
       if (isWaterPolygon) {
         if (isOsmWaterSalty(tags)) return !n50HasSea
+        // Ferskvanns-polygon: NVE (eller N50) er autoritativ når tilgjengelig.
+        if (nveHasLakes) return false
         if (tags.name) return true
         return !n50HasFreshwater
       }
@@ -356,10 +372,12 @@ export async function buildMapFromCenter({
       return true
     })
     if (n50Water.length > 0) elements.push(...n50Water)
+    if (nveLakes.length > 0) elements.push(...nveLakes)
     if (sjokartElements.length > 0) elements.push(...sjokartElements)
 
     const sourceParts = ['OSM']
     if (n50Water.length > 0) sourceParts.push(`N50 (${n50Water.length} vann${n50HasSea ? ', m/sjø' : ''})`)
+    if (nveLakes.length > 0) sourceParts.push(`NVE (${nveLakes.length} innsjø)`)
     if (sjokartElements.length > 0) sourceParts.push(`Sjøkart (${sjokartElements.length} dybde-features)`)
     sourceParts.push('DEM-sjø (NHM_DTM_25832)')
     const source = sourceParts.join(' + ')
@@ -386,7 +404,7 @@ export async function buildMapFromCenter({
       .filter(k => ti[k] != null).map(k => `${k} ${ti[k]}ms`).join(', ')
     logPerf(
       `[perf] kart ${(halfKm * 2).toFixed(1)}km total ${Math.round(_now() - _t0)}ms | ` +
-      `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | dem ${marks.dem ?? '-'} | ` +
+      `overpass ${marks.overpass ?? '-'} | n50 ${marks.n50 ?? '-'} | nve ${marks.nve ?? '-'} | dem ${marks.dem ?? '-'} | ` +
       `sjøkart ${marks['sjøkart'] ?? '-'} | buildSvg ${marks.buildSvg ?? '-'}${inner ? ` (${inner})` : ''}` +
       `${terrainFirst ? ' [terreng-først]' : ''} [ms]`
     )

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractLakeFromAttributes, pickLakeFromIdentify } from './nveLakeFetcher.js'
+import { extractLakeFromAttributes, pickLakeFromIdentify, esriPolygonToRelation, nveIdentifyToWater } from './nveLakeFetcher.js'
 
 describe('extractLakeFromAttributes — NVE innsjø-data', () => {
   it('plukker hoyde + navn fra typiske NVE-felt', () => {
@@ -115,5 +115,59 @@ describe('pickLakeFromIdentify — ArcGIS identify-respons', () => {
     expect(pickLakeFromIdentify({ results: [{ attributes: { navn: 'X' } }] })).toBeNull()
     expect(pickLakeFromIdentify({ results: [] })).toBeNull()
     expect(pickLakeFromIdentify({})).toBeNull()
+  })
+})
+
+describe('esriPolygonToRelation — NVE innsjø-flate → OSM-relation', () => {
+  // Esri-konvensjon: ytre ring CW (negativt shoelace i lon/lat), hull CCW.
+  const outerCW = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]      // klokka → outer
+  const innerCCW = [[0.2, 0.2], [0.4, 0.2], [0.4, 0.4], [0.2, 0.4], [0.2, 0.2]] // mot klokka → hull
+
+  it('lager en natural=water-relation med _source=nve fra én ytre ring', () => {
+    const el = esriPolygonToRelation({ rings: [outerCW] }, { navn: 'Røssvatnet' }, '7')
+    expect(el.type).toBe('relation')
+    expect(el.id).toBe('nve-7')
+    expect(el._source).toBe('nve')
+    expect(el.tags).toEqual({ natural: 'water', name: 'Røssvatnet' })
+    expect(el.members).toHaveLength(1)
+    expect(el.members[0].role).toBe('outer')
+    // [lon,lat] → {lat,lon}
+    expect(el.members[0].geometry[1]).toEqual({ lat: 1, lon: 0 })
+  })
+
+  it('klassifiserer hull (CCW) som inner og ytre (CW) som outer', () => {
+    const el = esriPolygonToRelation({ rings: [outerCW, innerCCW] }, {}, '0')
+    const roles = el.members.map(m => m.role)
+    expect(roles).toContain('outer')
+    expect(roles).toContain('inner')
+    expect(el.tags.name).toBeUndefined()
+  })
+
+  it('returnerer null for tom/ugyldig geometri', () => {
+    expect(esriPolygonToRelation({}, {}, '0')).toBeNull()
+    expect(esriPolygonToRelation({ rings: [] }, {}, '0')).toBeNull()
+    expect(esriPolygonToRelation({ rings: [[[0, 0], [1, 1]]] }, {}, '0')).toBeNull() // < 4 pkt
+  })
+})
+
+describe('nveIdentifyToWater — identify-respons → vann-elementer', () => {
+  it('beholder kun polygon-resultater (dropper linjer/punkt)', () => {
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [[[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]] }, attributes: { navn: 'A' } },
+        { layerName: 'Dybdekontur', geometry: { paths: [[[0, 0], [1, 1]]] }, attributes: {} },     // linje
+        { layerName: 'Dybdepunkt', geometry: { x: 0.5, y: 0.5 }, attributes: {} },                  // punkt
+        { layerName: 'Magasin', geometry: { rings: [[[2, 2], [2, 3], [3, 3], [3, 2], [2, 2]]] }, attributes: { magnavn: 'B' } },
+      ],
+    }
+    const els = nveIdentifyToWater(json)
+    expect(els).toHaveLength(2)
+    expect(els.every(e => e.tags.natural === 'water' && e._source === 'nve')).toBe(true)
+  })
+
+  it('returnerer tom array for tom/ugyldig respons', () => {
+    expect(nveIdentifyToWater({})).toEqual([])
+    expect(nveIdentifyToWater({ results: [] })).toEqual([])
+    expect(nveIdentifyToWater(null)).toEqual([])
   })
 })

@@ -175,6 +175,145 @@ export function pickLakeFromIdentify(json) {
   return buildLake(merged)
 }
 
+// ── Innsjø-POLYGONER for et bbox (autoritativ innlands-vannkilde) ────────
+//
+// N50 Innsjø-WFS er den «riktige» innlands-vannkilden, men den feiler ofte
+// CORS klient-side (returnerer 0 features på mobil) — da faller kart-pipelinen
+// tilbake til rå OSM `natural=water`, og store norske innsjøer (Røssvatnet,
+// Namsvatnet, Limingen) er der ofte mistagget/feil-assemblet slik at vannet
+// flommer ut over land. NVEs ArcGIS-tjeneste er derimot CORS-vennlig (samme
+// tjeneste som punkt-oppslaget over bruker), så vi henter innsjø-FLATENE
+// derfra og bruker dem i stedet. Geometrien kommer fra `identify` med en
+// envelope-geometri + `returnGeometry=true` — ingen hardkodet lag-id (robust
+// mot skjema-endringer, samme filosofi som punkt-oppslaget).
+
+// Shoelace signed area for en [lon,lat]-ring. Positiv = mot klokka (CCW).
+// Esri-konvensjon: ytre ringer er MED klokka (CW → negativ), hull er CCW.
+function ringSignedArea(ring) {
+  let a = 0
+  for (let i = 0, n = ring.length; i < n; i++) {
+    const [x1, y1] = ring[i]
+    const [x2, y2] = ring[(i + 1) % n]
+    a += x1 * y2 - x2 * y1
+  }
+  return a / 2
+}
+
+// Konverter én Esri-polygon-geometri (`{ rings: [...] }`) til et OSM-aktig
+// multipolygon-`relation` med outer/inner-ringer. Rendring i buildSvg bruker
+// `fill-rule="evenodd"` på outer+inner samlet, så hull (øyer i innsjøen)
+// virker uavhengig av eksakt ring-paring.
+export function esriPolygonToRelation(geom, attrs, idBase) {
+  const rings = geom?.rings
+  if (!Array.isArray(rings) || rings.length === 0) return null
+  const members = []
+  let anyOuter = false
+  for (const r of rings) {
+    // Esri-ringer er lukket (første == siste) → minst 4 punkter for et triangel.
+    if (!Array.isArray(r) || r.length < 4) continue
+    const role = ringSignedArea(r) < 0 ? 'outer' : 'inner'
+    if (role === 'outer') anyOuter = true
+    members.push({
+      type: 'way',
+      role,
+      geometry: r.map(([lon, lat]) => ({ lat, lon })),
+    })
+  }
+  if (members.length === 0) return null
+  // Fant ingen CW-ring (uventet orientering) → behandle alle som outer.
+  // evenodd-fyllingen gjengir uansett hull korrekt.
+  if (!anyOuter) for (const m of members) m.role = 'outer'
+
+  const navn = scanAttributes(attrs ?? {}).navn ?? null
+  const tags = { natural: 'water' }
+  if (navn) tags.name = navn
+  return { type: 'relation', id: `nve-${idBase}`, members, tags, _source: 'nve' }
+}
+
+/**
+ * Parse en ArcGIS `identify`-respons til OSM-aktige vann-`relation`-elementer.
+ * Kun resultater med polygon-geometri (`geometry.rings`) beholdes — dybde-
+ * konturer (linjer) og dybdepunkt (punkt) faller bort. Alle lag i
+ * Innsjodatabase2 er innsjø-relaterte (Innsjø-flate + Magasin), så polygon-
+ * filteret alene gir vann-flater.
+ * @param {{ results?: Array<{ geometry?: object, attributes?: object }> }} json
+ * @returns {Array} OSM-aktige relation-elementer
+ */
+export function nveIdentifyToWater(json) {
+  const results = json?.results
+  if (!Array.isArray(results)) return []
+  const els = []
+  let i = 0
+  for (const r of results) {
+    if (!r?.geometry?.rings) continue
+    const el = esriPolygonToRelation(r.geometry, r.attributes, String(i++))
+    if (el) els.push(el)
+  }
+  return els
+}
+
+function buildIdentifyBboxUrl(base, bbox) {
+  const { south, west, north, east } = bbox
+  const env = `${west},${south},${east},${north}`
+  const params = new URLSearchParams({
+    f: 'json',
+    geometry: env,
+    geometryType: 'esriGeometryEnvelope',
+    sr: '4326',                  // gjelder både input- og output-geometri i identify
+    layers: 'all',
+    tolerance: '2',
+    mapExtent: env,
+    imageDisplay: '800,800,96',
+    returnGeometry: 'true',
+    // Generaliser geometrien (~9 m ved 60° N) — vi DP-forenkler uansett i
+    // buildSvg, og dette holder payload-en nede for store innsjøer.
+    maxAllowableOffset: '0.00008',
+  })
+  return `${base}/identify?${params}`
+}
+
+/**
+ * Hent innsjø-FLATER (polygoner) for et WGS84-bbox fra NVE Innsjødatabase.
+ * Returnerer OSM-aktige `natural=water`-relations (klare for buildSvg) eller
+ * en tom array (ingen innsjøer i bbox, eller tjenesten utilgjengelig). Feiler
+ * aldri hardt — verste fall er dagens oppførsel (ingen NVE-vann → OSM-fallback).
+ *
+ * @param {{south:number,west:number,north:number,east:number}} bbox  WGS84
+ * @param {{ signal?: AbortSignal, timeoutMs?: number }} [opts]
+ * @returns {Promise<Array>}
+ */
+export async function fetchNveLakePolygons(bbox, opts = {}) {
+  if (!bbox || ![bbox.south, bbox.west, bbox.north, bbox.east].every(Number.isFinite)) return []
+  const { signal, timeoutMs = 8000 } = opts
+
+  for (const base of NVE_INNSJO_ENDPOINTS) {
+    const ctrl = new AbortController()
+    const onAbort = () => ctrl.abort()
+    if (signal) {
+      if (signal.aborted) return []
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const res = await fetch(buildIdentifyBboxUrl(base, bbox), { signal: ctrl.signal })
+      if (!res.ok) continue
+      const json = await res.json()
+      const els = nveIdentifyToWater(json)
+      // Gyldig respons (også tom) → svaret er autoritativt for dette endpoint-et;
+      // ikke prøv neste (ville gitt samme svar).
+      return els
+    } catch (e) {
+      if (signal?.aborted) return []
+      console.warn(`[NVE] Innsjø-polygon-oppslag mot ${base} feilet: ${e?.message ?? e}`)
+      // prøv neste endpoint
+    } finally {
+      clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+    }
+  }
+  return []
+}
+
 function buildIdentifyUrl(base, lat, lon) {
   // Liten map-extent rundt punktet (~±0.002° ≈ 220 m) med punktet i sentrum,
   // så identify-tolerans treffer innsjøen punktet ligger i.
