@@ -59,6 +59,7 @@ function pageToResult(p, lat, lon) {
   const coord = Array.isArray(p.coordinates) ? p.coordinates[0] : null
   const hasCoord = coord && Number.isFinite(coord.lat) && Number.isFinite(coord.lon)
   return {
+    source: 'wikipedia',
     title: p.title,
     extract: trimExtract(p.extract),
     url: p.fullurl || p.canonicalurl || null,

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.18: Store norske leksikon som foretrukket kilde ved navne-oppslag
+
+Long-press-oppslag bruker nå Store norske leksikon (SNL) som foretrukket kilde, med Wikipedia som fallback. Ny `lib/snlFetcher.js` slår opp navn mot SNLs åpne søke-API (`first_two_sentences` som ren ingress, `first_image_url` som bilde), filtrert til SNL-verket (`encyclopedia_id=1`) og med per-artikkel lisens-sjekk (`snlLicenseIsFree`) så ingress-tekst kun gjengis når lisensen er fri — ellers tittel + lenke. Verneområde-ingressen prøver SNL før Wikipedia. På nærmeste-sted-kortet identifiserer og lokaliserer Wikipedia-geosearch fortsatt featuren (koordinat-trygt), mens SNL leverer teksten/lenken for det bekreftede navnet og avstanden beholdes fra Wikipedia-ankeret; har Wikipedia ingen treff men kartet et stedsnavn, slås navnet opp i SNL som siste utvei. Kilde-etiketten på lenkene er nå dynamisk («Store norske leksikon ↗» / «Wikipedia ↗»). SNL er ført opp som datakilde i About (CC BY-SA). Degraderer trygt: er SNL utilgjengelig/CORS-blokkert, faller alt tilbake til Wikipedia. Cache-navnerom bumpet (`wiki2:` / `wikiplace3:`).
+
+---
+
 ## 2026-06-11 — v10.2.17: Flere norske terreng-/vann-ord i stedsnavn-matchingen
 
 Utvidet `placeNameMatches` (nærmeste-sted-kortet) med flere norske terreng-/vann-ord i bestemt/ubestemt og dialektform, så de kollapser til samme stamme ved oppslag: tjern/tjernet/tjønna, putt/putten/pytt, sjø/sjøen, myr/myra/myren, bekk/bekken, elv/elven/elva (i tillegg til vann/vatn fra før). Slik treffer kortet f.eks. «Storelva»~«Storelv» og «Bjørnemyra»~«Bjørnemyr» selv om Wikipedia-tittelen står i annen form. Koordinat-verifisering (≤ 8 km) er fortsatt sikkerhetsnettet.

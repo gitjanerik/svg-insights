@@ -87,6 +87,7 @@ async function fetchSummaryFrom(host, title, signal, requireVernHint = false) {
     return null
   }
   return {
+    source: 'wikipedia',
     title: json.title ?? title,
     extract,
     url: json.content_urls?.desktop?.page ?? `${host}/wiki/${encodeURIComponent(title)}`,

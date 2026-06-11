@@ -83,7 +83,7 @@ const TABS = [
           ren SVG med mm-baserte streker — ingen kart-engine.
         </p>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (CC BY 4.0 / ODbL; Wikipedia CC BY-SA)</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (CC BY 4.0 / ODbL; Wikipedia &amp; SNL CC BY-SA)</h4>
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn, øy-overlay</li>
           <li><strong class="text-white/75">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
@@ -95,7 +95,8 @@ const TABS = [
           <li><strong class="text-white/75">GBIF</strong> via Occurrence API — arter observert innenfor verneområde-polygonet</li>
           <li><strong class="text-white/75">Artsdatabanken — Norsk rødliste for arter 2021</strong> — lokal CSV-bundel bygget inn ved CI og snittet mot GBIF-artene (long-press på verneområde)</li>
           <li><strong class="text-white/75">NiN naturtyper (Miljødirektoratet)</strong> via ArcGIS REST — kartlagte naturtyper ved long-press</li>
-          <li><strong class="text-white/75">Wikipedia</strong> via REST-summary + Action API geosearch — ingress om verneområder og nærmeste geotaggede sted (innsjø, topp, grend, elv) ved long-press</li>
+          <li><strong class="text-white/75">Store norske leksikon</strong> via snl.no API — foretrukket ingress om verneområder og navngitte steder ved long-press</li>
+          <li><strong class="text-white/75">Wikipedia</strong> via REST-summary + Action API geosearch — nærmeste geotaggede sted (innsjø, topp, grend, elv) og fallback-ingress ved long-press</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 

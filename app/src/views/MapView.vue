@@ -35,8 +35,9 @@ import { fetchNaturtypes } from '../lib/naturtypeFetcher.js'
 import { fetchSpeciesSummary } from '../lib/gbifSpecies.js'
 import { summarizeRedListed } from '../lib/redListNo.js'
 import { groupSpecies } from '../lib/speciesGroups.js'
-import { fetchWikiSummary } from '../lib/wikiSummary.js'
-import { fetchNearestWikiPlace } from '../lib/wikiPlace.js'
+import { fetchWikiSummary, titleMatches } from '../lib/wikiSummary.js'
+import { fetchNearestWikiPlace, placeNameMatches } from '../lib/wikiPlace.js'
+import { fetchSnlSummary } from '../lib/snlFetcher.js'
 import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
@@ -2028,6 +2029,22 @@ watch(contextMenuPoint, async (p) => {
       // Nærmeste kartlabel (f.eks. «Glitre», «Bondivannet») som navne-hint, så
       // navn-søket kan disambiguere store features og bestemt/ubestemt form.
       place = await fetchNearestWikiPlace(info.lat, info.lon, { hintName: info.place?.name })
+      if (place) {
+        // SNL foretrekkes for TEKSTEN: Wikipedia-geosearch har allerede
+        // identifisert og lokalisert featuren (koordinat-trygt), så her bytter vi
+        // bare inn SNLs ingress/lenke for det bekreftede navnet og BEHOLDER
+        // avstanden fra Wikipedia-ankeret. SNL har ingen koordinater.
+        const snl = await fetchSnlSummary(place.title, { accept: placeNameMatches })
+        if (snl) {
+          place = { ...place, source: 'snl', title: snl.title, extract: snl.extract,
+                    url: snl.url, thumbnail: snl.thumbnail ?? place.thumbnail }
+        }
+      } else if (info.place?.name) {
+        // Ingen Wikipedia-treff i nærheten, men vi har et stedsnavn → siste utvei:
+        // slå opp navnet i SNL (uten avstand, ingen koordinat-verifisering).
+        const snl = await fetchSnlSummary(info.place.name, { accept: placeNameMatches })
+        if (snl) place = { ...snl, lat: null, lon: null, distanceM: null }
+      }
       if (place) cacheSet(key, place, TTL.wiki)
     }
     if (token !== placeWikiToken) return
@@ -2047,6 +2064,11 @@ const placeWikiCard = computed(() => {
   if (verneUrl && place.url && verneUrl === place.url) return null
   return place
 })
+
+// Kilde-etikett for lenke-/status-tekst. Oppslag kan komme fra SNL (foretrukket)
+// eller Wikipedia (fallback). Default Wikipedia for gamle cachede objekter uten kilde.
+const SOURCE_LABEL = { snl: 'Store norske leksikon', wikipedia: 'Wikipedia' }
+function sourceLabel(s) { return SOURCE_LABEL[s] ?? 'Wikipedia' }
 
 // Verdi-klasse for naturtype-badge: «svært høy»/«høy»/«svært viktig» → sterk
 // grønn, «moderat»/«viktig» → gulgrønn, «lav»/«lokalt» → dempet. Ukjent → nøytral.
@@ -2089,11 +2111,13 @@ async function loadVerneSpecies(token, area, lat, lon) {
 async function loadVerneWiki(token, area) {
   const navn = area?.navn
   if (!navn) { patchVerne(token, { wiki: null }); return }
-  const key = `wiki:${navn}|${area.verneform ?? ''}`
+  const key = `wiki2:${navn}|${area.verneform ?? ''}`   // v2: invaliderer pre-SNL cache
   try {
     let wiki = await cacheGet(key)
     if (!wiki) {
-      wiki = await fetchWikiSummary(navn, { verneform: area.verneform })
+      // SNL foretrekkes; Wikipedia som fallback.
+      wiki = await fetchSnlSummary(navn, { accept: titleMatches })
+        ?? await fetchWikiSummary(navn, { verneform: area.verneform })
       if (wiki) cacheSet(key, wiki, TTL.wiki)
     }
     patchVerne(token, { wiki: wiki ?? null })
@@ -6121,8 +6145,8 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <!-- Wikipedia-ingress -->
-              <div v-if="verneQuery.wiki && verneQuery.wiki !== 'loading'"
+              <!-- Leksikon-ingress (SNL foretrukket, Wikipedia fallback) -->
+              <div v-if="verneQuery.wiki && verneQuery.wiki !== 'loading' && verneQuery.wiki.extract"
                    class="text-[12px] text-emerald-50/80 leading-snug border-t border-emerald-400/15 pt-2">
                 {{ verneQuery.wiki.extract }}
               </div>
@@ -6136,19 +6160,20 @@ onUnmounted(() => {
                 <a v-if="verneQuery.wiki && verneQuery.wiki !== 'loading'" :href="verneQuery.wiki.url"
                    target="_blank" rel="noopener"
                    class="px-2.5 py-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/10 text-emerald-100 text-[11px]">
-                  Wikipedia ↗
+                  {{ sourceLabel(verneQuery.wiki.source) }} ↗
                 </a>
                 <span v-else
                    class="px-2.5 py-1.5 rounded-lg border border-emerald-400/15 bg-emerald-500/5 text-emerald-100/35 text-[11px] cursor-not-allowed"
-                   :title="verneQuery.wiki === 'loading' ? 'Søker i Wikipedia …' : 'Ingen Wikipedia-artikkel funnet'">
-                  Wikipedia {{ verneQuery.wiki === 'loading' ? '…' : '—' }}
+                   :title="verneQuery.wiki === 'loading' ? 'Søker i leksika …' : 'Ingen leksikon-artikkel funnet'">
+                  Oppslag {{ verneQuery.wiki === 'loading' ? '…' : '—' }}
                 </span>
               </div>
             </div>
           </div>
 
-          <!-- Nærmeste sted med Wikipedia-artikkel (geosearch) — uavhengig av
-               verneområde. Fakta om innsjø/fjelltopp/grend/elv/stedsnavn. -->
+          <!-- Nærmeste sted med leksikon-artikkel (Wikipedia-geosearch finner og
+               lokaliserer; SNL foretrukket for tekst) — uavhengig av verneområde.
+               Fakta om innsjø/fjelltopp/grend/elv/stedsnavn. -->
           <div v-if="placeWikiCard" class="px-4 pt-3">
             <div class="rounded-xl border border-sky-400/25 bg-sky-500/8 p-3 space-y-2">
               <div class="flex items-start gap-2">
@@ -6172,7 +6197,7 @@ onUnmounted(() => {
               <div v-if="placeWikiCard.url" class="pt-0.5">
                 <a :href="placeWikiCard.url" target="_blank" rel="noopener"
                    class="inline-block px-2.5 py-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 text-sky-100 text-[11px]">
-                  Wikipedia ↗
+                  {{ sourceLabel(placeWikiCard.source) }} ↗
                 </a>
               </div>
             </div>
