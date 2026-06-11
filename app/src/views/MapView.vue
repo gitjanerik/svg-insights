@@ -719,10 +719,15 @@ watch([scale, translateX, translateY, rotation], clampPan)
 // re-tessellerer ikke i device-piksler per frame, og kartet får ~3-5×
 // frame-rate-gevinst på store kart. Strokene "skalerer med" mens du zoomer
 // (visuelt OK i 200 ms), og snapper tilbake til riktig bredde når gesten er over.
-watch(isGesturing, (g) => {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  if (g) svg.classList.add('is-zooming')
+// Gest-perf-modus (.is-zooming + relieff-skjuling + solid dash). v10.3.0:
+// gjenopprettingen ved gest-slutt utsettes ~120 ms så den dyre snap-back-
+// repainten (non-scaling-stroke-retessellering + dash + relieff-blend) ikke
+// lander på samme frame som compositorens siste re-raster — og en ny gest
+// innen vinduet kansellerer den helt (rask pinch-pinch-pinch betaler én
+// gjenoppretting, ikke tre).
+let gestureRestoreTimer = null
+function setGesturePerfMode(svg, on) {
+  if (on) svg.classList.add('is-zooming')
   else svg.classList.remove('is-zooming')
   // v9.1.14 — Perf: skjul relieff-bildet under aktiv gest. Et fullkart-
   // <image> med mix-blend-mode må re-komponeres mot bakgrunnen hver frame
@@ -732,7 +737,7 @@ watch(isGesturing, (g) => {
   // OG mosaikk-spøkelsenes relieff (image[data-ghost-relief]), ellers «henger»
   // nabofliser igjen med relieff mens aktiv-flisa flater ut → visuell ulikhet.
   const reliefImgs = svg.querySelectorAll('#hillshade-layer, #ghost-tiles image[data-ghost-relief]')
-  for (const hs of reliefImgs) hs.style.visibility = g ? 'hidden' : ''
+  for (const hs of reliefImgs) hs.style.visibility = on ? 'hidden' : ''
   // v9.1.15 — Perf: stiplet strek (sti 505-508, gjerde/kraft, jernbane osv)
   // er den desidert dyreste å rastere på mobil-GPU under gest — på et 10 km-
   // kart blir den merge-de sti-pathen tusenvis av dash-segmenter som
@@ -741,7 +746,22 @@ watch(isGesturing, (g) => {
   // Inline style overstyrer den katalog-genererte data-iso-CSS-en. Gjelder
   // også spøkelses-flisene (data-ghost-layer) av samme grunn.
   const paths = svg.querySelectorAll('[data-layer] path, [data-ghost-layer] path')
-  for (const p of paths) p.style.strokeDasharray = g ? 'none' : ''
+  for (const p of paths) p.style.strokeDasharray = on ? 'none' : ''
+}
+watch(isGesturing, (g) => {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  if (gestureRestoreTimer) { clearTimeout(gestureRestoreTimer); gestureRestoreTimer = null }
+  if (g) {
+    setGesturePerfMode(svg, true)
+  } else {
+    gestureRestoreTimer = setTimeout(() => {
+      gestureRestoreTimer = null
+      // Re-query: en silent re-render kan ha byttet SVG-en i mellomtiden.
+      const cur = svgHostRef.value?.querySelector('svg')
+      if (cur && !isGesturing.value) setGesturePerfMode(cur, false)
+    }, 120)
+  }
 })
 
 // v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine
@@ -1714,6 +1734,10 @@ let naturtypeQueryToken = 0
 const contextSheetRef = ref(null)      // bottom-sheet-elementet (for into-focus)
 const detailInsetRef = ref(null)       // mini-SVG detalj-inset i bottom-sheeten
 const DETAIL_INSET_M = 1000            // 1×1 km roambart vindu rundt punktet
+// Detalj-lag (data-detail="1") løftet UT av hovedkartets DOM i setupHostSvg
+// (perf — de er usynlige der men kostet parse/recalc/clone). Inset-en kloner
+// inn herfra. Erstattes ved hver setupHostSvg (nytt kart = nye noder).
+let detachedDetailLayers = []
 const LONG_PRESS_MS = 550
 const LONG_PRESS_MOVE_PX = 10
 
@@ -2260,6 +2284,11 @@ function buildDetailInset() {
       if (id === 'user-layer' || id === 'contextmenu-pin-layer') continue
     }
     svg.appendChild(child.cloneNode(true))
+  }
+  // Detalj-lagene (dybdepunkt/dybdekurve) lever ikke lenger i hovedkartets
+  // DOM (detachet i setupHostSvg for perf) — klon dem inn fra modul-refen.
+  for (const g of detachedDetailLayers) {
+    svg.appendChild(g.cloneNode(true))
   }
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
@@ -3895,6 +3924,16 @@ function setupHostSvg(sourceRoot) {
   // [data-layer="vann"] (eller første overlay-lag).
   for (const child of Array.from(sourceRoot.childNodes)) {
     svg.appendChild(child.cloneNode(true))
+  }
+  // v10.3.0 (perf): detalj-lagene (data-detail="1": dybdepunkt/dybdekurve)
+  // er usynlige på hovedkartet (display:none) men kostet likevel parse,
+  // style-recalc og deep-clone ved hver buildDetailInset. Løft dem UT av
+  // live-DOM-en og hold dem i en modul-ref — inset-en (eneste konsument)
+  // appender kloner derfra i stedet.
+  detachedDetailLayers = []
+  for (const g of svg.querySelectorAll('[data-detail="1"]')) {
+    detachedDetailLayers.push(g)
+    g.remove()
   }
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')

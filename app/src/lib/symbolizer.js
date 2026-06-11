@@ -517,6 +517,14 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
           // bytter åker-fyllet, ikke bare solid-fyll-koder. Settes ved
           // applyTheme() i MapView; default (lys/ISOM) bruker pattern.
           props.push(`fill: var(--iso-${code}-fill, url(#${patternIds.get(def.fill.pattern)}))`)
+          // v10.3.0 — Perf: pattern-tiles re-rastreres per frame under
+          // pinch-zoom (dyrest av alle fyll på mobil-GPU). Under aktiv gest
+          // (.is-zooming) byttes mønsteret til flat farge: mønsterets
+          // background-farge der den finnes (kratt/halv-åpen/hugst/522/
+          // strand), ellers none (rene strek-mønstre som myr forsvinner i
+          // ~200 ms — samme kontrakt som dasharray-/relieff-undertrykkingen).
+          const flat = catalog.patterns?.[def.fill.pattern]?.background ?? 'none'
+          rules.push(`${root}.is-zooming [data-iso="${code}"] { fill: ${flat}; }`)
         } else if (def.fill.color) {
           props.push(`fill: var(--iso-${code}-fill, ${def.fill.color})`)
         }
