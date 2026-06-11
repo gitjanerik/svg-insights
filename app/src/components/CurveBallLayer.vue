@@ -9,7 +9,16 @@ import {
 const props = defineProps({
   flipp: { type: Object, required: true },
   viewBox: { type: String, required: true },
+  // Forskyvning (i kart-meter) fra kartets origo til spillets (0,0). Brukes
+  // til å sentrere det kvadratiske spille-utsnittet på et A-format-kart:
+  // spillet jobber i 0..Sm-koord, og dette translaterer alt innholdet tilbake
+  // til kartets senter. (0,0) for kvadratiske kart → no-op.
+  offset: { type: Object, default: () => ({ x: 0, y: 0 }) },
 })
+
+const offsetTransform = computed(
+  () => `translate(${props.offset?.x ?? 0} ${props.offset?.y ?? 0})`,
+)
 
 // Hent default-ballradius fra composable. v7.4.3: enkelte baller (mini,
 // invader) har sin egen `b.r` som overstyrer denne — bruk ballR(b)-helper
@@ -181,6 +190,10 @@ function onBallTap(b) {
         </feMerge>
       </filter>
     </defs>
+
+    <!-- Alt spill-innhold forskyves til det sentrerte kvadratiske utsnittet.
+         offset = (0,0) på kvadratiske kart, så dette er en no-op der. -->
+    <g :transform="offsetTransform">
 
     <!-- v8.10.0 Red Curves: høydekurver som glør rødt mens mini-spillet
          under invaders-modus pågår. Kryssing av en rød kurve gir 5× poeng
@@ -401,6 +414,7 @@ function onBallTap(b) {
             :width="tile.size" :height="tile.size"
             :opacity="tile.opacity"
             :fill="flipp.splash.kind === 'explode' ? '#fb923c' : '#38bdf8'"/>
+    </g>
     </g>
   </svg>
 </template>

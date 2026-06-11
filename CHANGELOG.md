@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-06-11 — v10.2.6: Rødliste-arter gruppert pr CR/EN/VU/NT (turkart-kort)
+## 2026-06-11 — v10.2.7: CurveInvaders på sentrert kvadratisk utsnitt + relieff av
+
+CurveInvaders ble designet for kvadratiske kart, men A-format (portrett, for A4-utskrift) er nå default for nye turkart. Midlertidig spiller spillet derfor på det STØRSTE MULIGE SENTRERTE KVADRATISKE utsnittet i stedet for hele rektangelet. Løsningen rører ikke fysikk-motoren (`useCurveBall.js`): en ny `cropDem()` i `demSampling.js` klipper DEM-en til det sentrerte kvadratet (spillet jobber i 0..Sm-koord mot utklippet), `CurveBallLayer` translaterer alt innholdet tilbake til kartets senter via en `offset`-prop, `updateMapRect` regner flipper-rektangelet som kvadratets skjerm-rekt, og kart-annoteringer flyttes inn i spill-koord (de utenfor kvadratet droppes). Offset-en snappes til DEM-celle-grenser så fysikk-DEM, render-translate og annoterings-shift refererer nøyaktig samme grid-celler — Red Curves-konturene og ball-fysikken flukter eksakt med kartets eget kontur-lag/terreng. Kvadratiske kart får offset (0,0) → byte-identisk med før. I tillegg: relieff (hillshade) slås MIDLERTIDIG helt av mens spillet kjører for et renere spillbrett — brukerens valgte relieff-nivå røres ikke og restaureres når spillet avsluttes.
+
+---
 
 Verneområde-kortet ved long-press viser ikke lenger «Arter»-linja (GBIF-artstellinga toppes på 500, så «500+» gjaldt nesten alle områder og skilte ikke områder fra hverandre). I stedet er Rødliste 2021-linja gjort interaktiv: CR/EN/VU/NT er nå klikkbare kategori-chips som folder ut *hvilke* rødlistearter som er observert i området, gruppert etter grov dyre-/plantegruppe (Pattedyr, Fugler, Insekter, Karplanter, Moser, Lav, Sopp osv). Artsnavn (norsk + vitenskapelig) og artsgruppe hentes fra Artsdatabankens egen `speciesGroup`-kolonne i Norsk rødliste 2021 — rødliste-bundelen er beriket fra `{ nøkkel: kategori }` til `{ nøkkel: { kategori, navn, gruppe } }` (bakoverkompatibel: gammelt format teller fortsatt). De 40 fingruppene slås sammen til ~12 lesbare grupper via `lib/speciesGroups.js`. Navne-visningen «Mardalen» beholdes slik Naturbase-registeret har den; en disabled Wikipedia-knapp er korrekt når ingen artikkel matcher eksakt (å/ø/æ holdes distinkt).
 

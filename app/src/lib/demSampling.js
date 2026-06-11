@@ -99,6 +99,52 @@ export function findHighestPoint(dem) {
 }
 
 /**
+ * Klipp ut et akse-justert sub-grid av DEM-en som dekker meter-rektangelet
+ * [offX, offX+sizeXM] × [offY, offY+sizeYM] i kart-SVG-koord. Det returnerte
+ * DEM-et har sin EGEN (0,0) i hjørnet (offX, offY) — sample(gx, gy) på utklippet
+ * tilsvarer altså sample(offX+gx, offY+gy) på kilden.
+ *
+ * Brukes av CurveBall for å spille på det største sentrerte KVADRATISKE
+ * utsnittet av et A-format (portrett) kart uten å røre fysikk-motoren: spillet
+ * jobber i 0..Sm-koord mot dette utklippet, og render-laget translaterer
+ * tilbake til kartets senter.
+ *
+ * Klipping skjer på celle-grenser (round), så meter-offset kan avvike inntil en
+ * halv piksel (~12 m på 25 m DTM) — usynlig på kart-skala. pixelWidth/Height
+ * bevares så sample-matematikken er uendret.
+ *
+ * @param {DEM} dem
+ * @param {number} offX  venstre kant i kilde-meter
+ * @param {number} offY  topp-kant i kilde-meter
+ * @param {number} sizeXM  bredde i meter
+ * @param {number} sizeYM  høyde i meter (default = sizeXM, dvs. kvadrat)
+ * @returns {DEM} nytt DEM med eget origo; kilde-DEM-et returneres uendret hvis
+ *   utklippet degenererer (0 celler)
+ */
+export function cropDem(dem, offX, offY, sizeXM, sizeYM = sizeXM) {
+  const { data, cols, rows, transform, noData } = dem
+  const pw = transform.pixelWidth
+  const ph = transform.pixelHeight
+  const c0 = Math.max(0, Math.round(offX / pw))
+  const r0 = Math.max(0, Math.round(offY / ph))
+  const colN = Math.min(Math.round(sizeXM / pw), cols - c0)
+  const rowN = Math.min(Math.round(sizeYM / ph), rows - r0)
+  if (colN <= 0 || rowN <= 0) return dem
+  const out = new Float32Array(colN * rowN)
+  for (let ry = 0; ry < rowN; ry++) {
+    const srcStart = (r0 + ry) * cols + c0
+    out.set(data.subarray(srcStart, srcStart + colN), ry * colN)
+  }
+  return {
+    data: out,
+    cols: colN,
+    rows: rowN,
+    transform: { ...transform, originX: 0, originY: 0 },
+    noData,
+  }
+}
+
+/**
  * Pakk DEM-data til en form som kan persisteres i IndexedDB. Returnerer
  * et POJO med ArrayBuffer for data-array (Float32Array er ikke direkte
  * structured-clonable i alle browsere, men ArrayBuffer er).

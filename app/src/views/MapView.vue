@@ -15,7 +15,7 @@ import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog, buildPointSymbolDef, buildIsomDefs, buildIsomCss } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
-import { unpackDem, findHighestPoint } from '../lib/demSampling.js'
+import { unpackDem, findHighestPoint, cropDem } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
@@ -173,6 +173,64 @@ const cbViewBox = computed(() => {
   return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
 })
 
+// CurveBall ble designet for kvadratiske kart. Etter at A-format (portrett,
+// for A4-utskrift) ble default for nye kart spiller vi MIDLERTIDIG på det
+// største mulige sentrerte kvadratiske utsnittet i stedet for hele rektangelet.
+// cbSquare gir kvadrat-siden (Sm) + meter-offset til kartets origo; alt avledes
+// fra dette: DEM-utklippet (cropDem), render-forskyvningen (cbOffset) og
+// flipper-rektangelet (updateMapRect). Kvadratiske kart → offset (0,0), no-op.
+const cbSquare = computed(() => {
+  if (!meta.value) return null
+  const Sm = Math.min(meta.value.widthM, meta.value.heightM)
+  let offX = (meta.value.widthM - Sm) / 2
+  let offY = (meta.value.heightM - Sm) / 2
+  // ESSENSIELT: snap offset-en til DEM-celle-grenser. cropDem klipper på hele
+  // celler (round), så hvis render-offset-en var den eksakte geometriske
+  // midten kunne fysikk-DEM og det tegnede spill-laget avvike med opptil en
+  // halv celle (~12,5 m på 25 m-DTM) — da flukter ikke Red Curves-konturene
+  // og ball-fysikken med kartets eget kontur-lag/terreng. Med snappet offset
+  // refererer DEM-utklipp, render-translate og annoterings-shift NØYAKTIG
+  // samme grid-celler, og kurvene ligger flush med terrenget.
+  const t = storedDem.value?.transform
+  if (t?.pixelWidth > 0 && t?.pixelHeight > 0) {
+    offX = Math.round(offX / t.pixelWidth) * t.pixelWidth
+    offY = Math.round(offY / t.pixelHeight) * t.pixelHeight
+  }
+  return { Sm, offX, offY }
+})
+const cbOffset = computed(() =>
+  cbSquare.value ? { x: cbSquare.value.offX, y: cbSquare.value.offY } : { x: 0, y: 0 })
+
+// Bygg init-konteksten for CurveBall: kvadratisk DEM-utklipp + bounds, og
+// annoteringer flyttet inn i spill-koord (0..Sm) med dem utenfor kvadratet
+// droppet. Delt mellom direkte start og turnerings-/gjenopprettings-flyten.
+function buildCurveBallContext() {
+  const sq = cbSquare.value
+  if (!sq) {
+    return {
+      dem: storedDem.value,
+      bounds: { width: meta.value.widthM, height: meta.value.heightM },
+      equidistanceM: meta.value.equidistance ?? 20,
+      annotations: annot.annotations.value,
+    }
+  }
+  const { Sm, offX, offY } = sq
+  const dem = storedDem.value
+    ? cropDem(storedDem.value, offX, offY, Sm)
+    : storedDem.value
+  const annotations = (annot.annotations.value ?? [])
+    .filter(a => a?.type === 'point'
+      && a.x >= offX && a.x <= offX + Sm
+      && a.y >= offY && a.y <= offY + Sm)
+    .map(a => ({ ...a, x: a.x - offX, y: a.y - offY }))
+  return {
+    dem,
+    bounds: { width: Sm, height: Sm },
+    equidistanceM: meta.value.equidistance ?? 20,
+    annotations,
+  }
+}
+
 // Skjerm-rekt for kart-SVG-en, oppdatert når curveball er aktiv så Pong-paddles
 // kan posisjoneres relativt til kartets ekte plass på skjermen (etter pinch/pan).
 const mapRect = ref(null)
@@ -203,20 +261,27 @@ function updateMapRect() {
     offsetX = 0
     offsetY = (r.height - contentH) / 2
   }
+  // CurveBall spiller på det sentrerte kvadratiske utsnittet (se cbSquare),
+  // så flipper-rektangelet er kvadratets skjerm-rekt — ikke hele kart-
+  // innholdet. På kvadratiske kart er offX/offY = 0 → identisk med før.
+  const pxPerM = contentW / meta.value.widthM    // CSS-px per viewBox-meter
+  const sq = cbSquare.value
+  const sqOffX = sq ? sq.offX : 0
+  const sqOffY = sq ? sq.offY : 0
+  const sqSidePx = (sq ? sq.Sm : meta.value.widthM) * pxPerM
   // v8.0.1: HUD-elementer (paddle-tykkelse, topp-bar, hjerter, exit-knapp)
   // skal skaleres med kart-utsnittets faktiske skjerm-størrelse. Tidligere
   // var alt fast i CSS-px slik at små kart fikk store paddles. Referansen
   // 420px tilsvarer ca. en typisk 4×4km-mapRect på telefon i portrait — der
   // designet var tunet — så scale=1 der. Clampes så HUD aldri blir mikro
   // eller dominerer hele kartet.
-  const minDim = Math.min(contentW, contentH)
-  const hudScale = Math.max(0.55, Math.min(1.3, minDim / 420))
+  const hudScale = Math.max(0.55, Math.min(1.3, sqSidePx / 420))
   mapRect.value = {
-    top:    r.top + offsetY,
-    left:   r.left + offsetX,
-    width:  contentW,
-    height: contentH,
-    pxPerM: contentW / meta.value.widthM,    // CSS-px per viewBox-meter
+    top:    r.top + offsetY + sqOffY * pxPerM,
+    left:   r.left + offsetX + sqOffX * pxPerM,
+    width:  sqSidePx,
+    height: sqSidePx,
+    pxPerM,
     hudScale,
   }
 }
@@ -489,14 +554,10 @@ async function startCurveBall() {
   // turneringsmodus, share-link-flow og direkte fra CurveBall-knappen.
   // Bryterhåndtering bevares (currentTheme er en ref, watch kjører applyTheme).
   currentTheme.value = 'curves'
-  curveball.init({
-    dem: storedDem.value,
-    bounds: { width: meta.value.widthM, height: meta.value.heightM },
-    equidistanceM: meta.value.equidistance ?? 20,
-    // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
-    // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
-    annotations: annot.annotations.value,
-  })
+  // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
+  // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
+  // Kvadratisk-utsnitt-kropping skjer i buildCurveBallContext.
+  curveball.init(buildCurveBallContext())
   curveball.restart()
   // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
   reset()
@@ -855,6 +916,8 @@ watch([scale, translateX, translateY, rotation], () => {
 })
 
 watch(() => curveball.active.value, (active) => {
+  // Relieff av under spill / på igjen etterpå (applyHillshade gater på active).
+  applyHillshade()
   if (active) {
     nextTick(updateMapRect)
     // Reset() animerer scale/translate over 200ms — re-mål når transitionen er ferdig.
@@ -1327,7 +1390,11 @@ async function applyHillshade() {
   // v9.1.13: knaus er nå malt inn i hillshade-bildet (ett relieff-lag). Rydd
   // vekk et evt. gammelt separat knaus-lag fra tidligere klient-versjoner.
   svg.querySelector('#knaus-relief-layer')?.remove()
-  const wantOn = reliefOpacity.value > 0
+  // Relieff slås MIDLERTIDIG helt av mens CurveBall kjører (rent spillbrett,
+  // uten hillshade-PNG-en som forstyrrer ball/kontur-lesbarheten). Brukerens
+  // valgte relieff-nivå røres ikke — applyHillshade kjøres på nytt når spillet
+  // avsluttes (se curveball.active-watch) og restaurerer nivået.
+  const wantOn = reliefOpacity.value > 0 && !curveball.active.value
   let img = svg.querySelector('#hillshade-layer')
   if (!wantOn) {
     if (img) img.remove()
@@ -4140,14 +4207,7 @@ async function activateRestoredCurveBall(state) {
   // v7.4.2: Curves-tema aktivt for hele turneringsmoduset, ikke bare ved
   // første start. Sikrer konsistent visuell stil mellom kart-bytter.
   currentTheme.value = 'curves'
-  curveball.init({
-    dem: storedDem.value,
-    bounds: { width: meta.value.widthM, height: meta.value.heightM },
-    equidistanceM: meta.value.equidistance ?? 20,
-    // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
-    // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
-    annotations: annot.annotations.value,
-  })
+  curveball.init(buildCurveBallContext())
   curveball.restoreFromTournament(state)
   reset()
   curveball.activate()
@@ -4586,6 +4646,7 @@ onUnmounted(() => {
         <CurveBallLayer
           :flipp="curveball"
           :view-box="cbViewBox"
+          :offset="cbOffset"
           @drop="onCurveBallContinue"/>
       </div>
     </div>
