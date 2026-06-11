@@ -1587,18 +1587,22 @@ export function buildSvg(elements, bbox, options = {}) {
 
   // Hule (ISOM 215) og gruve (ISOM 216): point-symboler. Sentrert ±0.7mm
   // = 1.4mm bredde (matcher scaleMm i katalogen).
+  // Posisjon via transform=translate(...) i user-units (meter) — å skrive
+  // x="<meter>mm" tolkes som ~3.78× user-units pr mm (CSS-spec), så symbolet
+  // havnet langt unna der project() ga oss. Samme fix som parkering (v8.10.x);
+  // gjelder hule/gruve/trig/kirke/bom.
   const huleSvg = huler.map(el => {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('hule')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/></g>`
   }).filter(Boolean).join('\n')
 
   const gruveSvg = gruver.map(el => {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('gruve')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.7)}mm" y="${fmt(p.y - 0.7)}mm" width="1.4mm" height="1.4mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.7mm" y="-0.7mm" width="1.4mm" height="1.4mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Trigonometrisk punkt (ISOM 113): trekant-symbol 1.6mm
@@ -1606,7 +1610,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('trigpunkt')
     if (!sid) return ''
-    return `    <use href="#${sid}" x="${fmt(p.x - 0.8)}mm" y="${fmt(p.y - 0.8)}mm" width="1.6mm" height="1.6mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-0.8mm" y="-0.8mm" width="1.6mm" height="1.6mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Kirke (ISOM 532-derivert): hytte-stil rektangulær ramme med kors 2.6mm.
@@ -1622,7 +1626,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const sid = symbolIds.get('kirke')
     if (!sid) return ''
     const half = kirkeSize / 2
-    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Utfartsparkering (ISOM 534-derivert): blå P-symbol 7.2mm (300% av v8.10.2-
@@ -1670,7 +1674,7 @@ export function buildSvg(elements, bbox, options = {}) {
     const sid = symbolIds.get('bom')
     if (!sid) return ''
     const half = bomSize / 2
-    return `    <use href="#${sid}" x="${fmt(p.x - half)}mm" y="${fmt(p.y - half)}mm" width="${bomSize}mm" height="${bomSize}mm"/>`
+    return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${bomSize}mm" height="${bomSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Fase 3: marine / padle-POI (fyr, sjømerker, skjær, landingssteder,
