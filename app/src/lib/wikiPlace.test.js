@@ -85,6 +85,17 @@ describe('placeNameMatches', () => {
     expect(placeNameMatches('Langtjernet', 'Langtjern')).toBe(true)
     expect(placeNameMatches('Fjellet', 'Fjell')).toBe(true)
   })
+  it('matcher terreng-/vann-ord i ulike former', () => {
+    expect(placeNameMatches('Svartputten', 'Svartputt')).toBe(true)
+    expect(placeNameMatches('Storpytt', 'Storputten')).toBe(true)
+    expect(placeNameMatches('Bondisjøen', 'Bondisjø')).toBe(true)
+    expect(placeNameMatches('Bjørnemyra', 'Bjørnemyr')).toBe(true)
+    expect(placeNameMatches('Bjørnemyren', 'Bjørnemyra')).toBe(true)
+    expect(placeNameMatches('Storbekken', 'Storbekk')).toBe(true)
+    expect(placeNameMatches('Storelva', 'Storelv')).toBe(true)
+    expect(placeNameMatches('Storelven', 'Storelva')).toBe(true)
+    expect(placeNameMatches('Langtjønna', 'Langtjern')).toBe(true)
+  })
   it('matcher parentes-disambiguering (Glitre ~ Glitre (innsjø))', () => {
     expect(placeNameMatches('Glitre', 'Glitre (innsjø)')).toBe(true)
   })

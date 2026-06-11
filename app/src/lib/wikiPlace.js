@@ -74,20 +74,36 @@ function isUsablePage(p) {
   return p && p.title && !p.missing && p.pageprops?.disambiguation === undefined
 }
 
-// Norsk stedsnavn-stamme for løs matching: dropp parentes-disambiguering, og
-// normaliser bestemt/ubestemt form + vann/vatn-varianter. Slik matcher
-// «Bondivannet»~«Bondivann», «Storvatnet»~«Storvatn», «Langtjernet»~«Langtjern»,
-// «Fjellet»~«Fjell». Brukt KUN for stedsoppslag (geosearch-kortet), der
-// koordinat-nærhet uansett verifiserer treffet — ikke for verneområde-matchingen
-// i wikiSummary, som holder seg streng (å/ø/æ-distinkt).
+// Norske terreng-/vann-ord i bestemt/ubestemt og dialektform, normalisert til
+// én felles stamme så formene kollapser sammen ved matching. Anker til slutten
+// av navnet (ordet er typisk siste ledd: «Bondivannet», «Svartputten»,
+// «Storelva»). Lengste/mest spesifikke varianter først så de vinner.
+const FEATURE_FORMS = [
+  [/(vatnet|vannet|vatn|vann)$/, 'vatn'],          // vann/vatn/-et
+  [/(tjernet|tjønna|tjønn|tjenn|tjern)$/, 'tjern'], // tjern/tjønn/-et
+  [/(putten|pytten|putte|putt|pytt)$/, 'putt'],    // putt/pytt/-en
+  [/(sjøen|sjø)$/, 'sjø'],                          // sjø/-en
+  [/(myra|myren|myr)$/, 'myr'],                     // myr/-a/-en
+  [/(bekken|bekk)$/, 'bekk'],                       // bekk/-en
+  [/(elven|elva|elv)$/, 'elv'],                     // elv/-en/-a
+]
+
+// Norsk stedsnavn-stamme for løs matching: dropp parentes-disambiguering,
+// normaliser terreng-/vann-ord (FEATURE_FORMS) og generell nøytrum bestemt form
+// (-et/-ene). Slik matcher «Bondivannet»~«Bondivann», «Langtjernet»~«Langtjern»,
+// «Storelva»~«Storelv», «Bjørnemyra»~«Bjørnemyr», «Fjellet»~«Fjell». Brukt KUN
+// for stedsoppslag (geosearch-kortet), der koordinat-nærhet uansett verifiserer
+// treffet — ikke for verneområde-matchingen i wikiSummary, som holder seg streng
+// (å/ø/æ-distinkt).
 function placeStem(s) {
-  return String(s ?? '')
+  let t = String(s ?? '')
     .normalize('NFC').toLowerCase()
     .replace(/\s*\([^)]*\)\s*$/, '')          // dropp «(innsjø)»-disambiguering
     .replace(/\s+/g, ' ').trim()
-    .replace(/(vatnet|vannet|vatn|vann)$/, 'vatn')
-    .replace(/(tjernet|tjønna|tjenn|tjern)$/, 'tjern')
-    .replace(/(et|ene)$/, '')                  // nøytrum bestemt form: Fjellet→Fjell
+  for (const [re, canon] of FEATURE_FORMS) {
+    if (re.test(t)) { t = t.replace(re, canon); return t }
+  }
+  return t.replace(/(et|ene)$/, '')           // nøytrum bestemt form: Fjellet→Fjell
 }
 
 // Matcher et stedsnavn mot en artikkeltittel. Først streng (titleMatches: håndterer
