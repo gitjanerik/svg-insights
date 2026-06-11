@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterIndex, foldName } from './useMapSearch.js'
+import { filterIndex, foldName, elementPosition } from './useMapSearch.js'
 
 // Pure-funksjons-tester. buildSearchIndex tester vi ikke her — den krever
 // reell DOM (jsdom er ikke installert), og vi har hverken @napi-rs eller
@@ -144,6 +144,79 @@ describe('useMapSearch', () => {
       const results = filterIndex(mockIndex, 'trondheimsfjord')
       expect(results.length).toBe(1)
       expect(results[0].name).toBe('Trondheimsfjorden')
+    })
+  })
+
+  describe('elementPosition', () => {
+    // Stub-elementer (ingen jsdom nødvendig): elementPosition bruker bare
+    // tagName, getAttribute, getBBox og parentElement. Stubbene speiler
+    // mapBuilder-markup eksakt.
+    const svgStub = { nodeType: 1, tagName: 'svg' }
+    const layerG = (transform = null) => ({
+      nodeType: 1, tagName: 'g',
+      getAttribute: (n) => (n === 'transform' ? transform : null),
+      parentElement: svgStub,
+    })
+    const attrs = (map) => (n) => map[n] ?? null
+
+    it('punkt-gruppe med posisjon i EGEN transform (holdeplass/parkering) — «Bondivann»-buggen', () => {
+      // <g data-name="Bondivann" transform="translate(2456.1,2234.5)">
+      //   <use x="-3mm" …/> → lokal bbox sentrert rundt (0,0)
+      const el = {
+        nodeType: 1, tagName: 'g',
+        getAttribute: attrs({ transform: 'translate(2456.1,2234.5)' }),
+        getBBox: () => ({ x: -11.3, y: -11.3, width: 22.6, height: 22.6 }),
+        parentElement: layerG(),
+      }
+      const pos = elementPosition(svgStub, el)
+      // Uten egen-translate var dette (0,0) = kartets NV-hjørne.
+      expect(pos.x).toBeCloseTo(2456.1, 6)
+      expect(pos.y).toBeCloseTo(2234.5, 6)
+    })
+
+    it('egen translate kombineres med rotate (upright-counter-rotasjon)', () => {
+      const el = {
+        nodeType: 1, tagName: 'g',
+        getAttribute: attrs({ transform: 'translate(100, 200) rotate(45)' }),
+        getBBox: () => ({ x: -5, y: -5, width: 10, height: 10 }),
+        parentElement: layerG(),
+      }
+      const pos = elementPosition(svgStub, el)
+      expect(pos.x).toBeCloseTo(100, 6)
+      expect(pos.y).toBeCloseTo(200, 6)
+    })
+
+    it('path uten egen transform er uendret (bbox-senter + parent-translate)', () => {
+      const el = {
+        nodeType: 1, tagName: 'path',
+        getAttribute: attrs({}),
+        getBBox: () => ({ x: 1000, y: 2000, width: 400, height: 200 }),
+        parentElement: layerG('translate(10,20)'),
+      }
+      const pos = elementPosition(svgStub, el)
+      expect(pos.x).toBeCloseTo(1000 + 200 + 10, 6)
+      expect(pos.y).toBeCloseTo(2000 + 100 + 20, 6)
+    })
+
+    it('text bruker x/y-attributter + parent-translate', () => {
+      const el = {
+        nodeType: 1, tagName: 'text',
+        getAttribute: attrs({ x: '2mm', y: '-0.4mm' }),
+        parentElement: layerG('translate(500,600)'),
+      }
+      const pos = elementPosition(svgStub, el)
+      expect(pos.x).toBeCloseTo(502, 6)
+      expect(pos.y).toBeCloseTo(600 - 0.4, 6)
+    })
+
+    it('degenerert bbox (display:none) → null', () => {
+      const el = {
+        nodeType: 1, tagName: 'path',
+        getAttribute: attrs({}),
+        getBBox: () => ({ x: 0, y: 0, width: 0, height: 0 }),
+        parentElement: layerG(),
+      }
+      expect(elementPosition(svgStub, el)).toBeNull()
     })
   })
 })

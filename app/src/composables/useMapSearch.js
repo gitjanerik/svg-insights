@@ -121,10 +121,16 @@ function ancestorTranslate(el, stopEl) {
  * og toggles av MapView.applyLayerVisibility — getBBox() ville gitt (0,0)
  * for skjulte elementer; getCTM() ville gitt CSS-piksler).
  *
- * For path/polygon med data-name: getBBox() gir lokal bbox i parent-coord-
- * system. Vi legger til parent-translate for å mappe til root.
+ * For path/polygon med data-name: getBBox() gir lokal bbox i ELEMENTETS
+ * eget koordinatsystem (FØR dets egen transform). Vi legger til både
+ * elementets EGEN translate og parent-translates for å mappe til root.
+ * Egen-translate er kritisk for punkt-grupper som holdeplass/parkering/
+ * sjø-POI: `<g data-name="…" transform="translate(x,y)"><use x="-3mm" …>`
+ * har hele posisjonen i sin egen transform og bbox-senter ≈ (0,0) lokalt —
+ * uten egen-translate havnet søketreff på slike i kartets NV-hjørne
+ * («Bondivann»-buggen: togholdeplassen markertes på (0,0)).
  */
-function elementPosition(svgEl, el) {
+export function elementPosition(svgEl, el) {
   try {
     if (el.tagName === 'text') {
       // parseFloat strips ev. mm-suffiks (peak-labels bruker "2mm"); 2 user-
@@ -139,10 +145,11 @@ function elementPosition(svgEl, el) {
     if (!Number.isFinite(bb.x) || !Number.isFinite(bb.y)) return null
     // Degenerert bbox (display:none / tomt polygon) — skip
     if (bb.width <= 0 && bb.height <= 0) return null
+    const own = parseTranslate(el.getAttribute('transform')) ?? [0, 0]
     const [dx, dy] = ancestorTranslate(el, svgEl)
     return {
-      x: bb.x + bb.width / 2 + dx,
-      y: bb.y + bb.height / 2 + dy,
+      x: bb.x + bb.width / 2 + own[0] + dx,
+      y: bb.y + bb.height / 2 + own[1] + dy,
     }
   } catch {
     return null

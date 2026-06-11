@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-11 — v10.2.10: Søketreff på punkt-POI markertes i kartets NV-hjørne
+
+Søk på navngitte punkt-POI-er (togholdeplasser, parkering, sjø-POI) plasserte highlight-ringen i kartets nordvest-hjørne i stedet for på selve punktet — rapportert som «Bondivann»-buggen (togholdeplassen i Asker markertes på (0,0)). Rotårsak i søkeindeksens `elementPosition`: punkt-grupper som `<g data-name="…" transform="translate(x,y)"><use x="-3mm" …>` bærer hele posisjonen i sin EGEN transform, og bbox-senteret er ≈ (0,0) i gruppens lokale rom — men kun foreldre-translates ble akkumulert, aldri elementets egen. Nå inkluderes egen-translate (sameksisterer med upright-rotasjon i samme transform-attributt), med enhetstester på stub-elementer som speiler mapBuilder-markupen.
+
+---
+
 ## 2026-06-11 — v10.2.9: Viewport-culling + romlig SVG-bucketing for mobil-ytelse
 
 Stor ytelsespakke for kart-rendering på mobil («out of sight, out of mind»). (1) Viewport-culling: en rbush-indeks over kart-elementenes bbokser skjuler vektorer utenfor synlig utsnitt + raus margin (klasse `vp-cull`, eksport-trygg som navn-LOD-en), med hysterese så panorering avdekker innhold momentant uten JS-arbeid og re-beregning aldri skjer midt i en gest. Kill switch: localStorage `vp-cull-off`; visuell debug-tint: `cull-debug`; teller i drawer-ens Debug-seksjon. (2) Romlig bucketing i mapBuilder: de kart-dekkende «mega-pathene» fra v8.10.4-mergingen deles nå per 1024 m grid-celle (hel feature per celle, aldri geometri-splitting) og alle paths emitterer `data-bbox` — så både nettleserens egen raster-tile-culling og viewport-cullingen får små, reelle bounds. Painter's order, lag-toggles og temaer er urørt; gamle lagrede kart degraderer til ingen culling. (3) Detalj-lagene (dybdepunkt/dybdekurve) løftes ut av hovedkartets DOM og klones kun inn i long-press-inset-en. (4) Gest-slutt-gjenopprettingen utsettes 120 ms (kanselleres av ny gest) og mønster-fyll (myr/kratt/åker/bymasse) flates til solid farge under aktiv pinch. Bonus-fix: hule-, gruve-, trigpunkt-, kirke- og bom-symboler var feilplassert (mm-tolkning av meter-koordinater) og posisjoneres nå korrekt via translate-wrapper; navn-LOD-skjulte navn vises nå riktig i detalj-inset-en.
