@@ -145,6 +145,34 @@ describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
   })
 })
 
+describe('xmlEscape — navn med spesialtegn gir gyldig XML (Stockholm-bug)', () => {
+  // Et OSM-navn med " brøt data-name="…"-attributtet → hele SVG-en ble
+  // ugyldig XML → MapView «Ugyldig SVG». Gjaldt store byer (Stockholm) der
+  // POI-er oftere har anførselstegn/spesialtegn i navnet.
+  const named = (name) => ({
+    type: 'way', id: 42,
+    tags: { natural: 'water', name },
+    geometry: ring(59.01, 10.06, 59.04, 10.08),
+  })
+
+  it('escaper " → &quot; (lukker ikke attributtet)', () => {
+    const { svg } = buildSvg([named('Lake "A"')], bbox, {})
+    expect(svg).toContain('Lake &quot;A&quot;')
+    expect(svg).not.toContain('Lake "A"')   // ingen rå anførselstegn i attr
+  })
+
+  it('escaper &, <, >', () => {
+    const { svg } = buildSvg([named('X & <Y>')], bbox, {})
+    expect(svg).toContain('X &amp; &lt;Y&gt;')
+  })
+
+  it('stripper ulovlige XML-kontrolltegn', () => {
+    const { svg } = buildSvg([named('Bad\u0007Name')], bbox, {})
+    expect(svg).toContain('BadName')
+    expect(svg).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/)
+  })
+})
+
 describe('painter\'s order — vann males OPPÅ terreng, ingen land-mask', () => {
   // To overlappende vann-polygoner fra ulike kilder (etterligner N50 + OSM for
   // samme innsjø, Tyrifjorden). Robusthets-kravet: konturer/stupkanter skjules
