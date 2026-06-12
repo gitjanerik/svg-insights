@@ -145,6 +145,28 @@ describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
   })
 })
 
+describe('svensk kyst som land — undertrykk rå OSM-saltvann uten autoritativ sjø', () => {
+  const osmBay = { type: 'way', id: 50, tags: { natural: 'water', water: 'bay' }, geometry: ring(59.0, 10.0, 59.05, 10.1) }
+  const osmLake = { type: 'way', id: 51, tags: { natural: 'water', name: 'Tjern' }, geometry: ring(59.01, 10.02, 59.02, 10.04) }
+
+  it('uten autoritativ sjø → saltvann (303) droppes (kyst som land)', () => {
+    const { svg } = buildSvg([osmBay], bbox, {})
+    expect(svg).toMatch(/data-iso="303"><\/g>/)   // tomt 303-lag
+  })
+
+  it('med autoritativ sjø (N50) renderes saltvann som før (ingen regresjon)', () => {
+    const { svg } = buildSvg([n50Sea, osmBay], bbox, {})
+    expect(svg).not.toMatch(/data-iso="303"><\/g>/) // 303 har innhold
+  })
+
+  it('ferskvann (innsjø) er urørt — vises fortsatt', () => {
+    const { svg } = buildSvg([osmLake], bbox, {})
+    // ferskvann klassifiseres som 301/302 og skal IKKE undertrykkes
+    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
+    expect(fresh).toBe(true)
+  })
+})
+
 describe('xmlEscape — navn med spesialtegn gir gyldig XML (Stockholm-bug)', () => {
   // Et OSM-navn med " brøt data-name="…"-attributtet → hele SVG-en ble
   // ugyldig XML → MapView «Ugyldig SVG». Gjaldt store byer (Stockholm) der
