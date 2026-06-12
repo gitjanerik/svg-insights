@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { parseNearestPlace, parseNamedNearest, placeNameMatches, haversineM } from './wikiPlace.js'
+import { parseNearestPlace, parseNamedNearest, placeNameMatches, haversineM,
+         firstPartStem, pickBroaderPlace } from './wikiPlace.js'
 
 describe('haversineM', () => {
   it('gir ~0 for samme punkt', () => {
@@ -102,6 +103,60 @@ describe('placeNameMatches', () => {
   it('avviser urelaterte navn', () => {
     expect(placeNameMatches('Bondivannet', 'Bondi skole')).toBe(false)
     expect(placeNameMatches('Glitre', 'Svarvestolen')).toBe(false)
+  })
+})
+
+describe('firstPartStem', () => {
+  it('gir første ledd av et flerords-navn', () => {
+    expect(firstPartStem('Hjerkinn stasjon')).toBe('hjerkinn')
+    expect(firstPartStem('Oslo S')).toBe('oslo')
+  })
+  it('gir tom streng for ettords-navn (ingen bredere del)', () => {
+    expect(firstPartStem('Gaustatoppen')).toBe('')
+    expect(firstPartStem('Hjerkinn')).toBe('')
+  })
+})
+
+describe('pickBroaderPlace', () => {
+  const lat = 62.22016, lon = 9.54193
+  const primary = {
+    title: 'Hjerkinn stasjon',
+    url: 'https://no.wikipedia.org/wiki/Hjerkinn_stasjon',
+  }
+
+  it('finner den overordnede «første del»-artikkelen blant kandidatene', () => {
+    // Hjerkinn stasjon → vis OGSÅ lenke til selve stedet «Hjerkinn».
+    const pages = [
+      { title: 'Hjerkinn', extract: 'Tettsted i Dovre.',
+        coordinates: [{ lat: 62.213, lon: 9.546 }], fullurl: 'https://no.wikipedia.org/wiki/Hjerkinn' },
+      { title: 'Hjerkinn stasjon', extract: 'Jernbanestasjon på Dovrebanen.',
+        coordinates: [{ lat: 62.2202, lon: 9.5419 }], fullurl: 'https://no.wikipedia.org/wiki/Hjerkinn_stasjon' },
+    ]
+    const r = pickBroaderPlace(pages, primary, lat, lon)
+    expect(r.title).toBe('Hjerkinn')
+    expect(r.url).toBe('https://no.wikipedia.org/wiki/Hjerkinn')
+  })
+
+  it('returnerer null når ingen overordnet artikkel finnes', () => {
+    const pages = [
+      { title: 'Snøhetta', extract: 'Fjell i Dovrefjell.',
+        coordinates: [{ lat: 62.3, lon: 9.27 }], fullurl: 'u' },
+    ]
+    expect(pickBroaderPlace(pages, primary, lat, lon)).toBeNull()
+  })
+
+  it('hopper over treff som er identisk med primær-artikkelen', () => {
+    const pages = [
+      { title: 'Hjerkinn stasjon', extract: 'x',
+        coordinates: [{ lat: 62.22, lon: 9.542 }], fullurl: 'https://no.wikipedia.org/wiki/Hjerkinn_stasjon' },
+    ]
+    expect(pickBroaderPlace(pages, primary, lat, lon)).toBeNull()
+  })
+
+  it('returnerer null for ettords-primær (ingen «første del»)', () => {
+    const single = { title: 'Hjerkinn', url: 'u' }
+    const pages = [{ title: 'Hjerkinn', extract: 'x', fullurl: 'u2' }]
+    expect(pickBroaderPlace(pages, single, lat, lon)).toBeNull()
   })
 })
 

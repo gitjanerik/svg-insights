@@ -96,7 +96,7 @@ const FEATURE_FORMS = [
 // for stedsoppslag (geosearch-kortet), der koordinat-nærhet uansett verifiserer
 // treffet — ikke for verneområde-matchingen i wikiSummary, som holder seg streng
 // (å/ø/æ-distinkt).
-function placeStem(s) {
+export function placeStem(s) {
   let t = String(s ?? '')
     .normalize('NFC').toLowerCase()
     .replace(/\s*\([^)]*\)\s*$/, '')          // dropp «(innsjø)»-disambiguering
@@ -114,6 +114,41 @@ export function placeNameMatches(query, title) {
   const q = placeStem(query)
   const t = placeStem(title)
   return !!q && !!t && q === t
+}
+
+// «Første del» av et flerleddet stedsnavn: stammen uten siste ord. «Hjerkinn
+// stasjon» → «hjerkinn», «Gaustatoppen» → '' (ettords-navn → ingen bredere del).
+// Brukt til å finne den OVERORDNEDE artikkelen (selve stedet) ved siden av den
+// spesifikke (stasjonen/toppen) når begge har egne oppslag.
+export function firstPartStem(title) {
+  const s = placeStem(title)
+  const i = s.lastIndexOf(' ')
+  return i > 0 ? s.slice(0, i).trim() : ''
+}
+
+/**
+ * Finn en OVERORDNET «første del»-artikkel i en liste kandidat-sider (geosearch
+ * + navn-søk): stedet hvis stamme er lik primær-artikkelens første del
+ * («Hjerkinn» ved siden av «Hjerkinn stasjon»). Returnerer nærmeste DISTINKTE
+ * treff, eller null når ingen slik artikkel finnes. Ren funksjon (testbar).
+ *
+ * @param {Array} pages   rå kandidat-sider (formatversion=2)
+ * @param {{title:string,url:string}} primary  den valgte primær-artikkelen
+ * @param {number} lat
+ * @param {number} lon
+ */
+export function pickBroaderPlace(pages, primary, lat, lon) {
+  if (!primary || !Array.isArray(pages)) return null
+  const target = firstPartStem(primary.title)
+  if (!target) return null
+  let best = null
+  for (const p of pages) {
+    if (!isUsablePage(p) || placeStem(p.title) !== target) continue
+    const r = pageToResult(p, lat, lon)
+    if (!r.url || r.url === primary.url) continue
+    if (!best || (r.distanceM ?? Infinity) < (best.distanceM ?? Infinity)) best = r
+  }
+  return best
 }
 
 /**
@@ -235,24 +270,34 @@ export async function fetchNearestWikiPlace(lat, lon, opts = {}) {
     for (const host of WIKI_HOSTS) {
       let geo = null
       let named = null
+      let pages = []   // alle kandidat-sider (geosearch + navn-søk) for «bredere»-oppslag
       try {
         const j = await fetchJson(geosearchUrl(host, lat, lon), ctrl.signal)
-        if (j) geo = parseNearestPlace(j, lat, lon)
+        if (j) { geo = parseNearestPlace(j, lat, lon); pages = pages.concat(j?.query?.pages ?? []) }
       } catch (e) { if (ctrl.signal.aborted) return null }
 
       if (hint) {
         try {
           const j = await fetchJson(namedSearchUrl(host, hint), ctrl.signal)
-          if (j) named = parseNamedNearest(j, lat, lon, hint)
+          if (j) { named = parseNamedNearest(j, lat, lon, hint); pages = pages.concat(j?.query?.pages ?? []) }
         } catch (e) { if (ctrl.signal.aborted) return null }
       }
 
-      // Foretrekk navne-treffet når geosearch ikke ER det navngitte stedet
-      // (man står «på Glitre» — vis Glitre, ikke nabohytta Svarvestolen).
-      if (named && (!geo || !placeNameMatches(hint, geo.title))) return named
-      if (geo) return geo
-      if (named) return named
-      // ellers: prøv neste språk
+      // PRIMÆR (mest spesifikk): foretrekk navne-treffet med mindre geosearch sitt
+      // nærmeste ER nøyaktig samme feature (stamme-likt) — ikke bare en bredere
+      // prefiks. «Hjerkinn» er ikke «Hjerkinn stasjon». Tidligere brukte vi
+      // placeNameMatches her, men den godtar prefiks-subsumering («Hjerkinn» ~
+      // «Hjerkinn stasjon») og lot det brede stedet sluke det spesifikke navnet,
+      // så geosearch sitt nærmeste («Hjerkinn») vant over det eksakte treffet.
+      const geoExact = !!geo && placeStem(hint) === placeStem(geo.title)
+      const primary = (named && !geoExact) ? named : (geo ?? named)
+      if (!primary) continue   // intet treff på dette språket → prøv neste
+
+      // SEKUNDÆR: den overordnede «første del»-artikkelen (selve stedet) når den
+      // har et eget oppslag, så kortet kan vise lenke til BEGGE («Hjerkinn stasjon»
+      // som tekst + lenke, og «Hjerkinn» som ekstra lenke).
+      const secondary = pickBroaderPlace(pages, primary, lat, lon)
+      return secondary ? { ...primary, secondary } : primary
     }
     return null
   } finally {
