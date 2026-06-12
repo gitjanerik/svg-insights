@@ -2039,6 +2039,20 @@ watch(contextMenuPoint, async (p) => {
           place = { ...place, source: 'snl', title: snl.title, extract: snl.extract,
                     url: snl.url, thumbnail: snl.thumbnail ?? place.thumbnail }
         }
+        // Den overordnede «første del»-artikkelen (selve stedet ved siden av
+        // stasjonen/toppen): foretrekk SNL-lenken her også. KUN lenke + tittel —
+        // ingen ingress-tekst, siden kortet viser teksten for den mest spesifikke.
+        // Faller tilbake til Wikipedia-lenken fra wikiPlace; droppes hvis den
+        // ender på samme URL som primær-lenken.
+        if (place.secondary) {
+          const snl2 = await fetchSnlSummary(place.secondary.title, { accept: placeNameMatches })
+          const sec = snl2
+            ? { ...place.secondary, source: 'snl', title: snl2.title, url: snl2.url }
+            : place.secondary
+          place = (sec.url && sec.url !== place.url)
+            ? { ...place, secondary: sec }
+            : { ...place, secondary: null }
+        }
       } else if (info.place?.name) {
         // Ingen Wikipedia-treff i nærheten, men vi har et stedsnavn → siste utvei:
         // slå opp navnet i SNL (uten avstand, ingen koordinat-verifisering).
@@ -3891,6 +3905,9 @@ async function loadMap({ silent = false } = {}) {
     }
     autoMapArmed = true
     if (pendingMovedToast) showAutoMapToast('Nytt kart — flyttet sentrum hit')
+    // Første-gangs onboarding: tips om auto-kart (kun når brukeren åpnet kartet
+    // selv — ikke en silent re-load eller et auto-kart-hopp).
+    if (!silent) maybeShowAutoMapOnboarding()
     // Mosaikk: tegn falmede nabo-fliser (steg 2) så man kan scrolle tilbake.
     // Async + fail-safe; setupHostSvg har tømt evt. gamle spøkelser.
     void renderGhostTiles()
@@ -4612,6 +4629,29 @@ const showEdgeAutoMapHint = computed(() =>
 function dismissEdgeHint() { edgeHintDismissed.value = true }
 watch(userNearMapEdge, (near) => { if (!near) edgeHintDismissed.value = false })
 
+// Første-gangs onboarding for auto-kart. Funksjonen er default AV (opt-in), så
+// nye brukere vet ikke at den finnes. Første gang et kart åpnes (av brukeren,
+// ikke et auto-generert hopp) viser vi ett dismissbart panel med én-trykks
+// «aktiver» + en peker mot Innstillinger. Vises kun ÉN gang totalt (localStorage).
+const AUTOMAP_ONBOARD_KEY = 'svg-insights-automap-onboarded'
+let autoMapOnboarded = (() => {
+  try { return localStorage.getItem(AUTOMAP_ONBOARD_KEY) === '1' } catch { return false }
+})()
+const showAutoMapOnboard = ref(false)
+function maybeShowAutoMapOnboarding() {
+  // Hopp over hvis alt vist før, hvis auto-kart alt er på (ingenting å tipse om),
+  // eller hvis dette er en auto-generert flis (brukeren åpnet ikke DET kartet selv).
+  if (autoMapOnboarded || autoMapEnabled.value || currentMapIsAuto.value) return
+  autoMapOnboarded = true
+  try { localStorage.setItem(AUTOMAP_ONBOARD_KEY, '1') } catch { /* noop */ }
+  showAutoMapOnboard.value = true
+}
+function dismissAutoMapOnboard() { showAutoMapOnboard.value = false }
+function enableAutoMapFromOnboard() {
+  if (!autoMapEnabled.value) toggleAutoMap()   // slår på + viser bekreftelses-toast
+  showAutoMapOnboard.value = false
+}
+
 // Screen Wake Lock — holder skjermen våken når brukeren bruker kartet til
 // orientering ute. Persisteres i localStorage (default PÅ). Re-requestes
 // automatisk når fanen blir synlig igjen siden browseren alltid slipper
@@ -5161,6 +5201,48 @@ onUnmounted(() => {
                      text-white text-[12px] font-medium active:scale-[0.98]">
         Slå på auto-kart
       </button>
+    </div>
+
+    <!-- Første-gangs tips: auto-kart finnes (default av). Dismissbart, med én-
+         trykks aktivering. Vises kun én gang, når et kart åpnes for første gang. -->
+    <div v-if="!loading && showAutoMapOnboard && !curveball.active.value"
+         class="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-[420px]
+                rounded-xl backdrop-blur bg-zinc-900/95 border border-emerald-400/30
+                text-white text-[12px] shadow-xl p-3.5">
+      <div class="flex items-start gap-2">
+        <svg viewBox="0 0 24 24" class="w-5 h-5 mt-0.5 shrink-0 text-emerald-300" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>
+        </svg>
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-emerald-100 mb-0.5">Visste du: auto-kart</div>
+          <div class="leading-snug text-white/80">
+            Drar du kartet forbi kanten, kan appen bygge et nytt utsnitt automatisk —
+            samme størrelse og ekvidistanse, sentrert der du ser. Funksjonen er av nå.
+          </div>
+          <div class="leading-snug text-white/45 mt-1">
+            Du finner valget igjen under Innstillinger (sammen med «Hold skjerm våken»).
+          </div>
+        </div>
+        <button @click="dismissAutoMapOnboard" aria-label="Lukk"
+                class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
+                       text-white/80 active:scale-90 active:bg-white/10 shrink-0">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="flex gap-2 mt-2.5">
+        <button @click="enableAutoMapFromOnboard"
+                class="flex-1 px-3 py-1.5 rounded-md bg-emerald-500 text-white text-[12px] font-medium active:scale-[0.98]">
+          Aktiver auto-kart
+        </button>
+        <button @click="dismissAutoMapOnboard"
+                class="px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/85 text-[12px] active:scale-[0.98]">
+          Ikke nå
+        </button>
+      </div>
     </div>
 
     <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
@@ -6196,10 +6278,18 @@ onUnmounted(() => {
               <div v-if="placeWikiCard.extract" class="text-[12px] text-sky-50/80 leading-snug">
                 {{ placeWikiCard.extract }}
               </div>
-              <div v-if="placeWikiCard.url" class="pt-0.5">
+              <div v-if="placeWikiCard.url" class="pt-0.5 flex flex-wrap items-center gap-2">
                 <a :href="placeWikiCard.url" target="_blank" rel="noopener"
                    class="inline-block px-2.5 py-1.5 rounded-lg border border-sky-400/30 bg-sky-500/10 text-sky-100 text-[11px]">
                   {{ sourceLabel(placeWikiCard.source) }} ↗
+                </a>
+                <!-- Sekundær: lenke til den overordnede «første del»-artikkelen
+                     (selve stedet) når den har et eget oppslag. Ofte vil man lese
+                     begge — f.eks. både «Hjerkinn stasjon» og «Hjerkinn». -->
+                <a v-if="placeWikiCard.secondary?.url" :href="placeWikiCard.secondary.url"
+                   target="_blank" rel="noopener"
+                   class="inline-block px-2.5 py-1.5 rounded-lg border border-sky-400/20 bg-white/5 text-sky-100/80 text-[11px]">
+                  {{ placeWikiCard.secondary.title }} ({{ sourceLabel(placeWikiCard.secondary.source) }}) ↗
                 </a>
               </div>
             </div>
