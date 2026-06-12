@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
+import { deflateSync } from 'node:zlib'
 import {
   terrariumElevation,
   decodeTerrariumRGBA,
+  decodeTerrariumPixels,
+  unfilterScanlines,
+  decodePng,
   chooseTerrariumZoom,
   lonToGlobalPx,
   latToGlobalPx,
@@ -36,6 +40,89 @@ describe('decodeTerrariumRGBA', () => {
     const out = decodeTerrariumRGBA(rgba, px)
     expect(out.length).toBe(4)
     expect([...out]).toEqual([0, 0, 0, 0])
+  })
+})
+
+describe('unfilterScanlines', () => {
+  // 2x2 RGB, kjente piksler: (10,20,30) (40,50,60) / (70,80,90) (100,110,120)
+  const flat = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]
+
+  it('filter 0 (None) er identitet', () => {
+    const raw = Uint8Array.from([0, ...flat.slice(0, 6), 0, ...flat.slice(6)])
+    expect([...unfilterScanlines(raw, 2, 2, 3)]).toEqual(flat)
+  })
+  it('filter 1 (Sub) rekonstruerer fra venstre nabo', () => {
+    // rad: [10,20,30, 30,30,30] med Sub → andre piksel lagres som diff
+    const raw = Uint8Array.from([1, 10, 20, 30, 30, 30, 30])
+    expect([...unfilterScanlines(raw, 2, 1, 3)]).toEqual([10, 20, 30, 40, 50, 60])
+  })
+  it('filter 2 (Up) rekonstruerer fra raden over', () => {
+    const raw = Uint8Array.from([0, 10, 20, 30, 2, 60, 60, 60])
+    expect([...unfilterScanlines(raw, 1, 2, 3)]).toEqual([10, 20, 30, 70, 80, 90])
+  })
+  it('filter 3 (Average) og 4 (Paeth) rekonstruerer kjente verdier', () => {
+    // Average: x = raw + floor((a+b)/2); rad2 px1: a=0,b=10 → raw=70-5=65
+    const avg = Uint8Array.from([0, 10, 20, 30, 3, 65, 70, 75])
+    expect([...unfilterScanlines(avg, 1, 2, 3)]).toEqual([10, 20, 30, 70, 80, 90])
+    // Paeth: rad2 px1: a=0,b=10,c=0 → predictor=b=10 → raw=70-10=60
+    const paeth = Uint8Array.from([0, 10, 20, 30, 4, 60, 60, 60])
+    expect([...unfilterScanlines(paeth, 1, 2, 3)]).toEqual([10, 20, 30, 70, 80, 90])
+  })
+})
+
+// Bygg en minimal ekte PNG (8-bit, ikke-interlaced) med node:zlib.
+// Dekoderen verifiserer ikke CRC, så CRC-feltene kan stå som nuller.
+function buildPng(width, height, channels, pixels) {
+  const colorType = channels === 3 ? 2 : 6
+  const stride = width * channels
+  const raw = new Uint8Array(height * (1 + stride))
+  for (let y = 0; y < height; y++) {
+    raw[y * (1 + stride)] = 0 // filter None
+    raw.set(pixels.subarray(y * stride, (y + 1) * stride), y * (1 + stride) + 1)
+  }
+  const idat = deflateSync(raw)
+  const chunk = (type, data) => {
+    const out = new Uint8Array(12 + data.length)
+    new DataView(out.buffer).setUint32(0, data.length)
+    out[4] = type.charCodeAt(0); out[5] = type.charCodeAt(1)
+    out[6] = type.charCodeAt(2); out[7] = type.charCodeAt(3)
+    out.set(data, 8)
+    return out
+  }
+  const ihdr = new Uint8Array(13)
+  const dv = new DataView(ihdr.buffer)
+  dv.setUint32(0, width); dv.setUint32(4, height)
+  ihdr[8] = 8; ihdr[9] = colorType; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0
+  const sig = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  const parts = [sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', new Uint8Array(0))]
+  const total = parts.reduce((s, p) => s + p.length, 0)
+  const png = new Uint8Array(total)
+  let p = 0
+  for (const part of parts) { png.set(part, p); p += part.length }
+  return png
+}
+
+describe('decodePng round-trip', () => {
+  it('dekoder en RGB-PNG bit-eksakt', async () => {
+    const pixels = Uint8Array.from([130, 88, 0, 128, 0, 0, 127, 246, 0, 131, 144, 128])
+    const png = buildPng(2, 2, 3, pixels)
+    const out = await decodePng(png)
+    expect(out.width).toBe(2)
+    expect(out.height).toBe(2)
+    expect(out.channels).toBe(3)
+    expect([...out.pixels]).toEqual([...pixels])
+    // og videre til høyder: 600, 0, -10, 912.5
+    const elev = decodeTerrariumPixels(out.pixels, 3, 4)
+    expect([...elev]).toEqual([600, 0, -10, 912.5])
+  })
+  it('dekoder en RGBA-PNG', async () => {
+    const pixels = Uint8Array.from([130, 88, 0, 255, 128, 0, 0, 255])
+    const out = await decodePng(buildPng(2, 1, 4, pixels))
+    expect(out.channels).toBe(4)
+    expect([...decodeTerrariumPixels(out.pixels, 4, 2)]).toEqual([600, 0])
+  })
+  it('kaster på ikke-PNG', async () => {
+    await expect(decodePng(Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8, 9]))).rejects.toThrow('ikke PNG')
   })
 })
 
