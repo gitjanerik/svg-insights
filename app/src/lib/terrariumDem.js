@@ -18,6 +18,17 @@
 //
 // Terrarium-koding: høyde_m = (R*256 + G + B/256) - 32768.
 //
+// VIKTIG — PNG dekodes i REN JS, IKKE via canvas (v10.2.23): første versjon
+// tegnet flisene til canvas og leste getImageData. Det ga terrasse-artefakter
+// («sagtann»-vegger av stablede kurver + flate platåer i relieffet) på mobil:
+// nettleserens bilde-dekoding kan kjøre fargerom-konvertering/-management på
+// pikslene (typisk på wide-gamut-Android), og i Terrarium-koding er ±1 i
+// RØD-kanalen ±256 METER. MapLibre omgår samme felle med createImageBitmap-
+// opsjonene {premultiplyAlpha:'none', colorSpaceConversion:'none'}, men de
+// respekteres ikke overalt — så vi parser PNG-en selv (IDAT er zlib; native
+// DecompressionStream) og er bit-eksakte på alle plattformer. Verifisert:
+// samme data gjennom ren-JS-dekoding ga rene, glatte grensekryssende kurver.
+//
 // STRATEGI (gated så innlands full-dekning er byte-identisk):
 //   1. detectTerrariumTrigger: finnes noData ELLER et stort ~0 m-felt mot
 //      ellers høyt terreng? Nei → ingen henting, DEM uendret.
@@ -51,6 +62,94 @@ export function decodeTerrariumRGBA(rgba, px = TILE_PX) {
   const out = new Float32Array(px * px)
   for (let i = 0, j = 0; i < out.length; i++, j += 4) {
     out[i] = terrariumElevation(rgba[j], rgba[j + 1], rgba[j + 2])
+  }
+  return out
+}
+
+// ── Minimal PNG-dekoder (bit-eksakt, ingen canvas/fargerom) ────────────────
+// Dekker det Terrarium-fliser faktisk er: 8-bit RGB (type 2) / RGBA (type 6),
+// ikke-interlaced, alle 5 scanline-filtre. Alt annet → kast (flisen droppes
+// og cellene forblir ufylt — aldri verre enn før). CRC verifiseres ikke.
+
+/** PNG-scanline-unfilter (ren funksjon, enhetstestet). raw = inflatet IDAT. */
+export function unfilterScanlines(raw, width, height, channels) {
+  const stride = width * channels
+  const out = new Uint8Array(stride * height)
+  let rp = 0
+  for (let y = 0; y < height; y++) {
+    const filter = raw[rp++]
+    const row = y * stride
+    const prev = row - stride
+    for (let x = 0; x < stride; x++) {
+      const rv = raw[rp + x]
+      const a = x >= channels ? out[row + x - channels] : 0
+      const b = y > 0 ? out[prev + x] : 0
+      const c = (x >= channels && y > 0) ? out[prev + x - channels] : 0
+      let v
+      switch (filter) {
+        case 0: v = rv; break
+        case 1: v = rv + a; break
+        case 2: v = rv + b; break
+        case 3: v = rv + ((a + b) >> 1); break
+        case 4: {
+          const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c)
+          v = rv + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)
+          break
+        }
+        default: throw new Error(`PNG-filter ${filter} ustøttet`)
+      }
+      out[row + x] = v & 0xff
+    }
+    rp += stride
+  }
+  return out
+}
+
+async function inflateZlib(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+/** Parse + dekod en PNG-fil til { width, height, channels, pixels }. */
+export async function decodePng(buf) {
+  if (buf.length < 8 || buf[0] !== 0x89 || buf[1] !== 0x50) throw new Error('ikke PNG')
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength)
+  let off = 8
+  let width = 0, height = 0, channels = 0
+  const idat = []
+  while (off + 8 <= buf.length) {
+    const len = dv.getUint32(off)
+    const type = String.fromCharCode(buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7])
+    if (type === 'IHDR') {
+      width = dv.getUint32(off + 8)
+      height = dv.getUint32(off + 12)
+      const bitDepth = buf[off + 16], colorType = buf[off + 17], interlace = buf[off + 20]
+      if (bitDepth !== 8) throw new Error(`PNG bitDepth ${bitDepth} ustøttet`)
+      if (colorType === 2) channels = 3
+      else if (colorType === 6) channels = 4
+      else throw new Error(`PNG colorType ${colorType} ustøttet`)
+      if (interlace !== 0) throw new Error('interlaced PNG ustøttet')
+    } else if (type === 'IDAT') {
+      idat.push(buf.subarray(off + 8, off + 8 + len))
+    } else if (type === 'IEND') break
+    off += 12 + len
+  }
+  if (!width || !channels || idat.length === 0) throw new Error('ufullstendig PNG')
+  const total = idat.reduce((s, d) => s + d.length, 0)
+  const z = new Uint8Array(total)
+  let p = 0
+  for (const d of idat) { z.set(d, p); p += d.length }
+  const raw = await inflateZlib(z)
+  const expected = height * (1 + width * channels)
+  if (raw.length < expected) throw new Error(`PNG-data for kort (${raw.length} < ${expected})`)
+  return { width, height, channels, pixels: unfilterScanlines(raw, width, height, channels) }
+}
+
+/** Dekod PNG-piksler (3 eller 4 kanaler) til Terrarium-høyder. */
+export function decodeTerrariumPixels(pixels, channels, count) {
+  const out = new Float32Array(count)
+  for (let i = 0, j = 0; i < count; i++, j += channels) {
+    out[i] = terrariumElevation(pixels[j], pixels[j + 1], pixels[j + 2])
   }
   return out
 }
@@ -154,25 +253,15 @@ export function fillDemCells(dem, utmBbox, sample) {
   return { dem: { ...dem, data: out, source }, filled: true, replaced }
 }
 
-// ── Nett + canvas (kjører kun i nettleser) ──────────────────────────────────
+// ── Nett-henting (ren JS-dekoding — se modul-kommentaren om canvas-fella) ──
 
 async function loadTerrariumTile(z, x, y, signal) {
   const url = `${TERRARIUM_URL}/${z}/${x}/${y}.png`
   const res = await fetch(url, { signal })
   if (!res.ok) return null
-  const blob = await res.blob()
-  const bmp = await createImageBitmap(blob)
-  try {
-    const canvas = typeof OffscreenCanvas !== 'undefined'
-      ? new OffscreenCanvas(TILE_PX, TILE_PX)
-      : Object.assign(document.createElement('canvas'), { width: TILE_PX, height: TILE_PX })
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })
-    ctx.drawImage(bmp, 0, 0)
-    const { data } = ctx.getImageData(0, 0, TILE_PX, TILE_PX)
-    return decodeTerrariumRGBA(data, TILE_PX)
-  } finally {
-    bmp.close?.()
-  }
+  const png = await decodePng(new Uint8Array(await res.arrayBuffer()))
+  if (png.width !== TILE_PX || png.height !== TILE_PX) return null
+  return decodeTerrariumPixels(png.pixels, png.channels, TILE_PX * TILE_PX)
 }
 
 /**
@@ -189,8 +278,9 @@ export async function fillDemVoidsFromTerrarium(dem, utmBbox, opts = {}) {
   const { trigger } = detectTerrariumTrigger(dem)
   if (!trigger) return { dem, filled: false, replaced: 0 }
 
-  // Miljø-guard: trenger fetch + bitmap-dekoding (nettleser). Node/CI → hopp over.
-  if (typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
+  // Miljø-guard: trenger fetch + DecompressionStream (alle moderne nettlesere
+  // og Node 18+ — så fyllet virker også i CI-bygg). Mangler de → hopp over.
+  if (typeof fetch !== 'function' || typeof DecompressionStream !== 'function') {
     return { dem, filled: false, replaced: 0 }
   }
 
