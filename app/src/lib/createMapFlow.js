@@ -22,6 +22,7 @@ import { fetchNveLakePolygons } from './nveLakeFetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
 import { isOsmWaterSalty } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
+import { fillDemVoidsFromTerrarium } from './terrariumDem.js'
 import { findHighestPoint, packDem } from './demSampling.js'
 import { utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
@@ -269,6 +270,27 @@ export async function buildMapFromCenter({
     return overpassP.then(osm => osmHasSaltwater(osm?.elements)).catch(() => false)
   })
 
+  // Grense-kart: fyll celler utenfor norsk WCS-dekning (noData, eller en
+  // kunstig ~0 m-klippe mot ekte terreng) fra global Terrarium-høyde, så
+  // høydekurver krysser riksgrensa i stedet for å stable seg til en «mur».
+  // Trygg/gated: full-dekning innlands-kart trigger ikke → DEM uendret, og
+  // syntetisk DEM hoppes over. Feiler hentingen → DEM uendret.
+  const maybeFillFromTerrarium = async (dem) => {
+    if (!dem || dem.source?.startsWith('synthetic')) return dem
+    try {
+      const { dem: filled, filled: didFill, replaced } =
+        await fillDemVoidsFromTerrarium(dem, utmBbox, { signal })
+      if (didFill) {
+        console.log(`[Terrarium] fylte ${replaced} celler utenfor norsk dekning`)
+        onProgress(`Fyller terreng utenfor norsk dekning fra global høydemodell …`)
+        return filled
+      }
+    } catch (e) {
+      console.warn(`[Terrarium] fyll hoppet over: ${e?.message ?? e}`)
+    }
+    return dem
+  }
+
   const demPromise = timeAsync('dem', probeDemPromise.then(async (probeDem) => {
     // Ingen oppgradering mulig (for stort/allerede fint) → returnér probe-DEM-et
     // med en gang; vent IKKE på kyst-signalet (som blokkerer på Overpass).
@@ -292,7 +314,7 @@ export async function buildMapFromCenter({
       console.warn(`[DEM] 5 m-oppgradering feilet (${e?.message ?? e}) — beholder ${resolutionM} m`)
       return probeDem
     }
-  }))
+  }).then(maybeFillFromTerrarium))
   // Sjøkart gates på samme kyst-signal (DEM-havflate + OSM-saltvann). For
   // innlands-bbox (inkl. store innsjøer) hoppes WFS-hentingen helt over.
   const sjokartPromise = timeAsync('sjøkart', coastalPromise.then(coastal => {

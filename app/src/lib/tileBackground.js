@@ -9,6 +9,11 @@
 import { computed } from 'vue'
 
 const TILE_URL = 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator'
+// OSM-standard som underlag: Kartverkets topo dekker bare Norge, så grensenære
+// utsnitt (Børgefjell etc.) ble blanke på svensk side. OSM dekker globalt og
+// rendres BAK Kartverket-flisene — der Kartverket mangler/feiler viser OSM.
+// Plain <img> trenger ikke CORS, så dette virker uavhengig av tile-policy.
+const OSM_TILE_URL = 'https://tile.openstreetmap.org'
 const TILE_SIZE = 256
 
 // Web Mercator tile koordinater fra lat/lon ved gitt zoom
@@ -57,7 +62,9 @@ export function tileMosaic(centerLat, centerLon, zoom, viewportPx) {
   for (let ty = tlTile.y; ty < brTile.y; ty++) {
     for (let tx = tlTile.x; tx < brTile.x; tx++) {
       tiles.push({
+        // Kartverket bruker {TileRow}/{TileCol} = {y}/{x}; OSM bruker {z}/{x}/{y}.
         url: `${TILE_URL}/${zoom}/${ty}/${tx}.png`,
+        osmUrl: `${OSM_TILE_URL}/${zoom}/${tx}/${ty}.png`,
         leftPx: tx * TILE_SIZE - tlPx.x,
         topPx:  ty * TILE_SIZE - tlPx.y,
       })

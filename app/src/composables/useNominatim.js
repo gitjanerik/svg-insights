@@ -1,11 +1,13 @@
 import { ref, watch } from 'vue'
 
 // Stedssøk via OpenStreetMap Nominatim. Free service, krever User-Agent
-// og rate-limit-vennlig bruk. Vi debouncer og begrenser til Norge.
+// og rate-limit-vennlig bruk. Vi debouncer og begrenser til Norge + Sverige
+// (countrycodes tar komma-liste) så grensenære turer — Børgefjell, Femunden,
+// Rogen — kan finne svenske stedsnavn i bbox-velgeren.
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org/search'
 
-export function useNominatim({ debounceMs = 350, countryCode = 'no' } = {}) {
+export function useNominatim({ debounceMs = 350, countryCode = 'no,se' } = {}) {
   const query = ref('')
   const results = ref([])
   const isSearching = ref(false)
