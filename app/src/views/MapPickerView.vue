@@ -306,6 +306,12 @@ const tiles = computed(() => {
   )
 })
 
+// Kartverket-topo dekker bare Norge. Feiler en flis (utenfor dekning), skjul
+// den så OSM-underlaget viser gjennom — slik blir svensk side ikke blank.
+function onTopoTileError(e) {
+  e.target.style.display = 'none'
+}
+
 // Pixel-størrelse av bbox-overlegget innen preview-en
 const bboxOverlayPx = computed(() => {
   if (!previewSize.value.w) return { w: 0, h: 0 }
@@ -725,13 +731,21 @@ onMounted(() => {
            @mouseup="onPreviewMouseUp"
            @mouseleave="onPreviewMouseUp"
            @wheel="onPreviewWheel">
-        <!-- Ekte Kartverket-tiler som bakgrunn. Tiles flyttes når bruker drar
-             (center oppdateres → tile-mosaikken regenereres rundt ny lat/lon). -->
+        <!-- OSM-underlag: dekker globalt (også Sverige) så grensenære utsnitt
+             ikke blir blanke der Kartverket-topo mangler. -->
+        <img v-for="t in tiles" :key="'osm-' + t.url"
+             :src="t.osmUrl" alt=""
+             class="absolute pointer-events-none select-none"
+             :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
+             draggable="false" />
+        <!-- Ekte Kartverket-tiler OVER OSM. Tiles flyttes når bruker drar
+             (center oppdateres → tile-mosaikken regenereres rundt ny lat/lon).
+             Skjules ved feil (utenfor norsk dekning) → OSM-underlaget viser. -->
         <img v-for="t in tiles" :key="t.url"
              :src="t.url" alt=""
              class="absolute pointer-events-none select-none"
              :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: '256px', height: '256px' }"
-             draggable="false" />
+             draggable="false" @error="onTopoTileError" />
 
         <!-- Netto-frame fast i sentrum (portrett — følger skjerm-formatet så
              kartet fyller fullskjerm). Brukeren drar kartet UNDER rammen for å
