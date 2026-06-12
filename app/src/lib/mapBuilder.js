@@ -16,6 +16,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectCliffs, detectKnauser } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
+import { buildSeaFromCoastline } from './coastlineToSea.js'
 import { depthToColor } from './sjokartFetcher.js'
 import {
   unionRingsToSea,
@@ -1007,6 +1008,36 @@ export function buildSvg(elements, bbox, options = {}) {
     if (n50SeaRings.length) {
       authoritativeSea = unionRingsToSea(n50SeaRings)
       if (authoritativeSea.length) authoritativeSeaSource = 'n50'
+    }
+  }
+
+  // ── Fallback: OSM-coastline-sjø (global — f.eks. svensk kyst) ─────────
+  // Ingen DEM/N50-autoritativ sjø betyr som regel «utenfor norsk datadekning»
+  // (Stockholms skjærgård, Bohuslän): Kartverket-DEM og N50 Havflate er begge
+  // norske kilder. OSM `natural=coastline` er derimot global og hentes CORS-
+  // trygt via Overpass (allerede i pipelinen). buildSeaFromCoastline er bevisst
+  // konservativ — produserer heller INGEN sjø enn feil sjø (flommer aldri land).
+  // Gated på at autoritativ sjø MANGLER: norske kyst-kart har alt DEM-sjø →
+  // hopper hit aldri → byte-identisk. Resultatet mates inn som demSeaPolygons,
+  // så rendering (303-fyll), land-maske og marin topologi virker uendret.
+  if (authoritativeSea.length === 0) {
+    const coastLines = []
+    for (const el of elements) {
+      if (el.type !== 'way' || el.tags?.natural !== 'coastline') continue
+      const g = el.geometry
+      if (!g || g.length < 2) continue
+      coastLines.push(g.map(pt => { const p = project(pt.lat, pt.lon); return [p.x, p.y] }))
+    }
+    if (coastLines.length) {
+      const coastSea = buildSeaFromCoastline(coastLines, { minX: 0, minY: 0, maxX: widthM, maxY: heightM })
+      if (coastSea.length) {
+        demSeaPolygons = coastSea
+        authoritativeSea = unionPolygonsToSea(coastSea)
+        if (authoritativeSea.length) {
+          authoritativeSeaSource = 'coastline'
+          console.log(`[sjø] OSM-coastline-fallback: ${coastSea.length} sjø-polygon(er)`)
+        }
+      }
     }
   }
   const hasAuthoritativeSea = authoritativeSea.length > 0
