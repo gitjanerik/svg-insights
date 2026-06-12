@@ -319,8 +319,24 @@ function ensureCCWForPolygonClipping(ring) {
   if (a < 0) ring.reverse()
 }
 
+// XML-escaping for tekst OG attributtverdier. Brukes overalt navn/etiketter
+// fra OSM legges inn i SVG-en (data-name="…", <text>…</text>). Må dekke BÅDE
+// innholds- og attributt-konteksten, ellers blir hele SVG-en ugyldig XML og
+// MapView feiler med «Ugyldig SVG»:
+//   - " (og ') escapes — et anførselstegn i et navn (vanlig i store byer som
+//     Stockholm, sjeldnere på norske kart) lukket ellers data-name="…"-attr-
+//     ibuttet midt i og brøt parsingen. DETTE var Stockholm-buggen.
+//   - C0-kontrolltegn (untatt tab/LF/CR) er ULOVLIGE i XML 1.0 selv escaped,
+//     så de strippes — et stray kontrolltegn i et OSM-navn ga ellers parsererror.
 function xmlEscape(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return String(s)
+    // Strip C0-kontrolltegn (untatt tab/LF/CR) — ulovlige i XML 1.0 selv escaped.
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 /**
