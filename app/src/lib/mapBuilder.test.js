@@ -159,9 +159,15 @@ describe('svensk kyst som land — undertrykk rå OSM-saltvann uten autoritativ 
     expect(svg).not.toMatch(/data-iso="303"><\/g>/) // 303 har innhold
   })
 
-  it('ferskvann (innsjø) er urørt — vises fortsatt', () => {
+  it('utenfor norsk dekning → ferskvanns-WAY droppes også (vann som land)', () => {
     const { svg } = buildSvg([osmLake], bbox, {})
-    // ferskvann klassifiseres som 301/302 og skal IKKE undertrykkes
+    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
+    expect(fresh).toBe(false)
+  })
+
+  it('med norsk vektordata (N50) beholdes OSM-ferskvann (ingen norsk regresjon)', () => {
+    // n50Sea har _source='n50' → vi er «i Norge» → ingen vann-tømming
+    const { svg } = buildSvg([n50Sea, osmLake], bbox, {})
     const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
     expect(fresh).toBe(true)
   })
@@ -194,8 +200,10 @@ describe('xmlEscape — navn med spesialtegn gir gyldig XML (Stockholm-bug)', ()
   // Et OSM-navn med " brøt data-name="…"-attributtet → hele SVG-en ble
   // ugyldig XML → MapView «Ugyldig SVG». Gjaldt store byer (Stockholm) der
   // POI-er oftere har anførselstegn/spesialtegn i navnet.
+  // _source='n50' → behandles som «i Norge» så vannet faktisk rendres (med
+  // data-name) og escaping kan verifiseres — uavhengig av svensk vann-tømming.
   const named = (name) => ({
-    type: 'way', id: 42,
+    type: 'way', id: 42, _source: 'n50',
     tags: { natural: 'water', name },
     geometry: ring(59.01, 10.06, 59.04, 10.08),
   })

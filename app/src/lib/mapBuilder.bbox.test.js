@@ -63,7 +63,9 @@ function bboxOf(pathTag) {
 const elements = [
   squareWay(1, 59.002, 10.002, 0.002, { natural: 'wood' }),
   squareWay(2, 59.040, 10.075, 0.002, { natural: 'wood' }),
-  squareWay(3, 59.020, 10.040, 0.002, { natural: 'water', name: 'Testvatnet' }),
+  // _source='n50' → «i Norge» så vannet rendres (svensk vann-tømming gjelder
+  // bare kart UTEN N50/NVE-data); denne testen handler om data-bbox-bucketing.
+  { ...squareWay(3, 59.020, 10.040, 0.002, { natural: 'water', name: 'Testvatnet' }), _source: 'n50' },
   lineWay(4, 59.005, 10.005, 0.03, 0.06, { highway: 'secondary' }),
 ]
 
