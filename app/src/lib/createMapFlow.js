@@ -20,7 +20,7 @@ import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchNveLakePolygons } from './nveLakeFetcher.js'
 import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
-import { isOsmWaterSalty } from './symbolizer.js'
+import { isOsmWaterSalty, isFlowingWaterArea } from './symbolizer.js'
 import { fetchDEM } from './demFetcher.js'
 import { fillDemVoidsFromTerrarium } from './terrariumDem.js'
 import { findHighestPoint, packDem } from './demSampling.js'
@@ -36,6 +36,42 @@ import { logPerf } from './perfLog.js'
 // dagens oppførsel (én full fetch). Følg med på at høydekurver flukter med
 // stier/vann (ingen forskyvning) på nabo-kart.
 const DEM_TILE_CACHE_ENABLED = true
+
+// Per-element OSM-vann-filter. De autoritative norske kildene (N50 vann, NVE
+// innsjø-flater, Sjøkart) er foretrukket der de finnes, men de dekker bare
+// deler av vann-stacken: N50/NVE leverer STILLESTÅENDE ferskvann (innsjøer/
+// magasin) og N50 i tillegg sjø — ingen av dem leverer ELVELØP. Derfor:
+//   • Saltvann → behold kun hvis N50 ikke har sjø (ellers er N50 autoritativ).
+//   • Elve-/kanal-/bekke-FLATER (isFlowingWaterArea) → behold ALLTID. Dette er
+//     regresjons-vakten: uten den droppes brede elver (Drammenselva, tagget
+//     natural=water+water=river) så snart NVE/N50 returnerer ferskvann, og det
+//     som står igjen er bare den hårtynne waterway=river-senterlinja (304).
+//   • Øvrig ferskvanns-flate (innsjø/tjern) → undertrykk når NVE/N50 leverer.
+//   • Bekke-/grøfte-LINJER → undertrykk kun når N50 har ferskvann.
+// I nettleseren feiler WFS-kildene ofte (CORS) → alle flagg false → alt OSM-vann
+// beholdes uendret.
+export function filterOsmWaterElements(elements, flags = {}) {
+  const { n50HasSea = false, n50HasFreshwater = false, nveHasLakes = false } = flags
+  return (elements ?? []).filter(el => {
+    const tags = el.tags ?? {}
+    const isWaterPolygon = tags.natural === 'water' || !!tags.water ||
+                           tags.natural === 'bay' || tags.natural === 'strait' ||
+                           tags.place === 'sea' || tags.place === 'ocean'
+    if (isWaterPolygon) {
+      if (isOsmWaterSalty(tags)) return !n50HasSea
+      // Elveløp som flate — verken NVE eller N50 har den, så aldri undertrykk.
+      if (isFlowingWaterArea(tags)) return true
+      // Ferskvanns-polygon: NVE (eller N50) er autoritativ når tilgjengelig.
+      if (nveHasLakes) return false
+      if (tags.name) return true
+      return !n50HasFreshwater
+    }
+    if (tags.waterway === 'stream' || tags.waterway === 'ditch') {
+      return !n50HasFreshwater
+    }
+    return true
+  })
+}
 
 // Terreng-først «finalize»-register: når et kart bygges terreng-først lagres
 // konturer+relieff straks, og den fulle byggingen (Overpass + OSM) fortsetter
@@ -371,28 +407,13 @@ export async function buildMapFromCenter({
       el.tags?.water === 'sea' || el.tags?.salt === 'yes'
     )
     // NVE leverer kun innsjø-FLATER (ikke elver/sjø). Er den tilgjengelig, er
-    // den autoritativ for ferskvanns-POLYGONER → undertrykk OSM-innsjøer helt
-    // (også navngitte: nettopp store, navngitte innsjøer som Røssvatnet er der
-    // mistagget og flommer). OSM-elver (waterway) beholdes — NVE har dem ikke.
+    // den autoritativ for INNSJØ-polygoner → undertrykk OSM-innsjøer helt (også
+    // navngitte: nettopp store, navngitte innsjøer som Røssvatnet er der
+    // mistagget og flommer). Elve-/kanal-/bekke-FLATER beholdes uansett (se
+    // filterOsmWaterElements / isFlowingWaterArea) — NVE har ingen elveløp.
     const nveHasLakes = nveLakes.length > 0
 
-    const elements = osmData.elements.filter(el => {
-      const tags = el.tags ?? {}
-      const isWaterPolygon = tags.natural === 'water' || !!tags.water ||
-                             tags.natural === 'bay' || tags.natural === 'strait' ||
-                             tags.place === 'sea' || tags.place === 'ocean'
-      if (isWaterPolygon) {
-        if (isOsmWaterSalty(tags)) return !n50HasSea
-        // Ferskvanns-polygon: NVE (eller N50) er autoritativ når tilgjengelig.
-        if (nveHasLakes) return false
-        if (tags.name) return true
-        return !n50HasFreshwater
-      }
-      if (tags.waterway === 'stream' || tags.waterway === 'ditch') {
-        return !n50HasFreshwater
-      }
-      return true
-    })
+    const elements = filterOsmWaterElements(osmData.elements, { n50HasSea, n50HasFreshwater, nveHasLakes })
     if (n50Water.length > 0) elements.push(...n50Water)
     if (nveLakes.length > 0) elements.push(...nveLakes)
     if (sjokartElements.length > 0) elements.push(...sjokartElements)

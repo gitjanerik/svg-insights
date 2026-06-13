@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPointSymbolDef, isOsmWaterSalty, classifyToIsom } from './symbolizer.js'
+import { buildPointSymbolDef, isOsmWaterSalty, isFlowingWaterArea, classifyToIsom } from './symbolizer.js'
 
 describe('isOsmWaterSalty — kun autoritative tagger, aldri navn', () => {
   // Prinsipp: salinitet avgjøres KUN av tagger, ALDRI av navnet.
@@ -28,6 +28,30 @@ describe('isOsmWaterSalty — kun autoritative tagger, aldri navn', () => {
   it('Tyrifjorden (natural=water + fjord-navn) klassifiseres som ferskvann 301, ikke sjø 303', () => {
     const res = classifyToIsom({ type: 'way', tags: { natural: 'water', name: 'Tyrifjorden' } })
     expect(res).toEqual({ code: '301', cat: 'water' })
+  })
+})
+
+describe('isFlowingWaterArea — elveløp-flater som NVE/N50 aldri leverer', () => {
+  it('water=river/canal/stream/ditch er flytende flate', () => {
+    for (const water of ['river', 'canal', 'stream', 'ditch', 'lock', 'moat', 'rapids', 'fish_pass']) {
+      expect(isFlowingWaterArea({ natural: 'water', water })).toBe(true)
+    }
+  })
+
+  it('waterway-areal (riverbank/dock/river/canal) er flytende flate', () => {
+    expect(isFlowingWaterArea({ waterway: 'riverbank' })).toBe(true)
+    expect(isFlowingWaterArea({ waterway: 'dock' })).toBe(true)
+    expect(isFlowingWaterArea({ waterway: 'river' })).toBe(true)
+    expect(isFlowingWaterArea({ waterway: 'canal' })).toBe(true)
+  })
+
+  it('innsjø/tjern/magasin er IKKE flytende (NVE/N50 er autoritativ for dem)', () => {
+    expect(isFlowingWaterArea({ natural: 'water' })).toBe(false)
+    expect(isFlowingWaterArea({ natural: 'water', water: 'lake' })).toBe(false)
+    expect(isFlowingWaterArea({ natural: 'water', water: 'pond' })).toBe(false)
+    expect(isFlowingWaterArea({ natural: 'water', water: 'reservoir' })).toBe(false)
+    expect(isFlowingWaterArea({})).toBe(false)
+    expect(isFlowingWaterArea(undefined)).toBe(false)
   })
 })
 
