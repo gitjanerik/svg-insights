@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.37: Kai/molo-strek ned til 0,1 mm (551)
+
+Den lineære kai/brygge/molo-streken (ISOM 551) er satt videre ned fra 0,6 mm til 0,1 mm — fortsatt for tjukk ved test. Areal-kaier (fylte, lukkede polygoner) er uendret.
+
+---
+
 ## 2026-06-13 — v10.2.36: Kai/molo-strek ned til 0,6 mm (551)
 
 Den lineære kai/brygge/molo-streken (ISOM 551) er satt videre ned fra 0,8 mm til 0,6 mm som et bedre utgangspunkt før test. Areal-kaier (fylte, lukkede polygoner) er uendret.
