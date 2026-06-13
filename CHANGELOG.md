@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-13 — v10.2.41: Elvevann + dybde på begge sider av øyer (Holmen)
+
+Ved Drammenselvas utløp ligger øya Holmen. Sørkanalen ble vist som beige land med Sjøkart-dybdetall flytende oppå — feil, siden en øy per definisjon har vann på alle kanter. Rotårsak: Sjøkart-dybdeareal (307) ble konvertert via `pushPolygonAsWays`, som tok KUN den ytre ringen og kastet alle øy-hull. For å hindre at dybde da malte over øyer ble 307 klippet mot den DEM-deriverte sjøen (areal ≤ 0,5 m som rører kartkanten) — men den klippingen kappet også bort elvekanaler som ligger over havnivå, så elvevannet forsvant og bare dybde-tallene sto igjen.
+
+Fiks: `pushPolygonAsWays` bevarer nå øy-hull (emitterer en relation med outer/inner-ringer når polygonet har hull), så dybdearealet karver ut øyer via sin egen geometri. Med hullene intakt er Sjøkart-omrisset (= kysten) autoritativt, og DEM-sjø-klippingen av 307 er fjernet — elvekanaler beholder dybde og blå flate på begge sider av øyer. Soundings/dybdekurver klippes ikke. 567 tester grønne.
+
+---
+
 ## 2026-06-13 — v10.2.40: Elver tilbake — elve-flater overlever NVE/N50-vann
 
 Regresjonsfiks: brede elver forsvant fra fylt blå flate til en hårtynn senterlinje (rapportert på Drammenselva). Rotårsak: per-element OSM-vann-filteret i `createMapFlow` undertrykte ALLE ferskvanns-polygoner så snart NVE eller N50 returnerte ferskvann — men de norske kildene leverer kun stillestående vann (innsjøer/magasin), aldri elveløp. En elve-flate (`natural=water` + `water=river`) ble dermed droppet uten erstatning, og bare den tynne OSM-senterlinja (`waterway=river` → ISOM 304) sto igjen.

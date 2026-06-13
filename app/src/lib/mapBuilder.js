@@ -20,8 +20,6 @@ import { depthToColor } from './sjokartFetcher.js'
 import {
   unionRingsToSea,
   unionPolygonsToSea,
-  clipPolygonToSea,
-  multiPolygonToPathD,
   pointFeatureKept,
 } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
@@ -1268,22 +1266,14 @@ export function buildSvg(elements, bbox, options = {}) {
           }
           d = subpaths.join(' ')
         }
-        // Fase 1 (single coastline): klipp dybdeareal (307) til den
-        // autoritative kysten. DepthArea ∩ Land = 0 — fjerner dybde-bleeding
-        // forbi strandlinjen og over øyer (øy-hull i sjø-geometrien kapper
-        // bort dybde inne på øyer). Gated på hasAuthoritativeSea; for
-        // innlands-kart eller manglende kyst-modell er d urørt.
-        if (code === '307' && hasAuthoritativeSea && el.type === 'way' && el.geometry?.length >= 3) {
-          const ring = el.geometry.map(g => {
-            const p = project(g.lat, g.lon)
-            return [p.x, p.y]
-          })
-          const clipped = clipPolygonToSea([ring], authoritativeSea)
-          if (clipped.length === 0) continue   // dybdeareal helt på land → dropp
-          d = multiPolygonToPathD(clipped, fmt)
-          bbox = null
-          for (const poly of clipped) for (const r of poly) bbox = unionBbox(bbox, bboxOfPoints(r))
-        }
+        // Dybdeareal (307) rendres med Sjøkarts EGEN geometri — øy-hull bevares
+        // nå i sjokartFetcher (relation m/ inner-ringer), så dybde males ikke
+        // over øyer (Holmen i Drammen). Tidligere ble 307 klippet mot den DEM-
+        // deriverte sjøen (DepthArea ∩ DEM-sjø) for å kompensere for tapte hull,
+        // men DEM-sjøen er kun areal ≤ 0,5 m som rører kartkanten → elvekanaler
+        // (som ligger over havnivå) ble da kappet bort og etterlot dybde-tall
+        // flytende på beige land. Med ekte hull er Sjøkart-omrisset (= kysten)
+        // autoritativt og klippingen overflødig.
         if (d) {
           // ISOM 307 (Sjøkart dybdeareal): per-polygon fill basert på
           // gjennomsnitts-dybde via depthToColor — kystnær 5-bånds dempet

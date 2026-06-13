@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest'
-import { depthToColor } from './sjokartFetcher.js'
+import { depthToColor, sjokartToElements } from './sjokartFetcher.js'
+
+describe('sjokartToElements — dybdeareal bevarer øy-hull', () => {
+  // Et dybdeareal med en øy (Holmen-tilfellet): GML-polygon med outer + ett
+  // hull. Hullet MÅ bevares, ellers males dybde over øya.
+  const outer = [[10.0, 59.0], [10.1, 59.0], [10.1, 59.1], [10.0, 59.1], [10.0, 59.0]]
+  const hole = [[10.04, 59.04], [10.06, 59.04], [10.06, 59.06], [10.04, 59.06], [10.04, 59.04]]
+
+  it('polygon med hull → relation med outer + inner members', () => {
+    const els = sjokartToElements({
+      dybdeareal: [{ geometry: { type: 'Polygon', coordinates: [outer, hole] },
+                     properties: { minimumsdybde: 2, maksimumsdybde: 5 } }],
+    })
+    const rel = els.find(e => e.type === 'relation')
+    expect(rel).toBeTruthy()
+    expect(rel.tags.sjokart).toBe('dybdeareal')
+    expect(rel.members.filter(m => m.role === 'outer')).toHaveLength(1)
+    expect(rel.members.filter(m => m.role === 'inner')).toHaveLength(1)
+    expect(rel.members[1].geometry).toHaveLength(hole.length)
+  })
+
+  it('polygon UTEN hull → way (uendret)', () => {
+    const els = sjokartToElements({
+      dybdeareal: [{ geometry: { type: 'Polygon', coordinates: [outer] }, properties: {} }],
+    })
+    const way = els.find(e => e.type === 'way')
+    expect(way).toBeTruthy()
+    expect(els.some(e => e.type === 'relation')).toBe(false)
+  })
+})
 
 describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
   it('5 distinkte bånd over kyst-relevante dyp', () => {
