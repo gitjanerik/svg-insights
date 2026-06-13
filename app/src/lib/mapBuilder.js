@@ -1026,26 +1026,38 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── Svensk/uautoritativ kyst → vis som LAND (ikke «Venezia») ───────────
+  // ── Svensk/uautoritativ kyst+vann → vis som LAND (ikke «Venezia») ──────
   // Tom authoritativeSea = «utenfor norsk marin datadekning» (svensk kyst:
   // Stockholm, Bohuslän). Da finnes ingen autoritativ sjø-geometri, og rå OSM-
-  // saltvann er upålitelig her: store sjø-/bukt-MULTIPOLYGON-relasjoner strekker
-  // seg utenfor kart-bbox, og når en ytre ring ikke lukkes i utsnittet tvangs-
-  // lukkes den (assembleRelationRings) med en rett strek tvers over kartet →
-  // vannet blør ut over land («Venezia», bekreftet via diagnose-modus: kilde =
-  // OSM way/relation). I Norge rydder N50/NVE opp i dette; Sverige har ingen
-  // slik kilde i pipelinen. Trygt valg inntil en autoritativ svensk sjø-kilde
-  // finnes: dropp saltvann (303/304) → kysten vises som LAND. Ferskvann
-  // (innsjøer) er urørt. Gated på manglende autoritativ sjø → norske kyst-kart
-  // (DEM/N50-sjø) er uberørt og byte-identiske.
+  // vann er upålitelig her: store sjø-/bukt-/innsjø-MULTIPOLYGON-RELASJONER
+  // (Saltsjön, Mälaren …) strekker seg utenfor kart-bbox, og når en ytre ring
+  // ikke lukkes i utsnittet tvangslukkes den (assembleRelationRings) med en rett
+  // strek tvers over kartet → vannet blør ut over land («Venezia»; diagnose-modus
+  // viste flommen = OSM-RELATION/magenta). I Norge rydder N50/NVE opp i dette;
+  // Sverige har ingen slik kilde i pipelinen.
+  //
+  // Trygt valg inntil en autoritativ svensk sjø-kilde finnes:
+  //   1) Saltvann (303/304): dropp HELT → kysten vises som land.
+  //   2) Ferskvann (301/302): dropp rå OSM-RELASJONER (flom-kilden via
+  //      tvangslukking, f.eks. Mälaren tagget uten salt-subtype → klassifisert
+  //      ferskvann). Behold innsjø-WAYS (lukker korrekt, flommer ikke) og
+  //      AUTORITATIVE flater: NVE leverer innsjøer som type:'relation' m/
+  //      _source='nve' (n50Fetcher likeså) — de MÅ beholdes, ellers forsvinner
+  //      norske innsjøer. Derfor: dropp kun relasjoner UTEN autoritativ _source.
+  // Gated på manglende autoritativ sjø → norske kyst-/innlands-kart (DEM/N50/NVE)
+  // er uberørt og byte-identiske.
   //
   // OSM-coastline→sjø-forsøket (coastlineToSea.js) er parkert: diagnose viste at
-  // flommen er en EGEN render-vei (rå OSM-vann), ikke coastline-laget, så det
-  // løste ikke problemet. Modulen + testene beholdes for et senere forsøk på en
-  // autoritativ svensk sjø (klipp OSM-vann mot kysten).
+  // flommen er en EGEN render-vei (rå OSM-vann), ikke coastline-laget. Modulen +
+  // testene beholdes for et senere forsøk på en autoritativ svensk sjø.
   if (authoritativeSea.length === 0) {
     buckets['303'] = []
     buckets['304'] = []
+    const isRawOsmRelation = (el) => el.type === 'relation' && !(el._source && el._source !== 'osm')
+    for (const code of ['301', '302']) {
+      const b = buckets[code]
+      if (b?.length) buckets[code] = b.filter(el => !isRawOsmRelation(el))
+    }
   }
   const hasAuthoritativeSea = authoritativeSea.length > 0
 

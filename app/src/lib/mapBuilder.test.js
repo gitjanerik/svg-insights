@@ -165,6 +165,29 @@ describe('svensk kyst som land — undertrykk rå OSM-saltvann uten autoritativ 
     const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
     expect(fresh).toBe(true)
   })
+
+  // Stockholm: Mälaren/Saltsjön som store OSM-RELASJONER (uten salt-subtype →
+  // klassifisert ferskvann) flommet via tvangslukking. Dropp rå OSM-relasjoner.
+  const osmWaterRel = {
+    type: 'relation', id: 60, tags: { natural: 'water' },
+    members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
+  }
+  const nveWaterRel = {
+    type: 'relation', id: 'nve-1', tags: { natural: 'water' }, _source: 'nve',
+    members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
+  }
+
+  it('uten autoritativ sjø → rå OSM-ferskvanns-RELASJON droppes (Mälaren-flom)', () => {
+    const { svg } = buildSvg([osmWaterRel], bbox, {})
+    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
+    expect(fresh).toBe(false)
+  })
+
+  it('NVE-innsjø (relation m/_source=nve) beholdes — ingen norsk regresjon', () => {
+    const { svg } = buildSvg([nveWaterRel], bbox, {})
+    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
+    expect(fresh).toBe(true)
+  })
 })
 
 describe('xmlEscape — navn med spesialtegn gir gyldig XML (Stockholm-bug)', () => {
