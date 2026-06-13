@@ -145,63 +145,25 @@ describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
   })
 })
 
-describe('robust OSM-vann — dropp flom-kildene per element (land-agnostisk)', () => {
-  // Stor rå OSM-flate (dekker bbox) = flom-kropp. Liten = ekte småvann.
-  const bigOsmBay = { type: 'way', id: 50, tags: { natural: 'water', water: 'bay' }, geometry: ring(59.0, 10.0, 59.05, 10.1) }
-  const bigOsmLake = { type: 'way', id: 51, tags: { natural: 'water', name: 'Stor' }, geometry: ring(59.0, 10.0, 59.04, 10.08) }
-  const smallOsmLake = { type: 'way', id: 52, tags: { natural: 'water', name: 'Tjern' }, geometry: ring(59.020, 10.040, 59.021, 10.041) }
-  const osmWaterRel = {
-    type: 'relation', id: 60, tags: { natural: 'water' },
-    members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
-  }
-  const nveWaterRel = {
-    type: 'relation', id: 'nve-1', tags: { natural: 'water' }, _source: 'nve',
-    members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
-  }
+describe('OSM-vann rendres uten størrelses-filtrering (velprøvd norsk oppførsel)', () => {
+  // Svensk-saga-eksperimentet med å droppe vann basert på areal/type er fjernet.
+  // OSM-vann skal rendres som før: ways OG relasjoner, uansett størrelse. (Norske
+  // klient-kart undertrykker OSM-ferskvann oppstrøms via NVE/N50; det innebygde
+  // Vardåsen-kartet bygges uten dem og bruker rent OSM-vann — Bondivannet er en
+  // OSM-relasjon som MÅ rendres.)
   const freshShown = (svg) => /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
+  const osmLakeWay = { type: 'way', id: 50, tags: { natural: 'water', name: 'Vatn' }, geometry: ring(59.01, 10.02, 59.04, 10.07) }
+  const osmLakeRel = {
+    type: 'relation', id: 51, tags: { natural: 'water', name: 'Bondivannet' },
+    members: [{ type: 'way', role: 'outer', geometry: ring(59.01, 10.02, 59.04, 10.07) }],
+  }
 
-  it('stor rå OSM-saltflate droppes (303 tomt)', () => {
-    const { svg } = buildSvg([bigOsmBay], bbox, {})
-    expect(svg).toMatch(/data-iso="303"><\/g>/)
+  it('OSM-innsjø-WAY rendres (ingen størrelses-filtrering)', () => {
+    expect(freshShown(buildSvg([osmLakeWay], bbox, {}).svg)).toBe(true)
   })
 
-  it('stor rå OSM-ferskflate droppes', () => {
-    const { svg } = buildSvg([bigOsmLake], bbox, {})
-    expect(freshShown(svg)).toBe(false)
-  })
-
-  it('LITEN rå OSM-innsjø BEHOLDES (svenske småvann vises)', () => {
-    const { svg } = buildSvg([smallOsmLake], bbox, {})
-    expect(freshShown(svg)).toBe(true)
-  })
-
-  it('rå OSM-vann-RELASJON droppes uansett størrelse (tvangslukkings-flom)', () => {
-    const { svg } = buildSvg([osmWaterRel], bbox, {})
-    expect(freshShown(svg)).toBe(false)
-  })
-
-  it('NVE-innsjø (relation, _source=nve) beholdes — autoritativ, ingen norsk regresjon', () => {
-    const { svg } = buildSvg([nveWaterRel], bbox, {})
-    expect(freshShown(svg)).toBe(true)
-  })
-
-  it('autoritativ N50-saltsjø beholdes selv om stor (303 har innhold)', () => {
-    const { svg } = buildSvg([n50Sea], bbox, {})
-    expect(svg).not.toMatch(/data-iso="303"><\/g>/)
-  })
-
-  it('stor OSM-MYR (308/309) beholdes — ikke vann-flom, ingen norsk myr-regresjon', () => {
-    const bigMarsh = { type: 'way', id: 70, tags: { natural: 'wetland' }, geometry: ring(59.0, 10.0, 59.04, 10.08) }
-    const { svg } = buildSvg([bigMarsh], bbox, {})
-    const marsh = /data-iso="308">(?!<\/g>)/.test(svg) || /data-iso="309">(?!<\/g>)/.test(svg)
-    expect(marsh).toBe(true)
-  })
-
-  it('grense-kart: norsk N50-vann beholdes, stor svensk OSM-flate droppes samtidig', () => {
-    // n50Sea (autoritativ) + bigOsmLake (rå OSM) i samme kart (Svinesund-scenario)
-    const { svg } = buildSvg([n50Sea, bigOsmLake], bbox, {})
-    expect(svg).not.toMatch(/data-iso="303"><\/g>/) // N50-sjø beholdt
-    expect(freshShown(svg)).toBe(false)             // stor OSM-ferskflate droppet
+  it('OSM-innsjø-RELASJON rendres (Bondivannet på innebygd kart — ikke droppet)', () => {
+    expect(freshShown(buildSvg([osmLakeRel], bbox, {}).svg)).toBe(true)
   })
 })
 
