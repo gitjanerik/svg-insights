@@ -151,6 +151,21 @@ export function isOsmWaterSalty(tags) {
   return false
 }
 
+// Flytende ferskvann tagget som FLATE: elve-/kanal-/bekkeløp (water=river osv.)
+// eller waterway-areal (riverbank/dock). Skilles ut fordi de autoritative norske
+// ferskvanns-kildene (NVE innsjø-flater, N50 vann) KUN dekker stillestående vann
+// (innsjøer/magasin) — aldri elveløp. Slike flater må derfor aldri undertrykkes
+// av N50/NVE, ellers kollapser brede elver (f.eks. Drammenselva) fra fylt blå
+// flate til kun en hårtynn OSM-senterlinje (waterway=river → 304).
+const FLOWING_WATER_SUBTYPES = new Set(['river', 'canal', 'stream', 'ditch', 'lock', 'moat', 'rapids', 'fish_pass'])
+export function isFlowingWaterArea(tags) {
+  const t = tags ?? {}
+  if (FLOWING_WATER_SUBTYPES.has(t.water)) return true
+  if (t.waterway === 'riverbank' || t.waterway === 'river' ||
+      t.waterway === 'canal' || t.waterway === 'dock') return true
+  return false
+}
+
 // Sjekk om en OSM-node har trigpunkt-relaterte tagger.
 // Eksportert så peak-rendering kan overlappe trigpunkt-symbol når peak
 // og trigpunkt deler node (vanlig i Norge: én node med både

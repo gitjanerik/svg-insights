@@ -1,6 +1,12 @@
 # Changelog
 
-## 2026-06-13 — v10.2.39: Tynnere veier (501–504) — base-bredder −25%
+## 2026-06-13 — v10.2.40: Elver tilbake — elve-flater overlever NVE/N50-vann
+
+Regresjonsfiks: brede elver forsvant fra fylt blå flate til en hårtynn senterlinje (rapportert på Drammenselva). Rotårsak: per-element OSM-vann-filteret i `createMapFlow` undertrykte ALLE ferskvanns-polygoner så snart NVE eller N50 returnerte ferskvann — men de norske kildene leverer kun stillestående vann (innsjøer/magasin), aldri elveløp. En elve-flate (`natural=water` + `water=river`) ble dermed droppet uten erstatning, og bare den tynne OSM-senterlinja (`waterway=river` → ISOM 304) sto igjen.
+
+Ny `isFlowingWaterArea`-vakt i `symbolizer.js`: elve-/kanal-/bekke-flater (`water=river/canal/stream/…`, `waterway=riverbank/dock`) beholdes alltid, uavhengig av NVE/N50. Innsjø-undertrykkingen (mistaggede flom-innsjøer som Røssvatnet) er uendret. Vann-filteret er trukket ut til en ren, eksportert `filterOsmWaterElements` med egne regresjonstester. 563 tester grønne.
+
+---
 
 Selve veibreddene i ISOM-katalogen er kuttet ~25% så veiene blir merkbart tynnere ved alle Strek-knott-innstillinger (forrige skala-kutt på −30% var bare en multiplikator på de samme base-breddene og ga en for subtil forskjell på allerede tynne streker):
 
