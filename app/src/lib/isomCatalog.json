@@ -283,13 +283,13 @@
         "$comment": "Bred rød veifyll med tynn sort omriss (casing). stroke = casing (bunn), overlayStroke = farget fyll (topp). Casing 0.03mm bredere på hver side så fargen dominerer.",
         "stroke": {
           "color": "#1a1a1a",
-          "widthMm": 0.52,
+          "widthMm": 0.39,
           "linecap": "round",
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#d8392c",
-          "widthMm": 0.46,
+          "widthMm": 0.34,
           "linecap": "round",
           "linejoin": "round"
         }
@@ -298,13 +298,13 @@
         "label": "Hovedvei",
         "stroke": {
           "color": "#1a1a1a",
-          "widthMm": 0.34,
+          "widthMm": 0.26,
           "linecap": "round",
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#e15a3a",
-          "widthMm": 0.29,
+          "widthMm": 0.22,
           "linecap": "round",
           "linejoin": "round"
         }
@@ -313,13 +313,13 @@
         "label": "Småvei",
         "stroke": {
           "color": "#1a1a1a",
-          "widthMm": 0.24,
+          "widthMm": 0.18,
           "linecap": "round",
           "linejoin": "round"
         },
         "overlayStroke": {
           "color": "#f0a456",
-          "widthMm": 0.2,
+          "widthMm": 0.15,
           "linecap": "round",
           "linejoin": "round"
         }
@@ -328,7 +328,7 @@
         "label": "Skogsbilvei",
         "stroke": {
           "color": "#000",
-          "widthMm": 0.13,
+          "widthMm": 0.1,
           "linecap": "round",
           "linejoin": "round"
         }
