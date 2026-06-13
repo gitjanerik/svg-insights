@@ -68,6 +68,37 @@ describe('buildSvg — 551/552 rendres', () => {
     expect(verts).toBeLessThanOrEqual(6)
   })
 
+  it('lineær molo (åpen LineString) strekes, fylles ikke (ingen wedge)', () => {
+    // En åpen molo-linje skal IKKE lukkes med Z og fylles — det ga før en
+    // diger grå trekant fra siste til første punkt. Nå: strek (fill:none).
+    const molo = {
+      type: 'way', id: 13, tags: { sjokart: 'havnestruktur', subtype: 'molo' },
+      // Åpen linje (første ≠ siste punkt) som strekker seg ut i sjøen.
+      geometry: [
+        { lat: 59.020, lon: 10.060 }, { lat: 59.022, lon: 10.062 },
+        { lat: 59.024, lon: 10.061 },
+      ],
+      _source: 'sjokart',
+    }
+    const { svg } = buildSvg([n50Sea, molo], bbox, {})
+    const m = svg.match(/<g data-layer="[^"]*" data-iso="551">([\s\S]*?)<\/g>/)
+    expect(m).toBeTruthy()
+    const path = m[1].match(/<path[^>]*>/)[0]
+    expect(path).toContain('fill:none')
+    expect(path).toContain('stroke:#6b6b6b')
+    // Ingen Z (ikke lukket) → ingen fylt wedge.
+    expect(path.match(/ d="([^"]+)"/)[1]).not.toContain('Z')
+  })
+
+  it('551 får eget data-layer="kai" (egen toggle, ikke sjo-poi)', () => {
+    const kai = {
+      type: 'way', id: 14, tags: { sjokart: 'havnestruktur' },
+      geometry: ringGeom(59.02, 10.06, 59.025, 10.065), _source: 'sjokart',
+    }
+    const { svg } = buildSvg([n50Sea, kai], bbox, {})
+    expect(svg).toContain('data-layer="kai" data-iso="551"')
+  })
+
   it('L-formet molo beholder knekken (konkavt 6-hjørne, ikke konveks)', () => {
     // L-form: et tydelig konkavt hjørne. Skal bevares (6 hjørner), ikke
     // kollapses til konveks firkant.
