@@ -248,6 +248,82 @@ export function autoMapAFormat(halfKm) {
   return { halfKm: widthKm / 2, aspect: PRINT_ASPECT }
 }
 
+// Minste avstand (meter) mellom to holdeplass-symboler før vi anser dem som
+// «samme stopp» og slår dem sammen. Store buss-/togterminaler (Asker, Sandvika)
+// har én OSM-node pr busslomme/p-plass; ett ISOM-symbol pr lomme blir en uleselig
+// klynge. Se clusterHoldeplasser().
+export const HOLDEPLASS_MIN_SEP_M = 50
+
+// Tilnærmet avstand i meter mellom to lat/lon-punkter (ekvirektangulær — god nok
+// for klynge-radius på titalls meter, ingen proj4 nødvendig).
+function metersBetween(a, b) {
+  const R = 6371000
+  const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180)
+  const dLat = (b.lat - a.lat) * (Math.PI / 180)
+  const dLon = (b.lon - a.lon) * (Math.PI / 180) * Math.cos(lat0)
+  return R * Math.hypot(dLat, dLon)
+}
+
+/**
+ * Tynner ut holdeplass-noder så vi ikke renderer en tett klynge av identiske
+ * buss-/tog-symboler (typisk på terminaler der hver busslomme/p-plass er sin
+ * egen OSM-node). Regel: holdeplasser repeteres ikke med mindre det er minst
+ * `minSepM` meter mellom punktene.
+ *
+ * Klyngene bygges med single-linkage union-find (to noder under `minSepM` havner
+ * i samme klynge, transitivt — en sammenhengende terminal blir én klynge). For
+ * hver klynge beholdes den MIDTERSTE noden (den nærmest klyngens tyngdepunkt) og
+ * resten skjules. Enkeltstående holdeplasser (ingen nabo innen `minSepM`) er sin
+ * egen klynge og beholdes uendret.
+ *
+ * O(n²) avstands-sjekk er trivielt her — antall holdeplasser i et kart-utsnitt
+ * er lite (titalls, ikke tusener).
+ *
+ * @param {Array} nodes  OSM-noder ({ type:'node', lat, lon, tags })
+ * @param {number} minSepM  minste avstand i meter (default HOLDEPLASS_MIN_SEP_M)
+ * @returns {Array}  representant-noder (én pr klynge), i opprinnelig rekkefølge
+ */
+export function clusterHoldeplasser(nodes, minSepM = HOLDEPLASS_MIN_SEP_M) {
+  const pts = (nodes || []).filter(
+    n => n && n.type === 'node' && Number.isFinite(n.lat) && Number.isFinite(n.lon)
+  )
+  const n = pts.length
+  if (n <= 1) return pts.slice()
+
+  // Union-find (med sti-kompresjon) over par som ligger nærmere enn minSepM.
+  const parent = pts.map((_, i) => i)
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (metersBetween(pts[i], pts[j]) < minSepM) union(i, j)
+    }
+  }
+
+  // Grupper på rot, og velg representant = noden nærmest klyngens tyngdepunkt.
+  const groups = new Map()
+  for (let i = 0; i < n; i++) {
+    const r = find(i)
+    if (!groups.has(r)) groups.set(r, [])
+    groups.get(r).push(pts[i])
+  }
+  const keep = new Set()
+  for (const g of groups.values()) {
+    if (g.length === 1) { keep.add(g[0]); continue }
+    let clat = 0, clon = 0
+    for (const p of g) { clat += p.lat; clon += p.lon }
+    clat /= g.length; clon /= g.length
+    let best = g[0], bestD = Infinity
+    for (const p of g) {
+      const d = metersBetween(p, { lat: clat, lon: clon })
+      if (d < bestD) { bestD = d; best = p }
+    }
+    keep.add(best)
+  }
+  // Bevar opprinnelig rekkefølge (stabil output, lettere å diffe).
+  return pts.filter(p => keep.has(p))
+}
+
 // v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
 // sub-piksel, men sparer ~1 tegn pr koordinat (mindre SVG, raskere parse).
 function fmt(n) { return Number(n.toFixed(1)) }
@@ -1741,7 +1817,9 @@ export function buildSvg(elements, bbox, options = {}) {
   // data-upright="1" holder symbolet rett ved kart-rotasjon (samme som
   // parkering/toalett). Brukes av «nærmeste holdeplass»-snarveien i søket.
   const holdeplassSize = 6.0
-  const holdeplassSvg = holdeplasser.map(el => {
+  // Tynn ut tette terminal-klynger: én representant (midterste) pr klynge, så
+  // ikke hver busslomme/p-plass gir sitt eget symbol (Asker/Sandvika-tilfellet).
+  const holdeplassSvg = clusterHoldeplasser(holdeplasser, HOLDEPLASS_MIN_SEP_M).map(el => {
     if (el.type !== 'node') return ''
     const p = project(el.lat, el.lon)
     const sid = symbolIds.get('holdeplass')

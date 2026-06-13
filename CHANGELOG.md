@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.32: Tynn ut tette holdeplass-klynger — ett symbol pr stopp
+
+Store buss-/togterminaler (Asker, Sandvika) har én OSM-node pr busslomme/p-plass, så vi rendret ett ISOM 560-holdeplass-symbol pr lomme — en uleselig klynge av identiske ikoner. Ny regel: holdeplasser repeteres ikke med mindre det er minst **50 meter** mellom punktene (`HOLDEPLASS_MIN_SEP_M`). `clusterHoldeplasser()` i `mapBuilder.js` grupperer nodene med single-linkage union-find (to noder under 50 m havner i samme klynge, transitivt — en sammenhengende terminal blir én klynge), beholder den **midterste** noden (nærmest klyngens tyngdepunkt) og skjuler resten. Enkeltstående holdeplasser er upåvirket. Avstanden måles i ekte meter (ekvirektangulær lat/lon, ingen proj4). Søk på «nærmeste holdeplass» finner fortsatt representanten siden navnet bevares. 550 tester.
+
+---
+
 ## 2026-06-13 — v10.2.31: Fjern størrelses-basert vann-filtrering — tilbake til velprøvd norsk vann
 
 Fjernet hele det per-element OSM-vann-filteret (v10.2.26–29). Det var et skjørt heuristikk-lag som droppet vann basert på **areal** (~1 km²-terskel) og type — bygget for å bekjempe svensk OSM-vann-flom. To problemer: (1) størrelses-terskler er vilkårlige og feiler på kanten (en stor norsk innsjø uten NVE-dekning ville droppet; et lite ødelagt polygon sluppet gjennom), og (2) det hørte ikke hjemme i en app som er skopet til Norge. Konkret regresjon: det droppet **Bondivannet** (OSM-relasjon) på det innebygde Vardåsen-kartet, som bygges uten N50/NVE og bruker rent OSM-vann. Fjernet også no-coverage-relieff-vakten (v10.2.28) — den kunne hoppe over DEM-sjø på legitime norske flatvanns-kart — og `unionByName`-`_source`-bevaringen (var kun for filteret). DEM-sjø og vann-rendering er nå tilbake til den velprøvde oppførselen fra før svensk-utforskningen. Beholdt: Terrarium-høyde-fyll (fikser den opprinnelige Børgefjell-grense-kurve-muren) og xmlEscape-fiksen (generell). Norske kart er upåvirket; svenske/grense-kart kan vise rå OSM-vann igjen, men Sverige er ikke en støttet/promotert funksjon. 543 tester. NB: innebygd Vardåsen-kart regenereres av CI ved merge — Bondivannet kommer tilbake.
