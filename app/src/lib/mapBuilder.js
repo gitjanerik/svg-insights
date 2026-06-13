@@ -913,15 +913,33 @@ export function buildSvg(elements, bbox, options = {}) {
     // lavtliggende øyer DEM-resolusjonen ikke fanger, så WMTS foretrekkes
     // når det er tilgjengelig (skipDemSea=true).
     if (!skipDemSea) {
-      const seaResult = buildSeaFromDem(usableDem, {
-        thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
-      })
-      demSeaPolygons = seaResult.polygons
-      if (demSeaPolygons.length) {
-        const shallow = buildSeaShallowBands(usableDem, {
-          thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+      // No-coverage-vakt (v10.2.28): Kartverket dekker ikke Sverige. Et utenfor-
+      // dekning-DEM kommer tilbake flatt (~0 m / nodata-fyll), og buildSeaFromDem
+      // ville da klassifisere HELE kartet som sjø (alt ≤ 0.5 m) → en falsk «sjø»
+      // som setter authoritativeSea og forstyrrer svensk-vann-håndteringen. Krev
+      // derfor reelt relieff (ekte terreng-variasjon) før vi avleder sjø fra DEM.
+      let dMin = Infinity, dMax = -Infinity
+      const dd = usableDem.data, ndv = usableDem.noData
+      for (let i = 0; i < dd.length; i++) {
+        const v = dd[i]
+        if (v === ndv || !Number.isFinite(v) || v < -1000) continue
+        if (v < dMin) dMin = v
+        if (v > dMax) dMax = v
+      }
+      const reliefM = dMax - dMin
+      if (reliefM >= 3) {
+        const seaResult = buildSeaFromDem(usableDem, {
+          thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
         })
-        demSeaBands = shallow.bands
+        demSeaPolygons = seaResult.polygons
+        if (demSeaPolygons.length) {
+          const shallow = buildSeaShallowBands(usableDem, {
+            thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+          })
+          demSeaBands = shallow.bands
+        }
+      } else {
+        console.log(`[DEM-sjø] hopper over — flatt DEM (relieff ${reliefM.toFixed(1)} m), trolig utenfor norsk dekning`)
       }
     }
   }
@@ -1026,38 +1044,32 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── Svensk/uautoritativ kyst+vann → vis som LAND (ikke «Venezia») ──────
-  // Tom authoritativeSea = «utenfor norsk marin datadekning» (svensk kyst:
-  // Stockholm, Bohuslän). Da finnes ingen autoritativ sjø-geometri, og rå OSM-
-  // vann er upålitelig her: store sjø-/bukt-/innsjø-MULTIPOLYGON-RELASJONER
-  // (Saltsjön, Mälaren …) strekker seg utenfor kart-bbox, og når en ytre ring
-  // ikke lukkes i utsnittet tvangslukkes den (assembleRelationRings) med en rett
-  // strek tvers over kartet → vannet blør ut over land («Venezia»; diagnose-modus
-  // viste flommen = OSM-RELATION/magenta). I Norge rydder N50/NVE opp i dette;
-  // Sverige har ingen slik kilde i pipelinen.
+  // ── Utenfor norsk vann-dekning (svensk kyst/innland) → vann som LAND ───
+  // Rotårsak til «Venezia»: rå OSM-vann-polygoner (store sjø-/bukt-/innsjø-
+  // relasjoner + store ways) blør ut over land. Store multipolygon-relasjoner
+  // strekker seg utenfor kart-bbox; når en ytre ring ikke lukkes i utsnittet
+  // tvangslukkes den (assembleRelationRings) med en rett strek tvers over kartet.
+  // I Norge rydder N50/NVE opp i dette (autoritativ vanngeometri erstatter/
+  // undertrykker OSM-vann); Sverige har ingen slik kilde i pipelinen.
   //
-  // Trygt valg inntil en autoritativ svensk sjø-kilde finnes:
-  //   1) Saltvann (303/304): dropp HELT → kysten vises som land.
-  //   2) Ferskvann (301/302): dropp rå OSM-RELASJONER (flom-kilden via
-  //      tvangslukking, f.eks. Mälaren tagget uten salt-subtype → klassifisert
-  //      ferskvann). Behold innsjø-WAYS (lukker korrekt, flommer ikke) og
-  //      AUTORITATIVE flater: NVE leverer innsjøer som type:'relation' m/
-  //      _source='nve' (n50Fetcher likeså) — de MÅ beholdes, ellers forsvinner
-  //      norske innsjøer. Derfor: dropp kun relasjoner UTEN autoritativ _source.
-  // Gated på manglende autoritativ sjø → norske kyst-/innlands-kart (DEM/N50/NVE)
-  // er uberørt og byte-identiske.
+  // Robust deteksjon av «utenfor norsk dekning»: INGEN N50- eller NVE-elementer
+  // i datasettet (begge er nasjonale norske kilder; Sverige gir tomt). Dette er
+  // uavhengig av authoritativeSea — viktig, siden et flatt svensk DEM tidligere
+  // kunne gi en FALSK DEM-sjø som satte authoritativeSea og hoppet over hele
+  // håndteringen (no-coverage-vakten over fjerner nå også den falske sjøen).
   //
-  // OSM-coastline→sjø-forsøket (coastlineToSea.js) er parkert: diagnose viste at
-  // flommen er en EGEN render-vei (rå OSM-vann), ikke coastline-laget. Modulen +
-  // testene beholdes for et senere forsøk på en autoritativ svensk sjø.
-  if (authoritativeSea.length === 0) {
-    buckets['303'] = []
-    buckets['304'] = []
-    const isRawOsmRelation = (el) => el.type === 'relation' && !(el._source && el._source !== 'osm')
-    for (const code of ['301', '302']) {
-      const b = buckets[code]
-      if (b?.length) buckets[code] = b.filter(el => !isRawOsmRelation(el))
-    }
+  // Tiltak: tøm FYLL-vann-lagene (301 innsjø, 302 tjern, 303 sjø, 307 dybdeareal,
+  // 308/309 myr) → vann vises som LAND. Behold strøm-/elv-/dybdekontur-LINJER
+  // (304/305/306) — de er streker, ikke flate, og flommer ikke. Trygt valg
+  // inntil en autoritativ svensk sjø-kilde finnes. Norske kart har alltid N50/
+  // NVE → denne grenen tas aldri → byte-identisk.
+  //
+  // (OSM-coastline→sjø-forsøket i coastlineToSea.js er fortsatt parkert.)
+  const hasNorwegianVectorData = elements.some(
+    el => el._source === 'n50' || el._source === 'nve' || el._source === 'sjokart'
+  )
+  if (!hasNorwegianVectorData) {
+    for (const code of ['301', '302', '303', '307', '308', '309']) buckets[code] = []
   }
   const hasAuthoritativeSea = authoritativeSea.length > 0
 
