@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-13 — v10.2.42: Luker bort lange bygningsnavn (institusjonsklynger)
+
+På kart over f.eks. et universitetscampus klumpet tette klynger av lange institusjons-/avdelingsnavn («Menneskerettighetshuset», «Universitetsledelsen», «Seksjon for …») seg sammen midt i det som ISOM-messig ser ut som skog/åpen mark. Alle disse kommer fra OSM `building`+`name`-tagger, og label-logikken slapp gjennom hvert lille bygg (< 500 m²) uavhengig av navnelengde — så hver campus-fløy fikk sitt eget navn stablet oppå naboen.
+
+Fiks: bygningsnavn lengre enn 16 tegn dropper nå label-en (`MAX_BUILDING_LABEL_LEN` i `mapBuilder.js`). Ekte hytte-/stue-navn er korte og beholdes; institusjonsklyngene forsvinner. Treffer KUN bygningsnavn (`hytte-navn`) — vann-, sted- og naturreservat-navn rendres via egne rutiner og er uberørt, så uoffisielle skogsnavn som «Fiskelaustjernet» og «10 000kr Bakken» står igjen.
+
+---
+
 ## 2026-06-13 — v10.2.41: Elvevann + dybde på begge sider av øyer (Holmen)
 
 Ved Drammenselvas utløp ligger øya Holmen. Sørkanalen ble vist som beige land med Sjøkart-dybdetall flytende oppå — feil, siden en øy per definisjon har vann på alle kanter. Rotårsak: Sjøkart-dybdeareal (307) ble konvertert via `pushPolygonAsWays`, som tok KUN den ytre ringen og kastet alle øy-hull. For å hindre at dybde da malte over øyer ble 307 klippet mot den DEM-deriverte sjøen (areal ≤ 0,5 m som rører kartkanten) — men den klippingen kappet også bort elvekanaler som ligger over havnivå, så elvevannet forsvant og bare dybde-tallene sto igjen.

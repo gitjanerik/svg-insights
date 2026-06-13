@@ -1666,6 +1666,14 @@ export function buildSvg(elements, bbox, options = {}) {
   // locality-polygoner) får navn ved sentroiden.
   const omradenavnLabels = []
   const omradeSeen = new Set()
+  // Lange bygningsnavn er nesten alltid institusjons-/avdelingsnavn
+  // (universitetscampus o.l.: «Menneskerettighetshuset», «Universitets-
+  // ledelsen», «Seksjon for …») som klumper seg sammen og spammer kartet
+  // midt i det som ISOM-messig ser ut som skog/åpen mark. Ekte hytte-/stue-
+  // navn er korte, så en lengde-cap luker bort klyngene uten å miste dem.
+  // Treffer KUN bygningsnavn — vann-/sted-/naturreservat-navn rendres via
+  // egne rutiner og er uberørt. (v10.2.42)
+  const MAX_BUILDING_LABEL_LEN = 16
   for (const el of elements) {
     const name = el.tags?.name?.trim()
     if (!name) continue
@@ -1731,6 +1739,8 @@ export function buildSvg(elements, bbox, options = {}) {
     // Bare label hytter (små bygg < 500m²) — store bygninger får ikke navn
     // for å unngå rot i tette boligområder. 521-terskel ovenfor speiles her.
     if (isBuilding && areaM2 >= 500) continue
+    // Dropp lange bygningsnavn (institusjons-/avdelingsklynger, se over).
+    if (isBuilding && name.length > MAX_BUILDING_LABEL_LEN) continue
 
     // Dedupe: samme navn innen ~80 m bucket (få store myr/heath kan ha
     // flere subareal-polygoner med samme navn — vi vil bare ha én label)
