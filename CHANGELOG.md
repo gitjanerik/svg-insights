@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-06-13 — v10.2.38: Strek-skala −30% + kai/molo til 0,075 mm
+
+To justeringer:
+
+- **Strek-knotten («kantlinje»-skalaen):** hele `STROKE_STEPS`-skalaen er senket 30% (× 0,7, fra `[0.4, 0.6, 0.85, 1.2, 1.6, 2.2]` til `[0.28, 0.42, 0.6, 0.84, 1.12, 1.54]`). Maks-hakket × kartstørrelse-basis (`strokeSizeBase`) ga en effektiv maks på rundt 1,3–1,5× — litt for voldsomt selv om verdien er dynamisk. Etter kuttet lander effektiv maks på drøyt 1 på både små og store kart. Default-hakket følger med ned (0,85× → 0,6×).
+- **Kai/brygge/molo (ISOM 551):** den lineære grå streken er senket videre fra 0,1 mm til 0,075 mm.
+
+---
+
 ## 2026-06-13 — v10.2.37: Kai/molo-strek ned til 0,1 mm (551)
 
 Den lineære kai/brygge/molo-streken (ISOM 551) er satt videre ned fra 0,6 mm til 0,1 mm — fortsatt for tjukk ved test. Areal-kaier (fylte, lukkede polygoner) er uendret.
