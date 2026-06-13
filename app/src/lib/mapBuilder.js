@@ -1223,18 +1223,18 @@ export function buildSvg(elements, bbox, options = {}) {
               bbox = bboxOfPoints(ring)
             } else {
               // Åpen molo-/pir-linje: lett DP-forenkling, render som strek
-              // (ingen Z). 0.6 mm non-scaling-stroke (CSS-regelen gjør den
+              // (ingen Z). 0.1 mm non-scaling-stroke (CSS-regelen gjør den
               // skjerm-konstant) leser som en kunstig struktur uten å fylle.
               // Bevisst tynn: under pan/zoom-gest er non-scaling-stroke av
               // (perf), så streken skalerer med viewBox-en og blir tjukkere —
-              // 0.6 mm holder den lesbar uten å dominere i den tilstanden.
+              // 0.1 mm holder den lesbar uten å dominere i den tilstanden.
               let line = projPts
               if (line.length > 2) line = simplifyDP(line, 1.5)
               if (line.length < 2) continue
               d = `M${fmt(line[0][0])},${fmt(line[0][1])}`
               for (let i = 1; i < line.length; i++) d += `L${fmt(line[i][0])},${fmt(line[i][1])}`
               bbox = bboxOfPoints(line)
-              strokeOnlyStyle = 'fill:none;stroke:#6b6b6b;stroke-width:0.6mm;stroke-linejoin:round;stroke-linecap:round'
+              strokeOnlyStyle = 'fill:none;stroke:#6b6b6b;stroke-width:0.1mm;stroke-linejoin:round;stroke-linecap:round'
             }
           } else {
             const r = pathAndBboxFromGeometry(el.geometry, true, filter.simplifyM)
