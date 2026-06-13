@@ -1069,9 +1069,9 @@ export function buildSvg(elements, bbox, options = {}) {
   //   – Rå OSM / merged WAY-flate: dropp hvis areal > terskel; behold småvann
   //     (lukker korrekt, flommer ikke) → svenske innsjøer beholdes.
   // Norske kart: OSM-ferskvann er alt undertrykt av N50/NVE oppstrøms, og
-  // autoritativt vann beholdes → byte-identisk.
-  //
-  // (OSM-coastline→sjø-forsøket i coastlineToSea.js er fortsatt parkert.)
+  // autoritativt vann beholdes → byte-identisk. Dette beholdes selv om app-en er
+  // skopet til Norge, fordi norske GRENSEKART (Børgefjell, Halden/Svinesund) har
+  // svensk territorium i bbox-en der rå OSM-vann ellers ville flommet.
   // KUN blå vann-fyll som faktisk flommer: 301 innsjø, 302 tjern, 303 sjø,
   // 307 dybdeareal. IKKE 308/309 (myr) — myr (natural=wetland) undertrykkes
   // ikke av NVE oppstrøms slik vann gjør, så norsk OSM-myr når hit; å droppe
