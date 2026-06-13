@@ -1072,7 +1072,12 @@ export function buildSvg(elements, bbox, options = {}) {
   // autoritativt vann beholdes → byte-identisk.
   //
   // (OSM-coastline→sjø-forsøket i coastlineToSea.js er fortsatt parkert.)
-  const FLOOD_WATER_CODES = ['301', '302', '303', '307', '308', '309']
+  // KUN blå vann-fyll som faktisk flommer: 301 innsjø, 302 tjern, 303 sjø,
+  // 307 dybdeareal. IKKE 308/309 (myr) — myr (natural=wetland) undertrykkes
+  // ikke av NVE oppstrøms slik vann gjør, så norsk OSM-myr når hit; å droppe
+  // store myr-flater ville fjernet ekte norsk myr. Myr er heller ikke
+  // «Venezia»-flommen (mønster-fyll, ikke blått vann).
+  const FLOOD_WATER_CODES = ['301', '302', '303', '307']
   const MAX_OSM_WATER_M2 = 1_000_000   // ~1 km²: småvann beholdes, flom-kropper droppes
   const isAuthoritativeWater = (el) =>
     el._source === 'n50' || el._source === 'nve' || el._source === 'sjokart'

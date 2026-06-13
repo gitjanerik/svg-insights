@@ -190,6 +190,13 @@ describe('robust OSM-vann — dropp flom-kildene per element (land-agnostisk)', 
     expect(svg).not.toMatch(/data-iso="303"><\/g>/)
   })
 
+  it('stor OSM-MYR (308/309) beholdes — ikke vann-flom, ingen norsk myr-regresjon', () => {
+    const bigMarsh = { type: 'way', id: 70, tags: { natural: 'wetland' }, geometry: ring(59.0, 10.0, 59.04, 10.08) }
+    const { svg } = buildSvg([bigMarsh], bbox, {})
+    const marsh = /data-iso="308">(?!<\/g>)/.test(svg) || /data-iso="309">(?!<\/g>)/.test(svg)
+    expect(marsh).toBe(true)
+  })
+
   it('grense-kart: norsk N50-vann beholdes, stor svensk OSM-flate droppes samtidig', () => {
     // n50Sea (autoritativ) + bigOsmLake (rå OSM) i samme kart (Svinesund-scenario)
     const { svg } = buildSvg([n50Sea, bigOsmLake], bbox, {})
