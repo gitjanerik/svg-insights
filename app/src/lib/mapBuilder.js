@@ -251,8 +251,9 @@ export function autoMapAFormat(halfKm) {
 // Minste avstand (meter) mellom to holdeplass-symboler før vi anser dem som
 // «samme stopp» og slår dem sammen. Store buss-/togterminaler (Asker, Sandvika)
 // har én OSM-node pr busslomme/p-plass; ett ISOM-symbol pr lomme blir en uleselig
-// klynge. Se clusterHoldeplasser().
-export const HOLDEPLASS_MIN_SEP_M = 50
+// klynge. Holdt lavt (25 m) så genuint atskilte stopp tett på hverandre overlever
+// — f.eks. holdeplass på BEGGE sider av en jernbanelinje/vei. Se clusterHoldeplasser().
+export const HOLDEPLASS_MIN_SEP_M = 25
 
 // Tilnærmet avstand i meter mellom to lat/lon-punkter (ekvirektangulær — god nok
 // for klynge-radius på titalls meter, ingen proj4 nødvendig).

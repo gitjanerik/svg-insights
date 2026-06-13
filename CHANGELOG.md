@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.33: Holdeplass-klynge-terskel 50 → 25 m
+
+Senket `HOLDEPLASS_MIN_SEP_M` fra 50 til 25 m. 50 m var for aggressivt for tette knutepunkter som Asker/Sandvika: genuint atskilte holdeplasser tett på hverandre — f.eks. stopp på BEGGE sider av jernbanelinjen (< 50 m fra hverandre) — ble feilaktig slått sammen, så vi mistet informasjon om at det finnes stopp på begge sider. 25 m fjerner fortsatt den tette lomme-for-lomme-klyngingen på terminalene, men bevarer slike par. Forsøksverdi — justeres etter test i felt. 550 tester.
+
+---
+
 ## 2026-06-13 — v10.2.32: Tynn ut tette holdeplass-klynger — ett symbol pr stopp
 
 Store buss-/togterminaler (Asker, Sandvika) har én OSM-node pr busslomme/p-plass, så vi rendret ett ISOM 560-holdeplass-symbol pr lomme — en uleselig klynge av identiske ikoner. Ny regel: holdeplasser repeteres ikke med mindre det er minst **50 meter** mellom punktene (`HOLDEPLASS_MIN_SEP_M`). `clusterHoldeplasser()` i `mapBuilder.js` grupperer nodene med single-linkage union-find (to noder under 50 m havner i samme klynge, transitivt — en sammenhengende terminal blir én klynge), beholder den **midterste** noden (nærmest klyngens tyngdepunkt) og skjuler resten. Enkeltstående holdeplasser er upåvirket. Avstanden måles i ekte meter (ekvirektangulær lat/lon, ingen proj4). Søk på «nærmeste holdeplass» finner fortsatt representanten siden navnet bevares. 550 tester.

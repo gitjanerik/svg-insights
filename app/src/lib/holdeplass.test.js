@@ -57,21 +57,21 @@ describe('clusterHoldeplasser — tett klynge tynnes til midterste', () => {
   const eastNode = (id, m, tags = { highway: 'bus_stop' }) =>
     node(id, lat0, 10.05 + m2dLon(m), tags)
 
-  it('to noder < 50 m fra hverandre → kun én beholdes', () => {
-    const reps = clusterHoldeplasser([eastNode(1, 0), eastNode(2, 20)])
+  it('to noder < 25 m fra hverandre → kun én beholdes', () => {
+    const reps = clusterHoldeplasser([eastNode(1, 0), eastNode(2, 15)])
     expect(reps).toHaveLength(1)
   })
 
-  it('to noder ≥ 50 m fra hverandre → begge beholdes', () => {
-    const reps = clusterHoldeplasser([eastNode(1, 0), eastNode(2, 60)])
+  it('to noder ≥ 25 m fra hverandre → begge beholdes (f.eks. hver side av jernbane)', () => {
+    const reps = clusterHoldeplasser([eastNode(1, 0), eastNode(2, 30)])
     expect(reps).toHaveLength(2)
   })
 
-  it('tett terminal-klynge (5 lommer à 10 m) → den midterste representanten', () => {
-    const cluster = [0, 10, 20, 30, 40].map((m, i) => eastNode(i + 1, m))
+  it('tett terminal-klynge (5 lommer à 5 m) → den midterste representanten', () => {
+    const cluster = [0, 5, 10, 15, 20].map((m, i) => eastNode(i + 1, m))
     const reps = clusterHoldeplasser(cluster)
     expect(reps).toHaveLength(1)
-    expect(reps[0].id).toBe(3) // midten (tyngdepunkt ≈ 20 m)
+    expect(reps[0].id).toBe(3) // midten (tyngdepunkt ≈ 10 m)
   })
 
   it('to separate terminaler 200 m fra hverandre → én representant hver', () => {
@@ -86,8 +86,8 @@ describe('clusterHoldeplasser — tett klynge tynnes til midterste', () => {
     expect(clusterHoldeplasser([eastNode(1, 0)])).toHaveLength(1)
   })
 
-  it('terskelen er 50 m', () => {
-    expect(HOLDEPLASS_MIN_SEP_M).toBe(50)
+  it('terskelen er 25 m', () => {
+    expect(HOLDEPLASS_MIN_SEP_M).toBe(25)
   })
 })
 
