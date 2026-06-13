@@ -145,35 +145,11 @@ describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
   })
 })
 
-describe('svensk kyst som land — undertrykk rå OSM-saltvann uten autoritativ sjø', () => {
-  const osmBay = { type: 'way', id: 50, tags: { natural: 'water', water: 'bay' }, geometry: ring(59.0, 10.0, 59.05, 10.1) }
-  const osmLake = { type: 'way', id: 51, tags: { natural: 'water', name: 'Tjern' }, geometry: ring(59.01, 10.02, 59.02, 10.04) }
-
-  it('uten autoritativ sjø → saltvann (303) droppes (kyst som land)', () => {
-    const { svg } = buildSvg([osmBay], bbox, {})
-    expect(svg).toMatch(/data-iso="303"><\/g>/)   // tomt 303-lag
-  })
-
-  it('med autoritativ sjø (N50) renderes saltvann som før (ingen regresjon)', () => {
-    const { svg } = buildSvg([n50Sea, osmBay], bbox, {})
-    expect(svg).not.toMatch(/data-iso="303"><\/g>/) // 303 har innhold
-  })
-
-  it('utenfor norsk dekning → ferskvanns-WAY droppes også (vann som land)', () => {
-    const { svg } = buildSvg([osmLake], bbox, {})
-    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
-    expect(fresh).toBe(false)
-  })
-
-  it('med norsk vektordata (N50) beholdes OSM-ferskvann (ingen norsk regresjon)', () => {
-    // n50Sea har _source='n50' → vi er «i Norge» → ingen vann-tømming
-    const { svg } = buildSvg([n50Sea, osmLake], bbox, {})
-    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
-    expect(fresh).toBe(true)
-  })
-
-  // Stockholm: Mälaren/Saltsjön som store OSM-RELASJONER (uten salt-subtype →
-  // klassifisert ferskvann) flommet via tvangslukking. Dropp rå OSM-relasjoner.
+describe('robust OSM-vann — dropp flom-kildene per element (land-agnostisk)', () => {
+  // Stor rå OSM-flate (dekker bbox) = flom-kropp. Liten = ekte småvann.
+  const bigOsmBay = { type: 'way', id: 50, tags: { natural: 'water', water: 'bay' }, geometry: ring(59.0, 10.0, 59.05, 10.1) }
+  const bigOsmLake = { type: 'way', id: 51, tags: { natural: 'water', name: 'Stor' }, geometry: ring(59.0, 10.0, 59.04, 10.08) }
+  const smallOsmLake = { type: 'way', id: 52, tags: { natural: 'water', name: 'Tjern' }, geometry: ring(59.020, 10.040, 59.021, 10.041) }
   const osmWaterRel = {
     type: 'relation', id: 60, tags: { natural: 'water' },
     members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
@@ -182,17 +158,43 @@ describe('svensk kyst som land — undertrykk rå OSM-saltvann uten autoritativ 
     type: 'relation', id: 'nve-1', tags: { natural: 'water' }, _source: 'nve',
     members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
   }
+  const freshShown = (svg) => /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
 
-  it('uten autoritativ sjø → rå OSM-ferskvanns-RELASJON droppes (Mälaren-flom)', () => {
-    const { svg } = buildSvg([osmWaterRel], bbox, {})
-    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
-    expect(fresh).toBe(false)
+  it('stor rå OSM-saltflate droppes (303 tomt)', () => {
+    const { svg } = buildSvg([bigOsmBay], bbox, {})
+    expect(svg).toMatch(/data-iso="303"><\/g>/)
   })
 
-  it('NVE-innsjø (relation m/_source=nve) beholdes — ingen norsk regresjon', () => {
+  it('stor rå OSM-ferskflate droppes', () => {
+    const { svg } = buildSvg([bigOsmLake], bbox, {})
+    expect(freshShown(svg)).toBe(false)
+  })
+
+  it('LITEN rå OSM-innsjø BEHOLDES (svenske småvann vises)', () => {
+    const { svg } = buildSvg([smallOsmLake], bbox, {})
+    expect(freshShown(svg)).toBe(true)
+  })
+
+  it('rå OSM-vann-RELASJON droppes uansett størrelse (tvangslukkings-flom)', () => {
+    const { svg } = buildSvg([osmWaterRel], bbox, {})
+    expect(freshShown(svg)).toBe(false)
+  })
+
+  it('NVE-innsjø (relation, _source=nve) beholdes — autoritativ, ingen norsk regresjon', () => {
     const { svg } = buildSvg([nveWaterRel], bbox, {})
-    const fresh = /data-iso="301">(?!<\/g>)/.test(svg) || /data-iso="302">(?!<\/g>)/.test(svg)
-    expect(fresh).toBe(true)
+    expect(freshShown(svg)).toBe(true)
+  })
+
+  it('autoritativ N50-saltsjø beholdes selv om stor (303 har innhold)', () => {
+    const { svg } = buildSvg([n50Sea], bbox, {})
+    expect(svg).not.toMatch(/data-iso="303"><\/g>/)
+  })
+
+  it('grense-kart: norsk N50-vann beholdes, stor svensk OSM-flate droppes samtidig', () => {
+    // n50Sea (autoritativ) + bigOsmLake (rå OSM) i samme kart (Svinesund-scenario)
+    const { svg } = buildSvg([n50Sea, bigOsmLake], bbox, {})
+    expect(svg).not.toMatch(/data-iso="303"><\/g>/) // N50-sjø beholdt
+    expect(freshShown(svg)).toBe(false)             // stor OSM-ferskflate droppet
   })
 })
 
