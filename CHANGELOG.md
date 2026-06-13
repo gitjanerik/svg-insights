@@ -4,7 +4,9 @@
 
 Kai/brygge/molo (ISOM 551) er nå et eget kartlag med egen av/på-bryter i «Sjø & padling»-seksjonen i Lag-fanen, default PÅ (tidligere delte det `sjo-poi`-bryteren med fyr/sjømerker/skjær osv.). `categoryFor(551)` → `'kai'`; 552 (fareområde) blir igjen i `sjo-poi`. Den nye bryteren tas også med i long-press-detalj-inset-en.
 
-**Wedge-fiksen:** de rare, store grå trekantene på kartet kom av at lineære havne-strukturer (Molo/Pir/Bølgebryter er ofte `LineString` i Sjøkart) ble lukket med `Z` og fylt — en molo som strekker seg langt ut i sjøen ga en diger fylt trekant fra siste til første punkt. Det var IKKE hjørne-forenklingen (`simplifyPierPolygon`, ≤6 hjørner) som var synderen — den gjelder fortsatt for ekte areal-kaier (lukkede polygoner). Nå skiller `buildSvg` på geometri: lukket ring → fylt areal som før; åpen linje → tegnes som en tykk grå strek (1.4 mm non-scaling-stroke, `fill:none`) uten fyll. 552 tester.
+**Wedge-fiksen:** de rare, store grå trekantene på kartet kom av at lineære havne-strukturer (Molo/Pir/Bølgebryter er ofte `LineString` i Sjøkart) ble lukket med `Z` og fylt — en molo som strekker seg langt ut i sjøen ga en diger fylt trekant fra siste til første punkt. Det var IKKE hjørne-forenklingen (`simplifyPierPolygon`, ≤6 hjørner) som var synderen — den gjelder fortsatt for ekte areal-kaier (lukkede polygoner). Nå skiller `buildSvg` på geometri: lukket ring → fylt areal som før; åpen linje → tegnes som en tykk grå strek (1.4 mm non-scaling-stroke, `fill:none`) uten fyll.
+
+**Lag-fanen ryddet:** «Lysløype» er flyttet ned til vinter-seksjonen sammen med Heistrasé og Slalombakke (den er default AV og lite relevant for de fleste turkart). Knapp #1 i lag-rutenettet er nå en **«↺ Nullstill»**-knapp som tilbakestiller all lag-synlighet til default; den er disabled inntil minst ett lag avviker fra sin default-tilstand. 552 tester.
 
 ---
 

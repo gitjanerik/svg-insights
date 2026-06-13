@@ -330,7 +330,6 @@ const LAYERS = [
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
   { key: 'tog',        label: 'Jernbane' },
-  { key: 'lysloype',   label: 'Lysløype' },
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'trig',       label: 'Trigpunkter' },
   // Navn — samlet mot slutten.
@@ -341,7 +340,9 @@ const LAYERS = [
   { key: 'stedsnavn-mid',   label: 'Landsby / bydel' },
   { key: 'stedsnavn-minor', label: 'Grend / gård' },
   { key: 'spor',       label: 'GPS-spor' },
-  // Sære vinter-ting — aller sist.
+  // Sære vinter-ting — aller sist (lysløype flyttet hit fra infrastruktur-
+  // blokken; den er lite relevant for de fleste turkart og default AV).
+  { key: 'lysloype',   label: 'Lysløype' },
   { key: 'heistrase',  label: 'Heistrasé' },
   { key: 'slalombakke', label: 'Slalombakke' },
   // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
@@ -370,7 +371,23 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // pattern-fyllet dekker mye og er sjelden ønsket i en oversikt, mens
 // frittstående hus/hytter er nyttig kontekst.
 const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
-const visibleLayers = ref(new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)))
+// Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
+// til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
+const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
+const visibleLayers = ref(new Set(DEFAULT_VISIBLE_LAYER_KEYS))
+// «Nullstill» er aktiv kun når brukeren har avveket fra default-synligheten
+// (minst ett lag slått til motsatt av sin default-tilstand).
+const layersDirty = computed(() => {
+  const cur = visibleLayers.value
+  if (cur.size !== DEFAULT_VISIBLE_LAYER_KEYS.length) return true
+  for (const k of DEFAULT_VISIBLE_LAYER_KEYS) if (!cur.has(k)) return true
+  return false
+})
+function resetLayers() {
+  if (!layersDirty.value) return
+  visibleLayers.value = new Set(DEFAULT_VISIBLE_LAYER_KEYS)
+  applyLayerVisibility()
+}
 // Tema: 'light' (default ISOM), 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate'.
 // isDark er derivert for steder som styrer UI-farger (toppbar, drawer-bg).
 const currentTheme = ref('light')
@@ -4432,7 +4449,7 @@ function onThemeChange(newTheme, oldTheme) {
   if (newT?.autoHideLayers) {
     visibleLayers.value = new Set(['kontur'])
   } else if (oldT?.autoHideLayers) {
-    visibleLayers.value = new Set(LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key))
+    visibleLayers.value = new Set(DEFAULT_VISIBLE_LAYER_KEYS)
   }
   applyLayerVisibility()
   // Tema-bytte endrer relieff-blend-modus → spøkelses-relieffet må re-tones
@@ -5439,6 +5456,16 @@ onUnmounted(() => {
           <!-- ── Tab: Lag ─────────────────────────────────────────── -->
           <div v-show="activeTab === 'lag'">
             <div class="grid grid-cols-2 gap-2 mb-2">
+              <!-- Knapp #1: Nullstill lag-synlighet. Default disabled; blir
+                   aktiv først når minst ett lag avviker fra default-tilstand. -->
+              <button @click="resetLayers"
+                      :disabled="!layersDirty"
+                      class="px-3 py-2 rounded-lg border text-left transition"
+                      :class="layersDirty
+                              ? 'bg-amber-400/20 border-amber-300/50 text-white active:scale-[0.98]'
+                              : 'bg-white/5 border-white/5 text-white/25 cursor-default'">
+                <span class="text-[12px]">↺ Nullstill</span>
+              </button>
               <button v-for="lay in landLayerButtons" :key="lay.key"
                       @click="toggleLayer(lay.key)"
                       class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
