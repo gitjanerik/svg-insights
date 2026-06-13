@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.36: Kai/molo-strek ned til 0,6 mm (551)
+
+Den lineære kai/brygge/molo-streken (ISOM 551) er satt videre ned fra 0,8 mm til 0,6 mm som et bedre utgangspunkt før test. Areal-kaier (fylte, lukkede polygoner) er uendret.
+
+---
+
 ## 2026-06-13 — v10.2.35: Tynnere kai/molo-strek (551)
 
 Den lineære kai/brygge/molo-streken (ISOM 551, åpen `LineString` → grå strek uten fyll) er halvert fra 1,4 mm til 0,8 mm. Den leste som for tjukk — særlig synlig under pan/zoom, der `non-scaling-stroke` slås av av perf-grunner og streken skalerer med viewBox-en og blir ekstra tjukk. 0,8 mm holder omrisset tydelig lesbart som en kunstig struktur uten å dominere kartet. Areal-kaier (lukkede polygoner, fylt) er uendret.
