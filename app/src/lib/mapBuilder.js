@@ -463,16 +463,10 @@ function unionByName(elements, project) {
         return [[ring]]
       })
       const merged = polygonClipping.union(...inputs)
-      // Bevar _source når HELE gruppen deler samme autoritative kilde, så et
-      // merget N50/NVE-vann ikke ser ut som rå OSM nedstrøms (flom-filteret
-      // beholder autoritativt vann uansett størrelse).
-      const sharedSource = group[0]._source
-      const keepSource = sharedSource && group.every(el => el._source === sharedSource)
       result.push({
         type: 'merged-water',
         id: group[0].id,
         tags: { ...group[0].tags },
-        ...(keepSource ? { _source: sharedSource } : {}),
         _mergedRings: merged,
         _mergedFromCount: group.length,
       })
@@ -919,33 +913,15 @@ export function buildSvg(elements, bbox, options = {}) {
     // lavtliggende øyer DEM-resolusjonen ikke fanger, så WMTS foretrekkes
     // når det er tilgjengelig (skipDemSea=true).
     if (!skipDemSea) {
-      // No-coverage-vakt (v10.2.28): Kartverket dekker ikke Sverige. Et utenfor-
-      // dekning-DEM kommer tilbake flatt (~0 m / nodata-fyll), og buildSeaFromDem
-      // ville da klassifisere HELE kartet som sjø (alt ≤ 0.5 m) → en falsk «sjø»
-      // som setter authoritativeSea og forstyrrer svensk-vann-håndteringen. Krev
-      // derfor reelt relieff (ekte terreng-variasjon) før vi avleder sjø fra DEM.
-      let dMin = Infinity, dMax = -Infinity
-      const dd = usableDem.data, ndv = usableDem.noData
-      for (let i = 0; i < dd.length; i++) {
-        const v = dd[i]
-        if (v === ndv || !Number.isFinite(v) || v < -1000) continue
-        if (v < dMin) dMin = v
-        if (v > dMax) dMax = v
-      }
-      const reliefM = dMax - dMin
-      if (reliefM >= 3) {
-        const seaResult = buildSeaFromDem(usableDem, {
-          thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
+      const seaResult = buildSeaFromDem(usableDem, {
+        thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
+      })
+      demSeaPolygons = seaResult.polygons
+      if (demSeaPolygons.length) {
+        const shallow = buildSeaShallowBands(usableDem, {
+          thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
         })
-        demSeaPolygons = seaResult.polygons
-        if (demSeaPolygons.length) {
-          const shallow = buildSeaShallowBands(usableDem, {
-            thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
-          })
-          demSeaBands = shallow.bands
-        }
-      } else {
-        console.log(`[DEM-sjø] hopper over — flatt DEM (relieff ${reliefM.toFixed(1)} m), trolig utenfor norsk dekning`)
+        demSeaBands = shallow.bands
       }
     }
   }
@@ -1050,62 +1026,6 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
 
-  // ── Rå OSM-vann er topologisk upålitelig → dropp flom-kildene ─────────
-  // Rotårsak til «Venezia»: rå OSM-vann-polygoner blør ut over land. To former:
-  //   • RELASJONER: store sjø-/bukt-/innsjø-multipolygoner strekker seg utenfor
-  //     kart-bbox; når en ytre ring ikke lukkes tvangslukkes den
-  //     (assembleRelationRings) med en rett strek tvers over kartet.
-  //   • STORE WAYS: enkeltflater (Mälaren-arm, fjordsegment) som dekker store
-  //     areal og dominerer utsnittet.
-  // I Norge rydder N50/NVE opp (autoritativ vanngeometri erstatter/undertrykker
-  // OSM-vann); utenfor (Sverige) finnes ingen referanse.
-  //
-  // Tidligere (v10.2.26–28) var dette gated PER KART (alt norsk vs alt svensk).
-  // Det feilet på GRENSE-kart (Svinesund): N50/NVE finnes for norsk side → hele
-  // kartet ble regnet «norsk» → svensk-side-vann flommet. Derfor nå PER ELEMENT
-  // og land-agnostisk:
-  //   – Autoritativt vann (_source n50/nve/sjokart): behold ALLTID.
-  //   – Rå OSM-RELASJON (vann): dropp (tvangslukkings-flom-kilde).
-  //   – Rå OSM / merged WAY-flate: dropp hvis areal > terskel; behold småvann
-  //     (lukker korrekt, flommer ikke) → svenske innsjøer beholdes.
-  // Norske kart: OSM-ferskvann er alt undertrykt av N50/NVE oppstrøms, og
-  // autoritativt vann beholdes → byte-identisk. Dette beholdes selv om app-en er
-  // skopet til Norge, fordi norske GRENSEKART (Børgefjell, Halden/Svinesund) har
-  // svensk territorium i bbox-en der rå OSM-vann ellers ville flommet.
-  // KUN blå vann-fyll som faktisk flommer: 301 innsjø, 302 tjern, 303 sjø,
-  // 307 dybdeareal. IKKE 308/309 (myr) — myr (natural=wetland) undertrykkes
-  // ikke av NVE oppstrøms slik vann gjør, så norsk OSM-myr når hit; å droppe
-  // store myr-flater ville fjernet ekte norsk myr. Myr er heller ikke
-  // «Venezia»-flommen (mønster-fyll, ikke blått vann).
-  const FLOOD_WATER_CODES = ['301', '302', '303', '307']
-  const MAX_OSM_WATER_M2 = 1_000_000   // ~1 km²: småvann beholdes, flom-kropper droppes
-  const isAuthoritativeWater = (el) =>
-    el._source === 'n50' || el._source === 'nve' || el._source === 'sjokart'
-  const mergedOuterAreaM2 = (mp) => {
-    let a = 0
-    for (const poly of mp ?? []) {
-      const outer = poly?.[0]
-      if (!outer || outer.length < 3) continue
-      let s = 0
-      for (let i = 0, n = outer.length; i < n; i++) {
-        const j = (i + 1) % n
-        s += outer[i][0] * outer[j][1] - outer[j][0] * outer[i][1]
-      }
-      a += Math.abs(s) / 2
-    }
-    return a
-  }
-  const keepWaterEl = (el) => {
-    if (isAuthoritativeWater(el)) return true       // autoritativ → alltid
-    if (el.type === 'relation') return false         // rå OSM-relasjon → flom-kilde
-    if (el.type === 'merged-water') return mergedOuterAreaM2(el._mergedRings) <= MAX_OSM_WATER_M2
-    if (el.type === 'way' && el.geometry) return polygonAreaM2(el.geometry) <= MAX_OSM_WATER_M2
-    return true
-  }
-  for (const code of FLOOD_WATER_CODES) {
-    const b = buckets[code]
-    if (b?.length) buckets[code] = b.filter(keepWaterEl)
-  }
   const hasAuthoritativeSea = authoritativeSea.length > 0
 
 
