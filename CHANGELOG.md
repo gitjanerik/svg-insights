@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-13 — v10.2.34: Kai/brygge/molo (551) — eget kartlag + fjern wedge-artefakter
+
+Kai/brygge/molo (ISOM 551) er nå et eget kartlag med egen av/på-bryter i «Sjø & padling»-seksjonen i Lag-fanen, default PÅ (tidligere delte det `sjo-poi`-bryteren med fyr/sjømerker/skjær osv.). `categoryFor(551)` → `'kai'`; 552 (fareområde) blir igjen i `sjo-poi`. Den nye bryteren tas også med i long-press-detalj-inset-en.
+
+**Wedge-fiksen:** de rare, store grå trekantene på kartet kom av at lineære havne-strukturer (Molo/Pir/Bølgebryter er ofte `LineString` i Sjøkart) ble lukket med `Z` og fylt — en molo som strekker seg langt ut i sjøen ga en diger fylt trekant fra siste til første punkt. Det var IKKE hjørne-forenklingen (`simplifyPierPolygon`, ≤6 hjørner) som var synderen — den gjelder fortsatt for ekte areal-kaier (lukkede polygoner). Nå skiller `buildSvg` på geometri: lukket ring → fylt areal som før; åpen linje → tegnes som en tykk grå strek (1.4 mm non-scaling-stroke, `fill:none`) uten fyll. 552 tester.
+
+---
+
 ## 2026-06-13 — v10.2.33: Holdeplass-klynge-terskel 50 → 25 m
 
 Senket `HOLDEPLASS_MIN_SEP_M` fra 50 til 25 m. 50 m var for aggressivt for tette knutepunkter som Asker/Sandvika: genuint atskilte holdeplasser tett på hverandre — f.eks. stopp på BEGGE sider av jernbanelinjen (< 50 m fra hverandre) — ble feilaktig slått sammen, så vi mistet informasjon om at det finnes stopp på begge sider. 25 m fjerner fortsatt den tette lomme-for-lomme-klyngingen på terminalene, men bevarer slike par. Forsøksverdi — justeres etter test i felt. 550 tester.

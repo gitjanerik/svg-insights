@@ -345,14 +345,16 @@ const LAYERS = [
   { key: 'heistrase',  label: 'Heistrasé' },
   { key: 'slalombakke', label: 'Slalombakke' },
   // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
-  // drikkevann) + kai/molo/fareområde (data-layer 'sjo-poi'). Rendres i en
-  // egen gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —
+  // drikkevann) + fareområde (data-layer 'sjo-poi'). Rendres i en egen
+  // gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —
   // de er skjulte detalj-lag som kun vises i long-press-inset-en.
+  { key: 'kai',        label: 'Kai / brygge / molo' },
   { key: 'sjo-poi',    label: 'Sjø & padling' },
 ]
 // Lag som hører til den marine «Sjø & padling»-seksjonen i drawer-en
-// (skilles ut fra terreng-grid-en for ryddigere gruppering).
-const MARINE_LAYER_KEYS = new Set(['sjo-poi'])
+// (skilles ut fra terreng-grid-en for ryddigere gruppering). 'kai' (ISOM 551
+// havne-strukturer) er et eget lag med egen toggle, default PÅ.
+const MARINE_LAYER_KEYS = new Set(['kai', 'sjo-poi'])
 const landLayerButtons = LAYERS.filter(l => !MARINE_LAYER_KEYS.has(l.key))
 const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 
@@ -2379,7 +2381,7 @@ function buildDetailInset() {
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
   // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
-  for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"]')) {
+  for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"], [data-layer="kai"]')) {
     g.style.display = ''
     for (const el of g.querySelectorAll('*')) el.style.display = ''
   }

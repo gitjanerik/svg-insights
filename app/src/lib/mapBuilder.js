@@ -590,7 +590,8 @@ const STRAND_CODES = ['556']
 const PROTECTED_CODES = ['520']
 const ROAD_CODES   = ['501', '502', '503', '504', '515', '505', '506', '507', '510', '511']
 // 551 (kai/brygge/molo) + 552 (fareområde) — Sjøkart-areal-koder. Sparsomme,
-// rendres øverst sammen med øvrige man-made-areal. categoryFor → 'sjo-poi'.
+// rendres øverst sammen med øvrige man-made-areal. 551 → eget lag (categoryFor
+// 'kai', egen drawer-toggle, default PÅ); 552 → 'sjo-poi'.
 const UPPER_CODES  = ['521', '525', '528', '551', '552']
 // Plassholder-koder for lag som rendres separat (konturer/stupkanter).
 const PLACEHOLDER_CODES = ['101', '102', '103', '104', '201', '203']
@@ -1142,6 +1143,9 @@ export function buildSvg(elements, bbox, options = {}) {
         let bbox = null
         let src = el._source ?? (el._mergedRings ? 'merged' : el.type)
         let isSmall = false
+        // Settes for lineære havne-strukturer (551) som skal strekes, ikke
+        // fylles — se 551-grenen under. Tom = vanlig fylt areal.
+        let strokeOnlyStyle = ''
         const name = el.tags?.name ?? el.tags?.navn ?? ''
         if (el.type === 'merged-water' && el._mergedRings) {
           // polygon-clipping output: én <path> per topologisk polygon
@@ -1193,19 +1197,42 @@ export function buildSvg(elements, bbox, options = {}) {
             bbox = { minX: c.x - half, minY: c.y - half, maxX: c.x + half, maxY: c.y + half }
             isSmall = true
           } else if (code === '551') {
-            // Kai/brygge/molo: Sjøkart-WFS gir forvridde ringer med mye støy.
-            // Vi trenger ikke eksakt fasong — bare en identifiserbar form.
-            // Forenkle til maks 6 hjørner (Visvalingam-Whyatt) som bevarer
-            // konkaviteter, så L-formede moloer beholder knekken mens enklere
-            // kaier faller ut som trekant/firkant/femkant.
-            const ring = simplifyPierPolygon(
-              el.geometry.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
-            )
-            if (ring.length < 3) continue
-            d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
-            for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
-            d += 'Z'
-            bbox = bboxOfPoints(ring)
+            // Kai/brygge/molo (Sjøkart-havnestruktur). Sjøkart leverer to
+            // geometri-typer, og de MÅ behandles ulikt:
+            //
+            //  • Areal (KaiBrygge som Polygon) → fyll. WFS gir forvridde
+            //    ringer med mye støy; forenkle til en ren ≤6-hjørnet form
+            //    (Visvalingam-Whyatt, bevarer konkaviteter så L-formede
+            //    moloer beholder knekken).
+            //  • Lineær (Molo/Pir/Bølgebryter som LineString) → IKKE fyll.
+            //    En åpen linje lukket med Z ble før fylt til en svær trekant
+            //    fra siste til første punkt — det er de rare grå sjevronene
+            //    på kartet (en molo som strekker seg langt ut i sjøen ga en
+            //    diger wedge). Render i stedet som en tykk grå strek.
+            const projPts = el.geometry.map(g => { const p = project(g.lat, g.lon); return [p.x, p.y] })
+            const g0 = el.geometry[0]
+            const gN = el.geometry[el.geometry.length - 1]
+            const closed = el.geometry.length >= 4 &&
+              Math.abs(g0.lat - gN.lat) < 1e-7 && Math.abs(g0.lon - gN.lon) < 1e-7
+            if (closed) {
+              const ring = simplifyPierPolygon(projPts)
+              if (ring.length < 3) continue
+              d = `M${fmt(ring[0][0])},${fmt(ring[0][1])}`
+              for (let i = 1; i < ring.length; i++) d += `L${fmt(ring[i][0])},${fmt(ring[i][1])}`
+              d += 'Z'
+              bbox = bboxOfPoints(ring)
+            } else {
+              // Åpen molo-/pir-linje: lett DP-forenkling, render som strek
+              // (ingen Z). 1.4 mm non-scaling-stroke (CSS-regelen gjør den
+              // skjerm-konstant) leser som en kunstig struktur uten å fylle.
+              let line = projPts
+              if (line.length > 2) line = simplifyDP(line, 1.5)
+              if (line.length < 2) continue
+              d = `M${fmt(line[0][0])},${fmt(line[0][1])}`
+              for (let i = 1; i < line.length; i++) d += `L${fmt(line[i][0])},${fmt(line[i][1])}`
+              bbox = bboxOfPoints(line)
+              strokeOnlyStyle = 'fill:none;stroke:#6b6b6b;stroke-width:1.4mm;stroke-linejoin:round;stroke-linecap:round'
+            }
           } else {
             const r = pathAndBboxFromGeometry(el.geometry, true, filter.simplifyM)
             d = r.d
@@ -1261,6 +1288,9 @@ export function buildSvg(elements, bbox, options = {}) {
           // trenger det, lav-kontrast så den ikke konkurrerer med terrenget.
           let inlineStyle = ''
           let dybdeAttr = ''
+          // Lineær havne-struktur (551): strek, ikke fyll — overstyrer
+          // gruppe-CSS-fyllet via inline style.
+          if (strokeOnlyStyle) inlineStyle = ` style="${strokeOnlyStyle}"`
           if (code === '307' && el.tags) {
             const minD = Number(el.tags.minDybde)
             const maxD = Number(el.tags.maxDybde)
@@ -2373,7 +2403,8 @@ function categoryFor(code) {
     case '526':                                  return 'bom'
     case '534':                                  return 'parkering'
     case '560':                                  return 'holdeplass'
-    case '551': case '552':                     return 'sjo-poi'
+    case '551':                                  return 'kai'
+    case '552':                                  return 'sjo-poi'
     case '556':                                  return 'strand'
     case '101': case '102': case '103': case '104': return 'kontur'
     default:                                     return 'other'
