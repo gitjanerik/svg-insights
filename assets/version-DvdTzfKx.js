@@ -1,0 +1,1 @@
+var e=`10.2.40`;export{e as t};
