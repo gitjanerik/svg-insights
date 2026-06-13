@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-06-13 — v10.2.39: Tynnere veier (501–504) — base-bredder −25%
+
+Selve veibreddene i ISOM-katalogen er kuttet ~25% så veiene blir merkbart tynnere ved alle Strek-knott-innstillinger (forrige skala-kutt på −30% var bare en multiplikator på de samme base-breddene og ga en for subtil forskjell på allerede tynne streker):
+
+- 501 Motorvei: casing 0,52 → 0,39 mm, fyll 0,46 → 0,34 mm
+- 502 Hovedvei: casing 0,34 → 0,26 mm, fyll 0,29 → 0,22 mm
+- 503 Småvei: casing 0,24 → 0,18 mm, fyll 0,20 → 0,15 mm
+- 504 Skogsbilvei: 0,13 → 0,10 mm
+
+Casing-en holdes proporsjonalt litt bredere enn fyllet så den fargede veien fortsatt dominerer med en tynn sort kant. Stier (505–507) og sykkelsti (508) er urørt — de var ikke for tjukke.
+
+---
+
 ## 2026-06-13 — v10.2.38: Strek-skala −30% + kai/molo til 0,075 mm
 
 To justeringer:
