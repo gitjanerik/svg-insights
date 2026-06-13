@@ -585,24 +585,35 @@ function parseDepth(v) {
 function pushPolygonAsWays(feature, tags, out, nextId) {
   const g = feature.geometry
   if (!g) return
+  // Emitter ett GML-polygon. Ringer = [outer, ...holes] (hver [lon,lat][]).
+  // Hull (indre ringer) er ØYER i dybdearealet — f.eks. Holmen i Drammens-
+  // elvas utløp. Tidligere ble KUN g.coordinates[0] (outer) brukt og hullene
+  // kastet, så dybdeareal malte rett over øyer; «single coastline»-klippingen
+  // mot DEM-sjøen måtte kompensere og kappet da også bort elvekanaler som
+  // ligger over havnivå. Vi bevarer nå hullene: med øy-hull intakt er Sjøkart-
+  // geometrien selv autoritativ (ytre ring = kyst, indre ring = øy), og DEM-
+  // klippingen er overflødig.
+  const toLatLon = (ring) => ring.map(([lon, lat]) => ({ lat, lon }))
+  const emit = (rings) => {
+    const outer = rings[0]
+    if (!outer || outer.length < 3) return
+    const holes = rings.slice(1).filter(r => Array.isArray(r) && r.length >= 3)
+    if (holes.length === 0) {
+      out.push({ type: 'way', id: nextId(), geometry: toLatLon(outer), tags, _source: 'sjokart' })
+    } else {
+      const members = [
+        { type: 'way', role: 'outer', geometry: toLatLon(outer) },
+        ...holes.map(h => ({ type: 'way', role: 'inner', geometry: toLatLon(h) })),
+      ]
+      out.push({ type: 'relation', id: nextId(), members, tags, _source: 'sjokart' })
+    }
+  }
   if (g.type === 'Polygon' && g.coordinates[0]?.length >= 3) {
-    out.push({
-      type: 'way',
-      id: nextId(),
-      geometry: g.coordinates[0].map(([lon, lat]) => ({ lat, lon })),
-      tags,
-      _source: 'sjokart',
-    })
+    emit(g.coordinates)
   } else if (g.type === 'MultiPolygon') {
     for (const poly of g.coordinates) {
       if (!poly[0] || poly[0].length < 3) continue
-      out.push({
-        type: 'way',
-        id: nextId(),
-        geometry: poly[0].map(([lon, lat]) => ({ lat, lon })),
-        tags,
-        _source: 'sjokart',
-      })
+      emit(poly)
     }
   }
 }

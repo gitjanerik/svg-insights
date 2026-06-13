@@ -108,39 +108,40 @@ const depthInSea = {
   _source: 'sjokart',
 }
 
-// Dybdeareal som feilaktig ligger på land (vest, utenfor N50-sjøen).
-// avgD = 99 → data-dybde="99". Skal klippes bort (DepthArea ∩ Land = 0).
-const depthOnLand = {
+// Dybdeareal UTENFOR den DEM/N50-deriverte sjøen (vest) — f.eks. en elvekanal
+// som ligger over havnivå. avgD = 99 → data-dybde="99". Tidligere ble dette
+// klippet bort (DepthArea ∩ DEM-sjø); nå rendres det med Sjøkarts egen geometri
+// (Holmen/Drammen-fiks: elvekanaler skal vises med dybde, ikke kappes til beige).
+const depthOutsideDemSea = {
   type: 'way', id: 3,
   tags: { sjokart: 'dybdeareal', minDybde: '98', maxDybde: '100' },
   geometry: ring(59.01, 10.01, 59.04, 10.03),
   _source: 'sjokart',
 }
 
-describe('buildSvg — Fase 1 single coastline / dybde-klipping', () => {
+describe('buildSvg — dybdeareal (307) rendres med Sjøkarts egen geometri', () => {
   it('beholder dybdeareal som ligger i sjøen', () => {
     const { svg } = buildSvg([n50Sea, depthInSea], bbox, {})
     expect(svg).toContain('data-iso="307"')
     expect(svg).toContain('data-dybde="3"')
   })
 
-  it('klipper bort dybdeareal som ligger på land', () => {
-    const { svg } = buildSvg([n50Sea, depthOnLand], bbox, {})
-    // Land-dybden (data-dybde="99") skal være droppet helt
-    expect(svg).not.toContain('data-dybde="99"')
+  it('klipper IKKE bort dybdeareal utenfor DEM/N50-sjøen (elvekanal beholdes)', () => {
+    // Sjøkart er autoritativt for sjø-utstrekning; øyer karves av bevarte
+    // øy-hull (se marineDepthArea.test.js), ikke av DEM-klipping. Dybdeareal
+    // utenfor DEM-sjøen (elvekanal over havnivå) skal derfor rendres.
+    const { svg } = buildSvg([n50Sea, depthOutsideDemSea], bbox, {})
+    expect(svg).toContain('data-dybde="99"')
   })
 
-  it('beholder sjø-dybde og dropper land-dybde samtidig', () => {
-    const { svg } = buildSvg([n50Sea, depthInSea, depthOnLand], bbox, {})
+  it('både sjø-dybde og kanal-dybde rendres samtidig', () => {
+    const { svg } = buildSvg([n50Sea, depthInSea, depthOutsideDemSea], bbox, {})
     expect(svg).toContain('data-dybde="3"')
-    expect(svg).not.toContain('data-dybde="99"')
+    expect(svg).toContain('data-dybde="99"')
   })
 
-  it('uten kyst-modell (ingen sjø) renderes dybdeareal urørt — gating/ingen regresjon', () => {
-    // Ingen N50-sjø, ingen DEM → hasAuthoritativeSea = false. Da skal
-    // 307 rendres som før, også «på land»-arealet (vi har ingen kyst å
-    // klippe mot, og skal ikke gjette).
-    const { svg } = buildSvg([depthOnLand], bbox, {})
+  it('uten kyst-modell (ingen sjø) renderes dybdeareal urørt', () => {
+    const { svg } = buildSvg([depthOutsideDemSea], bbox, {})
     expect(svg).toContain('data-dybde="99"')
   })
 })
