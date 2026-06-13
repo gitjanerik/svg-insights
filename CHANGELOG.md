@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.35: Tynnere kai/molo-strek (551)
+
+Den lineære kai/brygge/molo-streken (ISOM 551, åpen `LineString` → grå strek uten fyll) er halvert fra 1,4 mm til 0,8 mm. Den leste som for tjukk — særlig synlig under pan/zoom, der `non-scaling-stroke` slås av av perf-grunner og streken skalerer med viewBox-en og blir ekstra tjukk. 0,8 mm holder omrisset tydelig lesbart som en kunstig struktur uten å dominere kartet. Areal-kaier (lukkede polygoner, fylt) er uendret.
+
+---
+
 ## 2026-06-13 — v10.2.34: Kai/brygge/molo (551) — eget kartlag + fjern wedge-artefakter
 
 Kai/brygge/molo (ISOM 551) er nå et eget kartlag med egen av/på-bryter i «Sjø & padling»-seksjonen i Lag-fanen, default PÅ (tidligere delte det `sjo-poi`-bryteren med fyr/sjømerker/skjær osv.). `categoryFor(551)` → `'kai'`; 552 (fareområde) blir igjen i `sjo-poi`. Den nye bryteren tas også med i long-press-detalj-inset-en.
