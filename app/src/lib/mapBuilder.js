@@ -1065,9 +1065,10 @@ export function buildSvg(elements, bbox, options = {}) {
   // kartet ble regnet «norsk» → svensk-side-vann flommet. Derfor nå PER ELEMENT
   // og land-agnostisk:
   //   – Autoritativt vann (_source n50/nve/sjokart): behold ALLTID.
-  //   – Rå OSM-RELASJON (vann): dropp (tvangslukkings-flom-kilde).
-  //   – Rå OSM / merged WAY-flate: dropp hvis areal > terskel; behold småvann
-  //     (lukker korrekt, flommer ikke) → svenske innsjøer beholdes.
+  //   – Rå OSM/merged flate (relasjon ELLER way): dropp kun hvis areal > terskel
+  //     (store, tvangslukkede flom-kropper). Småvann som lukker korrekt beholdes
+  //     — både svenske innsjøer OG norske OSM-relasjon-innsjøer (Bondivannet på
+  //     det innebygde Vardåsen-kartet, som bygges uten N50/NVE → rent OSM-vann).
   // Norske kart: OSM-ferskvann er alt undertrykt av N50/NVE oppstrøms, og
   // autoritativt vann beholdes → byte-identisk. Dette beholdes selv om app-en er
   // skopet til Norge, fordi norske GRENSEKART (Børgefjell, Halden/Svinesund) har
@@ -1095,9 +1096,19 @@ export function buildSvg(elements, bbox, options = {}) {
     }
     return a
   }
+  // Areal av en relasjons sammensydde ytre ringer (m²). Brukes til samme
+  // størrelses-cap som ways: en LITEN, lukket innsjø-relasjon (f.eks.
+  // Bondivannet på Vardåsen, mappet som OSM-relasjon) er legitim og beholdes;
+  // det er STORE relasjoner (Saltsjön/Mälaren) som tvangslukkes og flommer.
+  const relationOuterAreaM2 = (el) => {
+    if (!el.members) return Infinity
+    let a = 0
+    for (const ring of assembleRelationRings(el.members, 'outer')) a += polygonAreaM2(ring)
+    return a
+  }
   const keepWaterEl = (el) => {
     if (isAuthoritativeWater(el)) return true       // autoritativ → alltid
-    if (el.type === 'relation') return false         // rå OSM-relasjon → flom-kilde
+    if (el.type === 'relation') return relationOuterAreaM2(el) <= MAX_OSM_WATER_M2
     if (el.type === 'merged-water') return mergedOuterAreaM2(el._mergedRings) <= MAX_OSM_WATER_M2
     if (el.type === 'way' && el.geometry) return polygonAreaM2(el.geometry) <= MAX_OSM_WATER_M2
     return true

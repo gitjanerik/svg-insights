@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-13 — v10.2.31: Behold små OSM-innsjø-relasjoner — fiks Bondivannet på innebygd Vardåsen-kart
+
+Regresjon fra v10.2.29: det per-element OSM-vann-filteret droppet *alle* rå OSM-vann-RELASJONER (uansett størrelse) som flom-kilde. Men det innebygde Vardåsen-demokartet bygges i CI **uten** N50/NVE (rent OSM-vann — bekreftet i diagnose: blå/magenta, ingen grønn/cyan), og Bondivannet er mappet som en OSM-**relasjon** → den ble droppet og mistet blåfargen. (Klient-genererte kart var uberørt: der gir NVE innsjøene autoritativt.) Fix: relasjoner får nå samme **størrelses-cap** som ways — en liten, lukket innsjø-relasjon (Bondivannet) beholdes; det er bare *store* relasjoner (Saltsjön/Mälaren, tvangslukket > ~1 km²) som droppes. Diskriminatoren er areal, ikke type. +1 test (liten OSM-innsjø-relasjon beholdes). 550 tester. NB: det innebygde kartet regenereres av CI ved merge til master — Bondivannet kommer tilbake når Vardåsen-workflowen har kjørt.
+
+---
+
 ## 2026-06-13 — v10.2.30: Skop til Norge — avslutt svensk-kart-utforskningen
 
 Etter utforskningen av svenske turkart (v10.2.22–29): konklusjonen er at Sverige ikke er praktisk for denne klient-side-app-en. Autoritative svenske kilder (Lantmäteriet høyde/hydrografi, SMHI SVAR, Sjöfartsverket sjøkart) er alle **konto-gated** og kan ikke brukes fra en statisk GitHub Pages-PWA uten en backend/proxy — og uten DEM/relieff/høydekurver blir svenske kart uansett lite brukervennlige. Vi skoper derfor app-en tilbake til Norge: stedssøket (`useNominatim`) er satt tilbake til kun `'no'`, og det parkerte OSM-coastline→sjø-eksperimentet (`coastlineToSea.js` + tester) er fjernet. **Beholdt** fra utforskningen, fordi det forbedrer norske GRENSEKART (Børgefjell, Halden/Svinesund har svensk territorium i bbox-en): Terrarium-høyde-fyll så høydekurver krysser riksgrensa rent; det per-element OSM-vann-filteret + relieff-vakten så svensk territorium i en norsk bbox ikke flommer; og den generelle xmlEscape-fiksen (`"`/kontrolltegn i navn → gyldig XML). 549 tester. NB: en bruker kan fortsatt dra picker-en inn i Sverige manuelt — da gjelder «vann som land»-oppførselen, men det er ikke lenger en promotert funksjon.

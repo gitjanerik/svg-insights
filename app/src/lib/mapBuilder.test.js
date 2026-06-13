@@ -150,9 +150,14 @@ describe('robust OSM-vann — dropp flom-kildene per element (land-agnostisk)', 
   const bigOsmBay = { type: 'way', id: 50, tags: { natural: 'water', water: 'bay' }, geometry: ring(59.0, 10.0, 59.05, 10.1) }
   const bigOsmLake = { type: 'way', id: 51, tags: { natural: 'water', name: 'Stor' }, geometry: ring(59.0, 10.0, 59.04, 10.08) }
   const smallOsmLake = { type: 'way', id: 52, tags: { natural: 'water', name: 'Tjern' }, geometry: ring(59.020, 10.040, 59.021, 10.041) }
-  const osmWaterRel = {
+  const bigOsmWaterRel = {
     type: 'relation', id: 60, tags: { natural: 'water' },
     members: [{ type: 'way', role: 'outer', geometry: ring(59.0, 10.0, 59.05, 10.1) }],
+  }
+  // Liten lukket innsjø-relasjon (Bondivannet-scenario på innebygd Vardåsen-kart)
+  const smallOsmWaterRel = {
+    type: 'relation', id: 61, tags: { natural: 'water', name: 'Bondivannet' },
+    members: [{ type: 'way', role: 'outer', geometry: ring(59.020, 10.040, 59.022, 10.043) }],
   }
   const nveWaterRel = {
     type: 'relation', id: 'nve-1', tags: { natural: 'water' }, _source: 'nve',
@@ -175,9 +180,14 @@ describe('robust OSM-vann — dropp flom-kildene per element (land-agnostisk)', 
     expect(freshShown(svg)).toBe(true)
   })
 
-  it('rå OSM-vann-RELASJON droppes uansett størrelse (tvangslukkings-flom)', () => {
-    const { svg } = buildSvg([osmWaterRel], bbox, {})
+  it('STOR rå OSM-vann-relasjon droppes (tvangslukkings-flom)', () => {
+    const { svg } = buildSvg([bigOsmWaterRel], bbox, {})
     expect(freshShown(svg)).toBe(false)
+  })
+
+  it('LITEN rå OSM-innsjø-RELASJON beholdes (Bondivannet på innebygd kart)', () => {
+    const { svg } = buildSvg([smallOsmWaterRel], bbox, {})
+    expect(freshShown(svg)).toBe(true)
   })
 
   it('NVE-innsjø (relation, _source=nve) beholdes — autoritativ, ingen norsk regresjon', () => {
