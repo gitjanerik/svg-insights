@@ -662,6 +662,18 @@ export function buildSvg(elements, bbox, options = {}) {
                                    // ~0 m over en innlands-vannflate er en DEM-artefakt.
   } = options
 
+  // «Fjern routes generelt» (v10.2.43): rute-relasjoner og rute-taggede
+  // elementer (buss/sykkel/vandre-linjer, ferge-ruter, løyper — type=route /
+  // route_master eller route=*) er aldri ekte kart-areal. Navnet deres er
+  // typisk en lang «A – B / A – (C) – B»-streng (busslinje) som forurenset
+  // område-navn-laget OG søk/highlight. De skal ikke bidra til NOE i pipelinen,
+  // så vi luker dem ut helt før all videre prosessering.
+  elements = (elements ?? []).filter(el => {
+    const t = el?.tags
+    if (!t) return true
+    return !(t.route || t.type === 'route' || t.type === 'route_master')
+  })
+
   // Lett timing-instrumentering: måler de tunge stegene og returneres som
   // `timings` (logges av createMapFlow). includeCliffs/includeBuildingMass = false
   // (progressiv fase-1) hopper over de to dyreste CPU-lagene.
@@ -1688,10 +1700,27 @@ export function buildSvg(elements, bbox, options = {}) {
     if (tags.natural === 'peak' || tags.natural === 'saddle') continue
     // place=*-noder rendrer egen label via stedsnavnSvg / places
     if (el.type === 'node' && tags.place) continue
+    // Lineære features (vei, sti, jernbane, gjerde, kraftlinje) og rute-
+    // relasjoner (busslinjer o.l.) er IKKE arealer og skal aldri få et
+    // areal-navn. Rute-relasjonens way-medlemmer har TOM rolle, så
+    // assembleRelationRings(..,'outer') plukker dem opp som «outer» (fallback),
+    // og polygonAreaM2 wrapper den åpne traséen (shoelace %n) til et falskt
+    // areal > minArea. Resultat: lange «A – B / A – (C) – B»-rutenavn ble
+    // labelet som område-navn — og lengde-cappen under er building-only, så
+    // den traff dem aldri. (v10.2.43)
+    if (tags.highway || tags.railway || tags.route || tags.type === 'route' ||
+        tags.public_transport || tags.barrier || tags.power) continue
 
     let cent = null
     let areaM2 = 0
     if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
+      // Bare LUKKEDE ways er arealer. En åpen polylinje er lineær —
+      // polygonAreaM2 wrapper den (%n) og gir et falskt areal, så åpne
+      // navngitte ways ville ellers fått en område-label (samme rot som over).
+      const g0 = el.geometry[0]
+      const gN = el.geometry[el.geometry.length - 1]
+      const closed = Math.abs(g0.lat - gN.lat) < 1e-9 && Math.abs(g0.lon - gN.lon) < 1e-9
+      if (!closed) continue
       areaM2 = polygonAreaM2(el.geometry)
       cent = polygonCentroid(el.geometry)
     } else if (el.type === 'relation' && el.members) {
