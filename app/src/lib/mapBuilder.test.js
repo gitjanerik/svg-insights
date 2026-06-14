@@ -168,6 +168,73 @@ describe('OSM-vann rendres uten størrelses-filtrering (velprøvd norsk oppførs
   })
 })
 
+describe('område-navn — lineære features får ALDRI areal-label (tullenavn-fiks v10.2.43)', () => {
+  // En busslinje-relasjon: type=route, way-medlemmer med TOM rolle. Tidligere
+  // plukket assembleRelationRings(..,'outer') opp trasé-wayene som «outer» og
+  // polygonAreaM2 wrappet den åpne traséen til et falskt areal > 1000 m² →
+  // labelet med rute-navnet. Lengde-cappen var building-only, så den traff aldri.
+  const tullenavn = 'Langum - Hafskjold / Langum - (Bragernes) - Hafskjold / Sundhaug - Asker'
+  const busRoute = {
+    type: 'relation', id: 90,
+    tags: { type: 'route', route: 'bus', name: tullenavn },
+    members: [
+      { type: 'way', role: '', geometry: [
+        { lat: 59.01, lon: 10.02 }, { lat: 59.02, lon: 10.05 },
+        { lat: 59.03, lon: 10.03 }, { lat: 59.04, lon: 10.07 },
+      ] },
+    ],
+  }
+
+  it('busslinje-relasjon gir ingen område-navn-label', () => {
+    const { svg } = buildSvg([busRoute], bbox, {})
+    expect(svg).not.toContain(tullenavn)
+  })
+
+  it('navngitt åpen vei (highway) gir ingen område-navn-label', () => {
+    const namedRoad = {
+      type: 'way', id: 91,
+      tags: { highway: 'residential', name: tullenavn },
+      geometry: [
+        { lat: 59.01, lon: 10.02 }, { lat: 59.02, lon: 10.05 },
+        { lat: 59.03, lon: 10.03 }, { lat: 59.04, lon: 10.07 },
+      ],
+    }
+    const { svg } = buildSvg([namedRoad], bbox, {})
+    expect(svg).not.toContain(tullenavn)
+  })
+})
+
+describe('routes filtreres ut globalt før all prosessering (v10.2.43)', () => {
+  // «Fjern routes generelt»: rute-relasjoner/-elementer skal aldri bidra til
+  // kartet — verken navn, geometri eller søk/highlight (data-name).
+  const routeRel = (extra) => ({
+    type: 'relation', id: 95,
+    tags: { name: 'Buss 251 — Langum', ...extra },
+    members: [{ type: 'way', role: '', geometry: ring(59.01, 10.02, 59.04, 10.07) }],
+  })
+
+  it('type=route droppes (intet navn, ingen data-name)', () => {
+    const { svg } = buildSvg([routeRel({ type: 'route', route: 'bus' })], bbox, {})
+    expect(svg).not.toContain('Buss 251')
+  })
+
+  it('route=* (uten type) droppes også', () => {
+    const { svg } = buildSvg([routeRel({ route: 'hiking' })], bbox, {})
+    expect(svg).not.toContain('Buss 251')
+  })
+
+  it('type=route_master droppes', () => {
+    const { svg } = buildSvg([routeRel({ type: 'route_master' })], bbox, {})
+    expect(svg).not.toContain('Buss 251')
+  })
+
+  it('ferge-way (route=ferry) droppes', () => {
+    const ferry = { type: 'way', id: 96, tags: { route: 'ferry', name: 'Buss 251' }, geometry: ring(59.01, 10.02, 59.04, 10.07) }
+    const { svg } = buildSvg([ferry], bbox, {})
+    expect(svg).not.toContain('Buss 251')
+  })
+})
+
 describe('xmlEscape — navn med spesialtegn gir gyldig XML (Stockholm-bug)', () => {
   // Et OSM-navn med " brøt data-name="…"-attributtet → hele SVG-en ble
   // ugyldig XML → MapView «Ugyldig SVG». Gjaldt store byer (Stockholm) der

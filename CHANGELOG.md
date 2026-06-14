@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-14 — v10.2.43: Fjerner routes generelt + tette label-lekkasjen
+
+Et nytt «tullenavn» dukket opp på kartet — en lang busslinje-streng («Langum - Hafskjold / Langum - (Bragernes) - Hafskjold / Sundhaug - Asker») labelet midt i terrenget. 16-tegns-cappen fra v10.2.42 traff den ikke, fordi den cappen kun gjelder `building`-navn. Navnet kom fra en rute-relasjon (`type=route`, busslinje): relasjonens trasé-ways har TOM rolle, så `assembleRelationRings(.., 'outer')` plukket dem opp som «outer» (fallback ment for øyer), og `polygonAreaM2` wrapper den åpne traséen (shoelace `%n`) til et falskt areal > 1000 m² → område-navn-label uten lengde-cap.
+
+To grep: (1) **Routes fjernes nå generelt** — `buildSvg` luker ut alle rute-relasjoner/-elementer (`type=route`/`route_master` eller `route=*`, inkl. ferge-/løype-/sykkel-ruter) helt før prosessering, så de aldri bidrar til navn, geometri eller søk/highlight. (2) **Område-navn-laget labeler ikke lenger lineære features** — vei/jernbane/gjerde/kraftlinje hoppes over, og ways må være LUKKEDE ringer for å regnes som areal (en åpen polylinje fikk ellers et falskt shoelace-areal). Ekte areal-navn (hytter, myr, naturreservat, vann) er uberørt.
+
+---
+
 ## 2026-06-13 — v10.2.42: Luker bort lange bygningsnavn (institusjonsklynger)
 
 På kart over f.eks. et universitetscampus klumpet tette klynger av lange institusjons-/avdelingsnavn («Menneskerettighetshuset», «Universitetsledelsen», «Seksjon for …») seg sammen midt i det som ISOM-messig ser ut som skog/åpen mark. Alle disse kommer fra OSM `building`+`name`-tagger, og label-logikken slapp gjennom hvert lille bygg (< 500 m²) uavhengig av navnelengde — så hver campus-fløy fikk sitt eget navn stablet oppå naboen.
