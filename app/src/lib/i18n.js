@@ -121,7 +121,9 @@ const no = {
 
   // ── Del-kart-banner (shareInvite — mottaker av et delt kart) ───────
   'share.invite.title': 'Noen har delt et kart med deg!',
+  'share.invite.titlePlace': 'Noen har delt et kart og et sted med deg!',
   'share.invite.body': 'Trykk «Lag turkart», så får du en nøyaktig kopi. God tur!',
+  'share.invite.bodyPlace': 'Trykk «Lag turkart» — du får en nøyaktig kopi med stedet markert. Utsnittet er låst så stedet ikke går tapt.',
   'share.invite.marking': 'Markering: {name}',
   'share.invite.cancel': 'Avbryt delt kart',
   'share.invite.installCheckbox': 'Installer kartappen for en bedre opplevelse',
@@ -214,7 +216,9 @@ const en = {
   'challenge.cancel': 'Cancel challenge',
 
   'share.invite.title': 'Someone shared a map with you!',
+  'share.invite.titlePlace': 'Someone shared a map and a place with you!',
   'share.invite.body': 'Tap «Generate map» to get an exact copy. Enjoy the trip!',
+  'share.invite.bodyPlace': 'Tap «Generate map» to get an exact copy with the place marked. The map area is locked so the place is never lost.',
   'share.invite.marking': 'Marking: {name}',
   'share.invite.cancel': 'Dismiss shared map',
   'share.invite.installCheckbox': 'Install the map app for a better experience',

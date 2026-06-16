@@ -171,7 +171,17 @@ function parseShareInvite() {
   if (Number.isFinite(km) && km >= 1 && km <= 14) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
-  return { hl: q.hl ? String(q.hl).slice(0, 60) : null }
+  // «Del kart og sted»: slat/slon er stedets eksakte koordinater. Forwardes
+  // til MapView så mottakeren får en rosa markering på nøyaktig samme punkt.
+  const slat = parseFloat(q.slat)
+  const slon = parseFloat(q.slon)
+  const hasPlace = Number.isFinite(slat) && Number.isFinite(slon)
+  return {
+    hl: q.hl ? String(q.hl).slice(0, 60) : null,
+    slat: hasPlace ? slat : null,
+    slon: hasPlace ? slon : null,
+    hasPlace,
+  }
 }
 
 const EQUIDISTANCE_OPTIONS = [
@@ -276,7 +286,12 @@ async function generateMap() {
     // som sender hadde valgt. Brukes når shareInvite er aktiv (ikke
     // utfordrings-share).
     const nav = { name: 'kart-vis', params: { id } }
-    if (shareInvite.value?.hl) nav.query = { hl: shareInvite.value.hl }
+    const inv = shareInvite.value
+    if (inv?.hl || inv?.hasPlace) {
+      nav.query = {}
+      if (inv.hl) nav.query.hl = inv.hl
+      if (inv.hasPlace) { nav.query.slat = String(inv.slat); nav.query.slon = String(inv.slon) }
+    }
     router.push(nav)
   } catch (e) {
     buildState.value = 'error'
@@ -476,14 +491,16 @@ onMounted(() => {
           </svg>
         </div>
         <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-semibold text-sky-100">{{ t('share.invite.title') }}</div>
+          <div class="text-[13px] font-semibold text-sky-100">
+            {{ shareInvite.hasPlace ? t('share.invite.titlePlace') : t('share.invite.title') }}
+          </div>
           <div v-if="shareInvite.hl" class="text-[11px] text-sky-100/75 truncate">
             {{ t('share.invite.marking', { name: shareInvite.hl }) }}
           </div>
         </div>
       </div>
       <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-        {{ t('share.invite.body') }}
+        {{ shareInvite.hasPlace ? t('share.invite.bodyPlace') : t('share.invite.body') }}
       </div>
 
       <!-- v9.1.x: Install-hint. Vises kun når appen IKKE alt kjører som PWA
