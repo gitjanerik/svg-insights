@@ -26,7 +26,7 @@ import {
   viewRectSvg, expandRect, rectContains, buildCullIndex,
   needsRecull, computeCullDiff, parseBboxAttr,
 } from '../lib/viewportCull.js'
-import { svgToWgs84 } from '../lib/utm.js'
+import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
 import { fetchLiveWater } from '../lib/nveHydApi.js'
@@ -1414,7 +1414,12 @@ watch(() => curveball.active.value, () => renderHighlight())
 // Bygger URL som tar mottaker til samme kart-utsnitt. Built-in kart pekes
 // direkte på /kart/:id; brukers egne kart deles som /kart/nytt?lat=&km=&eq=
 // så mottaker selv kan generere sin lokale kopi (SVG-en bor i IndexedDB
-// hos sender). Optional ?hl=<navn> sender med highlight-ønsket.
+// hos sender).
+//
+// «Del kart» (uten `place`) deler kun utsnittet. «Del kart og sted» sender med
+// et markert sted som eksakte koordinater (slat/slon) + navn (hl): mottakeren
+// får en rosa puls-markering på NØYAKTIG samme punkt — robust uavhengig av om
+// navnet finnes i deres ferske søkeindeks, så stedet ikke går tapt.
 const shareInfo = computed(() => {
   if (!meta.value) return null
   const m = meta.value
@@ -1425,43 +1430,40 @@ const shareInfo = computed(() => {
   return { lat, lon, sizeKm, equidistanceM }
 })
 
-function buildShareUrl() {
+function buildShareUrl(place = null) {
   if (!shareInfo.value) return null
   const base = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
   const id = route.params.id ?? 'vardasen'
   const isBuiltin = !!BUILTIN[id]
-  const hl = highlightedFeature.value?.name ?? ''
   const params = new URLSearchParams()
+  if (place && Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
+    if (place.name) params.set('hl', place.name)
+    params.set('slat', place.lat.toFixed(6))
+    params.set('slon', place.lon.toFixed(6))
+  }
   if (isBuiltin) {
     // Built-in: del direkte view-URL — mottaker ser nøyaktig samme kart.
-    if (hl) params.set('hl', hl)
     const qs = params.toString()
     return `${base}/kart/${id}${qs ? `?${qs}` : ''}`
   }
-  // Stored map: del bbox + ekvidistanse. Mottaker lander i picker som
-  // pre-populerer feltene; etter generering navigeres til MapView med ?hl=.
+  // Stored map: del bbox + ekvidistanse. Mottaker lander i picker (låst
+  // utsnitt); etter generering navigeres til MapView med ?hl=&slat=&slon=.
   const s = shareInfo.value
   params.set('lat', s.lat.toFixed(5))
   params.set('lon', s.lon.toFixed(5))
   params.set('km', String(s.sizeKm))
   params.set('eq', String(s.equidistanceM))
-  if (hl) params.set('hl', hl)
   return `${base}/kart/nytt?${params.toString()}`
 }
 
 const shareState = ref('idle')  // idle | sharing | copied | error
 let shareResetTimer = null
 
-async function onShareMap() {
-  const url = buildShareUrl()
+// Felles dele-mekanikk: native share-sheet (iOS/Android) med clipboard-fallback
+// på desktop. `shareState` driver knapp-teksten i begge dele-knapper.
+async function performShare(url, title, text) {
   if (!url) return
-  const shareData = {
-    title: mapTitle.value || 'SVG Insights — turkart',
-    text: highlightedFeature.value?.name
-      ? `${mapTitle.value} — markering: ${highlightedFeature.value.name}`
-      : mapTitle.value,
-    url,
-  }
+  const shareData = { title, text, url }
   // navigator.share åpner native iOS/Android-dialog der brukeren velger
   // app (Meldinger, WhatsApp, Mail, AirDrop osv). canShare() finnes på
   // moderne browsere men ikke alltid — try/catch dekker resten.
@@ -1506,11 +1508,58 @@ async function onShareMap() {
   shareResetTimer = setTimeout(() => { shareState.value = 'idle' }, 2200)
 }
 
+// «Del kart» — bare utsnittet, ingen markering.
+function onShareMap() {
+  performShare(buildShareUrl(), mapTitle.value || 'SVG Insights — turkart', mapTitle.value)
+}
+
+// «Del kart og sted» fra drawer-en — bruker den aktive rosa søke-/POI-
+// markeringen. SVG-punktet regnes om til WGS84 så mottakeren får eksakt
+// samme punkt.
+function onShareMapWithPlace() {
+  const h = highlightedFeature.value
+  if (!h || !meta.value) return
+  const { lat, lon } = svgToWgs84(h.x, h.y, meta.value)
+  performShare(
+    buildShareUrl({ name: h.name, lat, lon }),
+    mapTitle.value || 'SVG Insights — turkart',
+    `${mapTitle.value} — sted: ${h.name}`,
+  )
+}
+
+// «Del kart og sted» fra long-press-punktet (PUNKT-arket): deler det
+// brukeren akkurat trykket på — f.eks. et badevann eller utsiktspunkt.
+function onShareMapWithContextPlace() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  const name = info.place?.name || 'Markert sted'
+  performShare(
+    buildShareUrl({ name, lat: info.lat, lon: info.lon }),
+    mapTitle.value || 'SVG Insights — turkart',
+    `${mapTitle.value} — sted: ${name}`,
+  )
+  closeContextMenu()
+}
+
 function maybeHighlightFromQuery() {
   const hl = route.query.hl
-  if (!hl) return
+  const slat = parseFloat(route.query.slat)
+  const slon = parseFloat(route.query.slon)
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
+
+  // «Del kart og sted»: eksakte koordinater → samme rosa markering som om
+  // mottakeren selv hadde søkt i utsnittet. Koordinat-basert er robust;
+  // navne-oppslaget under er bare fallback for eldre lenker (kun ?hl=).
+  if (Number.isFinite(slat) && Number.isFinite(slon) && meta.value) {
+    const { x, y } = wgs84ToSvg(slat, slon, meta.value)
+    highlightedFeature.value = { name: hl ? String(hl) : 'Delt sted', x, y, kind: 'delt-sted' }
+    panTo(x, y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: 2.5 })
+    renderHighlight()
+    return
+  }
+
+  if (!hl) return
   const match = findByName(mapSearch.index.value, String(hl))
   if (!match) return
   highlightedFeature.value = { name: match.name, x: match.x, y: match.y, kind: match.kind }
@@ -5961,10 +6010,23 @@ onUnmounted(() => {
                 <template v-else>Del kart</template>
               </span>
             </button>
+            <!-- Del kart og sted — vises kun når et sted er markert (rosa puls).
+                 Mottakeren får utsnittet låst + samme rosa markering på stedet. -->
+            <button v-if="highlightedFeature" @click="onShareMapWithPlace"
+                    class="w-full mb-2 px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center justify-center gap-2 transition
+                           bg-pink-500/15 border-pink-400/40 text-pink-100">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span class="font-medium">Del kart og sted</span>
+            </button>
             <div v-if="highlightedFeature"
                  class="text-[10px] text-white/55 leading-snug mb-3 px-1 -mt-1">
-              Markering: <span class="text-pink-300 font-medium">{{ highlightedFeature.name }}</span>
-              · sendes som <code class="text-white/70">?hl=</code> i lenken.
+              Markert sted: <span class="text-pink-300 font-medium">{{ highlightedFeature.name }}</span>.
+              Mottakeren ser samme markering, og utsnittet er låst så stedet ikke går tapt.
             </div>
 
             <div class="grid grid-cols-2 gap-2 mb-3">
@@ -6471,6 +6533,16 @@ onUnmounted(() => {
                 <path d="M9 4 V18 M15 6 V20"/>
               </svg>
               <span>Del kart</span>
+            </button>
+            <button @click="onShareMapWithContextPlace"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-pink-500/15 border-pink-400/40 text-pink-100">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <span>Del kart og sted</span>
             </button>
             <button v-if="ctxCanMeasure" @click="onStartMeasureHere"
                     class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]

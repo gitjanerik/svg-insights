@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-16 — v10.2.45: Del kart og sted — markering følger med delingen
+
+Ny dele-handling «Del kart og sted» ved siden av «Del kart». Når du har markert et sted (rosa puls fra søk eller «nærmeste …»), eller long-press på et punkt — f.eks. et badevann, turmål, soppsted eller utsiktspunkt — kan du nå dele kartet MED stedet. Mottakeren får en rosa markering på nøyaktig samme punkt, akkurat som om de selv hadde søkt i utsnittet.
+
+Stedet sendes som eksakte koordinater (`slat`/`slon`) i lenken, ikke bare som navn — det er robust: markeringen lander på riktig punkt selv om navnet ikke finnes i mottakerens ferske søkeindeks. «Del kart» deler fortsatt kun utsnittet. Mottakerens kartutsnitt, størrelse og ekvidistanse er låst (som for alle delte kart), så stedet ikke kan gå tapt ved at mottakeren endrer utsnittet. Banneret hos mottakeren sier nå tydelig at både kart og sted er delt.
+
+---
+
 ## 2026-06-16 — v10.2.44: Elv-/bekk-navn ved klikk (geometri-bevisst stedsoppslag)
 
 Long-press på en navngitt elv, vannvei eller bekk viser nå navnet i info-kortet — med Store norske leksikon / Wikipedia-ingress og lenker når de finnes, akkurat som for stedsnavn. Eksempelet som motiverte fiksen: et punkt midt i Drammenselva ga ingen elv-info, fordi `findNearestPlace` kun målte avstand til navne-ankeret (sentroiden) og en lang elv tapte mot et nærmere stedsnavn.
