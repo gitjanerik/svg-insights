@@ -336,3 +336,37 @@ describe('vektor-vann er autoritativt over DEM-sjø (steg 2)', () => {
     expect(svg).toContain('data-src="dem-sea"')        // ekte kyst-sjø overlever
   })
 })
+
+describe('navngitte vannveier (elv/bekk) får data-name for klikk-oppslag (v10.2.44)', () => {
+  // En polylinje (ikke lukket ring) langs øst-vest. waterway=river → ISOM 304.
+  const elvLine = (name, way = 'river') => [
+    {
+      type: 'way', id: 70,
+      tags: { waterway: way, name },
+      geometry: [
+        { lat: 59.02, lon: 10.01 },
+        { lat: 59.02, lon: 10.05 },
+        { lat: 59.02, lon: 10.09 },
+      ],
+    },
+  ]
+
+  it('navngitt elv (304) emitteres standalone med data-name', () => {
+    const { svg } = buildSvg(elvLine('Drammenselva', 'river'), bbox, {})
+    expect(svg).toContain('data-iso="304"')
+    expect(svg).toMatch(/data-iso="304">[\s\S]*data-name="Drammenselva"/)
+  })
+
+  it('navngitt bekk (305) emitteres standalone med data-name', () => {
+    const { svg } = buildSvg(elvLine('Lurbekken', 'stream'), bbox, {})
+    expect(svg).toMatch(/data-iso="305">[\s\S]*data-name="Lurbekken"/)
+  })
+
+  it('unavngitt vannvei får ingen data-name (slås sammen som før)', () => {
+    const { svg } = buildSvg(elvLine('', 'stream'), bbox, {})
+    // Ingen data-name på 305-linja når navnet mangler.
+    const seg = svg.slice(svg.indexOf('data-iso="305"'))
+    const end = seg.indexOf('</g>')
+    expect(seg.slice(0, end)).not.toContain('data-name=')
+  })
+})

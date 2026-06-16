@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-16 — v10.2.44: Elv-/bekk-navn ved klikk (geometri-bevisst stedsoppslag)
+
+Long-press på en navngitt elv, vannvei eller bekk viser nå navnet i info-kortet — med Store norske leksikon / Wikipedia-ingress og lenker når de finnes, akkurat som for stedsnavn. Eksempelet som motiverte fiksen: et punkt midt i Drammenselva ga ingen elv-info, fordi `findNearestPlace` kun målte avstand til navne-ankeret (sentroiden) og en lang elv tapte mot et nærmere stedsnavn.
+
+Stedsoppslaget er nå geometri-bevisst: `findWaterFeatureAtPoint` i MapView sjekker først om klikk-punktet ligger PÅ en navngitt vann-feature — punkt-i-fyll for vann-arealer (innsjø/elveflate, ISOM 301/302/303) og nærmeste-punkt-på-polylinje for vann-linjer (elv/bekk, ISOM 304/305), med en zoom-skalert toleranse. Ligger punktet på en slik feature, vinner den over nærmeste-anker-heuristikken, og navnet brukes som hint mot SNL/Wikipedia. For at linje-oppslaget skal virke emitterer `mapBuilder` nå navngitte vannveier (304/305) standalone med `data-name` (som navngitte vann-arealer alltid har gjort) — visuelt uendret, og unavngitte vannveier slås fortsatt sammen. Linje-avstanden bruker ren punkt-til-segment-aritmetikk (ingen layout-tvingende `getPointAtLength`).
+
+---
+
 ## 2026-06-14 — v10.2.43: Fjerner routes generelt + tette label-lekkasjen
 
 Et nytt «tullenavn» dukket opp på kartet — en lang busslinje-streng («Langum - Hafskjold / Langum - (Bragernes) - Hafskjold / Sundhaug - Asker») labelet midt i terrenget. 16-tegns-cappen fra v10.2.42 traff den ikke, fordi den cappen kun gjelder `building`-navn. Navnet kom fra en rute-relasjon (`type=route`, busslinje): relasjonens trasé-ways har TOM rolle, så `assembleRelationRings(.., 'outer')` plukket dem opp som «outer» (fallback ment for øyer), og `polygonAreaM2` wrapper den åpne traséen (shoelace `%n`) til et falskt areal > 1000 m² → område-navn-label uten lengde-cap.

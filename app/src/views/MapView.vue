@@ -41,7 +41,7 @@ import { fetchSnlSummary } from '../lib/snlFetcher.js'
 import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
-  findNearestPlace,
+  findNearestPlace, pointToPolylineDist,
 } from '../lib/mapContext.js'
 import { useCurveBall } from '../composables/useCurveBall.js'
 import CurveBallLayer from '../components/CurveBallLayer.vue'
@@ -1881,6 +1881,80 @@ function pointOnFreshwater(svgX, svgY) {
   return false
 }
 
+// Parse en linje-path-d ("M x,y L x,y ... M ...") til lister av [x,y]-punkter,
+// én per subpath. mapBuilder skriver kun M/L med komma-separerte tall.
+function parseLinePoints(d) {
+  const subs = []
+  for (const part of String(d).split('M')) {
+    if (!part.trim()) continue
+    const pts = []
+    const re = /(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/g
+    let mm
+    while ((mm = re.exec(part)) !== null) {
+      const x = parseFloat(mm[1]), y = parseFloat(mm[2])
+      if (Number.isFinite(x) && Number.isFinite(y)) pts.push([x, y])
+    }
+    if (pts.length) subs.push(pts)
+  }
+  return subs
+}
+
+// Finn en navngitt vann-feature (elv/innsjø/bekk) som long-press-punktet ligger
+// PÅ — uavhengig av hvor feature-ens navne-anker (sentroid) er. Løser at en lang
+// elv (f.eks. Drammenselva) ellers taper mot et nærmere stedsnavn fordi
+// findNearestPlace kun måler avstand til anker-punktet, ikke til geometrien.
+//   1. Navngitte vann-AREALER (301/302/303): punkt-i-fyll. Velg minste areal
+//      ved overlapp (mest spesifikk feature).
+//   2. Navngitte vann-LINJER (304/305 elv/bekk): nærmeste punkt på polylinjen,
+//      ren matematikk (ingen layout-tvingende getPointAtLength). Toleransen
+//      skalerer med zoom (~14 px finger-treff) og clampes til [8, 60] m.
+function findWaterFeatureAtPoint(svgX, svgY) {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || typeof svg.createSVGPoint !== 'function') return null
+  const pt = svg.createSVGPoint()
+  pt.x = svgX
+  pt.y = svgY
+
+  // 1) Vann-arealer — punkt-i-fyll (samme CTM-invers-mønster som pointOnFreshwater).
+  let bestArea = null
+  for (const path of svg.querySelectorAll(
+    'g[data-iso="301"] path[data-name], g[data-iso="302"] path[data-name], g[data-iso="303"] path[data-name]')) {
+    const name = path.getAttribute('data-name')?.trim()
+    if (!name || typeof path.isPointInFill !== 'function') continue
+    const ctm = typeof path.getCTM === 'function' ? path.getCTM() : null
+    let local = pt
+    if (ctm) { try { local = pt.matrixTransform(ctm.inverse()) } catch { continue } }
+    if (!path.isPointInFill(local)) continue
+    let area = Infinity
+    try { const bb = path.getBBox(); area = bb.width * bb.height } catch { /* keep Infinity */ }
+    if (!bestArea || area < bestArea.area) bestArea = { name, area }
+  }
+  if (bestArea) return { name: bestArea.name, kind: 'vann', onFeature: true, distM: 0, x: svgX, y: svgY }
+
+  // 2) Vann-linjer — nærmeste-punkt-på-polylinje, zoom-skalert toleranse.
+  let tolM = 30
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  const m = meta.value
+  if (wrap && m && m.widthM && m.heightM) {
+    const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
+    const mPerPx = 1 / (fit * (scale.value || 1))
+    if (Number.isFinite(mPerPx) && mPerPx > 0) tolM = Math.min(60, Math.max(8, 14 * mPerPx))
+  }
+  let bestLine = null
+  for (const path of svg.querySelectorAll('g[data-iso="304"] path[data-name], g[data-iso="305"] path[data-name]')) {
+    const name = path.getAttribute('data-name')?.trim()
+    if (!name) continue
+    const d = path.getAttribute('d')
+    if (!d) continue
+    for (const sub of parseLinePoints(d)) {
+      const dist = pointToPolylineDist(svgX, svgY, sub)
+      if (dist <= tolM && (!bestLine || dist < bestLine.distM)) bestLine = { name, distM: dist }
+    }
+  }
+  if (bestLine) return { name: bestLine.name, kind: 'vann', onFeature: true, distM: bestLine.distM, x: svgX, y: svgY }
+  return null
+}
+
 // Info-utregning når menyen er åpen. Cachet via computed slik at en åpen meny
 // ikke re-evaluerer på hver pinch (kun når contextMenuPoint, searchIndex eller
 // DEM endrer seg).
@@ -1896,7 +1970,11 @@ const contextMenuInfo = computed(() => {
     ? sampleElevation(storedDem.value, p.svgX, p.svgY)
     : NaN
 
-  const place = inside ? findNearestPlace(mapSearch.index.value, p.svgX, p.svgY) : null
+  // Geometri-bevisst stedsoppslag: ligger punktet PÅ en navngitt elv/innsjø/bekk,
+  // vinner den over nærmeste navne-anker (ellers tapte lange elver mot et nærmere
+  // stedsnavn). Faller tilbake til nærmeste-anker-heuristikken ellers.
+  const waterHit = inside ? findWaterFeatureAtPoint(p.svgX, p.svgY) : null
+  const place = waterHit ?? (inside ? findNearestPlace(mapSearch.index.value, p.svgX, p.svgY) : null)
 
   // NB: «nærmeste sti/vei»-utregningen er bevisst fjernet (v9.1.22).
   // findNearestPath sampler hver path i sti/vei/bekk-lagene med
@@ -6154,10 +6232,10 @@ onUnmounted(() => {
             </div>
             <div v-if="contextMenuInfo.place"
                  class="flex items-baseline gap-2 text-[12px]">
-              <span class="text-white/45 w-20 shrink-0">Nærmest</span>
+              <span class="text-white/45 w-20 shrink-0">{{ contextMenuInfo.place.onFeature ? 'Sted' : 'Nærmest' }}</span>
               <span class="text-white truncate">
                 {{ contextMenuInfo.place.name }}
-                <span class="text-white/55 tabular-nums">
+                <span v-if="!contextMenuInfo.place.onFeature" class="text-white/55 tabular-nums">
                   · {{ formatDistanceM(contextMenuInfo.place.distM) }}
                 </span>
               </span>

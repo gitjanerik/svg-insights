@@ -33,6 +33,32 @@ export function formatDistanceM(m) {
   return `${(m / 1000).toFixed(2)} km`
 }
 
+// Korteste avstand fra punkt (px,py) til linjesegmentet (ax,ay)-(bx,by).
+// Ren matematikk — ingen DOM/layout. SVG user-units = meter.
+export function pointToSegmentDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay
+  const len2 = dx * dx + dy * dy
+  let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0
+  t = Math.max(0, Math.min(1, t))
+  const cx = ax + t * dx, cy = ay + t * dy
+  return Math.hypot(px - cx, py - cy)
+}
+
+// Korteste avstand fra punkt til en åpen polylinje (array av [x,y]). Brukes til
+// å avgjøre om et long-press-punkt ligger PÅ en navngitt bekk/elv (linje-vann)
+// — getPointAtLength er bevisst unngått (synkron, layout-tvingende, frøs store
+// kart i v9.1.22); dette er ren punkt-til-segment-aritmetikk.
+export function pointToPolylineDist(px, py, pts) {
+  if (!Array.isArray(pts) || pts.length === 0) return Infinity
+  if (pts.length === 1) return Math.hypot(px - pts[0][0], py - pts[0][1])
+  let best = Infinity
+  for (let i = 1; i < pts.length; i++) {
+    const d = pointToSegmentDist(px, py, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1])
+    if (d < best) best = d
+  }
+  return best
+}
+
 // Finn nærmeste navngitte sted i søke-indeksen. Begrenser til ekte
 // stedsnavn (ikke unavngitte vann-polygoner som har syntetiske navn).
 export function findNearestPlace(searchIndex, x, y) {
