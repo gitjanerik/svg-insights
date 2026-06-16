@@ -1405,10 +1405,22 @@ export function buildSvg(elements, bbox, options = {}) {
       // splitting — bevarer dash-fase og linecaps) så hver path får små
       // bounds + data-bbox. Map bevarer insertion-order → casing- og
       // overlay-passet (to-fase veier) produserer identiske bucket-sett.
+      // v10.2.44: navngitte vannveier (304 elv/kanal, 305 bekk/grøft) emitteres
+      // standalone med data-name — som navngitte vann-AREALER allerede gjør —
+      // så MapView kan identifisere hvilken elv/bekk et long-press-punkt ligger
+      // på (geometri, ikke bare nærmeste navne-label ~2 km unna). Stilen er
+      // identisk: pathen ligger i samme <g data-iso> så CSS-strøken matcher.
+      const isNamedWaterway = code === '304' || code === '305'
+      const namedLinePaths = []
       const cellBuckets = new Map()  // cellKey → { ds: [], bbox }
       for (const el of els) {
         const { d, bbox } = pathAndBboxFromGeometry(el.geometry, false, tol)
         if (!d) continue
+        const name = isNamedWaterway ? (el.tags?.name ?? '').trim() : ''
+        if (name) {
+          namedLinePaths.push(`    <path d="${d}"${bboxAttr(bbox, fmt)} data-name="${xmlEscape(name)}"/>`)
+          continue
+        }
         const key = cellKeyFor(bbox)
         let b = cellBuckets.get(key)
         if (!b) { b = { ds: [], bbox: null }; cellBuckets.set(key, b) }
@@ -1443,7 +1455,8 @@ export function buildSvg(elements, bbox, options = {}) {
         return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
       }
       const pathLines = lineBuckets.map(b => `    <path d="${b.ds.join(' ')}"${bboxAttr(b.bbox, fmt)}/>`)
-      return `  <g data-layer="${cat}" data-iso="${code}">\n${pathLines.join('\n')}\n  </g>\n`
+      const allLinePaths = [...pathLines, ...namedLinePaths]
+      return `  <g data-layer="${cat}" data-iso="${code}">\n${allLinePaths.join('\n')}\n  </g>\n`
     }
     return ''
   }
