@@ -93,6 +93,35 @@ export function buildRoutingGraph(features, opts = {}) {
     return hits[0]?.id ?? null
   }
 
+  // Nærmeste node UANSETT avstand. Brukervalgte start/mål-punkter ligger
+  // sjelden på en sti-node, så vi snapper dem til grafen. rbush-søk med
+  // voksende vindu; faller tilbake til lineær scan hvis grafen er glissen.
+  function nearestNode(pos) {
+    if (g.order === 0) return null
+    let best = null, bestD = Infinity
+    let r = Math.max(snapM, 8)
+    for (let tries = 0; tries < 12 && !best; tries++) {
+      const hits = nodeIndex.search({
+        minX: pos[0] - r, minY: pos[1] - r,
+        maxX: pos[0] + r, maxY: pos[1] + r,
+      })
+      for (const h of hits) {
+        const dx = h.pos[0] - pos[0], dy = h.pos[1] - pos[1]
+        const d = dx * dx + dy * dy
+        if (d < bestD) { bestD = d; best = h }
+      }
+      r *= 2
+    }
+    if (!best) {
+      g.forEachNode((id, attr) => {
+        const dx = attr.pos[0] - pos[0], dy = attr.pos[1] - pos[1]
+        const d = dx * dx + dy * dy
+        if (d < bestD) { bestD = d; best = { id, pos: attr.pos } }
+      })
+    }
+    return best ? { id: best.id, pos: best.pos, distM: Math.sqrt(bestD) } : null
+  }
+
   function route(fromId, toId) {
     if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return null
     const path = dijkstra.bidirectional(g, fromId, toId, 'cost')
@@ -106,5 +135,70 @@ export function buildRoutingGraph(features, opts = {}) {
     return { coordinates: coords, lengthM, costM, nodeIds: path }
   }
 
-  return { graph: g, nodeAt, route, edges, nodes: g.order }
+  return { graph: g, nodeAt, nearestNode, route, edges, nodes: g.order }
+}
+
+// Sett med kant-id'er en rute bruker (undirected — graphology gir samme
+// edge-id uansett retning).
+function routeEdgeSet(graph, nodeIds) {
+  const set = new Set()
+  for (let i = 0; i + 1 < nodeIds.length; i++) {
+    const e = graph.edge(nodeIds[i], nodeIds[i + 1])
+    if (e != null) set.add(e)
+  }
+  return set
+}
+
+function shareOf(aSet, bSet) {
+  if (!aSet.size) return 0
+  let common = 0
+  for (const e of aSet) if (bSet.has(e)) common++
+  return common / aSet.size
+}
+
+/**
+ * 1–k alternative ruter A→B via edge-penalty-metoden: finn korteste,
+ * straff dens kanter, finn neste, osv. Nye ruter beholdes kun hvis de er
+ * tilstrekkelig forskjellige (deler < `minShare` av kantene med en allerede
+ * valgt rute). Alle cost-mutasjoner reverseres til slutt.
+ *
+ * @param {ReturnType<typeof buildRoutingGraph>} rg
+ * @param {string} fromId
+ * @param {string} toId
+ * @param {{ k?: number, penalty?: number, minShare?: number }} opts
+ * @returns {Array<{coordinates:Array<[number,number]>, lengthM:number, costM:number, nodeIds:string[]}>}
+ *          sortert på lengthM stigende
+ */
+export function kShortestRoutes(rg, fromId, toId, opts = {}) {
+  const { k = 3, penalty = 2.5, minShare = 0.6 } = opts
+  const { graph: g, route } = rg
+  if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return []
+
+  const chosen = []
+  const chosenSets = []
+  const penalized = new Map()   // edgeId → original cost
+  const maxAttempts = k * 4
+
+  try {
+    for (let attempt = 0; attempt < maxAttempts && chosen.length < k; attempt++) {
+      const r = route(fromId, toId)
+      if (!r) break
+      const eset = routeEdgeSet(g, r.nodeIds)
+      const tooSimilar = chosenSets.some(s => shareOf(eset, s) >= minShare)
+      if (!tooSimilar) {
+        chosen.push(r)
+        chosenSets.push(eset)
+      }
+      // Straff denne rutens kanter slik at neste søk vrir unna.
+      for (const e of eset) {
+        if (!penalized.has(e)) penalized.set(e, g.getEdgeAttribute(e, 'cost'))
+        g.setEdgeAttribute(e, 'cost', g.getEdgeAttribute(e, 'cost') * penalty)
+      }
+    }
+  } finally {
+    for (const [e, cost] of penalized) g.setEdgeAttribute(e, 'cost', cost)
+  }
+
+  chosen.sort((a, b) => a.lengthM - b.lengthM)
+  return chosen
 }
