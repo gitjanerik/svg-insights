@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-17 — v11.0.0: Stifinner — rutenavigasjon på sti-laget
+
+Ny hovedfunksjon: **Stifinner**. Long-press et punkt på kartet, åpne info-arket og trykk «Naviger hit» — så foreslår appen 1–3 alternative ruter dit langs kartets sti- og vei-lag. Du velger startpunktet med et fast kikkertsikte midt i kartet: panorér så krysset står der du vil starte, og trykk «Bekreft startpunkt». Auto-kart er deaktivert mens du sikter, så kartet ikke bygges på nytt under panoreringen. Rutene tegnes som egne fargede linjer fra A til B; hver rute er tappbar og viser lengde og estimert gangtid, og den valgte ruten fremheves. Hele modusen kan avbrytes når som helst via en grønn alert med X-knapp øverst til venstre — uten å åpne info-arket — på samme måte som måleverktøyet.
+
+Rutene beregnes med en Dijkstra-graf (`lib/routing.js`, tidligere ubrukt) bygget fra sti-/vei-geometrien som leses tilbake fra den rendrede kart-SVG-en. Alternativene finnes via en edge-penalty-metode (`kShortestRoutes`), og start/mål snappes til nærmeste sti-node. Kostnadene vekter raske veier lavere enn vanskelige stitråkk (ISOM 501–507, 509). «Naviger hit» vises kun når kartet faktisk har routbare lag, og brukeren får tydelig beskjed om start/mål ligger for langt fra nærmeste sti eller om ingen rute finnes.
+
+---
+
 ## 2026-06-17 — v10.2.46: Scroll-piler på drawer-fanene
 
 Faneraden i kart-drawer-en (Kartlag / Tema / Annotering / Måling / Sporing / Eksport / Innstillinger) overflower vannrett på smale skjermer, og det var ikke åpenbart at det fantes flere faner enn de synlige. Nå står det en pil venstre foran første fane og en pil høyre etter siste fane. Pilene er alltid synlige som et hint om at raden kan scrolles, scroller raden mykt når man trykker, og disables (dempes) når man er scrollet helt til respektive ende. Native implementasjon (Tailwind-prosjekt) — tilsvarer Vuetify `v-slide-group`/`v-tabs show-arrows`, men uten ny avhengighet.

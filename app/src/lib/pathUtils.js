@@ -101,6 +101,43 @@ export function polylineToPath(points, close = false) {
 }
 
 /**
+ * Splitt en SVG path-d-streng til separate polylinjer — én pr subpath
+ * (M-kommando). Brukes av Stifinner for å lese sti-/vei-geometri tilbake
+ * fra den rendrede kart-SVG-en (kun `<path d>` er tilgjengelig på view-tid).
+ *
+ * Forventer ABSOLUTTE M/L-kommandoer slik `polylineToPath` produserer.
+ * Ekstra koordinat-par etter en M tolkes som implisitt L (SVG-spec). `Z`
+ * og andre kommandoer (kurver) ignoreres — kall kun på M/L-paths.
+ *
+ * @param {string} d
+ * @returns {Array<Array<[number,number]>>} subpaths, hver med ≥1 punkt
+ */
+export function parsePathSubpaths(d) {
+  if (typeof d !== 'string' || !d) return []
+  const subpaths = []
+  let current = null
+  const re = /([ML])([^MLZ]*)/gi
+  let m
+  while ((m = re.exec(d)) !== null) {
+    const cmd = m[1].toUpperCase()
+    const nums = (m[2].match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number)
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const pt = [nums[i], nums[i + 1]]
+      if (cmd === 'M' && i === 0) {
+        if (current && current.length) subpaths.push(current)
+        current = [pt]
+      } else if (current) {
+        current.push(pt)
+      } else {
+        current = [pt]
+      }
+    }
+  }
+  if (current && current.length) subpaths.push(current)
+  return subpaths
+}
+
+/**
  * Generaliser en feature avhengig av zoom: forenkle og evt smoothe.
  * Returnerer transformert kopi.
  */
