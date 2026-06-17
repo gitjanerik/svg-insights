@@ -509,6 +509,43 @@ watch(visibleTabs, (tabs) => {
   if (!tabs.some(t => t.key === activeTab.value)) activeTab.value = 'lag'
 }, { immediate: true })
 
+// Tab-bar scroll-piler (v9.3.6) — faneraden overflower på smale skjermer
+// (7 faner). Pil venstre/høyre står permanent foran/etter raden som hint om
+// at det finnes flere faner, og disables når man er scrollet helt til
+// respektive ende. Native implementasjon (Tailwind-prosjekt, ingen Vuetify).
+const tabScroller = ref(null)
+const canScrollTabsLeft = ref(false)
+const canScrollTabsRight = ref(false)
+let tabResizeObs = null
+
+function updateTabScroll() {
+  const el = tabScroller.value
+  if (!el) { canScrollTabsLeft.value = canScrollTabsRight.value = false; return }
+  const max = el.scrollWidth - el.clientWidth
+  canScrollTabsLeft.value = el.scrollLeft > 1
+  canScrollTabsRight.value = el.scrollLeft < max - 1
+}
+
+function scrollTabs(dir) {
+  const el = tabScroller.value
+  if (!el) return
+  el.scrollBy({ left: dir * Math.max(el.clientWidth * 0.6, 120), behavior: 'smooth' })
+}
+
+// Drawer-en er v-if, så scroller-elementet finnes først når den er åpen.
+// Sett opp ResizeObserver + recompute når den vises eller fanesettet endres.
+watch([showControls, visibleTabs], () => {
+  nextTick(() => {
+    const el = tabScroller.value
+    tabResizeObs?.disconnect()
+    if (el && typeof ResizeObserver !== 'undefined') {
+      tabResizeObs = new ResizeObserver(() => updateTabScroll())
+      tabResizeObs.observe(el)
+    }
+    updateTabScroll()
+  })
+})
+
 const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
 // Desktop: drawer er et høyrestilt side-panel med dra-bar venstrekant
 // (min 360px, maks 50vw, bredde lagret i localStorage per spor).
@@ -4855,6 +4892,7 @@ onUnmounted(() => {
   unlockBodyScroll()
   stopGpsTick()
   screenWake.stop()
+  tabResizeObs?.disconnect()
   componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
   desktopMq?.removeEventListener('change', updateIsDesktop)
@@ -5568,17 +5606,50 @@ onUnmounted(() => {
         </div>
 
         <!-- Tab-bar — understreket aktiv fane (samme stil som illustrasjons-
-             sporet). Horisontal scroll når labels ikke får plass. -->
-        <div class="shrink-0 mx-4 mb-2 flex border-b border-white/10 overflow-x-auto map-tabs"
-             style="scrollbar-width: none;">
-          <button v-for="tab in visibleTabs" :key="tab.key"
-                  @click="activeTab = tab.key"
-                  class="px-3 py-2.5 text-[10px] uppercase tracking-wider whitespace-nowrap shrink-0
-                         transition-colors"
-                  :class="activeTab === tab.key
-                          ? 'text-white border-b-2 border-slate-200'
-                          : 'text-white/40'">
-            {{ tab.label }}
+             sporet). Horisontal scroll når labels ikke får plass. Pil
+             venstre/høyre (v9.3.6) er alltid synlig som hint om flere faner,
+             og disables i hver ende. -->
+        <div class="shrink-0 mx-4 mb-2 flex items-stretch border-b border-white/10">
+          <!-- Pil venstre -->
+          <button type="button" @click="scrollTabs(-1)"
+                  :disabled="!canScrollTabsLeft"
+                  aria-label="Vis faner til venstre"
+                  class="shrink-0 px-1 flex items-center transition-colors"
+                  :class="canScrollTabsLeft
+                          ? 'text-white/70 active:scale-90 cursor-pointer'
+                          : 'text-white/15 cursor-default'">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+
+          <div ref="tabScroller" @scroll="updateTabScroll"
+               class="flex-1 flex overflow-x-auto map-tabs"
+               style="scrollbar-width: none;">
+            <button v-for="tab in visibleTabs" :key="tab.key"
+                    @click="activeTab = tab.key"
+                    class="px-3 py-2.5 text-[10px] uppercase tracking-wider whitespace-nowrap shrink-0
+                           transition-colors"
+                    :class="activeTab === tab.key
+                            ? 'text-white border-b-2 border-slate-200'
+                            : 'text-white/40'">
+              {{ tab.label }}
+            </button>
+          </div>
+
+          <!-- Pil høyre -->
+          <button type="button" @click="scrollTabs(1)"
+                  :disabled="!canScrollTabsRight"
+                  aria-label="Vis faner til høyre"
+                  class="shrink-0 px-1 flex items-center transition-colors"
+                  :class="canScrollTabsRight
+                          ? 'text-white/70 active:scale-90 cursor-pointer'
+                          : 'text-white/15 cursor-default'">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                 stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
           </button>
         </div>
 

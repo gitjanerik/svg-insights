@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-17 — v10.2.46: Scroll-piler på drawer-fanene
+
+Faneraden i kart-drawer-en (Kartlag / Tema / Annotering / Måling / Sporing / Eksport / Innstillinger) overflower vannrett på smale skjermer, og det var ikke åpenbart at det fantes flere faner enn de synlige. Nå står det en pil venstre foran første fane og en pil høyre etter siste fane. Pilene er alltid synlige som et hint om at raden kan scrolles, scroller raden mykt når man trykker, og disables (dempes) når man er scrollet helt til respektive ende. Native implementasjon (Tailwind-prosjekt) — tilsvarer Vuetify `v-slide-group`/`v-tabs show-arrows`, men uten ny avhengighet.
+
+---
+
 ## 2026-06-16 — v10.2.45: Del kart og sted — markering følger med delingen
 
 Ny dele-handling «Del kart og sted» ved siden av «Del kart». Når du har markert et sted (rosa puls fra søk eller «nærmeste …»), eller long-press på et punkt — f.eks. et badevann, turmål, soppsted eller utsiktspunkt — kan du nå dele kartet MED stedet. Mottakeren får en rosa markering på nøyaktig samme punkt, akkurat som om de selv hadde søkt i utsnittet.
