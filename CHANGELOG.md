@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.16: Lik strek-tykkelse på nabofliser i mosaikken
+
+Når man zoomet ut for å se et 2×2 brutto-kart hadde bare den opprinnelige (aktive) flisa full strek-tykkelse — nabofliene fikk tynnere streker. Årsaken: aktiv flis bruker `non-scaling-stroke` (konstant tykkelse uansett zoom), mens spøkelses-naboene (`data-ghost-layer`) med vilje var satt til skalerende strek for ytelse, så strekene deres krympet når man zoomet ut. Nå får spøkelses-strekene samme `non-scaling-stroke` som aktiv flis (med samme `.is-zooming`-unntak under pinch, så ytelsen er uendret). Regelen bakes inn i nye kart (symbolizer) og injiseres også i runtime, så den gjelder uansett når den aktive flisa ble bygd.
+
+---
+
 ## 2026-06-18 — v11.0.15: Kant-soner som SVG-elementer i canvas + fiks panorering-hopp
 
 Kant-sonene er nå ekte SVG-elementer tegnet inn i kart-SVG-en (gruppe `#extend-zones`) i stedet for HTML-knapper låst til skjermkanten. De lever i kartrommet og panner/zoomer/roterer med kartet, så de er ikke synlige før du enten zoomer ut eller panorerer forbi en kant — da kommer de diskrete blå «+»-prikkene til syne ytterst i canvas (ankret til yttergrensa av det som vises: aktiv flis ∪ nabofliser). Prikkene mot-skaleres til konstant skjermstørrelse uansett zoom, og fjernes ved eksport/utskrift (de er kun runtime-UI). Fikser også en feil der panorering etter at nye fliser var lagt til kunne utløse en «refresh» som flyttet kartutsnittet: når auto-kart er av skjer det nå ingenting automatisk under panorering (promotér-på-dvele og prefetch er kun aktivt når auto-kart er på), så det aktive kartet byttes aldri stille ut.
