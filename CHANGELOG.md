@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.17: Fjernet auto-kart, fri-form utvidelse, «bruk dette utsnittet», maks-fliser-slider + relieff-bryter
+
+Den automatiske auto-karten (bygg/prefetch når man drar forbi kanten + promotér-på-dvele) er fjernet — den byttet aktivt kart stille og forvirret. Nå har brukeren full kontroll: kant-sonene utvider kartet ett utsnitt om gangen (fri-form union — også diagonalene bygger nå kun ÉN flis, så mosaikken kan følge en trasé), og en «Bruk dette utsnittet»-knapp dukker opp når skjermsenteret står over en nabo-flis, så man kan gjøre den aktiv og bygge videre. Byttet er sømløst (ingen full-skjerm-loader). Auto-kart-bryteren i Innstillinger er erstattet med en **Maks kartfliser**-slider (4/9/16/25/36, default 16) som styrer hvor mange utsnitt mosaikk-cachen beholder. Ny **Relieff**-bryter slår terrengskygge helt av (skjuler relieff-knappen og hopper over hillshade-genereringen for både aktiv flis og naboer — sparer minne/GPU på svake enheter); fikser samtidig at naboflisene tidligere genererte hillshade-bilder selv når relieff var av. Oversiktssiden viser nå lagringsstørrelse per kart + totalt, med en «føre var»-melding om at store turkart bruker plass. Mosaikk-rendering, tile-cachen og «autoMap»-navn i koden er beholdt.
+
+---
+
 ## 2026-06-18 — v11.0.16: Lik strek-tykkelse på nabofliser i mosaikken
 
 Når man zoomet ut for å se et 2×2 brutto-kart hadde bare den opprinnelige (aktive) flisa full strek-tykkelse — nabofliene fikk tynnere streker. Årsaken: aktiv flis bruker `non-scaling-stroke` (konstant tykkelse uansett zoom), mens spøkelses-naboene (`data-ghost-layer`) med vilje var satt til skalerende strek for ytelse, så strekene deres krympet når man zoomet ut. Nå får spøkelses-strekene samme `non-scaling-stroke` som aktiv flis (med samme `.is-zooming`-unntak under pinch, så ytelsen er uendret). Regelen bakes inn i nye kart (symbolizer) og injiseres også i runtime, så den gjelder uansett når den aktive flisa ble bygd.

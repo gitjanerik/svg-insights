@@ -54,14 +54,20 @@ export async function loadMap(id) {
 
 /**
  * Liste alle kart med metadata, men UTEN svg- og dem-feltene (kan være store —
- * dem er ~160 KB ArrayBuffer per kart).
+ * dem er ~160 KB ArrayBuffer per kart). `sizeBytes` beregnes FØR strippingen så
+ * oversiktssiden kan vise lagringsbruk pr kart uten å holde de tunge blobene
+ * (svg-lengde ≈ byte for ASCII, lett underestimat ved æ/ø/å — godt nok for visning).
  * Sortert nyeste først.
  */
 export async function listMaps() {
   const store = await tx()
   const all = await asPromise(store.getAll())
   return all
-    .map(({ svg, dem, ...rest }) => ({ ...rest, hasDem: !!dem }))
+    .map(({ svg, dem, ...rest }) => ({
+      ...rest,
+      hasDem: !!dem,
+      sizeBytes: (svg?.length ?? 0) + (dem?.buffer?.byteLength ?? 0),
+    }))
     .sort((a, b) => b.opprettet - a.opprettet)
 }
 
