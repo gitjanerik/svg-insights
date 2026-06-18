@@ -91,6 +91,15 @@ function formatDateTime(ts) {
   return `${formatDate(d)} · ${formatTime(d)}`
 }
 
+// Lagringsstørrelse → kort KB/MB-streng. < 1 MB vises i KB, ellers MB med 1 desimal.
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return null
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+// Total lagringsbruk for brukerens lagrede kart (sum av sizeBytes).
+const totalBytes = computed(() => maps.value.reduce((s, m) => s + (m.sizeBytes ?? 0), 0))
+
 // «DEM 5 m» / «syntetisk DEM» / null (utelates). Syntetisk DEM har ingen ekte
 // oppløsning å vise.
 function demLabel(resM, source) {
@@ -350,7 +359,20 @@ async function onSelectSearchResult(r) {
 
       <!-- Brukergenererte kart -->
       <div v-if="maps.length > 0 || loading"
-           class="mt-6 mb-2 text-white/45 text-[11px] uppercase tracking-wide">Mine kart</div>
+           class="mt-6 mb-2 flex items-baseline justify-between gap-2">
+        <span class="text-white/45 text-[11px] uppercase tracking-wide">Mine kart</span>
+        <span v-if="totalBytes > 0" class="text-white/35 text-[11px] tabular-nums">
+          {{ formatBytes(totalBytes) }} totalt
+        </span>
+      </div>
+
+      <!-- «Føre var»: lagrede turkart ligger på enheten og kan bli store. -->
+      <div v-if="!loading && maps.length > 0"
+           class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
+                  text-amber-200/80 text-[11px] leading-snug">
+        Lagrede kart ligger på enheten. Store turkart kan bruke flere MB hver — slett kart du
+        ikke trenger for å frigjøre plass.
+      </div>
 
       <div v-if="loading" class="flex justify-center py-6">
         <div class="w-5 h-5 border-2 border-white/15 border-t-white/60 rounded-full animate-spin"/>
@@ -373,7 +395,9 @@ async function onSelectSearchResult(r) {
             <div class="text-[12px] text-white/50 truncate">
               {{ infoLine((m.halfKm * 2).toFixed(1), m.equidistanceM, m.demResolutionM, m.demSource) }}
             </div>
-            <div class="text-[11px] text-white/35 truncate">{{ formatDateTime(m.opprettet) }}</div>
+            <div class="text-[11px] text-white/35 truncate">
+              {{ formatDateTime(m.opprettet) }}<template v-if="formatBytes(m.sizeBytes)"> · {{ formatBytes(m.sizeBytes) }}</template>
+            </div>
           </div>
           <button @click.stop="onDelete(m.id, m.navn)"
                   class="w-9 h-9 rounded-lg flex items-center justify-center text-white/35

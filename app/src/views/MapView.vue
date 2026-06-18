@@ -21,7 +21,7 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
-import { pruneAutoTiles, countAutoTiles, MAX_AUTO_TILES, tileOffset, rectOverlapFraction } from '../lib/tileCache.js'
+import { pruneAutoTiles, countAutoTiles, tileOffset, rectOverlapFraction } from '../lib/tileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import {
   viewRectSvg, expandRect, rectContains, buildCullIndex,
@@ -885,6 +885,24 @@ function strokeSizeBase(widthM) {
 const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
 
+// Maks kartfliser i mosaikk-cachen — bruker-innstilling (slider i Innstillinger).
+// Diskrete trinn (kvadrat-tall, matcher et n×n grid-mentalt-bilde), default 16.
+// Påvirker hovedsakelig LAGRING (IndexedDB); live GPU/RAM er separat begrenset av
+// MAX_GHOSTS_RENDERED. pruneAutoTiles kapper fjerneste fliser til denne grensa.
+const MAX_TILE_STEPS = [4, 9, 16, 25, 36]
+const MAX_TILE_DEFAULT_IDX = 2  // = 16
+const MAX_TILES_LS_KEY = 'svg-insights-max-tiles'
+const maxTileIndex = ref(loadKnobStep(MAX_TILES_LS_KEY, MAX_TILE_DEFAULT_IDX, MAX_TILE_STEPS.length))
+const maxTiles = computed(() => MAX_TILE_STEPS[maxTileIndex.value])
+
+// Relieff (terrengskygge) av/på — bruker-innstilling. PÅ (default): hillshade
+// genereres for aktiv + nabofliser, og relieff-FAB-knotten vises (styrer intensitet).
+// AV: ingen hillshade genereres (sparer GPU/RAM per flis), og knotten skjules.
+const RELIEF_ENABLED_LS_KEY = 'svg-insights-relief-enabled'
+const reliefEnabled = ref((() => {
+  try { return localStorage.getItem(RELIEF_ENABLED_LS_KEY) !== '0' } catch { return true }
+})())
+
 // Tekststørrelse-slider (desktop) — søsken til rotasjons-sliden. Verdien er
 // −100…100 med 0 = «normal» (midtstilt); skala = 2^(v/100) → 0.5×…2.0×, så
 // brukeren både kan øke og minske størrelsen på alle kart-etiketter. Lagres i
@@ -964,6 +982,28 @@ watch(reliefStepIndex, () => {
   updateGhostReliefOpacity()   // hold mosaikk-spøkelsene i takt med relieff-nivået
   try { localStorage.setItem(RELIEF_LS_KEY, String(reliefStepIndex.value)) } catch { /* noop */ }
   flashKnobHint(reliefOpacity.value === 0 ? 'Relieff av' : `Relieff ${Math.round(reliefOpacity.value * 100)}%`)
+})
+
+// Maks-fliser-slider: persistér + håndhev en senket grense straks (kapp fjerneste).
+watch(maxTileIndex, () => {
+  try { localStorage.setItem(MAX_TILES_LS_KEY, String(maxTileIndex.value)) } catch { /* noop */ }
+  const m = meta.value
+  const c = m ? visibleCenterSvg() : null
+  let center = null
+  try { if (m && c) center = svgToWgs84(c.x, c.y, m) } catch { center = null }
+  pruneAutoTiles({ center: center ?? undefined, max: maxTiles.value, protectIds: [mapId.value] })
+    .then(() => { void refreshAutoTileCount() })
+    .catch(() => {})
+  flashKnobHint(`Maks ${maxTiles.value} kartfliser`)
+})
+
+// Relieff av/på: persistér, regenerer aktiv-flisas hillshade og re-render mosaikken
+// (spøkelses-relieff opprettes/fjernes i buildGhostSvg etter reliefEnabled).
+watch(reliefEnabled, () => {
+  try { localStorage.setItem(RELIEF_ENABLED_LS_KEY, reliefEnabled.value ? '1' : '0') } catch { /* noop */ }
+  applyHillshade()
+  void renderGhostTiles()
+  flashKnobHint(reliefEnabled.value ? 'Relieff på' : 'Relieff av')
 })
 
 // Tap = step (wrap), lang-trykk (500 ms) = nullstill til default.
@@ -1687,7 +1727,7 @@ async function applyHillshade() {
   // uten hillshade-PNG-en som forstyrrer ball/kontur-lesbarheten). Brukerens
   // valgte relieff-nivå røres ikke — applyHillshade kjøres på nytt når spillet
   // avsluttes (se curveball.active-watch) og restaurerer nivået.
-  const wantOn = reliefOpacity.value > 0 && !curveball.active.value
+  const wantOn = reliefEnabled.value && reliefOpacity.value > 0 && !curveball.active.value
   let img = svg.querySelector('#hillshade-layer')
   if (!wantOn) {
     if (img) img.remove()
@@ -3576,51 +3616,19 @@ function onExportTrackGpx(tr) {
   downloadGpx(tr, meta.value, mapTitle.value)
 }
 
-// ── Auto-kart: regenerer når visnings-senter krysser 85%-terskelen ────────
-// v9.3.38: default PÅ og «skjult» — ingen FAB, ramme eller trådkors. Styres av
-// en bryter i Innstillinger-fanen (localStorage-persistert). Når du
-// panner/zoomer slik at skjermsenteret har flyttet seg ≥85 % av halv-bredden ut
-// mot en kant, bygges et nytt kart med SAMME størrelse + ekvidistanse, sentrert
-// der du ser — stille, uten visuelle hjelpe-elementer.
-//
-// Spekulativ prefetch: når senteret passerer 50 %-sonen (men ikke 85 % ennå)
-// gjetter vi hvor du havner (projiserer reise-retningen ut til rammen) og bygger
-// kartet i bakgrunnen (Web Worker, jank-fritt). Krysser du så 85 % og gjettet
-// stemmer, bruker vi det ferdige kartet → tilnærmet umiddelbart. Bommer gjettet
-// (du snur), forkastes prefetch-en (worker termineres, kartet lagres aldri /
-// slettes) og vi bygger ferskt.
-const AUTO_MAP_THRESHOLD = 0.85   // andel av halv-bredden før ny-bygg trigges
-const PREFETCH_THRESHOLD = 0.5    // andel der bakgrunns-bygging starter
-const PREFETCH_MATCH_TOL_FRAC = 0.25  // hvor nær gjettet må være (× halv-bredde)
-// Auto-kart: default PÅ og «skjult» fra v9.3.38 — ingen FAB lenger, styres via
-// en bryter i Innstillinger-fanen. Valget huskes i localStorage på tvers av
-// økter (default AV — opt-in: brukeren slår det på i Innstillinger).
-// Trigger-rammen tegnes ikke lenger (SHOW_AUTO_MAP_FRAME=false) så funksjonen
-// jobber stille i bakgrunnen når den er på.
-const AUTO_MAP_PREF_KEY = 'svg-insights-automap-enabled'
-const SHOW_AUTO_MAP_FRAME = false
-function loadAutoMapPref() {
-  // Opt-in (v10.1.24): kun PÅ når brukeren eksplisitt har slått det på ('1').
-  try { return localStorage.getItem(AUTO_MAP_PREF_KEY) === '1' } catch { return false }
-}
-function saveAutoMapPref(on) {
-  try { localStorage.setItem(AUTO_MAP_PREF_KEY, on ? '1' : '0') } catch { /* noop */ }
-}
-const autoMapEnabled = ref(loadAutoMapPref()) // default AV (opt-in), persistert
+// ── Mosaikk + manuell utvidelse ───────────────────────────────────────────
+// Den AUTOMATISKE auto-karten (bygg-på-dvele/prefetch/promotér-på-dvele) er
+// fjernet — brukeren utvider eksplisitt via kant-sonene (#extend-zones) og gjør
+// en nabo-flis aktiv via en knapp. Mosaikk-rendering (renderGhostTiles) og
+// tile-cachen (pruneAutoTiles) beholdes. Navn med «autoMap»-prefiks beholdes der
+// de nå dekker delt infrastruktur (bygge-opts, toast, modus-gate).
 const buildingOnTheFly = ref(false)  // full-screen loader-flagg (gjenbrukes)
 const buildingProgress = ref('')
-const autoMapToast = ref('')      // transient melding (på/av, offline, flyttet)
+const autoMapToast = ref('')      // transient melding (offline, flyttet, utvidet)
 let autoMapToastTimer = null
 let autoMapOfflineNotified = false   // offline-toast vises kun én gang
-let autoMapArmed = true              // hindrer umiddelbar re-trigger etter bygg
-let autoMapCheckTimer = null
-// Spekulativ prefetch i bakgrunnen: { predicted:{x,y}, promise, controller,
-// aborted }. promise løses til { id, entry } fra buildMapFromCenter.
-let autoMapPrefetch = null
-// Om kartet som vises NÅ ble auto-generert (settes fra init-prefs). Styrer
-// push-vs-replace + opprydding: fra brukerens opprinnelige kart pushes første
-// auto-kart (tilbake-knappen → opprinnelig), videre auto-kart replace-r og
-// sletter forrige auto-kart fra lagring (ingen opphopning).
+let autoMapArmed = true              // bygge-lås (extendMap/promoteTile)
+// Om kartet som vises NÅ ble auto-/utvidelses-generert (settes fra init-prefs).
 const currentMapIsAuto = ref(false)
 
 // Kant-soner (manuell utvidelse, auto-kart AV): 8 diskrete prikker tegnet som
@@ -3638,7 +3646,6 @@ const EXTEND_ZONE_LABEL = {
 const EXTEND_ZONE_R = 16      // prikk-radius i skjermpiksler (mot-skalert)
 const EXTEND_ZONE_OFF = 30    // hvor langt UTENFOR kanten prikken sitter (px)
 const extendZonesVisible = computed(() =>
-  !autoMapEnabled.value &&
   !loading.value && !loadError.value && !!meta.value &&
   !buildingOnTheFly.value && !fillingInDetails.value &&
   !curveball.active.value && !annot.isAnnotateMode.value &&
@@ -3763,22 +3770,6 @@ function showAutoMapToast(msg) {
   autoMapToastTimer = setTimeout(() => { autoMapToast.value = '' }, 3500)
 }
 
-
-function toggleAutoMap() {
-  if (buildingOnTheFly.value) return
-  autoMapEnabled.value = !autoMapEnabled.value
-  saveAutoMapPref(autoMapEnabled.value)   // husk valget på tvers av økter
-  if (autoMapEnabled.value) {
-    autoMapArmed = true
-    autoMapOfflineNotified = false
-    showAutoMapToast('Auto-kart på — dra kartet for nytt utsnitt')
-  } else {
-    cancelPrefetch()
-    showAutoMapToast('Auto-kart av')
-  }
-  renderAutoMapFrame()
-}
-
 // Viewbox-koordinaten (SVG-meter) som ligger midt på skjermen akkurat nå.
 // Invers av forward-transformen i applyNameLOD/panTo: SVG fyller wrapperen med
 // preserveAspectRatio="xMidYMid meet", deretter M = T(tx,ty)∘R(rot)∘S(s).
@@ -3803,65 +3794,37 @@ function visibleCenterSvg() {
   return { x: (px - offX) / fit, y: (py - offY) / fit }
 }
 
-// Tegn (eller fjern) trigger-rammen som en stiplet rect i selve kart-SVG-en,
-// i SVG-meter-rommet, så den panner/zoomer/roterer SAMMEN med kartet. Rammen
-// er det indre 85 %-rektangelet (fra 7,5 % til 92,5 % på hver side).
-function renderAutoMapFrame() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  const existing = svg.querySelector('#auto-map-frame')
-  // v9.3.38: auto-kart kjører stille — trigger-rammen tegnes ikke (SHOW_AUTO_MAP_FRAME
-  // = false). Behold fjerne-grenen så en evt. gammel ramme ryddes bort.
-  if (!SHOW_AUTO_MAP_FRAME || !autoMapEnabled.value || !meta.value) {
-    if (existing) existing.remove()
+// «Gjør aktiv»-deteksjon: når skjermsenteret glir inn på en nabo-flis (utenfor
+// aktiv flis, inni en spøkelses-rect) eksponerer vi den som `activatableTile` så
+// en knapp kan tilby å gjøre den til aktiv flis. Debouncet (kjøres etter at
+// gesten har satt seg) — INGEN automatisk bytting (det gjør brukeren via knappen).
+const activatableTile = ref(null)   // { id, x, y, w, h, isAuto } eller null
+let activatableTimer = null
+function scheduleActivatableCheck() {
+  if (activatableTimer) clearTimeout(activatableTimer)
+  activatableTimer = setTimeout(() => {
+    if (isGesturing && isGesturing.value) { scheduleActivatableCheck(); return }
+    updateActivatableTile()
+  }, 250)
+}
+function updateActivatableTile() {
+  if (!ghostRects.value.length || autoMapModeBusy() || buildingOnTheFly.value || fillingInDetails.value) {
+    activatableTile.value = null
     return
   }
   const m = meta.value
-  const inset = (1 - AUTO_MAP_THRESHOLD) / 2   // 0.075
-  const x0 = inset * m.widthM
-  const y0 = inset * m.heightM
-  const rw = AUTO_MAP_THRESHOLD * m.widthM
-  const rh = AUTO_MAP_THRESHOLD * m.heightM
-  const ns = 'http://www.w3.org/2000/svg'
-  let g = existing
-  if (!g) {
-    g = document.createElementNS(ns, 'g')
-    g.setAttribute('id', 'auto-map-frame')
-    g.setAttribute('pointer-events', 'none')
-    const rect = document.createElementNS(ns, 'rect')
-    rect.setAttribute('fill', 'none')
-    rect.setAttribute('stroke', '#10b981')
-    rect.setAttribute('stroke-width', '2')
-    rect.setAttribute('stroke-dasharray', '10 8')
-    rect.setAttribute('stroke-linecap', 'round')
-    rect.setAttribute('vector-effect', 'non-scaling-stroke')
-    rect.setAttribute('opacity', '0.85')
-    g.appendChild(rect)
-    svg.appendChild(g)
+  const c = visibleCenterSvg()
+  if (!m || !c) { activatableTile.value = null; return }
+  // Fortsatt på aktiv flis → ingen kandidat.
+  if (c.x >= 0 && c.x <= m.widthM && c.y >= 0 && c.y <= m.heightM) {
+    activatableTile.value = null
+    return
   }
-  const rect = g.querySelector('rect')
-  rect.setAttribute('x', String(x0))
-  rect.setAttribute('y', String(y0))
-  rect.setAttribute('width', String(rw))
-  rect.setAttribute('height', String(rh))
+  activatableTile.value = ghostRects.value.find(
+    r => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h
+  ) ?? null
 }
-
-// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame). Kun når
-// auto-kart er PÅ — da bygges/prefetches nytt utsnitt ved kanten og man kan
-// «scrolle tilbake» til en cachet flis (promotér-på-dvele). Med auto-kart AV
-// skjer INGENTING automatisk under panorering: brukeren utvider eksplisitt via
-// kant-sonene, og det aktive kartet byttes aldri stille ut (tidligere ga
-// promotér-på-dvele her en forvirrende «refresh» + sentrum-hopp mens man pannet
-// over en manuelt tillagt flis).
-function scheduleAutoMapCheck() {
-  if (!autoMapEnabled.value) return
-  if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
-  autoMapCheckTimer = setTimeout(() => {
-    if (isGesturing && isGesturing.value) { scheduleAutoMapCheck(); return }
-    checkAutoMapTrigger()
-  }, 400)
-}
-watch([scale, translateX, translateY, rotation], scheduleAutoMapCheck)
+watch([scale, translateX, translateY, rotation], scheduleActivatableCheck)
 
 // Felles gate: ikke kjør auto-kart-logikk når et annet modus eier UI-en
 // (måling, annotering, spill, søk, åpen drawer) — da er skjermsenteret dekket
@@ -3871,33 +3834,14 @@ function autoMapModeBusy() {
          measureMode.value || sti.active.value || searchOpen.value || showControls.value
 }
 
-function autoMapDist(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y)
-}
-
-// Projiser reise-retningen (kart-senter → synlig-senter) ut til 85%-rammen og
-// returner punktet der den treffer — vårt gjett på hvor du krysser terskelen.
-function predictTriggerCenter(c) {
-  const m = meta.value
-  const cx = m.widthM / 2, cy = m.heightM / 2
-  const dx = c.x - cx, dy = c.y - cy
-  if (dx === 0 && dy === 0) return { x: cx, y: cy }
-  const bx = AUTO_MAP_THRESHOLD * m.widthM / 2
-  const by = AUTO_MAP_THRESHOLD * m.heightM / 2
-  const sx = dx !== 0 ? bx / Math.abs(dx) : Infinity
-  const sy = dy !== 0 ? by / Math.abs(dy) : Infinity
-  const s = Math.min(sx, sy)
-  return { x: cx + s * dx, y: cy + s * dy }
-}
-
-// Bygge-parametre for et auto-kart sentrert på et SVG-punkt (samme størrelse +
-// ekvidistanse som dagens kart).
+// Bygge-parametre for en ny flis sentrert på et SVG-punkt (samme størrelse +
+// ekvidistanse som dagens kart). Brukes av kant-sone-utvidelsen.
 function autoMapBuildOpts(centerSvg) {
   const m = meta.value
   const { lat, lon } = svgToWgs84(centerSvg.x, centerSvg.y, m)
   const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
   return {
-    center: { lat, lon, name: 'Auto-kart' },
+    center: { lat, lon, name: 'Utvidelse' },
     halfKm: +(m.widthM / 2000).toFixed(3),
     // Arv den aktive flisas aspekt (høyde/bredde) så nabo-flisa får NØYAKTIG
     // samme dimensjoner → mosaikken flukter sømløst uansett om flisa er A-format
@@ -3910,24 +3854,22 @@ function autoMapBuildOpts(centerSvg) {
   }
 }
 
-// ── Manuell kart-utvidelse (kant-soner, auto-kart AV) ───────────────────────
-// 8 klikkbare kant-soner lar brukeren legge til nye kartutsnitt i en valgt
-// retning når auto-kart er av. Kardinal (N/Ø/S/V) → ÉN ny flis, sentrum flyttes
-// til GRENSEN mellom gammelt og nytt. Diagonal (NV/NØ/SV/SØ) → TRE nye fliser
-// (de to kardinal-naboene + diagonal-naboen) → kvadratisk 2×2 brutto-kart,
-// sentrum flyttes til HJØRNET av gammelt kart (= midten av 2×2-blokken).
-// Brukeren beholder valgt zoom. Gjenbruker hele auto-kart-mosaikken:
-// buildMapFromCenter (isAuto) + renderGhostTiles (fullopake full-detalj naboer).
+// ── Manuell kart-utvidelse (kant-soner) ─────────────────────────────────────
+// 8 klikkbare kant-soner lar brukeren legge til ETT nytt kartutsnitt i valgt
+// retning (fri-form union — også diagonalene bygger kun 1 flis, så mosaikken kan
+// bli L-form/trappe). Sentrum flyttes til grensen (kardinal) / hjørnet (diagonal)
+// mellom gammelt og nytt; brukeren beholder valgt zoom. For å bygge videre utover
+// gjør man en nabo-flis aktiv via «Bruk dette utsnittet»-knappen og utvider derfra.
+// Gjenbruker mosaikken: buildMapFromCenter (isAuto) + renderGhostTiles.
 const EXTEND_DIR_WORD = {
   N: 'nord', S: 'sør', E: 'øst', W: 'vest',
   NE: 'nordøst', NW: 'nordvest', SE: 'sørøst', SW: 'sørvest',
 }
 
-// Geometri for en kant-sone i aktiv-flisas SVG-meter-rom. Returnerer nabo-flisenes
-// sentre (1 kardinal / 3 diagonal) + pan-punktet (grense midt / hjørne). SVG-y
-// vokser nedover, så nord = mindre y. panPoint nudges ~1 m INNOVER mot sentrum så
-// `c.x <= widthM` / `c.y >= 0` holder etter panTo → promote-on-dwell trigges ikke
-// på flyttall-rest (se maybePromoteMosaic, inklusiv grense).
+// Geometri for en kant-sone i aktiv-flisas SVG-meter-rom. Returnerer nabo-flisas
+// senter (ÉN flis) + pan-punktet (grense-midt for kardinal, hjørne for diagonal).
+// SVG-y vokser nedover, så nord = mindre y. panPoint nudges ~1 m INNOVER mot
+// sentrum så `c.x <= widthM` / `c.y >= 0` holder etter panTo.
 function extendMapGeometry(direction) {
   const m = meta.value
   if (!m) return null
@@ -3943,76 +3885,15 @@ function extendMapGeometry(direction) {
     case 'S': return { neighborCenters: [S_], panPoint: { x: cx, y: H - e } }
     case 'E': return { neighborCenters: [E_], panPoint: { x: W - e, y: cy } }
     case 'W': return { neighborCenters: [W_], panPoint: { x: e, y: cy } }
-    case 'NE': return { neighborCenters: [E_, N_, NE_], panPoint: { x: W - e, y: e } }
-    case 'NW': return { neighborCenters: [W_, N_, NW_], panPoint: { x: e, y: e } }
-    case 'SE': return { neighborCenters: [E_, S_, SE_], panPoint: { x: W - e, y: H - e } }
-    case 'SW': return { neighborCenters: [W_, S_, SW_], panPoint: { x: e, y: H - e } }
+    case 'NE': return { neighborCenters: [NE_], panPoint: { x: W - e, y: e } }
+    case 'NW': return { neighborCenters: [NW_], panPoint: { x: e, y: e } }
+    case 'SE': return { neighborCenters: [SE_], panPoint: { x: W - e, y: H - e } }
+    case 'SW': return { neighborCenters: [SW_], panPoint: { x: e, y: H - e } }
     default: return null
   }
 }
 
-// Forwarde tilstand til det nye kartet via sessionStorage (consume-on-read):
-// tema + lag, faktisk GPS-status, at auto-modus forblir PÅ, at kartet er auto-
-// generert, bevart zoom/rotasjon, og «flyttet sentrum»-toast.
-function writeAutoMapPrefs(id, resumeRecording = false) {
-  try {
-    sessionStorage.setItem(`mapview-init-prefs:${id}`, JSON.stringify({
-      theme: currentTheme.value,
-      layers: Array.from(visibleLayers.value),
-      autoStartGps: userPos.isWatching,
-      autoMapEnabled: true,
-      isAutoMap: true,
-      scale: scale.value,
-      rotation: rotation.value,
-      movedCenterToast: true,
-      resumeRecording,   // gjenoppta GPS-opptak på den nye flisa (se triggerAutoMap)
-    }))
-  } catch { /* noop */ }
-}
-
-// Start en bakgrunns-bygging mot et gjettet senter. Worker-basert (jank-fritt),
-// avbrytbar via AbortController.
-function startPrefetch(predicted) {
-  const controller = new AbortController()
-  const opts = autoMapBuildOpts(predicted)
-  const entry = { predicted, controller, aborted: false, failed: false, promise: null }
-  entry.promise = buildMapFromCenter({ ...opts, signal: controller.signal })
-  // En feilet/avbrutt bakgrunns-bygging (typisk forbigående Overpass-feil) skal
-  // IKKE «poisone» neste trigger: marker som feilet og fjern den som aktiv
-  // prefetch, så triggeren bygger ferskt i stedet for å vente på en rejected
-  // promise. (Neste maybePrefetch i 50–85%-sonen starter evt. en ny.)
-  entry.promise.catch(() => {
-    entry.failed = true
-    if (autoMapPrefetch === entry) autoMapPrefetch = null
-  })
-  autoMapPrefetch = entry
-}
-
-// Forkast en pågående/ferdig prefetch: terminer workeren (stopper CPU) og slett
-// kartet hvis det rakk å bli lagret før avbruddet.
-function cancelPrefetch() {
-  const p = autoMapPrefetch
-  autoMapPrefetch = null
-  if (!p) return
-  p.aborted = true
-  try { p.controller.abort() } catch { /* noop */ }
-  p.promise.then(r => { if (r?.id) deleteStoredMap(r.id).catch(() => {}) }).catch(() => {})
-}
-
-// Vurder å starte/erstatte en prefetch når senteret er i 50–85%-sonen.
-function maybePrefetch(c) {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
-  const m = meta.value
-  const predicted = predictTriggerCenter(c)
-  if (autoMapPrefetch) {
-    // Behold hvis gjettet fortsatt er nært; bytt hvis retningen endret seg mye.
-    if (autoMapDist(autoMapPrefetch.predicted, predicted) < PREFETCH_MATCH_TOL_FRAC * m.widthM / 2) return
-    cancelPrefetch()
-  }
-  startPrefetch(predicted)
-}
-
-// Ville et nytt auto-kart sentrert i `c` (samme størrelse som aktiv flis)
+// Ville en ny flis sentrert i `c` (samme størrelse som aktiv flis)
 // vesentlig duplisere en spøkelses-flis vi allerede har? I så fall skal vi IKKE
 // bygge nytt — man «scroller tilbake» til en flis vi har (steg 3 promoterer den
 // til full detalj). Returnerer true hvis overlapp med en spøkelse er stor nok.
@@ -4022,30 +3903,12 @@ function centerOverExistingTile(c, m) {
   return ghostRects.value.some(g => rectOverlapFraction(newRect, g) > GHOST_TRIGGER_SUPPRESS_FRAC)
 }
 
-// Promotér-på-dvele (steg 3): har skjermsenter glidd inn på en spøkelses-flis,
-// gjør den til aktiv flis i full detalj. Flisa er allerede lagret (steg 1), så
-// dette er en lokal re-render (~sub-sekund), ikke et nytt bygg. Visningen bevares
-// sømløst: det geografiske punktet under skjermsenter holdes i ro over koordinat-
-// skiftet. Returnerer true hvis en promotering ble startet.
-function maybePromoteMosaic() {
-  if (!ghostRects.value.length || curveball.active.value || animating.value) return false
-  if (buildingOnTheFly.value || fillingInDetails.value) return false
-  const m = meta.value
-  const c = visibleCenterSvg()
-  if (!m || !c) return false
-  // Fortsatt på aktiv flis → ingen promotering.
-  if (c.x >= 0 && c.x <= m.widthM && c.y >= 0 && c.y <= m.heightM) return false
-  // Spøkelse som inneholder skjermsenter?
-  const g = ghostRects.value.find(r => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h)
-  if (!g) return false
-  promoteTile(g, c)
-  return true
-}
-
-// Bytt aktiv flis til spøkelset `g` via router (oppdaterer mapId → annoteringer,
-// spor, DEM lastes korrekt for den nye flisa). promoteView i init-prefs lar
-// loadMap panne slik at det samme geografiske punktet (c, i aktiv-koordinater)
-// blir liggende under skjermsenter etter skiftet — ingen hopp.
+// Gjør spøkelses-flisa `g` til aktiv flis (eksplisitt «Bruk dette utsnittet»).
+// Bytter via router (oppdaterer mapId → annoteringer, spor, DEM bindes korrekt for
+// den nye flisa). promoteView i init-prefs lar loadMap panne slik at samme
+// geografiske punkt blir liggende under skjermsenter etter skiftet, og loadMap
+// hopper over full-skjerm-loaderen for promoteringer (peek på promoteView-pref)
+// → sømløst bytte, ingen spinner.
 function promoteTile(g, c) {
   const centerG = { x: c.x - g.x, y: c.y - g.y }   // c uttrykt i g's eget meter-rom
   try {
@@ -4057,125 +3920,25 @@ function promoteTile(g, c) {
       promoteView: { x: centerG.x, y: centerG.y, scale: scale.value, rotation: rotation.value },
     }))
   } catch { /* noop */ }
-  autoMapArmed = false   // unngå umiddelbar auto-bygg rett etter skiftet
+  activatableTile.value = null
   router.replace({ name: 'kart-vis', params: { id: g.id } })
 }
 
-function checkAutoMapTrigger() {
-  if (buildingOnTheFly.value || fillingInDetails.value) return
-  // Mosaikk-promotering kjører uavhengig av auto-kart-på/av.
-  if (maybePromoteMosaic()) return
-  if (!autoMapEnabled.value || !autoMapArmed) return
-  if (autoMapModeBusy()) return
-  const m = meta.value
+// «Bruk dette utsnittet»-knappen: gjør flisa under skjermsenter aktiv (for videre
+// utvidelse/kjeding utover).
+function activateTileUnderCenter() {
+  const g = activatableTile.value
   const c = visibleCenterSvg()
-  if (!m || !c) return
-  // Mosaikk: ikke bygg på nytt der vi allerede har en (spøkelses-)flis.
-  if (centerOverExistingTile(c, m)) return
-  const dx = Math.abs(c.x - m.widthM / 2)
-  const dy = Math.abs(c.y - m.heightM / 2)
-  const past85 = dx >= AUTO_MAP_THRESHOLD * m.widthM / 2 ||
-                 dy >= AUTO_MAP_THRESHOLD * m.heightM / 2
-  if (past85) { void triggerAutoMap(c); return }
-  const past50 = dx >= PREFETCH_THRESHOLD * m.widthM / 2 ||
-                 dy >= PREFETCH_THRESHOLD * m.heightM / 2
-  if (past50) maybePrefetch(c)
+  if (g && c) promoteTile(g, c)
 }
 
-async function triggerAutoMap(centerSvg) {
-  const m = meta.value
-  if (!m) return
-  // Offline-gate: bygging krever nett (OSM Overpass + Kartverket WCS uten
-  // fallback). Suppress stille, men forklar én gang med en diskret toast.
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    cancelPrefetch()
-    if (!autoMapOfflineNotified) {
-      autoMapOfflineNotified = true
-      showAutoMapToast('Offline — kan ikke lage nytt kart')
-    }
-    return
-  }
-  autoMapArmed = false   // ikke trigg igjen mens denne byggingen pågår
-  const wasAuto = currentMapIsAuto.value
-  const prevId = mapId.value
-  buildingOnTheFly.value = true
-  buildingProgress.value = 'Forbereder …'
-  closeDrawer()
-  closeSearch()
-  try {
-    // Bruk en treffende prefetch hvis gjettet er nær det faktiske krysningspunktet
-    // (og den ikke er avbrutt/feilet).
-    const hit = autoMapPrefetch && !autoMapPrefetch.aborted && !autoMapPrefetch.failed &&
-      autoMapDist(autoMapPrefetch.predicted, centerSvg) < PREFETCH_MATCH_TOL_FRAC * m.widthM / 2
-        ? autoMapPrefetch : null
-    let id = null
-    if (hit) {
-      autoMapPrefetch = null
-      buildingProgress.value = 'Henter forhåndslastet kart …'
-      // Skulle den ferdige prefetch-en likevel ha rejected (forbigående feil),
-      // faller vi tilbake til ferskt bygg under — aldri «ingen kart» når online.
-      try { id = (await hit.promise).id } catch { id = null }
-    }
-    if (!id) {
-      cancelPrefetch()   // forkast evt. bom/feilet prefetch
-      buildingProgress.value = 'Forbereder …'
-      const r = await buildMapFromCenter({
-        ...autoMapBuildOpts(centerSvg),
-        terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
-        onProgress: (msg) => { buildingProgress.value = msg },
-      })
-      id = r.id
-    }
-    // GPS-spor er per MapView-instans og dør når navigasjonen river denne av.
-    // Avslutt opptaket deterministisk NÅ (finaliserer + persist til forrige flis,
-    // som er beskyttet mot pruning via protectIds under) og be det nye kartet
-    // gjenoppta opptaket som et nytt spor-segment. Uten dette stanset sporingen
-    // stille ved hvert auto-kart-bytte.
-    const wasRecording = tracker.isRecording.value
-    if (wasRecording) await tracker.stopRecording()
-    writeAutoMapPrefs(id, wasRecording)
-    // Tile-cache (step 1): tidligere slettet vi forrige auto-kart her for å
-    // unngå opphopning — men da kunne man ikke «scrolle tilbake». Nå BEHOLDER
-    // vi flisene og lar pruneAutoTiles kappe de fjerneste (fra det nye senteret)
-    // når cachen vokser forbi MAX_AUTO_TILES. Den nye flisa beskyttes. Brukerens
-    // opprinnelige kart (ikke-auto) telles aldri og slettes aldri. Fire-and-
-    // forget — opprydding skal ikke forsinke navigasjonen til det nye kartet.
-    try {
-      const ll = svgToWgs84(centerSvg.x, centerSvg.y, m)
-      pruneAutoTiles({ center: { lat: ll.lat, lon: ll.lon }, protectIds: [id, prevId] })
-        .then(() => { void refreshAutoTileCount() })
-        .catch(() => {})
-    } catch { /* svgToWgs84 feilet → hopp over pruning denne gangen */ }
-    // «replace, behold opprinnelig»: fra et auto-kart erstatter vi history-
-    // oppføringen (tiles navigeres romlig i mosaikken, ikke via tilbake-knappen);
-    // fra brukerens opprinnelige kart pusher vi (tilbake → opprinnelig).
-    if (wasAuto) {
-      router.replace({ name: 'kart-vis', params: { id } })
-    } else {
-      router.push({ name: 'kart-vis', params: { id } })
-    }
-  } catch (e) {
-    console.error('Auto-kart-bygging feilet:', e)
-    buildingOnTheFly.value = false
-    buildingProgress.value = ''
-    autoMapArmed = true
-    if (!autoMapOfflineNotified) {
-      autoMapOfflineNotified = true
-      showAutoMapToast('Kunne ikke lage nytt kart')
-    }
-  }
-  // Merk: ved suksess lar vi buildingOnTheFly stå true til komponenten rives av
-  // navigasjonen, så loaderen holder seg synlig under overgangen.
-}
-
-// Manuell kant-sone-utvidelse. I motsetning til triggerAutoMap navigerer vi IKKE
-// — det aktive kartet beholdes, de nye flisene vises som fullopake mosaikk-naboer
-// og vi panorerer sentrum til grensen/hjørnet med BEHOLDT zoom. Derfor rydder vi
-// loader/state selv i finally (ingen komponent-teardown å lene seg på).
+// Manuell kant-sone-utvidelse. Navigerer IKKE — det aktive kartet beholdes, de
+// nye flisene vises som fullopake mosaikk-naboer og vi panorerer sentrum til
+// grensen/hjørnet med BEHOLDT zoom. Derfor rydder vi loader/state selv i finally.
 let extendingMap = false
 async function extendMap(direction) {
   if (extendingMap || buildingOnTheFly.value || fillingInDetails.value) return
-  if (autoMapEnabled.value || autoMapModeBusy()) return
+  if (autoMapModeBusy()) return
   const m = meta.value
   if (!m) return
   const geom = extendMapGeometry(direction)
@@ -4230,16 +3993,15 @@ async function extendMap(direction) {
       vbWidth: m.widthM, vbHeight: m.heightM,
       targetScale: scale.value, keepRotation: true,
     })
-    // Kapp auto-flis-cachen, beskytt aktiv flis + det vi nettopp bygde.
+    // Kapp auto-flis-cachen til bruker-valgt grense, beskytt aktiv flis + det vi
+    // nettopp bygde.
     try {
       const ll = svgToWgs84(geom.panPoint.x, geom.panPoint.y, m)
-      pruneAutoTiles({ center: { lat: ll.lat, lon: ll.lon }, protectIds: [mapId.value, ...builtIds] })
+      pruneAutoTiles({ center: { lat: ll.lat, lon: ll.lon }, max: maxTiles.value, protectIds: [mapId.value, ...builtIds] })
         .then(() => { void refreshAutoTileCount() })
         .catch(() => {})
     } catch { /* svgToWgs84 feilet → hopp over pruning */ }
-    showAutoMapToast(direction.length === 1
-      ? `Nytt utsnitt mot ${EXTEND_DIR_WORD[direction]}`
-      : 'Tre nye utsnitt — du beholder et kvadratisk kart')
+    showAutoMapToast(`Nytt utsnitt mot ${EXTEND_DIR_WORD[direction]}`)
   } catch (e) {
     console.error('Kant-sone-utvidelse feilet:', e)
     showAutoMapToast('Kunne ikke lage nytt utsnitt')
@@ -4345,10 +4107,22 @@ async function fetchBuiltinSvg(file) {
   throw lastErr ?? new Error('Ugyldig SVG')
 }
 
+// Peek (uten å konsumere) om det finnes en promoteView-pref for `id` — da er
+// dette en «gjør aktiv»-promotering, og vi hopper over full-skjerm-loaderen så
+// byttet føles sømløst (flisa er allerede bygd/lagret).
+function hasPromotePref(id) {
+  try {
+    const raw = sessionStorage.getItem(`mapview-init-prefs:${id}`)
+    return !!raw && !!JSON.parse(raw)?.promoteView
+  } catch { return false }
+}
+
 async function loadMap({ silent = false } = {}) {
   // silent = re-render av samme kart (terreng → full) uten full-skjerm-loader;
   // beholder zoom/pan og hopper over init-prefs (alt konsumert ved første last).
-  if (!silent) loading.value = true
+  // Promotering (gjør-aktiv): hopp også over loaderen, men prefs leses fortsatt.
+  const isPromote = !silent && hasPromotePref(route.params.id ?? 'vardasen')
+  if (!silent && !isPromote) loading.value = true
   loadError.value = null
   try {
     const id = route.params.id ?? 'vardasen'
@@ -4415,10 +4189,8 @@ async function loadMap({ silent = false } = {}) {
         if (Array.isArray(prefs.layers)) visibleLayers.value = new Set(prefs.layers)
         if (prefs.autoStartGps) pendingAutoStartGps = true
         if (prefs.resumeRecording) pendingResumeRecording = true
-        // v9.3.38: auto-kart styres nå av localStorage-preferansen (default PÅ),
-        // ikke av per-kart session-prefs — så vi overstyrer ikke autoMapEnabled her.
-        // Mosaikk-promotering setter isAutoMap eksplisitt (true/false) så å
-        // promotér til opprinnelig kart nullstiller auto-flagget korrekt.
+        // «Gjør aktiv»-promotering setter isAutoMap eksplisitt (true/false), så å
+        // promotere til opprinnelig kart nullstiller flagget korrekt.
         if (prefs.promoteView) currentMapIsAuto.value = !!prefs.isAutoMap
         else if (prefs.isAutoMap) currentMapIsAuto.value = true
         if (prefs.promoteView && typeof prefs.promoteView.x === 'number') {
@@ -4485,13 +4257,8 @@ async function loadMap({ silent = false } = {}) {
     applyViewportCull(true)
     // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
     maybeHighlightFromQuery()
-    // Auto-kart: gjenopprett visning + ramme etter et trigget hopp. Bevart
-    // zoom/rotasjon legges på rundt det NYE kartets sentrum (panTo sentrerer
-    // kart-senter under skjermsenter), så trådkorset peker på samme punkt du
-    // var på vei mot — og dx/dy ≈ 0, ingen umiddelbar re-trigger.
-    if (autoMapEnabled.value) renderAutoMapFrame()
     if (pendingPromoteView) {
-      // Mosaikk-promotering: pan slik at det samme geografiske punktet (uttrykt
+      // «Gjør aktiv»-promotering: pan slik at det samme geografiske punktet (uttrykt
       // i den nye flisas meter-rom) blir liggende under skjermsenter — sømløst,
       // ingen hopp i forhold til der brukeren scrollet.
       rotation.value = pendingPromoteView.rotation ?? 0
@@ -4509,11 +4276,8 @@ async function loadMap({ silent = false } = {}) {
       })
     }
     autoMapArmed = true
-    if (pendingMovedToast) showAutoMapToast('Nytt kart — flyttet sentrum hit')
-    // Første-gangs onboarding: tips om auto-kart (kun når brukeren åpnet kartet
-    // selv — ikke en silent re-load eller et auto-kart-hopp).
-    if (!silent) maybeShowAutoMapOnboarding()
-    // Mosaikk: tegn falmede nabo-fliser (steg 2) så man kan scrolle tilbake.
+    if (pendingMovedToast) showAutoMapToast('Flyttet sentrum hit')
+    // Mosaikk: tegn nabo-fliser så man kan utvide/gjøre dem aktive.
     // Async + fail-safe; setupHostSvg har tømt evt. gamle spøkelser.
     void renderGhostTiles()
     // Kant-soner (manuell utvidelse) — tegnes inn i den ferske SVG-en.
@@ -4575,7 +4339,6 @@ async function retryMapDetails() {
         theme: currentTheme.value,
         layers: Array.from(visibleLayers.value),
         autoStartGps: userPos.isWatching,
-        autoMapEnabled: autoMapEnabled.value,
         isAutoMap: currentMapIsAuto.value,
         scale: scale.value,
         rotation: rotation.value,
@@ -4708,8 +4471,10 @@ function buildGhostSvg(stored, activeMeta) {
   gsvg.style.contain = 'paint'                    // perf-isolasjon (mister [data-layer]-containment)
 
   // Relieff fra flisas egen DEM, UNDER vann-laget (finn vann FØR data-layer
-  // strippes) — samme hillshade-pipeline + blend-modus som aktiv flis.
-  if (stored.dem) {
+  // strippes) — samme hillshade-pipeline + blend-modus som aktiv flis. Hoppes
+  // over når relieff er av (eller knotten på 0) → ingen hillshade-PNG genereres/
+  // dekodes for spøkelser (sparer GPU/RAM).
+  if (stored.dem && reliefEnabled.value && reliefOpacity.value > 0) {
     const url = ghostHillshadeUrl(stored)
     if (url) {
       const ns = 'http://www.w3.org/2000/svg'
@@ -5238,50 +5003,6 @@ const showOutsideMapBanner = computed(() =>
 function dismissOutsideMap() { outsideMapDismissed.value = true }
 watch(() => userPos.isOutsideMap, (out) => { if (!out) outsideMapDismissed.value = false })
 
-// Forvarsel når GPS-prikken nærmer seg kartkanten: tips om at auto-kart kan lage
-// nye utsnitt automatisk. Vises kun når auto-kart er AV — når PÅ håndteres byttet
-// stille i bakgrunnen, ingen grunn til å mase. Margin = 15 % av minste kart-
-// dimensjon (≈150–250 m for typiske 1–2 km kart) → nok forvarsel i gangfart.
-// Dismissible per sesjon, resettes når man igjen er trygt innenfor kartet.
-const EDGE_WARN_FRAC = 0.15
-const userNearMapEdge = computed(() => {
-  const m = meta.value
-  if (!m || !userPos.isWatching || userPos.svgX == null || userPos.svgY == null ||
-      userPos.isOutsideMap) return false
-  const margin = EDGE_WARN_FRAC * Math.min(m.widthM, m.heightM)
-  return userPos.svgX < margin || userPos.svgX > m.widthM - margin ||
-         userPos.svgY < margin || userPos.svgY > m.heightM - margin
-})
-const edgeHintDismissed = ref(false)
-const showEdgeAutoMapHint = computed(() =>
-  userNearMapEdge.value && !autoMapEnabled.value && !edgeHintDismissed.value
-)
-function dismissEdgeHint() { edgeHintDismissed.value = true }
-watch(userNearMapEdge, (near) => { if (!near) edgeHintDismissed.value = false })
-
-// Første-gangs onboarding for auto-kart. Funksjonen er default AV (opt-in), så
-// nye brukere vet ikke at den finnes. Første gang et kart åpnes (av brukeren,
-// ikke et auto-generert hopp) viser vi ett dismissbart panel med én-trykks
-// «aktiver» + en peker mot Innstillinger. Vises kun ÉN gang totalt (localStorage).
-const AUTOMAP_ONBOARD_KEY = 'svg-insights-automap-onboarded'
-let autoMapOnboarded = (() => {
-  try { return localStorage.getItem(AUTOMAP_ONBOARD_KEY) === '1' } catch { return false }
-})()
-const showAutoMapOnboard = ref(false)
-function maybeShowAutoMapOnboarding() {
-  // Hopp over hvis alt vist før, hvis auto-kart alt er på (ingenting å tipse om),
-  // eller hvis dette er en auto-generert flis (brukeren åpnet ikke DET kartet selv).
-  if (autoMapOnboarded || autoMapEnabled.value || currentMapIsAuto.value) return
-  autoMapOnboarded = true
-  try { localStorage.setItem(AUTOMAP_ONBOARD_KEY, '1') } catch { /* noop */ }
-  showAutoMapOnboard.value = true
-}
-function dismissAutoMapOnboard() { showAutoMapOnboard.value = false }
-function enableAutoMapFromOnboard() {
-  if (!autoMapEnabled.value) toggleAutoMap()   // slår på + viser bekreftelses-toast
-  showAutoMapOnboard.value = false
-}
-
 // Screen Wake Lock — holder skjermen våken når brukeren bruker kartet til
 // orientering ute. Persisteres i localStorage (default PÅ). Re-requestes
 // automatisk når fanen blir synlig igjen siden browseren alltid slipper
@@ -5341,9 +5062,8 @@ onUnmounted(() => {
   window.removeEventListener('resize', scheduleNameLOD)
   desktopMq?.removeEventListener('change', updateIsDesktop)
   if (nameLodTimer) clearTimeout(nameLodTimer)
-  if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
+  if (activatableTimer) clearTimeout(activatableTimer)
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
-  cancelPrefetch()
 })
 </script>
 
@@ -5590,8 +5310,9 @@ onUnmounted(() => {
         </svg>
       </button>
       <!-- Relieff-knott: tap = mer relieff (wrapper til av etter max),
-           lang-trykk = nullstill. Senter-bumpens skygge følger nivået. -->
-      <button @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
+           lang-trykk = nullstill. Senter-bumpens skygge følger nivået. Skjules
+           helt når relieff er slått av i Innstillinger (reliefEnabled). -->
+      <button v-if="reliefEnabled" @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
               @pointercancel="knobUp('relief')"
               aria-label="Relieff-styrke — tap for å justere, hold for å nullstille"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
@@ -5908,76 +5629,22 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Forvarsel ved kartkant: GPS-prikken nærmer seg kanten og auto-kart er av.
-         Tipser om at auto-kart kan lage nye utsnitt automatisk, med én-trykks
-         aktivering. -->
-    <div v-else-if="!loading && showEdgeAutoMapHint"
-         class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 max-w-[92%]
-                rounded-lg backdrop-blur bg-amber-600/95 border border-slate-300/40
-                text-white text-[12px] shadow-lg p-3 transition-[left] duration-200"
-         :style="mapCenterStyle">
-      <div class="flex items-start gap-2">
-        <div class="flex-1 leading-snug">
-          Du nærmer deg kartkanten. Slå på auto-kart, så lages nye kart automatisk
-          når du går videre.
-        </div>
-        <button @click="dismissEdgeHint" aria-label="Skjul tips"
-                class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
-                       text-white/90 active:scale-90 active:bg-white/10 shrink-0">
-          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-          </svg>
-        </button>
-      </div>
-      <button @click="toggleAutoMap"
-              class="mt-2 w-full px-3 py-1.5 rounded-md bg-white/15 border border-white/25
-                     text-white text-[12px] font-medium active:scale-[0.98]">
-        Slå på auto-kart
-      </button>
-    </div>
-
-    <!-- Første-gangs tips: auto-kart finnes (default av). Dismissbart, med én-
-         trykks aktivering. Vises kun én gang, når et kart åpnes for første gang. -->
-    <div v-if="!loading && showAutoMapOnboard && !curveball.active.value"
-         class="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-[420px]
-                rounded-xl backdrop-blur bg-zinc-900/95 border border-emerald-400/30
-                text-white text-[12px] shadow-xl p-3.5">
-      <div class="flex items-start gap-2">
-        <svg viewBox="0 0 24 24" class="w-5 h-5 mt-0.5 shrink-0 text-emerald-300" fill="none"
-             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>
-        </svg>
-        <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-semibold text-emerald-100 mb-0.5">Visste du: auto-kart</div>
-          <div class="leading-snug text-white/80">
-            Drar du kartet forbi kanten, kan appen bygge et nytt utsnitt automatisk —
-            samme størrelse og ekvidistanse, sentrert der du ser. Funksjonen er av nå.
-          </div>
-          <div class="leading-snug text-white/45 mt-1">
-            Du finner valget igjen under Innstillinger (sammen med «Hold skjerm våken»).
-          </div>
-        </div>
-        <button @click="dismissAutoMapOnboard" aria-label="Lukk"
-                class="w-6 h-6 -mt-0.5 -mr-1 flex items-center justify-center rounded-md
-                       text-white/80 active:scale-90 active:bg-white/10 shrink-0">
-          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
-               stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-          </svg>
-        </button>
-      </div>
-      <div class="flex gap-2 mt-2.5">
-        <button @click="enableAutoMapFromOnboard"
-                class="flex-1 px-3 py-1.5 rounded-md bg-emerald-500 text-white text-[12px] font-medium active:scale-[0.98]">
-          Aktiver auto-kart
-        </button>
-        <button @click="dismissAutoMapOnboard"
-                class="px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white/85 text-[12px] active:scale-[0.98]">
-          Ikke nå
-        </button>
-      </div>
-    </div>
+    <!-- «Bruk dette utsnittet»: skjermsenteret står over en nabo-flis i mosaikken.
+         Eksplisitt bytte av aktiv flis (for videre utvidelse) — sømløst, ingen
+         spinner. Vises kun når en kandidat finnes og ingen annen modus eier UI-en. -->
+    <button v-if="!loading && activatableTile && !curveball.active.value && !showControls"
+            @click="activateTileUnderCenter"
+            class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 px-4 py-2
+                   rounded-full backdrop-blur bg-sky-600/95 border border-sky-300/40
+                   text-white text-[12px] font-medium shadow-lg active:scale-[0.97]
+                   flex items-center gap-2 transition-[left] duration-200"
+            :style="mapCenterStyle">
+      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/>
+      </svg>
+      Bruk dette utsnittet
+    </button>
 
     <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
          feilet, så kartet viser bare terreng. Lesbart, bryter på flere linjer,
@@ -6689,7 +6356,7 @@ onUnmounted(() => {
             <!-- Tile-cache: antall auto-fliser lagret (scroll-tilbake-mosaikk). -->
             <div class="flex items-baseline justify-between gap-2 mb-2 px-1">
               <span class="text-white/45 text-[11px]">Auto-fliser i cache</span>
-              <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ MAX_AUTO_TILES }}</span>
+              <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ maxTiles }}</span>
             </div>
             <!-- Viewport-culling: hvor mange indekserte elementer som er skjult
                  utenfor utsnittet akkurat nå + siste cull-beregning i ms. -->
@@ -6745,26 +6412,41 @@ onUnmounted(() => {
                       :class="screenWake.enabled.value ? 'left-5' : 'left-0.5'" />
               </button>
             </div>
-            <!-- Auto-kart (v9.3.38): default PÅ, kjører stille. Dra kartet forbi
-                 ~85 % av utsnittet, så bygges et nytt kart sentrert der du ser. -->
+            <!-- Maks kartfliser: hvor mange utsnitt mosaikk-cachen beholder.
+                 Trinn 4/9/16/25/36 (n×n), default 16. Påvirker mest lagring. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="flex items-center justify-between gap-3 mb-1.5">
+                <div class="text-[13px] text-white font-medium">Maks kartfliser</div>
+                <span class="text-white/60 text-[12px] tabular-nums">{{ maxTiles }}</span>
+              </div>
+              <input type="range" min="0" :max="MAX_TILE_STEPS.length - 1" step="1"
+                     v-model.number="maxTileIndex"
+                     aria-label="Maks antall kartfliser i mosaikken"
+                     class="w-full accent-sky-400"/>
+              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                Hvor mange kart-utsnitt som beholdes i mosaikken. Flere = større sammenhengende
+                område, men mer lagringsplass på enheten. De fjerneste fra der du er kappes først.
+              </div>
+            </div>
+            <!-- Relieff av/på: hillshade lages som ett bilde per kartflis og bruker
+                 minne/GPU. Av skjuler relieff-knappen og hopper over genereringen. -->
             <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3 flex items-center gap-3">
               <div class="flex-1 min-w-0">
-                <div class="text-[13px] text-white font-medium">Auto-kart</div>
+                <div class="text-[13px] text-white font-medium">Relieff (terrengskygge)</div>
                 <div class="text-[11px] text-white/55 leading-snug">
-                  Bygger automatisk et nytt kart-utsnitt når du drar kartet forbi kanten — samme størrelse og ekvidistanse, sentrert der du ser. Slå av om du vil bli stående på ett kart.
+                  Lages som ett bilde per kartflis og bruker mer minne/GPU. Slå av relieff
+                  (eller senk antall fliser) på svake enheter. Av skjuler også relieff-knappen.
                 </div>
               </div>
-              <button @click="toggleAutoMap"
-                      :aria-pressed="autoMapEnabled"
-                      :aria-label="autoMapEnabled ? 'Slå av auto-kart' : 'Slå på auto-kart'"
+              <button @click="reliefEnabled = !reliefEnabled"
+                      :aria-pressed="reliefEnabled"
+                      :aria-label="reliefEnabled ? 'Slå av relieff' : 'Slå på relieff'"
                       class="relative w-11 h-6 rounded-full transition-colors shrink-0"
-                      :class="autoMapEnabled ? 'bg-emerald-500' : 'bg-white/15'">
+                      :class="reliefEnabled ? 'bg-emerald-500' : 'bg-white/15'">
                 <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
-                      :class="autoMapEnabled ? 'left-5' : 'left-0.5'" />
+                      :class="reliefEnabled ? 'left-5' : 'left-0.5'" />
               </button>
             </div>
-            <!-- v9.3.38: forklarende prosa fjernet (finnes på Om-siden +
-                 Tegnforklaring). Denne fanen er nå rene innstillinger. -->
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
           </div>
         </div>
