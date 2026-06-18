@@ -711,7 +711,26 @@ const pinchEnabled = computed(() =>
   !curveball.active.value && !loading.value)
 // panAtRest: la kartet dras også ved nullstilt zoom (se clampPan for canvas-rom).
 const { scale, translateX, translateY, rotation, reset, panTo, rotateTo, animating, isGesturing } =
-  usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true })
+  usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true, minScale: () => mosaicMinScale() })
+
+// Dynamisk zoom-ut-gulv: la brukeren zoome ut akkurat langt nok til å se HELE
+// bruttokartet (aktiv flis ∪ nabofliser) med litt margin rundt — så man raskt
+// ser totalområdet et lagret/utvidet kart spenner over. Ett-flis-kart beholder
+// dagens gulv (0.5); større mosaikker får lavere gulv (flere zoom-ut-nivåer).
+// Absolutt bunn (0.06) hindrer at en svær mosaikk forsvinner i tomrom.
+function mosaicMinScale() {
+  const m = meta.value
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!m || !wrap?.width || !wrap?.height) return 0.5
+  const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
+  if (!(fit > 0)) return 0.5
+  const b = extendZonesBounds()   // union (alltid rektangulær)
+  const unionW = Math.max(m.widthM, b.maxX - b.minX)
+  const unionH = Math.max(m.heightM, b.maxY - b.minY)
+  // scale der mosaikken fyller ~82 % av viewporten (margin rundt)
+  const fitMosaic = 0.82 * Math.min(wrap.width / (unionW * fit), wrap.height / (unionH * fit))
+  return Math.max(0.06, Math.min(0.5, fitMosaic))
+}
 
 // Desktop uten touch: vis en rotasjons-slider (touch bruker to-finger-rotasjon).
 // Detekteres på mount (touch-evner endrer seg ikke i en sesjon i praksis).

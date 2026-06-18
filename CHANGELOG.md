@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.19: Ekstra zoom-ut-nivåer (se hele bruttokartet)
+
+Zoom-ut-gulvet er nå dynamisk: du kan zoome ut akkurat langt nok til å se HELE bruttokartet (aktiv flis ∪ nabofliser) med litt margin rundt — så du raskt ser totalområdet et utvidet/lagret kart spenner over. Ett-flis-kart beholder dagens gulv (scale 0.5); større mosaikker får et lavere gulv (flere zoom-ut-nivåer), f.eks. når 3 fliser i bredden ikke fikk plass på skjermen før. Et absolutt bunn-gulv (0.06) hindrer at en svær mosaikk forsvinner i tomrom. `usePinchZoom` tar nå en `minScale`-opsjon (tall/ref/funksjon); MapView gir den en `mosaicMinScale()` som regnes fra bruttoens yttergrense og viewport-størrelsen.
+
+---
+
 ## 2026-06-18 — v11.0.18: Alltid firkantet bruttokart + «Gjør dette til hovedkart»
 
 Kant-sonene utvider nå HELE det firkantede bruttokartet, så formatet alltid forblir rektangulært (ingen L-former). En kardinal-knapp (N/S/Ø/V) bygger en hel rad/kolonne langs den siden; en diagonal (NV/NØ/SV/SØ) bygger ny rad + ny kolonne + hjørne (vokser begge dimensjoner). Allerede-bygde fliser hoppes over, så man betaler kun for det som mangler. Geometrien regnes fra bruttoens yttergrense (aktiv flis ∪ nabofliser), som nå alltid er et rektangel — det fikser også at N-knappen tidligere kunne drive mot en diagonal-nabo i stedet for å ligge over toppen av kartet. «Bruk dette utsnittet»-knappen er døpt om til det tydeligere «Gjør dette til hovedkart».
