@@ -1919,8 +1919,9 @@ function onPointerDownLongPress(e) {
   // Ignorer høyreklikk her — den håndteres av contextmenu-eventet (som også
   // gir oss preventDefault på native browsermenyen).
   if (e.pointerType === 'mouse' && e.button !== 0) return
-  // Ignorer tap inne på interaktive UI-elementer (knapper, drawer-håndtak).
-  if (e.target.closest('button, input, textarea, select, a')) return
+  // Ignorer tap inne på interaktive UI-elementer (knapper, drawer-håndtak,
+  // kant-soner) — disse har egne klikk-handlere.
+  if (e.target.closest('button, input, textarea, select, a, [data-extend-dir]')) return
   lpPointerId = e.pointerId
   lpStartX = e.clientX
   lpStartY = e.clientY
@@ -3622,20 +3623,20 @@ let autoMapPrefetch = null
 // sletter forrige auto-kart fra lagring (ingen opphopning).
 const currentMapIsAuto = ref(false)
 
-// Kant-soner (manuell utvidelse, auto-kart AV): 8 blå prikker langs viewport-
-// kanten. `pos` plasserer hver prikk (innrykk klarerer topp-bar + bunn-FAB/safe-
-// area). Vises kun når auto-kart er av, kartet er lastet, og ingen annen modus
-// eier UI-en (samme gate som autoMapModeBusy, inlinet for reaktiv sporing).
-const EXTEND_ZONES = [
-  { dir: 'NW', label: 'Utvid nordvest', pos: { top: '4.5rem', left: '0.75rem' } },
-  { dir: 'N', label: 'Utvid nord', pos: { top: '4.5rem', left: '50%', transform: 'translateX(-50%)' } },
-  { dir: 'NE', label: 'Utvid nordøst', pos: { top: '4.5rem', right: '0.75rem' } },
-  { dir: 'W', label: 'Utvid vest', pos: { top: '50%', left: '0.75rem', transform: 'translateY(-50%)' } },
-  { dir: 'E', label: 'Utvid øst', pos: { top: '50%', right: '0.75rem', transform: 'translateY(-50%)' } },
-  { dir: 'SW', label: 'Utvid sørvest', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', left: '0.75rem' } },
-  { dir: 'S', label: 'Utvid sør', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', left: '50%', transform: 'translateX(-50%)' } },
-  { dir: 'SE', label: 'Utvid sørøst', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', right: '0.75rem' } },
-]
+// Kant-soner (manuell utvidelse, auto-kart AV): 8 diskrete prikker tegnet som
+// EKTE SVG-elementer i kart-SVG-en (gruppe #extend-zones). De lever i kart-rommet
+// og panner/zoomer/roterer med kartet, så de er IKKE synlige før brukeren enten
+// zoomer ut eller panorerer forbi en kant (da kommer canvas-marginen utenfor
+// flisa til syne). De fjernes ved eksport/utskrift (se mapSvgMarkupForExport +
+// stripRuntimeOverlays). Prikkene mot-skaleres til konstant skjermstørrelse.
+const EXTEND_ZONE_DIRS = ['N', 'S', 'E', 'W', 'NE', 'NW', 'SE', 'SW']
+const EXTEND_ZONE_LABEL = {
+  N: 'Utvid mot nord', S: 'Utvid mot sør', E: 'Utvid mot øst', W: 'Utvid mot vest',
+  NE: 'Utvid mot nordøst', NW: 'Utvid mot nordvest',
+  SE: 'Utvid mot sørøst', SW: 'Utvid mot sørvest',
+}
+const EXTEND_ZONE_R = 16      // prikk-radius i skjermpiksler (mot-skalert)
+const EXTEND_ZONE_OFF = 30    // hvor langt UTENFOR kanten prikken sitter (px)
 const extendZonesVisible = computed(() =>
   !autoMapEnabled.value &&
   !loading.value && !loadError.value && !!meta.value &&
@@ -3644,11 +3645,124 @@ const extendZonesVisible = computed(() =>
   !measureMode.value && !sti.active.value && !searchOpen.value && !showControls.value
 )
 
+// Mot-skalerings-faktor: 1 base-enhet i en kant-sone-gruppe rendres som 1 skjerm-
+// piksel, uavhengig av zoom. SVG fyller wrapperen med fit = min(w/W, h/H), og
+// kart-CSS-transformen legger på scale; vi nuller begge ut.
+function extendZoneScaleK() {
+  const m = meta.value
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!m || !wrap?.width || !wrap?.height) return null
+  const fit = Math.min(wrap.width / m.widthM, wrap.height / m.heightM)
+  if (!(fit > 0)) return null
+  return 1 / (fit * (scale.value || 1))
+}
+
+// Yttergrensa for det som vises nå = aktiv flis ∪ alle spøkelses-rekter (samme
+// union som clampPan). Prikkene ankres til DENNE kanten, ikke bare aktiv flis, så
+// de alltid står ytterst i canvas — også etter at man har bygd et 2×2 brutto-kart.
+function extendZonesBounds() {
+  const m = meta.value
+  let minX = 0, minY = 0, maxX = m.widthM, maxY = m.heightM
+  for (const g of ghostRects.value) {
+    if (g.x < minX) minX = g.x
+    if (g.y < minY) minY = g.y
+    if (g.x + g.w > maxX) maxX = g.x + g.w
+    if (g.y + g.h > maxY) maxY = g.y + g.h
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+// Anker (på selve mosaikk-kanten) + utover-offset (i base-piksler) pr retning.
+// SVG-y vokser nedover → nord = mindre y.
+function extendZoneAnchor(direction, b) {
+  const c = 0.7071   // diagonal-komponent (45°) så hjørne-prikker står like langt ut
+  const O = EXTEND_ZONE_OFF
+  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
+  switch (direction) {
+    case 'N': return { ax: cx, ay: b.minY, ox: 0, oy: -O }
+    case 'S': return { ax: cx, ay: b.maxY, ox: 0, oy: O }
+    case 'E': return { ax: b.maxX, ay: cy, ox: O, oy: 0 }
+    case 'W': return { ax: b.minX, ay: cy, ox: -O, oy: 0 }
+    case 'NE': return { ax: b.maxX, ay: b.minY, ox: O * c, oy: -O * c }
+    case 'NW': return { ax: b.minX, ay: b.minY, ox: -O * c, oy: -O * c }
+    case 'SE': return { ax: b.maxX, ay: b.maxY, ox: O * c, oy: O * c }
+    case 'SW': return { ax: b.minX, ay: b.maxY, ox: -O * c, oy: O * c }
+    default: return null
+  }
+}
+
+// Oppdater bare scale-komponenten på de eksisterende kant-sone-gruppene (billig,
+// kjøres på zoom-watch). Ankeret (translate) er uendret.
+function updateExtendZoneScale() {
+  const g = svgHostRef.value?.querySelector('#extend-zones')
+  if (!g) return
+  const k = extendZoneScaleK()
+  if (k == null) return
+  for (const z of g.querySelectorAll('[data-extend-dir]')) {
+    z.setAttribute('transform', `translate(${z.dataset.ax} ${z.dataset.ay}) scale(${k})`)
+  }
+}
+
+// Tegn (eller fjern) de 8 kant-sonene som SVG-elementer i den aktive flisa.
+function renderExtendZones() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  svg.querySelector('#extend-zones')?.remove()
+  if (!extendZonesVisible.value) return
+  const m = meta.value
+  const k = extendZoneScaleK()
+  if (!m || k == null) return
+  const bounds = extendZonesBounds()
+  const ns = 'http://www.w3.org/2000/svg'
+  const g = document.createElementNS(ns, 'g')
+  g.setAttribute('id', 'extend-zones')
+  // Containeren slipper gjennom pan-gester; kun prikkene fanger tap.
+  g.setAttribute('pointer-events', 'none')
+  for (const dir of EXTEND_ZONE_DIRS) {
+    const a = extendZoneAnchor(dir, bounds)
+    if (!a) continue
+    const zone = document.createElementNS(ns, 'g')
+    zone.setAttribute('data-extend-dir', dir)
+    zone.dataset.ax = String(a.ax)
+    zone.dataset.ay = String(a.ay)
+    zone.setAttribute('transform', `translate(${a.ax} ${a.ay}) scale(${k})`)
+    zone.setAttribute('pointer-events', 'auto')
+    zone.setAttribute('cursor', 'pointer')
+    zone.setAttribute('role', 'button')
+    zone.setAttribute('aria-label', EXTEND_ZONE_LABEL[dir])
+    const circle = document.createElementNS(ns, 'circle')
+    circle.setAttribute('cx', String(a.ox))
+    circle.setAttribute('cy', String(a.oy))
+    circle.setAttribute('r', String(EXTEND_ZONE_R))
+    circle.setAttribute('fill', '#0ea5e9')
+    circle.setAttribute('fill-opacity', '0.92')
+    circle.setAttribute('stroke', '#ffffff')
+    circle.setAttribute('stroke-width', '2.5')
+    const plus = document.createElementNS(ns, 'path')
+    const h = 7
+    plus.setAttribute('d', `M ${a.ox - h} ${a.oy} H ${a.ox + h} M ${a.ox} ${a.oy - h} V ${a.oy + h}`)
+    plus.setAttribute('stroke', '#ffffff')
+    plus.setAttribute('stroke-width', '2.5')
+    plus.setAttribute('stroke-linecap', 'round')
+    zone.appendChild(circle)
+    zone.appendChild(plus)
+    zone.addEventListener('click', (ev) => { ev.stopPropagation(); extendMap(dir) })
+    g.appendChild(zone)
+  }
+  svg.appendChild(g)
+}
+watch(extendZonesVisible, () => { renderExtendZones() })
+// Mosaikken endret seg (ny flis bygd / scroll-tilbake) → re-anker prikkene til
+// den nye yttergrensa.
+watch(ghostRects, () => { renderExtendZones() }, { deep: true })
+watch(scale, updateExtendZoneScale)
+
 function showAutoMapToast(msg) {
   autoMapToast.value = msg
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
   autoMapToastTimer = setTimeout(() => { autoMapToast.value = '' }, 3500)
 }
+
 
 function toggleAutoMap() {
   if (buildingOnTheFly.value) return
@@ -3732,11 +3846,15 @@ function renderAutoMapFrame() {
   rect.setAttribute('height', String(rh))
 }
 
-// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame). Kjører
-// både når auto-kart er på (bygg/prefetch) OG når det finnes spøkelses-fliser
-// (promotér-på-dvele) — så «scroll tilbake» virker også med auto-kart av.
+// Debouncet sjekk: kjør etter at gesten har satt seg (ikke per frame). Kun når
+// auto-kart er PÅ — da bygges/prefetches nytt utsnitt ved kanten og man kan
+// «scrolle tilbake» til en cachet flis (promotér-på-dvele). Med auto-kart AV
+// skjer INGENTING automatisk under panorering: brukeren utvider eksplisitt via
+// kant-sonene, og det aktive kartet byttes aldri stille ut (tidligere ga
+// promotér-på-dvele her en forvirrende «refresh» + sentrum-hopp mens man pannet
+// over en manuelt tillagt flis).
 function scheduleAutoMapCheck() {
-  if (!autoMapEnabled.value && !ghostRects.value.length) return
+  if (!autoMapEnabled.value) return
   if (autoMapCheckTimer) clearTimeout(autoMapCheckTimer)
   autoMapCheckTimer = setTimeout(() => {
     if (isGesturing && isGesturing.value) { scheduleAutoMapCheck(); return }
@@ -4156,6 +4274,7 @@ function mapSvgMarkupForExport() {
   // printExport.stripRuntimeOverlays.)
   const clone = svg.cloneNode(true)
   clone.querySelector('#ghost-tiles')?.remove()
+  clone.querySelector('#extend-zones')?.remove()   // kant-soner er kun runtime-UI
   return clone.outerHTML
 }
 // Hvilken eksport som kjører nå ('' | 'svg' | 'png' | 'pdf' | 'print'). Brukes
@@ -4397,6 +4516,8 @@ async function loadMap({ silent = false } = {}) {
     // Mosaikk: tegn falmede nabo-fliser (steg 2) så man kan scrolle tilbake.
     // Async + fail-safe; setupHostSvg har tømt evt. gamle spøkelser.
     void renderGhostTiles()
+    // Kant-soner (manuell utvidelse) — tegnes inn i den ferske SVG-en.
+    renderExtendZones()
     // Terreng-først: hvis dette kartet ble vist som terreng-skjelett, konsumér
     // finalize-promisen og re-render (stille) når full SVG med OSM er klar.
     if (!silent) consumeTerrainFinalize()
@@ -5504,22 +5625,6 @@ onUnmounted(() => {
           :offset="cbOffset"
           @drop="onCurveBallContinue"/>
       </div>
-    </div>
-
-    <!-- Kant-soner (manuell kart-utvidelse, auto-kart AV). Containeren er
-         pointer-events-none så panorering ikke blokkeres; kun de 8 blå prikkene
-         er klikkbare. Ligger over kartet (z-20) men under FAB/header. -->
-    <div v-if="extendZonesVisible"
-         class="absolute inset-0 z-20 pointer-events-none"
-         :style="{ right: panelOffsetPx + 'px' }">
-      <button v-for="z in EXTEND_ZONES" :key="z.dir"
-              @click="extendMap(z.dir)"
-              :disabled="buildingOnTheFly"
-              :aria-label="z.label" :title="z.label"
-              class="absolute pointer-events-auto w-9 h-9 rounded-full bg-sky-500/90
-                     border-2 border-white shadow-lg active:scale-90 transition
-                     disabled:opacity-40"
-              :style="z.pos"></button>
     </div>
 
     <!-- Stifinner: fast midt-kikkertsikte mens startpunkt velges. Brukeren

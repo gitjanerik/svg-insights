@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.15: Kant-soner som SVG-elementer i canvas + fiks panorering-hopp
+
+Kant-sonene er nå ekte SVG-elementer tegnet inn i kart-SVG-en (gruppe `#extend-zones`) i stedet for HTML-knapper låst til skjermkanten. De lever i kartrommet og panner/zoomer/roterer med kartet, så de er ikke synlige før du enten zoomer ut eller panorerer forbi en kant — da kommer de diskrete blå «+»-prikkene til syne ytterst i canvas (ankret til yttergrensa av det som vises: aktiv flis ∪ nabofliser). Prikkene mot-skaleres til konstant skjermstørrelse uansett zoom, og fjernes ved eksport/utskrift (de er kun runtime-UI). Fikser også en feil der panorering etter at nye fliser var lagt til kunne utløse en «refresh» som flyttet kartutsnittet: når auto-kart er av skjer det nå ingenting automatisk under panorering (promotér-på-dvele og prefetch er kun aktivt når auto-kart er på), så det aktive kartet byttes aldri stille ut.
+
+---
+
 ## 2026-06-18 — v11.0.14: Manuelle kant-soner for kartutvidelse (auto-kart av)
 
 Når auto-kart er slått av kan du nå utvide kartet manuelt: 8 blå kant-soner (nord/sør/øst/vest + de fire hjørnene) legges over kartkanten. Trykk en kardinal-sone for å bygge ett nytt kartutsnitt i den retningen — sentrum flyttes til grensen mellom gammelt og nytt kart, og du beholder valgt zoom. Trykk en hjørne-sone for å bygge tre nye utsnitt på én gang, slik at du beholder et kvadratisk 2×2 brutto-kart med sentrum i hjørnet av det gamle kartet. De nye utsnittene vises straks som fullopake, full-detalj naboer i mosaikken, så du aldri blir forvirret av tomme felt. Sonene er skjult når auto-kart er på (da bygges nytt kart automatisk når du drar forbi kanten). Gjenbruker hele auto-kart-mosaikken under panseret (buildMapFromCenter + renderGhostTiles + tile-cache).
