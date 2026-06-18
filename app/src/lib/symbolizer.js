@@ -166,6 +166,31 @@ export function isFlowingWaterArea(tags) {
   return false
 }
 
+// Utfartsparkering vs. vanlig/privat parkering.
+//
+// OSM har ingen egen tag for «utfartsparkering», men trailhead-/turparkering
+// skiller seg fra de mange private plassene på to lesbare måter: (1) navn,
+// operator eller beskrivelse nevner utfart/tur/friluft, eller (2) tilgangen
+// er eksplisitt offentlig (access=yes/permissive/public/destination). Private
+// plasser tagges typisk access=private/customers/no — disse skal ALDRI
+// markeres som utfart. Default (ingen access-tag) regnes konservativt som
+// vanlig parkering: vi framhever bare plasser vi er trygge på er offentlige,
+// siden problemet nettopp er at de fleste P-plassene er private.
+const UTFART_KEYWORDS = /utfart|turparkering|friluft|badeplass|fotturist|skiløper/i
+const PARKING_PUBLIC_ACCESS = new Set(['yes', 'public', 'permissive', 'destination'])
+const PARKING_PRIVATE_ACCESS = new Set(['private', 'customers', 'no', 'permit', 'residents', 'agricultural', 'forestry'])
+export function isTrailheadParking(tags) {
+  const t = tags ?? {}
+  if (t.amenity !== 'parking') return false
+  const text = [t.name, t['name:no'], t['name:nb'], t.operator, t.description, t.ref]
+    .filter(Boolean).join(' ')
+  if (UTFART_KEYWORDS.test(text)) return true
+  const access = String(t.access ?? '').toLowerCase()
+  if (PARKING_PRIVATE_ACCESS.has(access)) return false
+  if (PARKING_PUBLIC_ACCESS.has(access)) return true
+  return false
+}
+
 // Sjekk om en OSM-node har trigpunkt-relaterte tagger.
 // Eksportert så peak-rendering kan overlappe trigpunkt-symbol når peak
 // og trigpunkt deler node (vanlig i Norge: én node med både

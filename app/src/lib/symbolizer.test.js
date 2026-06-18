@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { buildPointSymbolDef, isOsmWaterSalty, isFlowingWaterArea, classifyToIsom } from './symbolizer.js'
+import { buildPointSymbolDef, isOsmWaterSalty, isFlowingWaterArea, classifyToIsom, isTrailheadParking } from './symbolizer.js'
+
+describe('isTrailheadParking — offentlig utfartsparkering vs. privat', () => {
+  it('utfart-/tur-/friluft-navn markeres som utfartsparkering uansett access', () => {
+    expect(isTrailheadParking({ amenity: 'parking', name: 'Utfartsparkering Vardåsen' })).toBe(true)
+    expect(isTrailheadParking({ amenity: 'parking', name: 'Turparkering' })).toBe(true)
+    expect(isTrailheadParking({ amenity: 'parking', operator: 'Friluftsetaten' })).toBe(true)
+    expect(isTrailheadParking({ amenity: 'parking', 'name:no': 'Badeplass-parkering' })).toBe(true)
+  })
+
+  it('eksplisitt offentlig access markeres som utfartsparkering', () => {
+    for (const access of ['yes', 'public', 'permissive', 'destination']) {
+      expect(isTrailheadParking({ amenity: 'parking', access })).toBe(true)
+    }
+  })
+
+  it('privat/kunde-access er ALDRI utfartsparkering — selv med utfart-navn taper access ikke (navn vinner)', () => {
+    for (const access of ['private', 'customers', 'no', 'permit', 'residents']) {
+      expect(isTrailheadParking({ amenity: 'parking', access })).toBe(false)
+    }
+  })
+
+  it('navn vinner over privat access (en navngitt utfartsparkering er offentlig selv om access feil-tagget)', () => {
+    expect(isTrailheadParking({ amenity: 'parking', access: 'private', name: 'Utfartsparkering' })).toBe(true)
+  })
+
+  it('parkering uten access-tag regnes konservativt som vanlig (ikke utfart)', () => {
+    expect(isTrailheadParking({ amenity: 'parking' })).toBe(false)
+    expect(isTrailheadParking({ amenity: 'parking', name: 'Parkeringshus' })).toBe(false)
+  })
+
+  it('ikke-parkering returnerer false', () => {
+    expect(isTrailheadParking({ amenity: 'toilets', access: 'yes' })).toBe(false)
+    expect(isTrailheadParking({})).toBe(false)
+    expect(isTrailheadParking(null)).toBe(false)
+  })
+})
 
 describe('isOsmWaterSalty — kun autoritative tagger, aldri navn', () => {
   // Prinsipp: salinitet avgjøres KUN av tagger, ALDRI av navnet.

@@ -27,6 +27,8 @@ const SECTIONS = [
   { title: 'Jernbane', codes: ['515'], category: 'manmade' },
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger', codes: ['521', '522', '532', '525', '528'], category: 'manmade' },
+  { title: 'Parkering & service', codes: ['534', '534u', '560'], category: 'manmade',
+    note: 'Utfartsparkering (offentlig) vises grønn og 50 % større enn vanlig/privat parkering — den er nesten alltid foretrukket når man skal ut i marka.' },
   { title: 'Verneområder', codes: ['520'], category: 'manmade',
     note: 'Naturreservat, nasjonalpark og landskapsvernområde hentet fra OSM (leisure=nature_reserve / boundary=protected_area). Lett grønn overlay matcher Kartverkets konvensjon.' },
 ]
