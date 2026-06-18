@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.9: Utfartsparkering — nærhets-terskel hevet 50 → 100 m
+
+Nærhets-kravet (b) er hevet fra 50 m til 100 m for både sti og skogsbilvei. Det er ofte litt flytende hvor selve P-plassen plasseres på kartet og hvor skogsbilveien «starter», og store P-plasser markeres på sentroiden — for en kjempestor, avlang plass (MIF-hytta i Drammen) kan avstanden fra sentroid til veien lett bli > 50 m selv om plassen i praksis ligger inntil. 100 m fanger disse uten å bli for sjenerøs. Kart, tegnforklaring og katalog-doc oppdatert.
+
+---
+
 ## 2026-06-18 — v11.0.8: Utfartsparkering — skogsbilvei (504) teller også som turadkomst
 
 Nærhets-kvalifiseringen utvides: en parkering regnes nå som utfartsparkering hvis det finnes en sti (ISOM 505/506/507) **eller en skogsbilvei (504)** innen 50 m — tidligere bare sti. Mange marka-P-er ligger ved enden av en skogsbilvei der selve turstien tar av lenger inne, og falt derfor utenfor. Øvrige krav er uendret (offentlig access / utfart-navn). Kart, tegnforklaring og katalog-doc oppdatert.

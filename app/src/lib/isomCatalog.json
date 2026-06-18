@@ -520,7 +520,7 @@
       },
       "534u": {
         "label": "Utfartsparkering",
-        "$comment": "Sannsynlig turstart-parkering — markeres med vanlig blått P-skilt + fire frittstående sorte hjørne-braketter (Variant B) som framhever den uten å bruke den fargeblind-uvennlige grønn-mot-blått-kombinasjonen. Det blå feltet er IDENTISK med vanlig parkering (534, 5,4 mm) — kun brakettene skiller dem. Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) eller skogsbilvei (504) innen 50 m. NB: dette er en heuristikk, ikke en autoritativ kilde — i søk/forklaring merkes den derfor med * og navnet («Utfartsparkering <sted>») presenteres som et forslag, ikke offisielt. scaleMm 3.6 + viewBox 3 gir blått felt ≈ 5,4 mm; brakettene strekker symbolet til ≈ 9,7 mm.",
+        "$comment": "Sannsynlig turstart-parkering — markeres med vanlig blått P-skilt + fire frittstående sorte hjørne-braketter (Variant B) som framhever den uten å bruke den fargeblind-uvennlige grønn-mot-blått-kombinasjonen. Det blå feltet er IDENTISK med vanlig parkering (534, 5,4 mm) — kun brakettene skiller dem. Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) eller skogsbilvei (504) innen 100 m. NB: dette er en heuristikk, ikke en autoritativ kilde — i søk/forklaring merkes den derfor med * og navnet («Utfartsparkering <sted>») presenteres som et forslag, ikke offisielt. scaleMm 3.6 + viewBox 3 gir blått felt ≈ 5,4 mm; brakettene strekker symbolet til ≈ 9,7 mm.",
         "point": {
           "symbol": "parkering-utfart",
           "scaleMm": 3.6
@@ -1148,7 +1148,7 @@
       ]
     },
     "parkering-utfart": {
-      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti eller skogsbilvei innen 50 m. BEHOLDER det helt vanlige blå P-skiltet UENDRET (samme rect+path som 'parkering'), men markeres med fire FRITTSTÅENDE sorte hjørne-braketter (Variant B) med luft rundt skiltet. Sort er valgt bevisst: grønn ramme rundt blått svikter for blå-grønn-fargeblinde (tritanopi) — sort skiller seg på lyshet og leses for alle CVD-typer. viewBox er -1.5..1.5 (3 enheter) så det blå P-et (rect ±0.75) fyller bare midtre 50 % og brakettene ved ±1.35 får luft; mapBuilder bruker parkeringUtfartSize=10.8 mm slik at selve det blå feltet blir 5.4 mm — IDENTISK med vanlig P (534).",
+      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti eller skogsbilvei innen 100 m. BEHOLDER det helt vanlige blå P-skiltet UENDRET (samme rect+path som 'parkering'), men markeres med fire FRITTSTÅENDE sorte hjørne-braketter (Variant B) med luft rundt skiltet. Sort er valgt bevisst: grønn ramme rundt blått svikter for blå-grønn-fargeblinde (tritanopi) — sort skiller seg på lyshet og leses for alle CVD-typer. viewBox er -1.5..1.5 (3 enheter) så det blå P-et (rect ±0.75) fyller bare midtre 50 % og brakettene ved ±1.35 får luft; mapBuilder bruker parkeringUtfartSize=10.8 mm slik at selve det blå feltet blir 5.4 mm — IDENTISK med vanlig P (534).",
       "viewBox": "-1.5 -1.5 3 3",
       "elements": [
         {
