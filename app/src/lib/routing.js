@@ -160,17 +160,24 @@ function shareOf(aSet, bSet) {
  * 1–k alternative ruter A→B via edge-penalty-metoden: finn korteste,
  * straff dens kanter, finn neste, osv. Nye ruter beholdes kun hvis de er
  * tilstrekkelig forskjellige (deler < `minShare` av kantene med en allerede
- * valgt rute). Alle cost-mutasjoner reverseres til slutt.
+ * valgt rute) OG ikke uforholdsmessig lange (≤ `maxLengthRatio` × korteste
+ * rute). Alle cost-mutasjoner reverseres til slutt.
+ *
+ * `maxLengthRatio` finnes fordi edge-penalty-metoden, etter at de korte
+ * rutene er straffet, gjerne presser den k-te ruta ut på en absurd omvei
+ * («æresrunde» — f.eks. 9 km der korteste er 4 km) bare for å være distinkt
+ * nok. Slike ruter ville ingen valgt; vi dropper dem heller og returnerer
+ * færre alternativer. 1.8 = en omvei på opptil +80 % godtas, mer ikke.
  *
  * @param {ReturnType<typeof buildRoutingGraph>} rg
  * @param {string} fromId
  * @param {string} toId
- * @param {{ k?: number, penalty?: number, minShare?: number }} opts
+ * @param {{ k?: number, penalty?: number, minShare?: number, maxLengthRatio?: number }} opts
  * @returns {Array<{coordinates:Array<[number,number]>, lengthM:number, costM:number, nodeIds:string[]}>}
  *          sortert på lengthM stigende
  */
 export function kShortestRoutes(rg, fromId, toId, opts = {}) {
-  const { k = 3, penalty = 2.5, minShare = 0.6 } = opts
+  const { k = 3, penalty = 2.5, minShare = 0.6, maxLengthRatio = 1.8 } = opts
   const { graph: g, route } = rg
   if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return []
 
@@ -178,14 +185,19 @@ export function kShortestRoutes(rg, fromId, toId, opts = {}) {
   const chosenSets = []
   const penalized = new Map()   // edgeId → original cost
   const maxAttempts = k * 4
+  let shortestLen = Infinity    // settes av første (= globalt korteste) rute
 
   try {
     for (let attempt = 0; attempt < maxAttempts && chosen.length < k; attempt++) {
       const r = route(fromId, toId)
       if (!r) break
+      if (r.lengthM < shortestLen) shortestLen = r.lengthM
       const eset = routeEdgeSet(g, r.nodeIds)
       const tooSimilar = chosenSets.some(s => shareOf(eset, s) >= minShare)
-      if (!tooSimilar) {
+      // Korteste ruta godtas alltid; alternativer kun hvis de ikke er en
+      // uforholdsmessig lang omvei.
+      const tooLong = chosen.length > 0 && r.lengthM > shortestLen * maxLengthRatio
+      if (!tooSimilar && !tooLong) {
         chosen.push(r)
         chosenSets.push(eset)
       }
