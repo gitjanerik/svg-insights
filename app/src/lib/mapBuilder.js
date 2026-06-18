@@ -324,6 +324,48 @@ export function clusterHoldeplasser(nodes, minSepM = HOLDEPLASS_MIN_SEP_M) {
   return pts.filter(p => keep.has(p))
 }
 
+// Minste avstand (meter) mellom to vanlige parkerings-symboler (ISOM 534) før
+// vi anser dem som «samme P-plass» og skjuler den ene. Tett bebygde områder har
+// én OSM-node/-way pr p-flekk (gateparkering, kjøpesenter, boligfelt) — uten
+// uttynning blir kartet en uleselig vegg av blå P-skilt (se skjermbildet fra
+// Asker/Bondi). Utfartsparkering (534u) er UNNTATT og vises alltid uansett
+// nærhet — se thinParkering().
+export const PARKERING_MIN_SEP_M = 50
+
+/**
+ * Tynner ut tett plasserte parkerings-symboler. Utfartsparkeringer
+ * (`utfart === true`) beholdes ALLTID uansett naboer — de er det viktigste
+ * utgangspunktet for marka-turer og skal aldri skjules. Vanlige P-plasser
+ * beholdes greedy: en vanlig P beholdes bare hvis den ligger minst `minSepM`
+ * meter fra alle allerede beholdte markører (inkludert utfartsparkeringene, som
+ * legges inn først og dermed «vinner» når en vanlig P ligger tett inntil).
+ *
+ * Punktene er i SVG-meter-rom (project()-output), så `minSepM` er ekte meter.
+ * O(n²) er trivielt her — antall parkeringer i et kart-utsnitt er lite.
+ *
+ * @param {Array} items  { p:{x,y} (meter), utfart:boolean, ... }
+ * @param {number} minSepM  minste avstand i meter mellom to vanlige P-symboler
+ * @returns {Array} delmengde av items i opprinnelig rekkefølge
+ */
+export function thinParkering(items, minSepM = PARKERING_MIN_SEP_M) {
+  const list = (items || []).filter(
+    it => it && it.p && Number.isFinite(it.p.x) && Number.isFinite(it.p.y)
+  )
+  const occupied = []  // {x,y} for hver beholdt markør
+  const keep = new Set()
+  const tooClose = p => occupied.some(q => Math.hypot(q.x - p.x, q.y - p.y) < minSepM)
+  // Utfart først: alltid med, og de opptar plass som vanlige P må holde unna.
+  for (const it of list) {
+    if (it.utfart) { keep.add(it); occupied.push(it.p) }
+  }
+  // Vanlige P greedy i opprinnelig rekkefølge.
+  for (const it of list) {
+    if (it.utfart || tooClose(it.p)) continue
+    keep.add(it); occupied.push(it.p)
+  }
+  return list.filter(it => keep.has(it))
+}
+
 // v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
 // sub-piksel, men sparer ~1 tegn pr koordinat (mindre SVG, raskere parse).
 function fmt(n) { return Number(n.toFixed(1)) }
@@ -1962,13 +2004,20 @@ export function buildSvg(elements, bbox, options = {}) {
 
   const parkeringSize = 7.2
   const parkeringUtfartSize = 10.8  // braketter-symbol: blått felt 5.4mm (= vanlig P); brakettene strekker til ≈9.7mm
-  const parkeringSvg = parkeringer.map(el => {
+  // Projiser hver parkering og avgjør utfart-status FØR uttynning, så
+  // thinParkering kan jobbe i meter-rom og alltid beholde utfartsparkeringene.
+  const parkeringCands = parkeringer.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
     else if (el.type === 'way' && el.geometry) p = polygonCentroid(el.geometry)
-    if (!p) return ''
+    if (!p) return null
     const utfart = isTrailheadParking(el.tags) &&
       isPointNearPolylines(p, stiPolylines, UTFART_STI_MAXDIST_M)
+    return { p, utfart }
+  }).filter(Boolean)
+  // Tynn ut tett plasserte vanlige P-plasser (min PARKERING_MIN_SEP_M meter);
+  // utfartsparkering vises alltid uansett nærhet.
+  const parkeringSvg = thinParkering(parkeringCands, PARKERING_MIN_SEP_M).map(({ p, utfart }) => {
     const sid = symbolIds.get(utfart ? 'parkering-utfart' : 'parkering')
     if (!sid) return ''
     const size = utfart ? parkeringUtfartSize : parkeringSize

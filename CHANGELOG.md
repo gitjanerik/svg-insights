@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.20: Tynner ut tett plasserte parkerings-symboler
+
+Samme opprydding som ble gjort for busstopp gjelder nå parkering: tett plasserte vanlige P-skilt (ISOM 534) tynnes ut så det er minst **50 meter** mellom dem. Tett bebygde områder har én OSM-node/-way pr p-flekk (gateparkering, kjøpesenter, boligfelt), og uten uttynning ble kartet en uleselig vegg av blå P-skilt. **Utfartsparkering (534u) er unntatt og vises ALLTID uansett nærhet** — de er det viktigste utgangspunktet for marka-turer og skal aldri skjules; en vanlig P som ligger tett inntil en utfartsparkering droppes til fordel for utfarts-markøren. Uttynningen (`thinParkering` i `mapBuilder.js`) er greedy i SVG-meter-rom og fullt enhetstestet.
+
+---
+
 ## 2026-06-18 — v11.0.19: Ekstra zoom-ut-nivåer (se hele bruttokartet)
 
 Zoom-ut-gulvet er nå dynamisk: du kan zoome ut akkurat langt nok til å se HELE bruttokartet (aktiv flis ∪ nabofliser) med litt margin rundt — så du raskt ser totalområdet et utvidet/lagret kart spenner over. Ett-flis-kart beholder dagens gulv (scale 0.5); større mosaikker får et lavere gulv (flere zoom-ut-nivåer), f.eks. når 3 fliser i bredden ikke fikk plass på skjermen før. Et absolutt bunn-gulv (0.06) hindrer at en svær mosaikk forsvinner i tomrom. `usePinchZoom` tar nå en `minScale`-opsjon (tall/ref/funksjon); MapView gir den en `mosaicMinScale()` som regnes fra bruttoens yttergrense og viewport-størrelsen.
