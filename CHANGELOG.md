@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.13: Stifinner — prioriter natur-korridoren (sti → skogsbilvei → småveg → veg)
+
+Rutekostnadene var snudd: vei var billigst og sti dyrest, så turforslagene tok «æresrunder» gjennom boligfelt på asfalt i stedet for å følge skogsbilveien/stien rett fram. Snudd prioriteringen så et turforslag helst går i natur-korridoren: Sti (505/506/507) → Skogsbilvei (504) → Småveg (503) → Veg (502/501). Det er et tydelig kost-hopp fra natur-korridor (≤1.6) til kjørevei (≥2.6), så Dijkstra velger sti/skogsbilvei der den finnes, men bruker vei der det er eneste forbindelse. Korteste-rute-cap og luftlinje/høydemeter er uendret.
+
+---
+
 ## 2026-06-18 — v11.0.12: Stifinner — dropp «æresrunde»-omveier blant rute-alternativene
 
 Den k-te rute-kandidaten kunne bli en absurd 360°-omvei (f.eks. 9,2 km der korteste er 4,0 km): edge-penalty-metoden straffer de korte rutenes kanter for å finne distinkte alternativer, og uten en lengde-grense ble det tredje «alternativet» presset ut på en runde ingen ville gått. `kShortestRoutes` har nå en `maxLengthRatio` (default 1.8) som forkaster alternativer som er mer enn 80 % lengre enn korteste rute. Da vises heller færre, fornuftige alternativer enn en æresrunde. Korteste rute godtas alltid.

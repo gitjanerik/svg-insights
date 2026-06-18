@@ -14,13 +14,24 @@ import RBush from 'rbush'
 import { polylineLength } from './pathUtils.js'
 
 // Kostnadsfaktor pr ISOM-kode. Større = mindre attraktiv som rute.
+//
+// PRIORITERING (v11.0.13): et turforslag skal helst gå i natur-korridoren og
+// bare bruke bilvei når det trengs. Rekkefølge fra mest til minst foretrukket:
+//   Sti (505/506/507) → Skogsbilvei (504) → Småveg (503) → Veg (502/501).
+// Tidligere var det motsatt (vei billigst), så stifinneren tok «æresrunder»
+// gjennom boligfelt på asfalt i stedet for å følge skogsbilveien rett fram.
+// Det er et tydelig HOPP i kost fra natur-korridoren (≤1.6) til kjørevei
+// (≥2.6) så Dijkstra velger sti/skogsbilvei når den finnes, men faller
+// tilbake på vei der det er eneste forbindelse.
 const ISOM_COST = {
-  '501': 1.0, '502': 1.1, '503': 1.3,    // veier — raske
-  '504': 1.5,                              // skogsbilvei
-  '505': 1.6,                              // sti — godt løp
-  '506': 2.2,                              // sti — uklar
-  '507': 3.5,                              // stitråkk — vanskelig
-  '509': 1.0,                              // bro
+  '505': 1.0,                              // sti — godt løp (mest foretrukket)
+  '506': 1.2,                              // sti — uklar
+  '507': 1.5,                              // stitråkk — vanskelig, men fortsatt sti
+  '504': 1.6,                              // skogsbilvei
+  '509': 1.0,                              // bro — nøytral (nødvendig kryssing)
+  '503': 2.6,                              // småveg (tertiary/residential/service)
+  '502': 3.4,                              // hovedvei
+  '501': 4.0,                              // motorvei — minst foretrukket å gå
 }
 
 /**
