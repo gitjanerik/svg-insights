@@ -24,7 +24,7 @@ import {
   pointFeatureKept,
 } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
-import { polylineToPath, simplifyDP } from './pathUtils.js'
+import { polylineToPath, simplifyDP, isPointNearPolylines } from './pathUtils.js'
 import { bboxOfPoints, unionBbox, cellKeyFor, bboxAttr } from './spatialBucket.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
@@ -1879,18 +1879,39 @@ export function buildSvg(elements, bbox, options = {}) {
   // data-upright="1" gjør at MapView counter-roterer symbolet ved kart-
   // rotasjon, så "P" alltid leses vannrett med skjermens topp som rettesnor.
   //
-  // Utfartsparkering (offentlig/trailhead) skilles ut via isTrailheadParking():
-  // grønn P-variant (534u) i stedet for blå, og 50 % større (10.8mm) så den
-  // foretrukne plassen for marka-turer fanger blikket blant de mange private
-  // P-plassene. data-iso settes til 534 / 534u for Tegnforklaring-kobling.
+  // Utfartsparkering (offentlig/trailhead) skilles ut med blått P-skilt + grønn
+  // ramme (parkering-utfart, kode 534u) i stedet for vanlig blå P, og det blå
+  // feltet er ~50 % større, så den foretrukne plassen for marka-turer fanger
+  // blikket blant de mange private P-plassene. data-iso = 534 / 534u for
+  // Tegnforklaring-kobling.
+  //
+  // KVALIFISERING (begge MÅ gjelde):
+  //   (a) isTrailheadParking(tags) — offentlig access eller utfart-/tur-navn
+  //   (b) en sti (ISOM 505/506/507) innen 30 m av P-punktet
+  // Regel (b) sikrer at vi bare framhever parkering som faktisk er et
+  // utgangspunkt for tur — en offentlig P-plass uten sti i nærheten er ikke
+  // en utfartsparkering i praksis. Sti-geometrien hentes fra de allerede
+  // bucket-klassifiserte stiene og projiseres til meter-rom (samme som
+  // P-punktet), så 30 m-terskelen er ekte meter.
+  const STI_CODES = ['505', '506', '507']
+  const UTFART_STI_MAXDIST_M = 30
+  const stiPolylines = []
+  for (const code of STI_CODES) {
+    for (const el of (buckets[code] || [])) {
+      if (el.geometry && el.geometry.length >= 2) {
+        stiPolylines.push(el.geometry.map(g => project(g.lat, g.lon)))
+      }
+    }
+  }
   const parkeringSize = 7.2
-  const parkeringUtfartSize = parkeringSize * 1.5
+  const parkeringUtfartSize = 11.25  // grønn-ramme-symbol: blått felt ≈ 8.1mm (= 1.5 × vanlig 5.4mm)
   const parkeringSvg = parkeringer.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
     else if (el.type === 'way' && el.geometry) p = polygonCentroid(el.geometry)
     if (!p) return ''
-    const utfart = isTrailheadParking(el.tags)
+    const utfart = isTrailheadParking(el.tags) &&
+      isPointNearPolylines(p, stiPolylines, UTFART_STI_MAXDIST_M)
     const sid = symbolIds.get(utfart ? 'parkering-utfart' : 'parkering')
     if (!sid) return ''
     const size = utfart ? parkeringUtfartSize : parkeringSize
