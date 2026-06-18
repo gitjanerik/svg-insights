@@ -2478,6 +2478,25 @@ function onSelectRoute(idx) {
   sti.selectRoute(idx)
   renderRoutes()
 }
+
+// Høydemeter A→B: ren høydeforskjell mellom start- og målpunktet (DEM-sampla
+// i samme svg-meter-rom som rutene). Rute-uavhengig — som luftlinja — så den
+// vises på samme bunn-linje uansett hvilken rute som er valgt. null når kartet
+// mangler DEM (ingen WCS) eller et av punktene faller på noData.
+const stiElevationDiffM = computed(() => {
+  const a = sti.start.value, b = sti.destination.value
+  const dem = storedDem.value
+  if (!a || !b || !dem) return null
+  const ea = sampleElevation(dem, a.svgX, a.svgY)
+  const eb = sampleElevation(dem, b.svgX, b.svgY)
+  if (!Number.isFinite(ea) || !Number.isFinite(eb)) return null
+  return eb - ea
+})
+function formatElevationDiff(m) {
+  const r = Math.round(m)
+  if (r === 0) return '0 m'
+  return `${r > 0 ? '+' : '−'}${Math.abs(r)} m`
+}
 function onOpenGoogleMaps() {
   const info = contextMenuInfo.value
   if (!info) return
@@ -5502,6 +5521,9 @@ onUnmounted(() => {
             <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/90 mt-0.5 tabular-nums">
               Luftlinje A→B: {{ formatDistance(sti.directDistanceM.value) }}
             </div>
+            <div v-if="stiElevationDiffM !== null" class="text-[10px] text-emerald-100/90 tabular-nums">
+              Høydemeter A→B: {{ formatElevationDiff(stiElevationDiffM) }}
+            </div>
           </template>
           <template v-else>
             <div class="text-[12px] font-semibold mb-1">
@@ -5521,6 +5543,9 @@ onUnmounted(() => {
             </div>
             <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/80 mt-1 tabular-nums">
               Luftlinje A→B: {{ formatDistance(sti.directDistanceM.value) }}
+            </div>
+            <div v-if="stiElevationDiffM !== null" class="text-[10px] text-emerald-100/80 tabular-nums">
+              Høydemeter A→B: {{ formatElevationDiff(stiElevationDiffM) }}
             </div>
           </template>
         </template>

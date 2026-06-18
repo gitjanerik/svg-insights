@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.11: Stifinner — «Høydemeter A→B» i info-panelet
+
+Ny linje nederst i det grønne Stifinner-panelet: «Høydemeter A→B: ±N m» — ren høydeforskjell mellom start- og målpunktet, DEM-sampla. Vises sammen med luftlinja (begge rute-uavhengige). Skjules når kartet mangler DEM (ingen WCS-høydedata) eller et punkt faller på noData.
+
+---
+
 ## 2026-06-18 — v11.0.10: Utfartsparkering 100 → 50 m + Stifinner over vei/skogsbilvei
 
 To små endringer i samme slengen:
