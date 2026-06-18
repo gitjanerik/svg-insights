@@ -138,6 +138,29 @@ describe('kShortestRoutes', () => {
     expect(kShortestRoutes(rg, 'nope', 'n0', {})).toEqual([])
   })
 
+  it('foretrekker skogsbilvei framfor en kortere småveg (priorisering)', () => {
+    // A(0,0) → B(200,0). Småveg (503) rett fram 200 m, skogsbilvei (504) som
+    // omvei ~280 m. rg.route (kost-optimal) skal velge skogsbilveien tross
+    // lengre, fordi 280×1.6=448 < 200×2.6=520. Isolerer priortering fra lengde.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '503' },          // småveg rett fram 200
+      { coordinates: [[0, 0], [0, 40], [200, 40], [200, 0]], isomCode: '504' }, // skogsbilvei omvei ~280
+    ], { snapM: 2 })
+    const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([200, 0]))
+    expect(r.lengthM).toBeGreaterThan(200) // valgte skogsbilvei-omveien
+  })
+
+  it('foretrekker en litt lengre sti framfor en kortere kjørevei', () => {
+    // Sti (505) omvei ~280 m vs hovedvei (502) rett fram 200 m. Natur-
+    // prioriteringen gjør stien billigst (280×1.0=280 < 200×3.4=680).
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [0, 40], [200, 40], [200, 0]], isomCode: '505' }, // sti omvei ~280
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '502' },           // hovedvei rett fram 200
+    ], { snapM: 2 })
+    const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([200, 0]))
+    expect(r.lengthM).toBeGreaterThan(200) // valgte stien, tross lengre
+  })
+
   it('utelater uforholdsmessig lange omveier (æresrunde-cap)', () => {
     // A(0,0) → B(100,0): direkte 100 m, pluss en lang æresrunde-loop (~520 m).
     const seg = (coords) => ({ coordinates: coords, isomCode: '505' })
