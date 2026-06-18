@@ -35,6 +35,7 @@ const LABEL_LUT = {
   'vann-navn':  'Vann',
   'peak':       'Topp',
   'sted':       'Sted',
+  'parkering':  'Parkering',
 }
 
 function labelFor(kind) {
@@ -50,6 +51,9 @@ const CATEGORY_ALIASES = {
   'innsjoe': 'vann',
   'innsjo':  'vann',
   'tjern':   'vann',
+  'parkering': 'parkering',
+  'utfartsparkering': 'parkering',
+  'utfart':  'parkering',
 }
 
 /**
@@ -285,10 +289,25 @@ export function buildSearchIndex(svgEl) {
     pushRaw(out, name, kind, pos, t, { categories })
   }
 
+  // 1b) Utfartsparkering (ISOM 534u) — mapBuilder emitterer data-name med
+  //    nærmeste natur-feature ("Knivåsen Utfartsparkering"). Egen kind/label
+  //    + 'parkering'-kategori så et søk på "parkering" lister dem (selv om
+  //    navnet alltid inneholder ordet uansett). Kjøres FØR den generiske
+  //    data-name-runden, som hopper over 534u for å unngå dubletter.
+  for (const g of svgEl.querySelectorAll('g[data-iso="534u"][data-name]')) {
+    const name = g.getAttribute('data-name')?.trim()
+    if (!name) continue
+    const pos = elementPosition(svgEl, g)
+    if (!pos) continue
+    pushRaw(out, name, 'parkering', pos, g, { categories: ['parkering'] })
+  }
+
   // 2) Navngitte polygoner (data-name) — typisk innsjøer/elver/øyer som er
   //    syt sammen fra OSM relations. Mange har egen vann-navn label allerede,
   //    så vi deduper på navn+omtrentlig posisjon under.
   for (const p of svgEl.querySelectorAll('[data-name]')) {
+    // 534u-markørene plukkes i 1b — skip dem her så vi ikke dobbelt-indekserer.
+    if (p.tagName === 'g' && p.getAttribute('data-iso') === '534u') continue
     const name = p.getAttribute('data-name')?.trim()
     if (!name) continue
     const pos = elementPosition(svgEl, p)

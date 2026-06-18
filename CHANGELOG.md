@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-18 — v11.0.4: Utfartsparkering — sorte hjørne-braketter + søkbar på «parkering»
+
+To endringer på utfartsparkering-markøren:
+
+**Fargeblind-vennlig markør (Variant B).** Den grønne rammen rundt det blå P-skiltet er erstattet med fire frittstående sorte hjørne-braketter med luft rundt skiltet. Grønt mot blått er nettopp den kombinasjonen som svikter for blå-grønn-fargeblinde (tritanopi); sort skiller seg på lyshet og leses for alle synsvarianter. Det blå P-feltet er nå IDENTISK i størrelse med vanlig parkering (534) — kun brakettene skiller dem.
+
+**Søkbar på «parkering».** Et kart-søk på «parkering» (eller «utfart»/«utfartsparkering») lister nå alle utfartsparkeringene i kartet. Hver får et navn fra nærmeste navngitte natur-feature i prioritert rekkefølge fjelltopp → ås → elv → vann, f.eks. «Knivåsen Utfartsparkering». mapBuilder beregner navnet ved bygging og legger det på markøren (`data-name`); søkeindeksen (`useMapSearch`) plukker det opp med egen «Parkering»-etikett. Vanlig privat parkering forblir unavngitt og dukker ikke opp i søket.
+
+---
+
 ## 2026-06-18 — v11.0.3: Utfartsparkering — sti-nærhet hevet til 50 m
 
 Justering av v11.0.2. Terskelen for sti-nærhets-kvalifiseringen er hevet fra 30 m til **50 m**, fordi stien (ISOM 505/506/507) ofte starter et lite stykke fra selve P-lommen — særlig der parkeringen ligger ved enden av en skogsbilvei og turstien tar av litt unna. Øvrige krav er uendret: en parkering markeres som utfartsparkering kun når den både har offentlig access / utfart-navn (`isTrailheadParking`) og har en sti innen 50 m.
