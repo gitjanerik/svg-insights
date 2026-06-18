@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.22: Utvidelses-fliser arver tema (ikke lenger halvt kremgult kart)
+
+Når man byttet til et mørkt tema (f.eks. Curves) og deretter utvidet kartet via kant-sonene, rendret de nybygde flisene med det lyse kremgule standard-fyllet mens den aktive flisa var mørk — kartet ble halvt mørkt, halvt kremgult. Årsaken: spøkelses-/mosaikk-flisene får `#bakgrunn`-id-en strippet (for å unngå duplikat-id i DOM-en), men da sluttet aktiv-flisas CSS-regel `.isom-map #bakgrunn rect { fill: var(--bg) }` å treffe deres bakgrunns-rektangel, så det ble hengende på det inline lyse default-fyllet. `buildGhostSvg` skriver nå bakgrunns-fyllet om til `var(--bg, <inline default>)` slik at det arver tema-variabelen fra `mapInnerRef` akkurat som den aktive flisa — mørke tema rekolorerer hele mosaikken, lys default bevares for frittstående/print.
+
+---
+
 ## 2026-06-18 — v11.0.21: Retnings-kjegla følger kompasset, ny «mange kart»-melding
 
 Posisjons-kjegla (den lyseblå sektoren ut fra GPS-prikken) peker nå dit telefonen **vender**, basert på kompasset (magnetometer/gyro via `DeviceOrientationEvent`) i stedet for GPS-kursen. Før brukte den `coords.heading` fra GPS, som kun er definert mens du er i bevegelse og peker dit du er på vei — derfor var kjegla usynlig når du stod stille og upålitelig i gangfart. Nå virker den stillestående og viser faktisk peke-retning, som er det orienteringsbrukeren trenger for å vri kartet rett. Kompasset auto-startes i samme bruker-gest som GPS-en (kritisk for iOS som krever permission innenfor et tap); GPS-kurs beholdes som fallback hvis kompasset mangler eller avvises.
