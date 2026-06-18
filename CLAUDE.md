@@ -1,5 +1,21 @@
 # CLAUDE.md — Prosjektkontekst for Claude Code
 
+## Visuell prioritet — ALLTID verifiser visuelt (les `visual-check`-skillen)
+
+Eieren er svært opptatt av det visuelle. For ALT som påvirker hvordan noe ser ut
+(Vue-komponenter, SVG-generering/-rendering for kart/font/tegning, Tailwind/CSS,
+farger, ISOM-symboler, ikoner, layout, FAB/drawer, animasjoner, print/eksport):
+**en grønn `npm run build` og passerende `npm run test` beviser IKKE at det ser
+riktig ut.** En visuell endring er ikke «ferdig» før den er sett.
+
+- Prioriter å kjøre appen (`npm run dev` i `app/`) og se på det faktiske
+  resultatet — bruk `visual-check`-skillen for fremgangsmåte (+ `run`/`verify`).
+- Produser et bilde/screenshot når mulig og vurder pikslene selv før du konkluderer.
+- Får du IKKE testet visuelt (headless sandbox uten skjerm): si det **eksplisitt**,
+  aldri stilltiende hopp over det. Forklar hva du sjekket i stedet, og gi eieren
+  konkrete steg + nøyaktig hva hun skal se etter. Aldri påstå at en visuell
+  endring «virker» kun basert på bygg/tester.
+
 ## Sync-modell — origin er sannheten
 
 Dette er et lite, privat prosjekt der eieren mest jobber fra mobil/web. Hver Claude Code-sesjon kjører i en fersk sandkasse — alt som ikke er pushet til origin er borte. Derfor: **origin/master er alltid kilden, lokal state følger.** Ingen lange-levende lokale commits utenfor en feature-branch.
