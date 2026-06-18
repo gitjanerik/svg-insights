@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.3: Utfartsparkering — sti-nærhet hevet til 50 m
+
+Justering av v11.0.2. Terskelen for sti-nærhets-kvalifiseringen er hevet fra 30 m til **50 m**, fordi stien (ISOM 505/506/507) ofte starter et lite stykke fra selve P-lommen — særlig der parkeringen ligger ved enden av en skogsbilvei og turstien tar av litt unna. Øvrige krav er uendret: en parkering markeres som utfartsparkering kun når den både har offentlig access / utfart-navn (`isTrailheadParking`) og har en sti innen 50 m.
+
+---
+
 ## 2026-06-18 — v11.0.2: Utfartsparkering — grønn ramme + sti-krav (30 m)
 
 Justering av v11.0.1. P-skilt skal beholde sin blå konvensjon, så den grønne heldekkende bakgrunnen er byttet ut med en tykk **grønn ramme rundt det blå P-skiltet** (Forslag 5). Det blå feltet er fortsatt ~50 % større enn vanlig parkering. I tillegg er det innført en hard kvalifiseringsregel: en parkering markeres som utfartsparkering **kun hvis det finnes en sti (ISOM 505/506/507) innen 30 m** av P-punktet — i tillegg til det eksisterende kravet om offentlig access / utfart-navn. En offentlig P-plass uten sti i nærheten er ikke et reelt turutgangspunkt og forblir vanlig blå. Sti-avstanden måles i ekte meter mot den projiserte sti-geometrien (`isPointNearPolylines` i `pathUtils.js`, enhetstestet).

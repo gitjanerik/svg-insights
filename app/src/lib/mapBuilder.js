@@ -1887,14 +1887,15 @@ export function buildSvg(elements, bbox, options = {}) {
   //
   // KVALIFISERING (begge MÅ gjelde):
   //   (a) isTrailheadParking(tags) — offentlig access eller utfart-/tur-navn
-  //   (b) en sti (ISOM 505/506/507) innen 30 m av P-punktet
+  //   (b) en sti (ISOM 505/506/507) innen 50 m av P-punktet
   // Regel (b) sikrer at vi bare framhever parkering som faktisk er et
   // utgangspunkt for tur — en offentlig P-plass uten sti i nærheten er ikke
   // en utfartsparkering i praksis. Sti-geometrien hentes fra de allerede
   // bucket-klassifiserte stiene og projiseres til meter-rom (samme som
-  // P-punktet), så 30 m-terskelen er ekte meter.
+  // P-punktet), så 50 m-terskelen er ekte meter. (Hevet fra 30 m i v11.0.3
+  // fordi stien ofte starter et lite stykke fra selve P-lommen.)
   const STI_CODES = ['505', '506', '507']
-  const UTFART_STI_MAXDIST_M = 30
+  const UTFART_STI_MAXDIST_M = 50
   const stiPolylines = []
   for (const code of STI_CODES) {
     for (const el of (buckets[code] || [])) {

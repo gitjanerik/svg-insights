@@ -520,7 +520,7 @@
       },
       "534u": {
         "label": "Utfartsparkering (offentlig)",
-        "$comment": "Offentlig utfartsparkering — foretrukket når man skal ut i marka. Blått P-skilt med grønn ramme rundt (Forslag 5); det blå feltet er ~50 % større enn vanlig parkering (534). Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 30 m. scaleMm 3.75 gir blått felt ≈ 8,1 mm (= 1,5 × vanlig 5,4 mm).",
+        "$comment": "Offentlig utfartsparkering — foretrukket når man skal ut i marka. Blått P-skilt med grønn ramme rundt (Forslag 5); det blå feltet er ~50 % større enn vanlig parkering (534). Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 50 m. scaleMm 3.75 gir blått felt ≈ 8,1 mm (= 1,5 × vanlig 5,4 mm).",
         "point": {
           "symbol": "parkering-utfart",
           "scaleMm": 3.75
@@ -1148,7 +1148,7 @@
       ]
     },
     "parkering-utfart": {
-      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti innen 30 m. BEHOLDER det blå P-skiltet (P-konvensjon), men får en tykk GRØNN ramme rundt (Forslag 5) + 50 % større enn vanlig P, så den foretrukne marka-plassen skiller seg ut. Grønn ytre firkant ligger BAK det blå skiltet; det blå feltet er nedskalert til ±0,72 så den grønne margen blir synlig. mapBuilder skalerer slik at det blå feltet blir ~50 % større enn vanlig.",
+      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti innen 50 m. BEHOLDER det blå P-skiltet (P-konvensjon), men får en tykk GRØNN ramme rundt (Forslag 5) + 50 % større enn vanlig P, så den foretrukne marka-plassen skiller seg ut. Grønn ytre firkant ligger BAK det blå skiltet; det blå feltet er nedskalert til ±0,72 så den grønne margen blir synlig. mapBuilder skalerer slik at det blå feltet blir ~50 % større enn vanlig.",
       "viewBox": "-1 -1 2 2",
       "elements": [
         {
