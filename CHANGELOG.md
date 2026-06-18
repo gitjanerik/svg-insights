@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.7: Utfartsparkering — gult ★-ikon byttet til hvit tekst-stjerne (*)
+
+Det gule stjerneikonet ble for dominerende. Erstattet med en enkel hvit tekstlig stjerne (*) alle steder — etter navnet i søkeresultatet, foran forklaringslinja, og i Tegnforklaring-noten. Ingen egen farge lenger; stjernen arver tekstfargen. `noteHtml`-hjelperen i Tegnforklaring er fjernet (note rendres igjen som ren tekst).
+
+---
+
 ## 2026-06-18 — v11.0.6: Utfartsparkering — navnerekkefølge «Utfartsparkering ‹sted›» + dempet ★
 
 Finpuss av v11.0.5 etter at ★-ikonet og den gule skriften ble litt for voldsom i søket:

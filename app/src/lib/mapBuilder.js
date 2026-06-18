@@ -1912,7 +1912,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // ved Knivåsen blir «Utfartsparkering Knivåsen» (typen først, så stedet).
   // Navnet emitteres som data-name på 534u-markøren og plukkes opp av
   // søkeindeksen (useMapSearch); det er IKKE et offisielt navn, så UI-en
-  // merker det med en ★ og et forbehold.
+  // merker det med en * og et forbehold.
   // Tier 0=fjelltopp (natural=peak/saddle), 1=ås (place-navn med terreng-
   // suffiks), 2=elv (waterway river/stream/canal), 3=vann (navngitt innsjø).
   // Tier 4 = nærmeste øvrige stedsnavn som fallback når ingen natur-feature
