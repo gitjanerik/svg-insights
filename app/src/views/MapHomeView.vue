@@ -366,12 +366,13 @@ async function onSelectSearchResult(r) {
         </span>
       </div>
 
-      <!-- «Føre var»: lagrede turkart ligger på enheten og kan bli store. -->
-      <div v-if="!loading && maps.length > 0"
+      <!-- Vises kun når brukeren har samlet opp mange kart. Filene er små,
+           så dette handler om ryddighet/utdaterte kart, ikke lagringsplass. -->
+      <div v-if="!loading && maps.length > 5"
            class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
                   text-amber-200/80 text-[11px] leading-snug">
-        Lagrede kart ligger på enheten. Store turkart kan bruke flere MB hver — slett kart du
-        ikke trenger for å frigjøre plass.
+        Du har mange og potensielt utdaterte kart. Slett kart du ikke trenger lenger for å
+        holde lista ryddig.
       </div>
 
       <div v-if="loading" class="flex justify-center py-6">
