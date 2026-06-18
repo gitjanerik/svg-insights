@@ -1888,14 +1888,17 @@ export function buildSvg(elements, bbox, options = {}) {
   //
   // KVALIFISERING (begge MÅ gjelde):
   //   (a) isTrailheadParking(tags) — offentlig access eller utfart-/tur-navn
-  //   (b) en sti (ISOM 505/506/507) innen 50 m av P-punktet
+  //   (b) en sti (ISOM 505/506/507) ELLER skogsbilvei (504) innen 50 m av
+  //       P-punktet
   // Regel (b) sikrer at vi bare framhever parkering som faktisk er et
-  // utgangspunkt for tur — en offentlig P-plass uten sti i nærheten er ikke
-  // en utfartsparkering i praksis. Sti-geometrien hentes fra de allerede
-  // bucket-klassifiserte stiene og projiseres til meter-rom (samme som
-  // P-punktet), så 50 m-terskelen er ekte meter. (Hevet fra 30 m i v11.0.3
-  // fordi stien ofte starter et lite stykke fra selve P-lommen.)
-  const STI_CODES = ['505', '506', '507']
+  // utgangspunkt for tur — en offentlig P-plass uten sti/skogsbilvei i
+  // nærheten er ikke en utfartsparkering i praksis. Skogsbilvei (504) ble
+  // tatt med f.o.m. v11.0.8 fordi mange marka-P-er ligger ved enden av en
+  // skogsbilvei der selve turstien tar av lenger inne. Geometrien hentes fra
+  // de allerede bucket-klassifiserte vegene/stiene og projiseres til meter-
+  // rom (samme som P-punktet), så 50 m-terskelen er ekte meter. (Hevet fra
+  // 30 m i v11.0.3 fordi stien ofte starter et lite stykke fra P-lommen.)
+  const STI_CODES = ['504', '505', '506', '507']
   const UTFART_STI_MAXDIST_M = 50
   const stiPolylines = []
   for (const code of STI_CODES) {

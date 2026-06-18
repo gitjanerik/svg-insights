@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.8: Utfartsparkering — skogsbilvei (504) teller også som turadkomst
+
+Nærhets-kvalifiseringen utvides: en parkering regnes nå som utfartsparkering hvis det finnes en sti (ISOM 505/506/507) **eller en skogsbilvei (504)** innen 50 m — tidligere bare sti. Mange marka-P-er ligger ved enden av en skogsbilvei der selve turstien tar av lenger inne, og falt derfor utenfor. Øvrige krav er uendret (offentlig access / utfart-navn). Kart, tegnforklaring og katalog-doc oppdatert.
+
+---
+
 ## 2026-06-18 — v11.0.7: Utfartsparkering — gult ★-ikon byttet til hvit tekst-stjerne (*)
 
 Det gule stjerneikonet ble for dominerende. Erstattet med en enkel hvit tekstlig stjerne (*) alle steder — etter navnet i søkeresultatet, foran forklaringslinja, og i Tegnforklaring-noten. Ingen egen farge lenger; stjernen arver tekstfargen. `noteHtml`-hjelperen i Tegnforklaring er fjernet (note rendres igjen som ren tekst).
