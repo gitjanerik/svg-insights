@@ -26,6 +26,10 @@ export function usePinchZoom(elementRef, options = {}) {
   const enabledOpt = options.enabled
   const rotateEnabled = options.rotateEnabled !== false
   const panAtRest = options.panAtRest === true
+  // options.minScale (number | ref | () => number) — dynamisk zoom-ut-gulv. Lar
+  // konsumenten senke gulvet så hele en mosaikk kan zoomes ut til (se MapView).
+  // Faller tilbake til MIN_SCALE når ikke satt / ugyldig.
+  const minScaleOpt = options.minScale
   function isEnabled() {
     return enabledOpt == null ? true : !!unref(enabledOpt)
   }
@@ -90,7 +94,10 @@ export function usePinchZoom(elementRef, options = {}) {
   }
 
   function clampScale(s) {
-    return Math.max(MIN_SCALE, Math.min(MAX_SCALE, s))
+    let v
+    try { v = typeof minScaleOpt === 'function' ? minScaleOpt() : unref(minScaleOpt) } catch { v = undefined }
+    const min = (typeof v === 'number' && v > 0) ? Math.min(v, MAX_SCALE) : MIN_SCALE
+    return Math.max(min, Math.min(MAX_SCALE, s))
   }
 
   /**
