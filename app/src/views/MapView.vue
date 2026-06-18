@@ -3607,9 +3607,19 @@ function sampleByDistance(points, minDistM) {
   return out
 }
 
+// Start GPS + kompass i samme bruker-gest. Kompasset driver retnings-kjegla
+// (se updateUserDot); det MÅ startes fra et klikk/tap fordi iOS krever at
+// DeviceOrientationEvent.requestPermission() kalles innenfor en bruker-gest.
+// Derfor kalles dette fra gest-handlerne, ikke fra en watcher. compass.start()
+// er idempotent-guardet på isActive så GPS-refresh ikke re-spør om tillatelse.
+function startPositioning() {
+  userPos.start()
+  if (!compass.isActive) compass.start()
+}
+
 // Track-action-handlers for drawer
 function onToggleRecording() {
-  if (!userPos.isWatching) { userPos.start(); return }
+  if (!userPos.isWatching) { startPositioning(); return }
   if (tracker.isRecording.value) tracker.stopRecording()
   else tracker.startRecording()
 }
@@ -3623,7 +3633,7 @@ function onHeaderTrackShortcut() {
     void tracker.stopRecording()
     return
   }
-  if (!userPos.isWatching) userPos.start()
+  if (!userPos.isWatching) startPositioning()
   tracker.startRecording()
 }
 async function onDeleteTrack(id) {
@@ -4676,7 +4686,8 @@ function ensureGhostIsomStyles(svg, container) {
 }
 
 watch(
-  () => [userPos.svgX, userPos.svgY, userPos.accuracyM, userPos.headingDeg],
+  () => [userPos.svgX, userPos.svgY, userPos.accuracyM,
+         compass.headingDeg, compass.isActive, userPos.headingDeg],
   () => updateUserDot()
 )
 
@@ -4687,7 +4698,14 @@ function updateUserDot() {
   const x = userPos.svgX
   const y = userPos.svgY
   const acc = userPos.accuracyM ?? 30
-  const heading = userPos.headingDeg
+  // Kjegla peker dit telefonen vender (kompass/magnetometer via DeviceOrientation)
+  // når kompasset er aktivt — det er retningen orienteringsbrukeren vil ha, og
+  // det virker også stillestående. GPS-kurs (coords.heading) er fallback når
+  // kompasset mangler/avvist; den er kun definert i bevegelse og peker dit du
+  // er på vei, ikke dit du vender.
+  const heading = (compass.isActive && Number.isFinite(compass.headingDeg))
+    ? compass.headingDeg
+    : userPos.headingDeg
   layer.replaceChildren()
   if (x == null || y == null) return
   const ns = 'http://www.w3.org/2000/svg'
@@ -5815,7 +5833,7 @@ onUnmounted(() => {
             </svg>
             Tegnforklaring
           </button>
-          <button @click="userPos.isWatching ? userPos.stop() : userPos.start()"
+          <button @click="userPos.isWatching ? userPos.stop() : startPositioning()"
                   class="px-2 py-2 rounded-lg border text-[11px] font-medium active:scale-[0.98]
                          flex flex-col items-center gap-1"
                   :class="userPos.isWatching

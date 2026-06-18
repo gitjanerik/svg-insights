@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-18 — v11.0.21: Retnings-kjegla følger kompasset, ny «mange kart»-melding
+
+Posisjons-kjegla (den lyseblå sektoren ut fra GPS-prikken) peker nå dit telefonen **vender**, basert på kompasset (magnetometer/gyro via `DeviceOrientationEvent`) i stedet for GPS-kursen. Før brukte den `coords.heading` fra GPS, som kun er definert mens du er i bevegelse og peker dit du er på vei — derfor var kjegla usynlig når du stod stille og upålitelig i gangfart. Nå virker den stillestående og viser faktisk peke-retning, som er det orienteringsbrukeren trenger for å vri kartet rett. Kompasset auto-startes i samme bruker-gest som GPS-en (kritisk for iOS som krever permission innenfor et tap); GPS-kurs beholdes som fallback hvis kompasset mangler eller avvises.
+
+Datamengde-advarselen på «Mine kart» er fjernet — lagrede turkart er forsvinnende små filer, så «kan bruke flere MB»-teksten var villedende. Erstattet med en melding som kun vises når du har **mer enn 5 lagrede kart**: «Du har mange og potensielt utdaterte kart. Slett kart du ikke trenger lenger for å holde lista ryddig.»
+
+---
+
 ## 2026-06-18 — v11.0.20: Tynner ut tett plasserte parkerings-symboler
 
 Samme opprydding som ble gjort for busstopp gjelder nå parkering: tett plasserte vanlige P-skilt (ISOM 534) tynnes ut så det er minst **50 meter** mellom dem. Tett bebygde områder har én OSM-node/-way pr p-flekk (gateparkering, kjøpesenter, boligfelt), og uten uttynning ble kartet en uleselig vegg av blå P-skilt. **Utfartsparkering (534u) er unntatt og vises ALLTID uansett nærhet** — de er det viktigste utgangspunktet for marka-turer og skal aldri skjules; en vanlig P som ligger tett inntil en utfartsparkering droppes til fordel for utfarts-markøren. Uttynningen (`thinParkering` i `mapBuilder.js`) er greedy i SVG-meter-rom og fullt enhetstestet.
