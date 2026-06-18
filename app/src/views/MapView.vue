@@ -4542,7 +4542,22 @@ function buildGhostSvg(stored, activeMeta) {
     el.removeAttribute('data-name')
     el.removeAttribute('data-detail')
   }
-  gsvg.querySelector('#bakgrunn')?.removeAttribute('id')
+  // Bakgrunns-rektangelet må følge tema-bytte. Vi stripper #bakgrunn-id-en (unngå
+  // duplikat-id i DOM-en med aktiv flis), men da slutter aktiv-flisas CSS-regel
+  // `.isom-map #bakgrunn rect { fill: var(--bg) }` å treffe spøkelsets bakgrunn →
+  // den ble hengende på det inline LYSE default-fyllet (kremgul) også i mørkt/
+  // Curves-tema, så nybygde utvidelses-fliser rendret lyse mens aktiv flis var
+  // mørk (rapportert v11.0.x: «halvt mørkt, halvt kremgult kart»). Skriv fyllet om
+  // til var(--bg, <inline default>) så det arver --bg fra mapInnerRef som aktiv flis.
+  const ghostBg = gsvg.querySelector('#bakgrunn')
+  if (ghostBg) {
+    ghostBg.removeAttribute('id')
+    const bgRect = ghostBg.querySelector('rect')
+    if (bgRect) {
+      const fallback = bgRect.getAttribute('fill') || isomCatalog.background.color
+      bgRect.setAttribute('fill', `var(--bg, ${fallback})`)
+    }
+  }
 
   return { el: gsvg, rect: { x: off.dx, y: off.dy, w: Wg, h: Hg } }
 }
