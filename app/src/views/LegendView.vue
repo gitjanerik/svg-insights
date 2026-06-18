@@ -28,7 +28,7 @@ const SECTIONS = [
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger', codes: ['521', '522', '532', '525', '528'], category: 'manmade' },
   { title: 'Parkering & service', codes: ['534', '534u', '560'], category: 'manmade',
-    note: 'Utfartsparkering (P med sti eller skogsbilvei innen 100 m) får fire sorte hjørne-braketter rundt det blå P-skiltet — en sannsynlig god kandidat for turstart. Vanlig/privat parkering er blå uten braketter. (Sorte braketter framfor grønn ramme: grønt mot blått er vanskelig for fargeblinde.) I kart-søket dukker disse opp som «Utfartsparkering ‹sted›» med en * etter navnet, der ‹sted› er nærmeste fjelltopp/ås/elv/vann (f.eks. «Utfartsparkering Knivåsen»). * betyr at navnet er utledet fra kart-data — ikke et offisielt navn eller en garantert turstart.' },
+    note: 'Utfartsparkering (P med sti eller skogsbilvei innen 50 m) får fire sorte hjørne-braketter rundt det blå P-skiltet — en sannsynlig god kandidat for turstart. Vanlig/privat parkering er blå uten braketter. (Sorte braketter framfor grønn ramme: grønt mot blått er vanskelig for fargeblinde.) I kart-søket dukker disse opp som «Utfartsparkering ‹sted›» med en * etter navnet, der ‹sted› er nærmeste fjelltopp/ås/elv/vann (f.eks. «Utfartsparkering Knivåsen»). * betyr at navnet er utledet fra kart-data — ikke et offisielt navn eller en garantert turstart.' },
   { title: 'Verneområder', codes: ['520'], category: 'manmade',
     note: 'Naturreservat, nasjonalpark og landskapsvernområde hentet fra OSM (leisure=nature_reserve / boundary=protected_area). Lett grønn overlay matcher Kartverkets konvensjon.' },
 ]

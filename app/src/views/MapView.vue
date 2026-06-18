@@ -5497,7 +5497,12 @@ onUnmounted(() => {
           <div class="text-[10px] text-emerald-100/90">Sikt med krysset, trykk Bekreft</div>
         </template>
         <template v-else>
-          <div v-if="sti.error.value" class="text-[12px] font-semibold">{{ sti.error.value }}</div>
+          <template v-if="sti.error.value">
+            <div class="text-[12px] font-semibold">{{ sti.error.value }}</div>
+            <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/90 mt-0.5 tabular-nums">
+              Luftlinje A→B: {{ formatDistance(sti.directDistanceM.value) }}
+            </div>
+          </template>
           <template v-else>
             <div class="text-[12px] font-semibold mb-1">
               {{ sti.routes.value.length }} {{ sti.routes.value.length === 1 ? 'rute' : 'ruter' }}
@@ -5513,6 +5518,9 @@ onUnmounted(() => {
                   {{ formatDistance(r.lengthM) }} · {{ sti.estWalkMinutes(r.lengthM) }} min
                 </span>
               </button>
+            </div>
+            <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/80 mt-1 tabular-nums">
+              Luftlinje A→B: {{ formatDistance(sti.directDistanceM.value) }}
             </div>
           </template>
         </template>

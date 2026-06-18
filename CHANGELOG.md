@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-18 — v11.0.10: Utfartsparkering 100 → 50 m + Stifinner over vei/skogsbilvei
+
+To små endringer i samme slengen:
+
+**Utfartsparkering — nærhets-terskel reversert 100 → 50 m.** Reverserer v11.0.9 så sti og skogsbilvei har like forutsetninger for å kvalifisere en P-plass som utfartsparkering. Store plasser som MIF-hytta er uansett søkbare når man oppretter nytt kart — er turstarten allerede planlagt et slikt sted, trenger ikke brukeren utfarts-markøren.
+
+**Stifinner kobler vei + skogsbilvei + sti bedre.** Routing-grafen snapper nå kryss på 6 m (var 3 m) så en adkomstvei/skogsbilvei og stien den møter havner i samme sammenhengende nett — tidligere falt de i hver sin frakoblede komponent, og man fikk «ingen treff» når startpunktet lå på en P-plass ved en vei istedenfor rett på stien. I tillegg vises **luftlinje A→B** i Stifinner-panelet (både ved treff og når ingen sammenhengende rute finnes), så man alltid ser den faktiske avstanden mellom punktene. Feilmeldingene sier nå «sti eller vei» i stedet for bare «sti».
+
+---
+
 ## 2026-06-18 — v11.0.9: Utfartsparkering — nærhets-terskel hevet 50 → 100 m
 
 Nærhets-kravet (b) er hevet fra 50 m til 100 m for både sti og skogsbilvei. Det er ofte litt flytende hvor selve P-plassen plasseres på kartet og hvor skogsbilveien «starter», og store P-plasser markeres på sentroiden — for en kjempestor, avlang plass (MIF-hytta i Drammen) kan avstanden fra sentroid til veien lett bli > 50 m selv om plassen i praksis ligger inntil. 100 m fanger disse uten å bli for sjenerøs. Kart, tegnforklaring og katalog-doc oppdatert.

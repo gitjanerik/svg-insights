@@ -37,6 +37,16 @@ export function useStifinner() {
 
   const active = computed(() => mode.value !== 'idle')
 
+  // Luftlinje (rett strek) A→B i meter. SVG-rommet er i meter (viewBox), så
+  // dette er ekte avstand. Tilgjengelig så snart både start og mål er satt —
+  // også når ingen sammenhengende rute finnes, så brukeren alltid ser den
+  // faktiske A→B-avstanden.
+  const directDistanceM = computed(() => {
+    const a = start.value, b = destination.value
+    if (!a || !b) return null
+    return Math.hypot(a.svgX - b.svgX, a.svgY - b.svgY)
+  })
+
   function begin(dest) {
     destination.value = { svgX: dest.svgX, svgY: dest.svgY }
     start.value = null
@@ -103,18 +113,25 @@ export function useStifinner() {
       return
     }
 
-    const rg = buildRoutingGraph(features, { snapM: 3 })
+    // snapM=6: routbare lag dekker vei + skogsbilvei + sti (ROUTABLE_CODES),
+    // men der en adkomstvei møter en sti er endepunktene ofte nudget noen
+    // meter fra hverandre etter rendering/DP-forenkling. 6 m slår sammen
+    // slike kryss så en tur som går vei → skogsbilvei → sti henger sammen
+    // i grafen (var 3 m, som lot road- og sti-nettet falle i hver sin
+    // frakoblede komponent → «fant ingen rute» når man startet på en P-plass
+    // ved en vei).
+    const rg = buildRoutingGraph(features, { snapM: 6 })
     const aPos = [start.value.svgX, start.value.svgY]
     const bPos = [destination.value.svgX, destination.value.svgY]
     const aNode = rg.nearestNode(aPos)
     const bNode = rg.nearestNode(bPos)
 
     if (!aNode || aNode.distM > MAX_SNAP_M) {
-      error.value = 'Ingen sti i nærheten av startpunktet'
+      error.value = 'Ingen sti eller vei i nærheten av startpunktet'
       return
     }
     if (!bNode || bNode.distM > MAX_SNAP_M) {
-      error.value = 'Ingen sti i nærheten av målet'
+      error.value = 'Ingen sti eller vei i nærheten av målet'
       return
     }
     startSnap.value = { x: aNode.pos[0], y: aNode.pos[1] }
@@ -138,7 +155,7 @@ export function useStifinner() {
 
   return {
     mode, active, destination, start, routes, selectedRouteIdx, error,
-    startSnap, destSnap,
+    startSnap, destSnap, directDistanceM,
     begin, cancel, confirmStart, selectRoute, estWalkMinutes,
   }
 }
