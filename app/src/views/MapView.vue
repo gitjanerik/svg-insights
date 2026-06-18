@@ -4836,9 +4836,26 @@ async function renderGhostTiles() {
     // derfor mangler i dens lazy CSS) får fyll-/strek-regler — ellers rendres de
     // svart. Deretter respekterer vi lag-toggling (f.eks. bymasse av) på dem.
     ensureGhostIsomStyles(svg, container)
+    ensureGhostStrokeStyle(svg)
     applyLayerVisibility()
   }
   clampPan()   // utvid pan-grensa til mosaikken
+}
+
+// Gi spøkelses-strekene SAMME non-scaling-stroke som aktiv flis. Nyere kart har
+// regelen bakt inn i sin egen <style> (symbolizer.js), men eldre lagrede kart —
+// som kan være den AKTIVE flisa hvis spøkelsene farges av dens <style> — har den
+// ikke, så uten denne runtime-injeksjonen skalerer spøkelses-strekene med zoom og
+// blir tynnere enn originalen (rapportert v11.0.15). is-zooming-varianten bevarer
+// gest-perf (ingen re-tessellering per frame under pinch).
+function ensureGhostStrokeStyle(svg) {
+  if (svg.querySelector('#ghost-stroke-style')) return
+  const st = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+  st.setAttribute('id', 'ghost-stroke-style')
+  st.textContent =
+    '.isom-map [data-ghost-layer] path{vector-effect:non-scaling-stroke}' +
+    '.isom-map.is-zooming [data-ghost-layer] path{vector-effect:none}'
+  svg.insertBefore(st, svg.firstChild)
 }
 
 // Den aktive flisas <style> er «lazy» (v9.1.10) — den emitterer kun ISOM-regler

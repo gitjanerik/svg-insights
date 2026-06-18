@@ -519,13 +519,17 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Bakgrunn-rect bruker også --bg så mørk modus erstatter den kremgule
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
   rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)
-  rules.push(`${root} [data-layer] path { vector-effect: non-scaling-stroke; }`)
+  // Mosaikk-spøkelser (data-ghost-layer) får SAMME non-scaling-stroke som aktiv
+  // flis, ellers skalerer strekene deres med zoom og blir tynnere enn originalen
+  // når man zoomer ut for å se hele 2×2-mosaikken (rapportert v11.0.15). Samme
+  // gest-perf-unntak under (.is-zooming) så de re-tessellerer ikke per frame.
+  rules.push(`${root} [data-layer] path, ${root} [data-ghost-layer] path { vector-effect: non-scaling-stroke; }`)
   // v8.10.3 — Perf: under aktiv pinch/wheel-gest slår vi av non-scaling-stroke
   // så browseren slipper å re-tessellere stroke-geometri i device-piksler per
   // frame. Strokene skalerer med viewBox-transformen mens gesten varer
   // (visuelt OK i 200 ms) og snapper tilbake til riktig bredde via klassen
   // som fjernes etter gesten. Stor frame-rate-gevinst på store kart.
-  rules.push(`${root}.is-zooming [data-layer] path { vector-effect: none; }`)
+  rules.push(`${root}.is-zooming [data-layer] path, ${root}.is-zooming [data-ghost-layer] path { vector-effect: none; }`)
   // v8.10.3 — Perf: CSS containment isolerer layer-grupper så browseren kan
   // skippe repaint av lag som ikke har endret seg (toggle av/på, hill-shade
   // re-render osv). `paint` containment betyr at lag-en ikke "smitter" visuelt
