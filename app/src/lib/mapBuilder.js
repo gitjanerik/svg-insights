@@ -1909,8 +1909,10 @@ export function buildSvg(elements, bbox, options = {}) {
   // Søk i kartet etter «parkering» skal liste utfartsparkeringene med et
   // gjenkjennelig navn. Vi velger nærmeste navngitte feature i PRIORITERT
   // rekkefølge: fjelltopp → ås → elv → vann (brukerens ønske). Et P-punkt
-  // ved Knivåsen blir «Knivåsen Utfartsparkering». Navnet emitteres som
-  // data-name på 534u-markøren og plukkes opp av søkeindeksen (useMapSearch).
+  // ved Knivåsen blir «Utfartsparkering Knivåsen» (typen først, så stedet).
+  // Navnet emitteres som data-name på 534u-markøren og plukkes opp av
+  // søkeindeksen (useMapSearch); det er IKKE et offisielt navn, så UI-en
+  // merker det med en ★ og et forbehold.
   // Tier 0=fjelltopp (natural=peak/saddle), 1=ås (place-navn med terreng-
   // suffiks), 2=elv (waterway river/stream/canal), 3=vann (navngitt innsjø).
   // Tier 4 = nærmeste øvrige stedsnavn som fallback når ingen natur-feature
@@ -1950,7 +1952,7 @@ export function buildSvg(elements, bbox, options = {}) {
         best = { tier: c.tier, name: c.name, d }
       }
     }
-    return best ? `${best.name} Utfartsparkering` : 'Utfartsparkering'
+    return best ? `Utfartsparkering ${best.name}` : 'Utfartsparkering'
   }
 
   const parkeringSize = 7.2

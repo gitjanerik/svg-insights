@@ -5150,11 +5150,11 @@ onUnmounted(() => {
                          border-white/8 last:border-0 flex items-center gap-2">
             <div class="flex-1 min-w-0">
               <div class="text-[13px] font-medium text-white truncate">
-                <span v-if="r.kind === 'parkering'" class="text-amber-300" aria-hidden="true">★ </span>{{ r.name }}
+                {{ r.name }}<span v-if="r.kind === 'parkering'" class="text-amber-400" aria-hidden="true"> ★</span>
               </div>
               <div class="text-[10px] text-white/45 uppercase tracking-wide">{{ r.label }}</div>
-              <div v-if="r.kind === 'parkering'" class="text-[10px] text-amber-300/80 leading-tight mt-0.5">
-                ★ Sannsynlig turstart — navnet er utledet fra nærmeste sted, ikke et offisielt navn
+              <div v-if="r.kind === 'parkering'" class="text-[10px] text-white/45 leading-tight mt-0.5">
+                <span class="text-amber-400">★</span> Navnet er utledet fra nærmeste sted, ikke et offisielt navn
               </div>
             </div>
             <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-white/35 shrink-0" fill="none"

@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-06-18 — v11.0.6: Utfartsparkering — navnerekkefølge «Utfartsparkering ‹sted›» + dempet ★
+
+Finpuss av v11.0.5 etter at ★-ikonet og den gule skriften ble litt for voldsom i søket:
+
+- Navnet snus til **«Utfartsparkering ‹sted›»** (typen først), f.eks. «Utfartsparkering Knivåsen». Gjelder overalt — søk, kart-highlight og info-chip — siden navnet kommer fra `data-name` på markøren.
+- ★ flyttes til **etter** navnet i søkeresultatet, og **kun selve stjernetegnet er gult** — resten av teksten er dempet som før.
+- Forklaringslinja er kortet ned til «★ Navnet er utledet fra nærmeste sted, ikke et offisielt navn» (droppet «Sannsynlig turstart —»).
+- I Tegnforklaring-siden vises ★ som gult stjerneikon i note-teksten.
+
+---
+
 ## 2026-06-18 — v11.0.5: Utfartsparkering — ★-merking og «forslag, ikke offisielt»-forbehold
 
 Vi skal være forsiktige med å påberope oss «<sted> Utfartsparkering» som et faktum — navnet er en heuristikk utledet fra nærmeste fjelltopp/ås/elv/vann. Navnet beholdes i søk og tegnforklaring, men:

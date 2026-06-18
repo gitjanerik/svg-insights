@@ -150,10 +150,10 @@ describe('useMapSearch', () => {
       // folded settes via foldName så vi ikke hardkoder feil (å → a, ikke aa)
       const entry = (id, name, extra) => ({ id, name, folded: foldName(name), ...extra })
       const idx = [
-        entry('p1', 'Knivåsen Utfartsparkering', {
+        entry('p1', 'Utfartsparkering Knivåsen', {
           kind: 'parkering', label: 'Parkering', x: 100, y: 100, categories: ['parkering'], areaM2: null,
         }),
-        entry('p2', 'Vardåsen Utfartsparkering', {
+        entry('p2', 'Utfartsparkering Vardåsen', {
           kind: 'parkering', label: 'Parkering', x: 200, y: 200, categories: ['parkering'], areaM2: null,
         }),
         entry('v1', 'Hestesund', {
@@ -163,8 +163,8 @@ describe('useMapSearch', () => {
 
       it('"parkering" lister alle utfartsparkeringer, ikke vann', () => {
         const names = filterIndex(idx, 'parkering').map(r => r.name)
-        expect(names).toContain('Knivåsen Utfartsparkering')
-        expect(names).toContain('Vardåsen Utfartsparkering')
+        expect(names).toContain('Utfartsparkering Knivåsen')
+        expect(names).toContain('Utfartsparkering Vardåsen')
         expect(names).not.toContain('Hestesund')
       })
 
@@ -176,7 +176,7 @@ describe('useMapSearch', () => {
 
       it('navnesøk på nærmeste-feature ("knivåsen") treffer P-en', () => {
         const results = filterIndex(idx, 'knivåsen')
-        expect(results.map(r => r.name)).toEqual(['Knivåsen Utfartsparkering'])
+        expect(results.map(r => r.name)).toEqual(['Utfartsparkering Knivåsen'])
       })
     })
   })
