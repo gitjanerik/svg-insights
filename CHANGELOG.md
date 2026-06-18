@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.18: Alltid firkantet bruttokart + «Gjør dette til hovedkart»
+
+Kant-sonene utvider nå HELE det firkantede bruttokartet, så formatet alltid forblir rektangulært (ingen L-former). En kardinal-knapp (N/S/Ø/V) bygger en hel rad/kolonne langs den siden; en diagonal (NV/NØ/SV/SØ) bygger ny rad + ny kolonne + hjørne (vokser begge dimensjoner). Allerede-bygde fliser hoppes over, så man betaler kun for det som mangler. Geometrien regnes fra bruttoens yttergrense (aktiv flis ∪ nabofliser), som nå alltid er et rektangel — det fikser også at N-knappen tidligere kunne drive mot en diagonal-nabo i stedet for å ligge over toppen av kartet. «Bruk dette utsnittet»-knappen er døpt om til det tydeligere «Gjør dette til hovedkart».
+
+---
+
 ## 2026-06-18 — v11.0.17: Fjernet auto-kart, fri-form utvidelse, «bruk dette utsnittet», maks-fliser-slider + relieff-bryter
 
 Den automatiske auto-karten (bygg/prefetch når man drar forbi kanten + promotér-på-dvele) er fjernet — den byttet aktivt kart stille og forvirret. Nå har brukeren full kontroll: kant-sonene utvider kartet ett utsnitt om gangen (fri-form union — også diagonalene bygger nå kun ÉN flis, så mosaikken kan følge en trasé), og en «Bruk dette utsnittet»-knapp dukker opp når skjermsenteret står over en nabo-flis, så man kan gjøre den aktiv og bygge videre. Byttet er sømløst (ingen full-skjerm-loader). Auto-kart-bryteren i Innstillinger er erstattet med en **Maks kartfliser**-slider (4/9/16/25/36, default 16) som styrer hvor mange utsnitt mosaikk-cachen beholder. Ny **Relieff**-bryter slår terrengskygge helt av (skjuler relieff-knappen og hopper over hillshade-genereringen for både aktiv flis og naboer — sparer minne/GPU på svake enheter); fikser samtidig at naboflisene tidligere genererte hillshade-bilder selv når relieff var av. Oversiktssiden viser nå lagringsstørrelse per kart + totalt, med en «føre var»-melding om at store turkart bruker plass. Mosaikk-rendering, tile-cachen og «autoMap»-navn i koden er beholdt.

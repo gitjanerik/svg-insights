@@ -3855,40 +3855,46 @@ function autoMapBuildOpts(centerSvg) {
 }
 
 // ── Manuell kart-utvidelse (kant-soner) ─────────────────────────────────────
-// 8 klikkbare kant-soner lar brukeren legge til ETT nytt kartutsnitt i valgt
-// retning (fri-form union — også diagonalene bygger kun 1 flis, så mosaikken kan
-// bli L-form/trappe). Sentrum flyttes til grensen (kardinal) / hjørnet (diagonal)
-// mellom gammelt og nytt; brukeren beholder valgt zoom. For å bygge videre utover
-// gjør man en nabo-flis aktiv via «Bruk dette utsnittet»-knappen og utvider derfra.
-// Gjenbruker mosaikken: buildMapFromCenter (isAuto) + renderGhostTiles.
+// 8 klikkbare kant-soner utvider HELE det (firkantede) bruttokartet i valgt
+// retning, så formatet alltid forblir rektangulært: en kardinal-knapp (N/S/Ø/V)
+// bygger en hel rad/kolonne langs den siden, en diagonal (NV/NØ/SV/SØ) bygger ny
+// rad + ny kolonne + hjørne (vokser begge dimensjoner med 1). Allerede-bygde
+// fliser hoppes over (centerOverExistingTile), så man betaler kun for det som
+// mangler. Sentrum flyttes til grensen/hjørnet; zoom beholdes. Gjenbruker
+// mosaikken: buildMapFromCenter (isAuto) + renderGhostTiles.
 const EXTEND_DIR_WORD = {
   N: 'nord', S: 'sør', E: 'øst', W: 'vest',
   NE: 'nordøst', NW: 'nordvest', SE: 'sørøst', SW: 'sørvest',
 }
 
-// Geometri for en kant-sone i aktiv-flisas SVG-meter-rom. Returnerer nabo-flisas
-// senter (ÉN flis) + pan-punktet (grense-midt for kardinal, hjørne for diagonal).
-// SVG-y vokser nedover, så nord = mindre y. panPoint nudges ~1 m INNOVER mot
-// sentrum så `c.x <= widthM` / `c.y >= 0` holder etter panTo.
+// Geometri for en kant-sone i aktiv-flisas SVG-meter-rom, basert på YTTERGRENSA
+// til hele bruttokartet (aktiv flis ∪ alle nabofliser). Returnerer senter for hver
+// nye flis som trengs for å holde bruttoen rektangulær + pan-punktet (grense-midt
+// for kardinal, hjørne for diagonal). SVG-y vokser nedover → nord = mindre y.
 function extendMapGeometry(direction) {
   const m = meta.value
   if (!m) return null
   const W = m.widthM, H = m.heightM
-  const cx = W / 2, cy = H / 2
-  const e = 1   // innover-nudge i meter
-  const E_ = { x: cx + W, y: cy }, W_ = { x: cx - W, y: cy }
-  const N_ = { x: cx, y: cy - H }, S_ = { x: cx, y: cy + H }
-  const NE_ = { x: cx + W, y: cy - H }, NW_ = { x: cx - W, y: cy - H }
-  const SE_ = { x: cx + W, y: cy + H }, SW_ = { x: cx - W, y: cy + H }
+  const b = extendZonesBounds()   // { minX, minY, maxX, maxY } — bruttoens union
+  const e = 1                     // innover-nudge i meter
+  const cols = Math.max(1, Math.round((b.maxX - b.minX) / W))
+  const rows = Math.max(1, Math.round((b.maxY - b.minY) / H))
+  // En vertikal kolonne (rows fliser) med venstrekant ved xLeft.
+  const colAt = (xLeft) => Array.from({ length: rows },
+    (_, r) => ({ x: xLeft + W / 2, y: b.minY + (r + 0.5) * H }))
+  // En horisontal rad (cols fliser) med toppkant ved yTop.
+  const rowAt = (yTop) => Array.from({ length: cols },
+    (_, c) => ({ x: b.minX + (c + 0.5) * W, y: yTop + H / 2 }))
+  const midX = (b.minX + b.maxX) / 2, midY = (b.minY + b.maxY) / 2
   switch (direction) {
-    case 'N': return { neighborCenters: [N_], panPoint: { x: cx, y: e } }
-    case 'S': return { neighborCenters: [S_], panPoint: { x: cx, y: H - e } }
-    case 'E': return { neighborCenters: [E_], panPoint: { x: W - e, y: cy } }
-    case 'W': return { neighborCenters: [W_], panPoint: { x: e, y: cy } }
-    case 'NE': return { neighborCenters: [NE_], panPoint: { x: W - e, y: e } }
-    case 'NW': return { neighborCenters: [NW_], panPoint: { x: e, y: e } }
-    case 'SE': return { neighborCenters: [SE_], panPoint: { x: W - e, y: H - e } }
-    case 'SW': return { neighborCenters: [SW_], panPoint: { x: e, y: H - e } }
+    case 'N': return { neighborCenters: rowAt(b.minY - H), panPoint: { x: midX, y: b.minY + e } }
+    case 'S': return { neighborCenters: rowAt(b.maxY), panPoint: { x: midX, y: b.maxY - e } }
+    case 'E': return { neighborCenters: colAt(b.maxX), panPoint: { x: b.maxX - e, y: midY } }
+    case 'W': return { neighborCenters: colAt(b.minX - W), panPoint: { x: b.minX + e, y: midY } }
+    case 'NE': return { neighborCenters: [...colAt(b.maxX), ...rowAt(b.minY - H), { x: b.maxX + W / 2, y: b.minY - H / 2 }], panPoint: { x: b.maxX - e, y: b.minY + e } }
+    case 'NW': return { neighborCenters: [...colAt(b.minX - W), ...rowAt(b.minY - H), { x: b.minX - W / 2, y: b.minY - H / 2 }], panPoint: { x: b.minX + e, y: b.minY + e } }
+    case 'SE': return { neighborCenters: [...colAt(b.maxX), ...rowAt(b.maxY), { x: b.maxX + W / 2, y: b.maxY + H / 2 }], panPoint: { x: b.maxX - e, y: b.maxY - e } }
+    case 'SW': return { neighborCenters: [...colAt(b.minX - W), ...rowAt(b.maxY), { x: b.minX - W / 2, y: b.maxY + H / 2 }], panPoint: { x: b.minX + e, y: b.maxY - e } }
     default: return null
   }
 }
@@ -3903,7 +3909,7 @@ function centerOverExistingTile(c, m) {
   return ghostRects.value.some(g => rectOverlapFraction(newRect, g) > GHOST_TRIGGER_SUPPRESS_FRAC)
 }
 
-// Gjør spøkelses-flisa `g` til aktiv flis (eksplisitt «Bruk dette utsnittet»).
+// Gjør spøkelses-flisa `g` til aktiv flis (eksplisitt «Gjør dette til hovedkart»).
 // Bytter via router (oppdaterer mapId → annoteringer, spor, DEM bindes korrekt for
 // den nye flisa). promoteView i init-prefs lar loadMap panne slik at samme
 // geografiske punkt blir liggende under skjermsenter etter skiftet, og loadMap
@@ -3924,7 +3930,7 @@ function promoteTile(g, c) {
   router.replace({ name: 'kart-vis', params: { id: g.id } })
 }
 
-// «Bruk dette utsnittet»-knappen: gjør flisa under skjermsenter aktiv (for videre
+// «Gjør dette til hovedkart»-knappen: gjør flisa under skjermsenter aktiv (for videre
 // utvidelse/kjeding utover).
 function activateTileUnderCenter() {
   const g = activatableTile.value
@@ -4001,7 +4007,7 @@ async function extendMap(direction) {
         .then(() => { void refreshAutoTileCount() })
         .catch(() => {})
     } catch { /* svgToWgs84 feilet → hopp over pruning */ }
-    showAutoMapToast(`Nytt utsnitt mot ${EXTEND_DIR_WORD[direction]}`)
+    showAutoMapToast(`Utvidet kartet mot ${EXTEND_DIR_WORD[direction]}`)
   } catch (e) {
     console.error('Kant-sone-utvidelse feilet:', e)
     showAutoMapToast('Kunne ikke lage nytt utsnitt')
@@ -5629,7 +5635,7 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- «Bruk dette utsnittet»: skjermsenteret står over en nabo-flis i mosaikken.
+    <!-- «Gjør dette til hovedkart»: skjermsenteret står over en nabo-flis i mosaikken.
          Eksplisitt bytte av aktiv flis (for videre utvidelse) — sømløst, ingen
          spinner. Vises kun når en kandidat finnes og ingen annen modus eier UI-en. -->
     <button v-if="!loading && activatableTile && !curveball.active.value && !showControls"
@@ -5643,7 +5649,7 @@ onUnmounted(() => {
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/>
       </svg>
-      Bruk dette utsnittet
+      Gjør dette til hovedkart
     </button>
 
     <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
