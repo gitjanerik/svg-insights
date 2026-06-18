@@ -1879,10 +1879,11 @@ export function buildSvg(elements, bbox, options = {}) {
   // data-upright="1" gjør at MapView counter-roterer symbolet ved kart-
   // rotasjon, så "P" alltid leses vannrett med skjermens topp som rettesnor.
   //
-  // Utfartsparkering (offentlig/trailhead) skilles ut med blått P-skilt + grønn
-  // ramme (parkering-utfart, kode 534u) i stedet for vanlig blå P, og det blå
-  // feltet er ~50 % større, så den foretrukne plassen for marka-turer fanger
-  // blikket blant de mange private P-plassene. data-iso = 534 / 534u for
+  // Utfartsparkering (offentlig/trailhead) skilles ut med vanlig blått P-skilt
+  // + fire frittstående sorte hjørne-braketter (parkering-utfart, kode 534u),
+  // så den foretrukne plassen for marka-turer fanger blikket blant de mange
+  // private P-plassene. Sorte braketter framfor grønn ramme fordi grønt-mot-
+  // blått svikter for blå-grønn-fargeblinde. data-iso = 534 / 534u for
   // Tegnforklaring-kobling.
   //
   // KVALIFISERING (begge MÅ gjelde):
@@ -1904,8 +1905,56 @@ export function buildSvg(elements, bbox, options = {}) {
       }
     }
   }
+  // ── Navngi utfartsparkering etter nærmeste natur-feature ──────────────
+  // Søk i kartet etter «parkering» skal liste utfartsparkeringene med et
+  // gjenkjennelig navn. Vi velger nærmeste navngitte feature i PRIORITERT
+  // rekkefølge: fjelltopp → ås → elv → vann (brukerens ønske). Et P-punkt
+  // ved Knivåsen blir «Knivåsen Utfartsparkering». Navnet emitteres som
+  // data-name på 534u-markøren og plukkes opp av søkeindeksen (useMapSearch).
+  // Tier 0=fjelltopp (natural=peak/saddle), 1=ås (place-navn med terreng-
+  // suffiks), 2=elv (waterway river/stream/canal), 3=vann (navngitt innsjø).
+  // Tier 4 = nærmeste øvrige stedsnavn som fallback når ingen natur-feature
+  // ligger innenfor radiusen.
+  const AAS_SUFFIX_RE = /(ås|åsen|åsane|kollen|koll|haugen|haug|nuten|nut|fjell|fjellet|berg|berget|heia|høgda|toppen|varden|egga|eggen|pigg|piggen|kletten?)$/i
+  const nameCands = []  // { tier, x, y, name }
+  const pushNameCand = (tier, x, y, name) => {
+    const nm = (name ?? '').trim()
+    if (nm && Number.isFinite(x) && Number.isFinite(y)) nameCands.push({ tier, x, y, name: nm })
+  }
+  for (const e of peaks) {
+    if (!e.tags?.name) continue
+    const p = project(e.lat, e.lon); pushNameCand(0, p.x, p.y, e.tags.name)
+  }
+  for (const e of places) {
+    const nm = e.tags?.name
+    if (!nm) continue
+    const p = project(e.lat, e.lon)
+    pushNameCand(AAS_SUFFIX_RE.test(nm) ? 1 : 4, p.x, p.y, nm)
+  }
+  for (const e of elements) {
+    const wy = e.tags?.waterway
+    if ((wy === 'river' || wy === 'stream' || wy === 'canal') && e.tags?.name && e.geometry?.length) {
+      const mid = e.geometry[Math.floor(e.geometry.length / 2)]
+      const p = project(mid.lat, mid.lon); pushNameCand(2, p.x, p.y, e.tags.name)
+    }
+  }
+  for (const l of lakeLabels) pushNameCand(3, l.x, l.y, l.name)
+
+  const NAME_MAX_DIST_M = 1500
+  const utfartName = (p) => {
+    let best = null
+    for (const c of nameCands) {
+      const d = Math.hypot(c.x - p.x, c.y - p.y)
+      if (d > NAME_MAX_DIST_M) continue
+      if (!best || c.tier < best.tier || (c.tier === best.tier && d < best.d)) {
+        best = { tier: c.tier, name: c.name, d }
+      }
+    }
+    return best ? `${best.name} Utfartsparkering` : 'Utfartsparkering'
+  }
+
   const parkeringSize = 7.2
-  const parkeringUtfartSize = 11.25  // grønn-ramme-symbol: blått felt ≈ 8.1mm (= 1.5 × vanlig 5.4mm)
+  const parkeringUtfartSize = 10.8  // braketter-symbol: blått felt 5.4mm (= vanlig P); brakettene strekker til ≈9.7mm
   const parkeringSvg = parkeringer.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
@@ -1918,7 +1967,10 @@ export function buildSvg(elements, bbox, options = {}) {
     const size = utfart ? parkeringUtfartSize : parkeringSize
     const half = size / 2
     const iso = utfart ? '534u' : '534'
-    return `    <g data-upright="1" data-iso="${iso}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(size)}mm" height="${fmt(size)}mm"/></g>`
+    // Utfartsparkering får data-name (nærmeste natur-feature) så den blir
+    // søkbar på «parkering». Vanlig privat P (534) forblir unavngitt.
+    const nameAttr = utfart ? ` data-name="${xmlEscape(utfartName(p))}"` : ''
+    return `    <g data-upright="1" data-iso="${iso}"${nameAttr} transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(size)}mm" height="${fmt(size)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Holdeplass (ISOM 560-derivert): blå buss-symbol 6.0mm. OSM-node-posisjon.

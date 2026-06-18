@@ -145,6 +145,40 @@ describe('useMapSearch', () => {
       expect(results.length).toBe(1)
       expect(results[0].name).toBe('Trondheimsfjorden')
     })
+
+    describe('parkering-kategori (utfartsparkering)', () => {
+      // folded settes via foldName så vi ikke hardkoder feil (å → a, ikke aa)
+      const entry = (id, name, extra) => ({ id, name, folded: foldName(name), ...extra })
+      const idx = [
+        entry('p1', 'Knivåsen Utfartsparkering', {
+          kind: 'parkering', label: 'Parkering', x: 100, y: 100, categories: ['parkering'], areaM2: null,
+        }),
+        entry('p2', 'Vardåsen Utfartsparkering', {
+          kind: 'parkering', label: 'Parkering', x: 200, y: 200, categories: ['parkering'], areaM2: null,
+        }),
+        entry('v1', 'Hestesund', {
+          kind: 'omrade', label: 'Vann', x: 300, y: 300, categories: ['vann'], areaM2: 9000,
+        }),
+      ]
+
+      it('"parkering" lister alle utfartsparkeringer, ikke vann', () => {
+        const names = filterIndex(idx, 'parkering').map(r => r.name)
+        expect(names).toContain('Knivåsen Utfartsparkering')
+        expect(names).toContain('Vardåsen Utfartsparkering')
+        expect(names).not.toContain('Hestesund')
+      })
+
+      it('"utfart" og "utfartsparkering" er synonymer for kategorien', () => {
+        const base = filterIndex(idx, 'parkering').map(r => r.name).sort()
+        expect(filterIndex(idx, 'utfart').map(r => r.name).sort()).toEqual(base)
+        expect(filterIndex(idx, 'utfartsparkering').map(r => r.name).sort()).toEqual(base)
+      })
+
+      it('navnesøk på nærmeste-feature ("knivåsen") treffer P-en', () => {
+        const results = filterIndex(idx, 'knivåsen')
+        expect(results.map(r => r.name)).toEqual(['Knivåsen Utfartsparkering'])
+      })
+    })
   })
 
   describe('elementPosition', () => {

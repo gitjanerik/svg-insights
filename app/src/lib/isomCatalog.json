@@ -520,10 +520,10 @@
       },
       "534u": {
         "label": "Utfartsparkering (offentlig)",
-        "$comment": "Offentlig utfartsparkering — foretrukket når man skal ut i marka. Blått P-skilt med grønn ramme rundt (Forslag 5); det blå feltet er ~50 % større enn vanlig parkering (534). Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 50 m. scaleMm 3.75 gir blått felt ≈ 8,1 mm (= 1,5 × vanlig 5,4 mm).",
+        "$comment": "Offentlig utfartsparkering — foretrukket når man skal ut i marka. Vanlig blått P-skilt med fire frittstående sorte hjørne-braketter rundt (Variant B) som framhever den uten å bruke den fargeblind-uvennlige grønn-mot-blått-kombinasjonen. Det blå feltet er IDENTISK med vanlig parkering (534, 5,4 mm) — kun brakettene skiller dem. Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 50 m. scaleMm 3.6 + viewBox 3 gir blått felt ≈ 5,4 mm; brakettene strekker symbolet til ≈ 9,7 mm.",
         "point": {
           "symbol": "parkering-utfart",
-          "scaleMm": 3.75
+          "scaleMm": 3.6
         }
       },
       "526": {
@@ -1148,23 +1148,15 @@
       ]
     },
     "parkering-utfart": {
-      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti innen 50 m. BEHOLDER det blå P-skiltet (P-konvensjon), men får en tykk GRØNN ramme rundt (Forslag 5) + 50 % større enn vanlig P, så den foretrukne marka-plassen skiller seg ut. Grønn ytre firkant ligger BAK det blå skiltet; det blå feltet er nedskalert til ±0,72 så den grønne margen blir synlig. mapBuilder skalerer slik at det blå feltet blir ~50 % større enn vanlig.",
-      "viewBox": "-1 -1 2 2",
+      "$comment": "Utfartsparkering — offentlig/trailhead-parkering med sti innen 50 m. BEHOLDER det helt vanlige blå P-skiltet UENDRET (samme rect+path som 'parkering'), men markeres med fire FRITTSTÅENDE sorte hjørne-braketter (Variant B) med luft rundt skiltet. Sort er valgt bevisst: grønn ramme rundt blått svikter for blå-grønn-fargeblinde (tritanopi) — sort skiller seg på lyshet og leses for alle CVD-typer. viewBox er -1.5..1.5 (3 enheter) så det blå P-et (rect ±0.75) fyller bare midtre 50 % og brakettene ved ±1.35 får luft; mapBuilder bruker parkeringUtfartSize=10.8 mm slik at selve det blå feltet blir 5.4 mm — IDENTISK med vanlig P (534).",
+      "viewBox": "-1.5 -1.5 3 3",
       "elements": [
         {
           "type": "rect",
-          "x": -0.98,
-          "y": -0.98,
-          "width": 1.96,
-          "height": 1.96,
-          "fill": "#2e7d32"
-        },
-        {
-          "type": "rect",
-          "x": -0.72,
-          "y": -0.72,
-          "width": 1.44,
-          "height": 1.44,
+          "x": -0.75,
+          "y": -0.75,
+          "width": 1.5,
+          "height": 1.5,
           "fill": "#1f5d8a"
         },
         {
@@ -1172,6 +1164,38 @@
           "d": "M -0.32 0.55 L -0.32 -0.55 L 0.08 -0.55 Q 0.45 -0.55 0.45 -0.18 Q 0.45 0.22 0.08 0.22 L -0.02 0.22 L -0.02 0.55 Z M -0.02 -0.05 L 0.05 -0.05 Q 0.2 -0.05 0.2 -0.18 Q 0.2 -0.3 0.05 -0.3 L -0.02 -0.3 Z",
           "fill": "#fff",
           "fillRule": "evenodd"
+        },
+        {
+          "type": "path",
+          "d": "M -0.85 -1.35 L -1.35 -1.35 L -1.35 -0.85",
+          "fill": "none",
+          "stroke": "#1a1a1a",
+          "strokeW": 0.12,
+          "linecap": "round"
+        },
+        {
+          "type": "path",
+          "d": "M 0.85 -1.35 L 1.35 -1.35 L 1.35 -0.85",
+          "fill": "none",
+          "stroke": "#1a1a1a",
+          "strokeW": 0.12,
+          "linecap": "round"
+        },
+        {
+          "type": "path",
+          "d": "M -0.85 1.35 L -1.35 1.35 L -1.35 0.85",
+          "fill": "none",
+          "stroke": "#1a1a1a",
+          "strokeW": 0.12,
+          "linecap": "round"
+        },
+        {
+          "type": "path",
+          "d": "M 0.85 1.35 L 1.35 1.35 L 1.35 0.85",
+          "fill": "none",
+          "stroke": "#1a1a1a",
+          "strokeW": 0.12,
+          "linecap": "round"
         }
       ]
     },
