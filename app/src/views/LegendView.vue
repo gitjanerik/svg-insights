@@ -28,7 +28,7 @@ const SECTIONS = [
   { title: 'Vinter & ski', codes: ['510', '511', '512'], category: 'manmade' },
   { title: 'Bygninger', codes: ['521', '522', '532', '525', '528'], category: 'manmade' },
   { title: 'Parkering & service', codes: ['534', '534u', '560'], category: 'manmade',
-    note: 'Utfartsparkering (offentlig) vises grønn og 50 % større enn vanlig/privat parkering — den er nesten alltid foretrukket når man skal ut i marka.' },
+    note: 'Utfartsparkering (offentlig, med sti innen 30 m) får grønn ramme rundt det blå P-skiltet og er 50 % større — den er nesten alltid foretrukket når man skal ut i marka. Vanlig/privat parkering er blå.' },
   { title: 'Verneområder', codes: ['520'], category: 'manmade',
     note: 'Naturreservat, nasjonalpark og landskapsvernområde hentet fra OSM (leisure=nature_reserve / boundary=protected_area). Lett grønn overlay matcher Kartverkets konvensjon.' },
 ]

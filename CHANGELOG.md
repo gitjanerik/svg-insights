@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.2: Utfartsparkering — grønn ramme + sti-krav (30 m)
+
+Justering av v11.0.1. P-skilt skal beholde sin blå konvensjon, så den grønne heldekkende bakgrunnen er byttet ut med en tykk **grønn ramme rundt det blå P-skiltet** (Forslag 5). Det blå feltet er fortsatt ~50 % større enn vanlig parkering. I tillegg er det innført en hard kvalifiseringsregel: en parkering markeres som utfartsparkering **kun hvis det finnes en sti (ISOM 505/506/507) innen 30 m** av P-punktet — i tillegg til det eksisterende kravet om offentlig access / utfart-navn. En offentlig P-plass uten sti i nærheten er ikke et reelt turutgangspunkt og forblir vanlig blå. Sti-avstanden måles i ekte meter mot den projiserte sti-geometrien (`isPointNearPolylines` i `pathUtils.js`, enhetstestet).
+
+---
+
 ## 2026-06-18 — v11.0.1: Utfartsparkering skiller seg ut — grønn og større
 
 Kartene har svært mange P-plasser, og de fleste er private. Nå skilles **offentlig utfartsparkering** ut fra mengden: den tegnes med grønn bakgrunn (i stedet for den vanlige blå) og 50 % større, så den foretrukne plassen for en marka-tur fanger blikket. En parkering regnes som utfartsparkering når navn/operator/beskrivelse nevner utfart/tur/friluft, eller når OSM-tilgangen er eksplisitt offentlig (`access=yes/public/permissive/destination`). Privat/kunde-parkering (`access=private/customers/no/...`) markeres aldri grønn, og parkering uten access-tag regnes konservativt som vanlig. Ny ISOM-kode 534u og symbol i katalogen + egen «Parkering & service»-seksjon i Tegnforklaring.

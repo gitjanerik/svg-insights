@@ -1,5 +1,41 @@
 import { describe, it, expect } from 'vitest'
-import { parsePathSubpaths, polylineToPath, polylineLength } from './pathUtils.js'
+import { parsePathSubpaths, polylineToPath, polylineLength, distPointToSegment, isPointNearPolylines } from './pathUtils.js'
+
+describe('distPointToSegment', () => {
+  it('måler perpendikulær avstand til segmentet', () => {
+    expect(distPointToSegment(0, 5, -10, 0, 10, 0)).toBeCloseTo(5)
+  })
+  it('klamper til endepunkt når projeksjonen faller utenfor segmentet', () => {
+    expect(distPointToSegment(20, 0, -10, 0, 10, 0)).toBeCloseTo(10)
+    expect(distPointToSegment(-20, 0, -10, 0, 10, 0)).toBeCloseTo(10)
+  })
+  it('degenerert segment (a==b) gir avstand til punktet', () => {
+    expect(distPointToSegment(3, 4, 0, 0, 0, 0)).toBeCloseTo(5)
+  })
+})
+
+describe('isPointNearPolylines — sti-nærhets-kvalifisering', () => {
+  const sti = [[{ x: 0, y: 0 }, { x: 100, y: 0 }]]
+  it('true når punktet er innenfor maxDist av en polylinje', () => {
+    expect(isPointNearPolylines({ x: 50, y: 25 }, sti, 30)).toBe(true)
+    expect(isPointNearPolylines({ x: 50, y: 30 }, sti, 30)).toBe(true)
+  })
+  it('false når punktet er lenger unna enn maxDist', () => {
+    expect(isPointNearPolylines({ x: 50, y: 31 }, sti, 30)).toBe(false)
+    expect(isPointNearPolylines({ x: 50, y: 200 }, sti, 30)).toBe(false)
+  })
+  it('false uten polylinjer, og hopper over for korte linjer', () => {
+    expect(isPointNearPolylines({ x: 0, y: 0 }, [], 30)).toBe(false)
+    expect(isPointNearPolylines({ x: 0, y: 0 }, [[{ x: 0, y: 0 }]], 30)).toBe(false)
+  })
+  it('finner nærmeste blant flere polylinjer (early-out)', () => {
+    const lines = [
+      [{ x: 0, y: 500 }, { x: 100, y: 500 }],
+      [{ x: 0, y: 10 }, { x: 100, y: 10 }],
+    ]
+    expect(isPointNearPolylines({ x: 50, y: 0 }, lines, 30)).toBe(true)
+  })
+})
 
 describe('parsePathSubpaths', () => {
   it('parser en enkel M/L-streng', () => {

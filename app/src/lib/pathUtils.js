@@ -100,6 +100,35 @@ export function polylineToPath(points, close = false) {
   return d
 }
 
+/** Korteste avstand fra punkt (px,py) til linjesegment (ax,ay)–(bx,by). */
+export function distPointToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay
+  const len2 = dx * dx + dy * dy
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0
+  t = t < 0 ? 0 : t > 1 ? 1 : t
+  const cx = ax + t * dx, cy = ay + t * dy
+  return Math.hypot(px - cx, py - cy)
+}
+
+/**
+ * Er punktet {x,y} innenfor `maxDist` av minst én av polylinjene?
+ * `polylines` er en array av punkt-arrayer ({x,y}). Early-out ved første
+ * treff. Brukes til sti-nærhets-kvalifisering av utfartsparkering i mapBuilder
+ * (samme enhet inn = samme enhet ut; med projiserte meter-koordinater er
+ * `maxDist` i meter).
+ */
+export function isPointNearPolylines(pt, polylines, maxDist) {
+  for (const line of polylines) {
+    if (!line || line.length < 2) continue
+    for (let i = 1; i < line.length; i++) {
+      if (distPointToSegment(pt.x, pt.y, line[i - 1].x, line[i - 1].y, line[i].x, line[i].y) <= maxDist) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 /**
  * Splitt en SVG path-d-streng til separate polylinjer — én pr subpath
  * (M-kommando). Brukes av Stifinner for å lese sti-/vei-geometri tilbake
