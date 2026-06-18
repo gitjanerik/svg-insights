@@ -1,8 +1,12 @@
 # Changelog
 
-## 2026-06-18 — v11.0.11: Stifinner — «Høydemeter A→B» i info-panelet
+## 2026-06-18 — v11.0.11: Stifinner — høydemeter i info-panelet
 
-Ny linje nederst i det grønne Stifinner-panelet: «Høydemeter A→B: ±N m» — ren høydeforskjell mellom start- og målpunktet, DEM-sampla. Vises sammen med luftlinja (begge rute-uavhengige). Skjules når kartet mangler DEM (ingen WCS-høydedata) eller et punkt faller på noData.
+To nye linjer nederst i det grønne Stifinner-panelet, DEM-sampla:
+- **Høydemeter A→B: ±N m** — ren høydeforskjell mellom start- og målpunktet (rute-uavhengig, vises sammen med luftlinja og også når ingen rute finnes).
+- **Valgt rute: ↑N m ↓N m** — samlet stigning og fall langs den valgte ruta (rute-avhengig, via `sampleProfile` med støy-glatting).
+
+Begge skjules når kartet mangler DEM (ingen WCS-høydedata) eller et punkt faller på noData.
 
 ---
 
