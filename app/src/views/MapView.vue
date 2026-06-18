@@ -3622,6 +3622,28 @@ let autoMapPrefetch = null
 // sletter forrige auto-kart fra lagring (ingen opphopning).
 const currentMapIsAuto = ref(false)
 
+// Kant-soner (manuell utvidelse, auto-kart AV): 8 blå prikker langs viewport-
+// kanten. `pos` plasserer hver prikk (innrykk klarerer topp-bar + bunn-FAB/safe-
+// area). Vises kun når auto-kart er av, kartet er lastet, og ingen annen modus
+// eier UI-en (samme gate som autoMapModeBusy, inlinet for reaktiv sporing).
+const EXTEND_ZONES = [
+  { dir: 'NW', label: 'Utvid nordvest', pos: { top: '4.5rem', left: '0.75rem' } },
+  { dir: 'N', label: 'Utvid nord', pos: { top: '4.5rem', left: '50%', transform: 'translateX(-50%)' } },
+  { dir: 'NE', label: 'Utvid nordøst', pos: { top: '4.5rem', right: '0.75rem' } },
+  { dir: 'W', label: 'Utvid vest', pos: { top: '50%', left: '0.75rem', transform: 'translateY(-50%)' } },
+  { dir: 'E', label: 'Utvid øst', pos: { top: '50%', right: '0.75rem', transform: 'translateY(-50%)' } },
+  { dir: 'SW', label: 'Utvid sørvest', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', left: '0.75rem' } },
+  { dir: 'S', label: 'Utvid sør', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', left: '50%', transform: 'translateX(-50%)' } },
+  { dir: 'SE', label: 'Utvid sørøst', pos: { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)', right: '0.75rem' } },
+]
+const extendZonesVisible = computed(() =>
+  !autoMapEnabled.value &&
+  !loading.value && !loadError.value && !!meta.value &&
+  !buildingOnTheFly.value && !fillingInDetails.value &&
+  !curveball.active.value && !annot.isAnnotateMode.value &&
+  !measureMode.value && !sti.active.value && !searchOpen.value && !showControls.value
+)
+
 function showAutoMapToast(msg) {
   autoMapToast.value = msg
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
@@ -3767,6 +3789,47 @@ function autoMapBuildOpts(centerSvg) {
     equidistanceM: m.equidistance ?? 20,
     navn: `Tur ${stamp}`,
     isAuto: true,   // markér som auto-flis → inngår i tileCache (kappes, ikke brukerkart)
+  }
+}
+
+// ── Manuell kart-utvidelse (kant-soner, auto-kart AV) ───────────────────────
+// 8 klikkbare kant-soner lar brukeren legge til nye kartutsnitt i en valgt
+// retning når auto-kart er av. Kardinal (N/Ø/S/V) → ÉN ny flis, sentrum flyttes
+// til GRENSEN mellom gammelt og nytt. Diagonal (NV/NØ/SV/SØ) → TRE nye fliser
+// (de to kardinal-naboene + diagonal-naboen) → kvadratisk 2×2 brutto-kart,
+// sentrum flyttes til HJØRNET av gammelt kart (= midten av 2×2-blokken).
+// Brukeren beholder valgt zoom. Gjenbruker hele auto-kart-mosaikken:
+// buildMapFromCenter (isAuto) + renderGhostTiles (fullopake full-detalj naboer).
+const EXTEND_DIR_WORD = {
+  N: 'nord', S: 'sør', E: 'øst', W: 'vest',
+  NE: 'nordøst', NW: 'nordvest', SE: 'sørøst', SW: 'sørvest',
+}
+
+// Geometri for en kant-sone i aktiv-flisas SVG-meter-rom. Returnerer nabo-flisenes
+// sentre (1 kardinal / 3 diagonal) + pan-punktet (grense midt / hjørne). SVG-y
+// vokser nedover, så nord = mindre y. panPoint nudges ~1 m INNOVER mot sentrum så
+// `c.x <= widthM` / `c.y >= 0` holder etter panTo → promote-on-dwell trigges ikke
+// på flyttall-rest (se maybePromoteMosaic, inklusiv grense).
+function extendMapGeometry(direction) {
+  const m = meta.value
+  if (!m) return null
+  const W = m.widthM, H = m.heightM
+  const cx = W / 2, cy = H / 2
+  const e = 1   // innover-nudge i meter
+  const E_ = { x: cx + W, y: cy }, W_ = { x: cx - W, y: cy }
+  const N_ = { x: cx, y: cy - H }, S_ = { x: cx, y: cy + H }
+  const NE_ = { x: cx + W, y: cy - H }, NW_ = { x: cx - W, y: cy - H }
+  const SE_ = { x: cx + W, y: cy + H }, SW_ = { x: cx - W, y: cy + H }
+  switch (direction) {
+    case 'N': return { neighborCenters: [N_], panPoint: { x: cx, y: e } }
+    case 'S': return { neighborCenters: [S_], panPoint: { x: cx, y: H - e } }
+    case 'E': return { neighborCenters: [E_], panPoint: { x: W - e, y: cy } }
+    case 'W': return { neighborCenters: [W_], panPoint: { x: e, y: cy } }
+    case 'NE': return { neighborCenters: [E_, N_, NE_], panPoint: { x: W - e, y: e } }
+    case 'NW': return { neighborCenters: [W_, N_, NW_], panPoint: { x: e, y: e } }
+    case 'SE': return { neighborCenters: [E_, S_, SE_], panPoint: { x: W - e, y: H - e } }
+    case 'SW': return { neighborCenters: [W_, S_, SW_], panPoint: { x: e, y: H - e } }
+    default: return null
   }
 }
 
@@ -3985,6 +4048,89 @@ async function triggerAutoMap(centerSvg) {
   }
   // Merk: ved suksess lar vi buildingOnTheFly stå true til komponenten rives av
   // navigasjonen, så loaderen holder seg synlig under overgangen.
+}
+
+// Manuell kant-sone-utvidelse. I motsetning til triggerAutoMap navigerer vi IKKE
+// — det aktive kartet beholdes, de nye flisene vises som fullopake mosaikk-naboer
+// og vi panorerer sentrum til grensen/hjørnet med BEHOLDT zoom. Derfor rydder vi
+// loader/state selv i finally (ingen komponent-teardown å lene seg på).
+let extendingMap = false
+async function extendMap(direction) {
+  if (extendingMap || buildingOnTheFly.value || fillingInDetails.value) return
+  if (autoMapEnabled.value || autoMapModeBusy()) return
+  const m = meta.value
+  if (!m) return
+  const geom = extendMapGeometry(direction)
+  if (!geom) return
+  // Offline-gate: bygging krever nett (OSM Overpass + Kartverket WCS).
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!autoMapOfflineNotified) {
+      autoMapOfflineNotified = true
+      showAutoMapToast('Offline — kan ikke lage nytt utsnitt')
+    }
+    return
+  }
+  // Hopp over naboer vi allerede har en (rutenett-flukta) flis for — da gir en
+  // ny flis på samme senter ≈100 % overlapp med en eksisterende spøkelses-flis.
+  const toBuild = geom.neighborCenters.filter(c => !centerOverExistingTile(c, m))
+  if (!toBuild.length) {
+    panTo(geom.panPoint.x, geom.panPoint.y, {
+      vbWidth: m.widthM, vbHeight: m.heightM,
+      targetScale: scale.value, keepRotation: true,
+    })
+    showAutoMapToast('Allerede bygd — flytter dit')
+    return
+  }
+  extendingMap = true
+  autoMapArmed = false
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Forbereder …'
+  closeDrawer()
+  closeSearch()
+  const builtIds = []
+  try {
+    for (let i = 0; i < toBuild.length; i++) {
+      const prefix = toBuild.length > 1 ? `Utsnitt ${i + 1}/${toBuild.length}` : ''
+      buildingProgress.value = toBuild.length > 1
+        ? `Bygger utsnitt ${i + 1} av ${toBuild.length} …`
+        : 'Bygger nytt utsnitt …'
+      const { id } = await buildMapFromCenter({
+        ...autoMapBuildOpts(toBuild[i]),
+        terrainFirst: false,   // full flis med en gang
+        onProgress: (msg) => {
+          buildingProgress.value = prefix ? `${prefix}: ${msg}` : msg
+        },
+      })
+      if (id) builtIds.push(id)
+    }
+    // Tegn de nye flisene som mosaikk-naboer (fullopake, full detalj) og utvid
+    // pan-grensa til mosaikken (renderGhostTiles → clampPan), så panTo ikke
+    // klampes tilbake til aktiv-flisas grenser.
+    await renderGhostTiles()
+    await nextTick()
+    panTo(geom.panPoint.x, geom.panPoint.y, {
+      vbWidth: m.widthM, vbHeight: m.heightM,
+      targetScale: scale.value, keepRotation: true,
+    })
+    // Kapp auto-flis-cachen, beskytt aktiv flis + det vi nettopp bygde.
+    try {
+      const ll = svgToWgs84(geom.panPoint.x, geom.panPoint.y, m)
+      pruneAutoTiles({ center: { lat: ll.lat, lon: ll.lon }, protectIds: [mapId.value, ...builtIds] })
+        .then(() => { void refreshAutoTileCount() })
+        .catch(() => {})
+    } catch { /* svgToWgs84 feilet → hopp over pruning */ }
+    showAutoMapToast(direction.length === 1
+      ? `Nytt utsnitt mot ${EXTEND_DIR_WORD[direction]}`
+      : 'Tre nye utsnitt — du beholder et kvadratisk kart')
+  } catch (e) {
+    console.error('Kant-sone-utvidelse feilet:', e)
+    showAutoMapToast('Kunne ikke lage nytt utsnitt')
+  } finally {
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    autoMapArmed = true
+    extendingMap = false
+  }
 }
 
 // Slå opp symbolKey + label for en lagret annotering. Faller tilbake til
@@ -5358,6 +5504,22 @@ onUnmounted(() => {
           :offset="cbOffset"
           @drop="onCurveBallContinue"/>
       </div>
+    </div>
+
+    <!-- Kant-soner (manuell kart-utvidelse, auto-kart AV). Containeren er
+         pointer-events-none så panorering ikke blokkeres; kun de 8 blå prikkene
+         er klikkbare. Ligger over kartet (z-20) men under FAB/header. -->
+    <div v-if="extendZonesVisible"
+         class="absolute inset-0 z-20 pointer-events-none"
+         :style="{ right: panelOffsetPx + 'px' }">
+      <button v-for="z in EXTEND_ZONES" :key="z.dir"
+              @click="extendMap(z.dir)"
+              :disabled="buildingOnTheFly"
+              :aria-label="z.label" :title="z.label"
+              class="absolute pointer-events-auto w-9 h-9 rounded-full bg-sky-500/90
+                     border-2 border-white shadow-lg active:scale-90 transition
+                     disabled:opacity-40"
+              :style="z.pos"></button>
     </div>
 
     <!-- Stifinner: fast midt-kikkertsikte mens startpunkt velges. Brukeren

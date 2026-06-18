@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.14: Manuelle kant-soner for kartutvidelse (auto-kart av)
+
+Når auto-kart er slått av kan du nå utvide kartet manuelt: 8 blå kant-soner (nord/sør/øst/vest + de fire hjørnene) legges over kartkanten. Trykk en kardinal-sone for å bygge ett nytt kartutsnitt i den retningen — sentrum flyttes til grensen mellom gammelt og nytt kart, og du beholder valgt zoom. Trykk en hjørne-sone for å bygge tre nye utsnitt på én gang, slik at du beholder et kvadratisk 2×2 brutto-kart med sentrum i hjørnet av det gamle kartet. De nye utsnittene vises straks som fullopake, full-detalj naboer i mosaikken, så du aldri blir forvirret av tomme felt. Sonene er skjult når auto-kart er på (da bygges nytt kart automatisk når du drar forbi kanten). Gjenbruker hele auto-kart-mosaikken under panseret (buildMapFromCenter + renderGhostTiles + tile-cache).
+
+---
+
 ## 2026-06-18 — v11.0.13: Stifinner — prioriter natur-korridoren (sti → skogsbilvei → småveg → veg)
 
 Rutekostnadene var snudd: vei var billigst og sti dyrest, så turforslagene tok «æresrunder» gjennom boligfelt på asfalt i stedet for å følge skogsbilveien/stien rett fram. Snudd prioriteringen så et turforslag helst går i natur-korridoren: Sti (505/506/507) → Skogsbilvei (504) → Småveg (503) → Veg (502/501). Det er et tydelig kost-hopp fra natur-korridor (≤1.6) til kjørevei (≥2.6), så Dijkstra velger sti/skogsbilvei der den finnes, men bruker vei der det er eneste forbindelse. Korteste-rute-cap og luftlinje/høydemeter er uendret.
