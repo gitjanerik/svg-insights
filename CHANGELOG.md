@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-18 — v11.0.5: Utfartsparkering — ★-merking og «forslag, ikke offisielt»-forbehold
+
+Vi skal være forsiktige med å påberope oss «<sted> Utfartsparkering» som et faktum — navnet er en heuristikk utledet fra nærmeste fjelltopp/ås/elv/vann. Navnet beholdes i søk og tegnforklaring, men:
+
+- I kart-søket merkes utfartsparkeringer nå med en ★ og en liten forklaring: «Sannsynlig turstart — navnet er utledet fra nærmeste sted, ikke et offisielt navn».
+- Tegnforklaringen er skrevet om: brakettene betyr «sannsynlig god kandidat for turstart», og ★-en/navnet er et forslag basert på kart-data, ikke offisielt.
+- «(offentlig)» er fjernet fra etiketten — koden 534u heter nå bare «Utfartsparkering».
+
+---
+
 ## 2026-06-18 — v11.0.4: Utfartsparkering — sorte hjørne-braketter + søkbar på «parkering»
 
 To endringer på utfartsparkering-markøren:
