@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.12: Stifinner — dropp «æresrunde»-omveier blant rute-alternativene
+
+Den k-te rute-kandidaten kunne bli en absurd 360°-omvei (f.eks. 9,2 km der korteste er 4,0 km): edge-penalty-metoden straffer de korte rutenes kanter for å finne distinkte alternativer, og uten en lengde-grense ble det tredje «alternativet» presset ut på en runde ingen ville gått. `kShortestRoutes` har nå en `maxLengthRatio` (default 1.8) som forkaster alternativer som er mer enn 80 % lengre enn korteste rute. Da vises heller færre, fornuftige alternativer enn en æresrunde. Korteste rute godtas alltid.
+
+---
+
 ## 2026-06-18 — v11.0.11: Stifinner — høydemeter i info-panelet
 
 To nye linjer nederst i det grønne Stifinner-panelet, DEM-sampla:

@@ -109,7 +109,9 @@ describe('kShortestRoutes', () => {
     const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
     const b = rg.nodeAt([100, 0])
     const e = rg.nodeAt([100, 100])
-    const routes = kShortestRoutes(rg, b, e, { k: 3, penalty: 5, minShare: 0.5 })
+    // maxLengthRatio høyt her: denne testen verifiserer distinkthet-mekanismen,
+    // ikke æresrunde-cap-en (grid-ets eneste omvei B→E er ~5× korteste).
+    const routes = kShortestRoutes(rg, b, e, { k: 3, penalty: 5, minShare: 0.5, maxLengthRatio: 100 })
     // Direkte (100 m) + en omvei skal være mulig
     expect(routes.length).toBeGreaterThanOrEqual(2)
     // Sortert kortest først
@@ -134,5 +136,29 @@ describe('kShortestRoutes', () => {
     const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
     expect(kShortestRoutes(rg, null, 'n0', {})).toEqual([])
     expect(kShortestRoutes(rg, 'nope', 'n0', {})).toEqual([])
+  })
+
+  it('utelater uforholdsmessig lange omveier (æresrunde-cap)', () => {
+    // A(0,0) → B(100,0): direkte 100 m, pluss en lang æresrunde-loop (~520 m).
+    const seg = (coords) => ({ coordinates: coords, isomCode: '505' })
+    const rg = buildRoutingGraph([
+      seg([[0, 0], [100, 0]]),                                   // direkte 100
+      // lang æresrunde ~520 m (delt node i begge ender)
+      seg([[0, 0], [-100, 0], [-100, -200], [200, -200], [200, 0], [100, 0]]),
+    ], { snapM: 2 })
+    const a = rg.nodeAt([0, 0])
+    const b = rg.nodeAt([100, 0])
+
+    // Med standard cap (1.8) skal den lange loopen (~5× korteste) aldri tas med.
+    const capped = kShortestRoutes(rg, a, b, { k: 3, minShare: 0.1 })
+    expect(capped.length).toBeGreaterThanOrEqual(1)
+    expect(capped[0].lengthM).toBeCloseTo(100, 0)
+    for (const r of capped) {
+      expect(r.lengthM).toBeLessThanOrEqual(100 * 1.8 + 0.01)
+    }
+
+    // Uten cap (svært høy ratio) skal den lange loopen kunne dukke opp.
+    const uncapped = kShortestRoutes(rg, a, b, { k: 3, minShare: 0.1, maxLengthRatio: 100 })
+    expect(Math.max(...uncapped.map(r => r.lengthM))).toBeGreaterThan(100 * 1.8)
   })
 })
