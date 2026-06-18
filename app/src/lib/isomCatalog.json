@@ -520,7 +520,7 @@
       },
       "534u": {
         "label": "Utfartsparkering",
-        "$comment": "Sannsynlig turstart-parkering — markeres med vanlig blått P-skilt + fire frittstående sorte hjørne-braketter (Variant B) som framhever den uten å bruke den fargeblind-uvennlige grønn-mot-blått-kombinasjonen. Det blå feltet er IDENTISK med vanlig parkering (534, 5,4 mm) — kun brakettene skiller dem. Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 50 m. NB: dette er en heuristikk, ikke en autoritativ kilde — i søk/forklaring merkes den derfor med ★ og navnet («<sted> Utfartsparkering») presenteres som et forslag, ikke offisielt. scaleMm 3.6 + viewBox 3 gir blått felt ≈ 5,4 mm; brakettene strekker symbolet til ≈ 9,7 mm.",
+        "$comment": "Sannsynlig turstart-parkering — markeres med vanlig blått P-skilt + fire frittstående sorte hjørne-braketter (Variant B) som framhever den uten å bruke den fargeblind-uvennlige grønn-mot-blått-kombinasjonen. Det blå feltet er IDENTISK med vanlig parkering (534, 5,4 mm) — kun brakettene skiller dem. Kvalifiseres KUN når både (a) isTrailheadParking() er sann (offentlig access eller utfart-/tur-/friluft-navn) OG (b) det finnes en sti (ISOM 505/506/507) innen 50 m. NB: dette er en heuristikk, ikke en autoritativ kilde — i søk/forklaring merkes den derfor med * og navnet («Utfartsparkering <sted>») presenteres som et forslag, ikke offisielt. scaleMm 3.6 + viewBox 3 gir blått felt ≈ 5,4 mm; brakettene strekker symbolet til ≈ 9,7 mm.",
         "point": {
           "symbol": "parkering-utfart",
           "scaleMm": 3.6
