@@ -511,11 +511,19 @@
         }
       },
       "534": {
-        "label": "Utfartsparkering",
-        "$comment": "Parkering / utfartsparkering (amenity=parking). Blå firkant med hvit P plassert på OSM-node eller centroid av parkering-polygon. Brukes for trailhead-parkering, ferje-pendel og generelle parkeringsplasser.",
+        "label": "Parkering",
+        "$comment": "Parkering (amenity=parking). Blå firkant med hvit P plassert på OSM-node eller centroid av parkering-polygon. Brukes for vanlig/privat parkering — offentlig utfartsparkering får grønn variant (534u).",
         "point": {
           "symbol": "parkering",
           "scaleMm": 2.4
+        }
+      },
+      "534u": {
+        "label": "Utfartsparkering (offentlig)",
+        "$comment": "Offentlig utfartsparkering — foretrukket når man skal ut i marka. Grønn firkant med hvit P, 50 % større enn vanlig parkering (534). Klassifiseres via isTrailheadParking() i symbolizer: offentlig access eller utfart-/tur-/friluft-navn.",
+        "point": {
+          "symbol": "parkering-utfart",
+          "scaleMm": 3.6
         }
       },
       "526": {
@@ -1130,6 +1138,26 @@
           "width": 1.5,
           "height": 1.5,
           "fill": "#1f5d8a"
+        },
+        {
+          "type": "path",
+          "d": "M -0.32 0.55 L -0.32 -0.55 L 0.08 -0.55 Q 0.45 -0.55 0.45 -0.18 Q 0.45 0.22 0.08 0.22 L -0.02 0.22 L -0.02 0.55 Z M -0.02 -0.05 L 0.05 -0.05 Q 0.2 -0.05 0.2 -0.18 Q 0.2 -0.3 0.05 -0.3 L -0.02 -0.3 Z",
+          "fill": "#fff",
+          "fillRule": "evenodd"
+        }
+      ]
+    },
+    "parkering-utfart": {
+      "$comment": "Utfartsparkering — offentlig/trailhead-parkering (amenity=parking med offentlig access eller utfart-navn). Samme P-glyf som vanlig parkering, men GRØNN bakgrunn istedenfor blå så den foretrukne plassen skiller seg ut når man skal ut i marka. Rendres 50 % større enn vanlig P i mapBuilder.",
+      "viewBox": "-1 -1 2 2",
+      "elements": [
+        {
+          "type": "rect",
+          "x": -0.75,
+          "y": -0.75,
+          "width": 1.5,
+          "height": 1.5,
+          "fill": "#2e7d32"
         },
         {
           "type": "path",

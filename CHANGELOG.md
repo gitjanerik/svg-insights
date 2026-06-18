@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-18 — v11.0.1: Utfartsparkering skiller seg ut — grønn og større
+
+Kartene har svært mange P-plasser, og de fleste er private. Nå skilles **offentlig utfartsparkering** ut fra mengden: den tegnes med grønn bakgrunn (i stedet for den vanlige blå) og 50 % større, så den foretrukne plassen for en marka-tur fanger blikket. En parkering regnes som utfartsparkering når navn/operator/beskrivelse nevner utfart/tur/friluft, eller når OSM-tilgangen er eksplisitt offentlig (`access=yes/public/permissive/destination`). Privat/kunde-parkering (`access=private/customers/no/...`) markeres aldri grønn, og parkering uten access-tag regnes konservativt som vanlig. Ny ISOM-kode 534u og symbol i katalogen + egen «Parkering & service»-seksjon i Tegnforklaring.
+
+---
+
 ## 2026-06-17 — v11.0.0: Stifinner — rutenavigasjon på sti-laget
 
 Ny hovedfunksjon: **Stifinner**. Long-press et punkt på kartet, åpne info-arket og trykk «Naviger hit» — så foreslår appen 1–3 alternative ruter dit langs kartets sti- og vei-lag. Du velger startpunktet med et fast kikkertsikte midt i kartet: panorér så krysset står der du vil starte, og trykk «Bekreft startpunkt». Auto-kart er deaktivert mens du sikter, så kartet ikke bygges på nytt under panoreringen. Rutene tegnes som egne fargede linjer fra A til B; hver rute er tappbar og viser lengde og estimert gangtid, og den valgte ruten fremheves. Hele modusen kan avbrytes når som helst via en grønn alert med X-knapp øverst til venstre — uten å åpne info-arket — på samme måte som måleverktøyet.

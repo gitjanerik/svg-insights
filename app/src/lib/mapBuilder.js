@@ -9,6 +9,7 @@ import { wgs84ToUtm32, utm32BboxFromWgs84 } from './utm.js'
 import {
   classifyToIsom,
   isTrigPoint,
+  isTrailheadParking,
   buildIsomDefs,
   buildIsomCss,
   getIsomDef,
@@ -1869,7 +1870,7 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${kirkeSize}mm" height="${kirkeSize}mm"/></g>`
   }).filter(Boolean).join('\n')
 
-  // Utfartsparkering (ISOM 534-derivert): blå P-symbol 7.2mm (300% av v8.10.2-
+  // Parkering (ISOM 534-derivert): blå P-symbol 7.2mm (300% av v8.10.2-
   // basis). Node-parkering på OSM-noden, way-parkering på polygon-centroid.
   // Posisjon må gå via transform=translate(...) i user-units (meter) — å skrive
   // x="<meter>mm" tolkes av nettleseren som ~3.78× user-units pr mm (CSS-spec),
@@ -1877,16 +1878,25 @@ export function buildSvg(elements, bbox, options = {}) {
   // samme pattern; nå også parkering.
   // data-upright="1" gjør at MapView counter-roterer symbolet ved kart-
   // rotasjon, så "P" alltid leses vannrett med skjermens topp som rettesnor.
+  //
+  // Utfartsparkering (offentlig/trailhead) skilles ut via isTrailheadParking():
+  // grønn P-variant (534u) i stedet for blå, og 50 % større (10.8mm) så den
+  // foretrukne plassen for marka-turer fanger blikket blant de mange private
+  // P-plassene. data-iso settes til 534 / 534u for Tegnforklaring-kobling.
   const parkeringSize = 7.2
+  const parkeringUtfartSize = parkeringSize * 1.5
   const parkeringSvg = parkeringer.map(el => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
     else if (el.type === 'way' && el.geometry) p = polygonCentroid(el.geometry)
     if (!p) return ''
-    const sid = symbolIds.get('parkering')
+    const utfart = isTrailheadParking(el.tags)
+    const sid = symbolIds.get(utfart ? 'parkering-utfart' : 'parkering')
     if (!sid) return ''
-    const half = parkeringSize / 2
-    return `    <g data-upright="1" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${half}mm" y="-${half}mm" width="${parkeringSize}mm" height="${parkeringSize}mm"/></g>`
+    const size = utfart ? parkeringUtfartSize : parkeringSize
+    const half = size / 2
+    const iso = utfart ? '534u' : '534'
+    return `    <g data-upright="1" data-iso="${iso}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(size)}mm" height="${fmt(size)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Holdeplass (ISOM 560-derivert): blå buss-symbol 6.0mm. OSM-node-posisjon.
