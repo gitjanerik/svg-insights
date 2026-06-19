@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-19 — v11.0.26: Stifinner avviser vann-punkter (ingen rute-endepunkt midt i en innsjø)
+
+Stifinner kunne plassere start- og målmarkøren midt i en vannflate: «Naviger hit» ble tilbudt uansett hva man long-presset på, og startpunktet (kikkertsiktet) ble bekreftet selv om skjermsenteret lå over en innsjø eller sjøen. Markøren tegnes der man peker, så prikkene endte i vannet selv om selve ruta snappet til nærmeste sti. Nå sjekkes begge endepunkt mot alle vann-AREAL-koder (301/302/303/307/308/309, punkt-i-fyll med øy-hull): long-presser man på vann, vises ikke lenger «Naviger hit», og er kikkertsiktet over vann ved bekreftelse får man «Fant ingen rute – startpunktet er i vann» i stedet for en villedende markør midt i innsjøen.
+
+---
+
 ## 2026-06-19 — v11.0.25: Idrettsanlegg — nytt kartlag for stadion, baner, travbane og hoppbakke
 
 Kartet hadde ingen markering av idrettsanlegg — stadioner, idrettsparker, idrettsbaner, travbaner, friidrettsbaner, hoppbakker og arenaer forsvant i bakgrunnen. Et nytt **«Idrettsanlegg»**-lag (ISOM-utvidelse 513, default PÅ) henter og markerer disse fra OSM: `leisure=stadium/sports_centre/pitch/track/horse_racing`, `landuse=recreation_ground`, `building=stadium` og `sport=ski_jumping`. Hvert anlegg tegnes med sin faktiske form («baneform») — dempet okergul flate med solid varm-brun omriss — som et bunn-areal i samme z-lag som slalombakke, slik at stier, høydekurver og veier legger seg lesbart oppå. Laget får sin egen bryter nederst i Lag-fanen sammen med Lysløype, Heistrasé og Slalombakke. Hoppbakker navngis: `sport=ski_jumping` mappet som åpen profil-linje eller enkelt node (slik OSM ofte gjør) får etiketten på midtpunktet, ikke bare lukkede arealer. Lysløype (`leisure=track` + `sport=skiing`) forblir uendret kode 510.

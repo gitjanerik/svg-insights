@@ -93,14 +93,23 @@ export function useStifinner() {
    * `svgElement`. Setter routes/error og går til 'showing'.
    * @param {SVGElement} svgElement
    */
-  function confirmStart(svgPoint, svgElement) {
-    start.value = { svgX: svgPoint.x, svgY: svgPoint.y }
+  function confirmStart(svgPoint, svgElement, opts = {}) {
     error.value = ''
     routes.value = []
     selectedRouteIdx.value = 0
     startSnap.value = null
     destSnap.value = null
     mode.value = 'showing'
+
+    // Startpunkt i vann → ingen rute, og ikke sett start (så ingen villedende
+    // markør tegnes midt i vannet). Caller avgjør vann-treff (DOM-avhengig).
+    if (opts.startOnWater) {
+      start.value = null
+      error.value = 'Fant ingen rute – startpunktet er i vann'
+      return
+    }
+
+    start.value = { svgX: svgPoint.x, svgY: svgPoint.y }
 
     if (!svgElement || !destination.value) {
       error.value = 'Mangler kartdata'
