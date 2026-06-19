@@ -91,6 +91,37 @@ describe('isFlowingWaterArea — elveløp-flater som NVE/N50 aldri leverer', () 
   })
 })
 
+describe('classifyToIsom — idrettsanlegg (ISOM 513)', () => {
+  it('stadion/idrettspark/idrettsbane/travbane/recreation_ground → 513', () => {
+    const cases = [
+      { leisure: 'stadium' },
+      { leisure: 'sports_centre' },
+      { leisure: 'pitch' },
+      { leisure: 'track' },
+      { leisure: 'horse_racing' },
+      { landuse: 'recreation_ground' },
+      { building: 'stadium' },
+    ]
+    for (const tags of cases) {
+      expect(classifyToIsom({ type: 'way', tags })).toEqual({ code: '513', cat: 'manmade' })
+    }
+  })
+
+  it('hoppbakke (sport=ski_jumping) → 513 uansett base-tag og element-type', () => {
+    expect(classifyToIsom({ type: 'way', tags: { sport: 'ski_jumping' } })).toEqual({ code: '513', cat: 'manmade' })
+    expect(classifyToIsom({ type: 'node', tags: { sport: 'ski_jumping', name: 'Midtstubakken' } })).toEqual({ code: '513', cat: 'manmade' })
+    expect(classifyToIsom({ type: 'way', tags: { leisure: 'pitch', sport: 'ski_jumping' } })).toEqual({ code: '513', cat: 'manmade' })
+  })
+
+  it('lysløype (leisure=track + sport=skiing) forblir 510, ikke idrettsanlegg', () => {
+    expect(classifyToIsom({ type: 'way', tags: { leisure: 'track', sport: 'skiing' } })).toEqual({ code: '510', cat: 'manmade' })
+  })
+
+  it('leisure=park forblir åpen mark (401), ikke idrettsanlegg', () => {
+    expect(classifyToIsom({ type: 'way', tags: { leisure: 'park' } })).toEqual({ code: '401', cat: 'terrain' })
+  })
+})
+
 describe('buildPointSymbolDef', () => {
   it('renders rect-elementer (ISOM 540 stake-port)', () => {
     const spec = {

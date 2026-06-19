@@ -362,6 +362,34 @@ export function classifyToIsom(el) {
       }
     }
   }
+  // Idrettsanlegg (Norge-spesifikk ISOM-utvidelse 513): stadion, idrettspark,
+  // idrettsbane, travbane, friidrettsbane, hoppbakke, arena. Markeres med
+  // anleggets faktiske form («baneform») i en distinkt farge. Eget toggle-lag
+  // som rendres nederst sammen med slalombakke/heistrasé. Sjekkes FØR
+  // `building` (et stadion-/arena-bygg skal bli idrettsanlegg, ikke hus) og
+  // FØR generell landuse/leisure-klassifisering.
+  //   leisure=stadium        → stadion / arena
+  //   leisure=sports_centre  → idrettspark / idrettshall
+  //   leisure=pitch          → idrettsbane (fotball, tennis, håndball …)
+  //   leisure=track          → løpebane / friidrettsbane / travbane
+  //   leisure=horse_racing   → travbane / galoppbane
+  //   landuse=recreation_ground → idrettspark / anleggsareal
+  //   building=stadium       → arena-bygg
+  //   sport=ski_jumping      → hoppbakke (uansett base-tag)
+  // MERK: leisure=track + sport=skiing er lysløype (510), ikke idrettsanlegg
+  // — den ekskluderes her og fanges lenger ned i ski-infrastruktur-grenen.
+  if (
+    t.leisure === 'stadium' ||
+    t.leisure === 'sports_centre' ||
+    t.leisure === 'pitch' ||
+    t.leisure === 'horse_racing' ||
+    (t.leisure === 'track' && t.sport !== 'skiing') ||
+    t.landuse === 'recreation_ground' ||
+    t.building === 'stadium' ||
+    t.sport === 'ski_jumping'
+  ) {
+    return { code: '513', cat: 'manmade' }
+  }
   if (t.building)                                   return { code: '521', cat: 'manmade' }
   // Saltvann / fjord / sjø → ISOM 303 (mørkere, mer mettet blå).
   // Eksplisitte tags først, deretter navn-heuristikk for fjord-polygoner
