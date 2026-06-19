@@ -151,6 +151,33 @@ export function isOsmWaterSalty(tags) {
   return false
 }
 
+// Maritime navne-features: geografiske navn i/ved sjøen som hører hjemme i et
+// eget «Sjønavn»-lag — bukt/vik/kile (natural=bay), nes/odde (natural=cape),
+// sund (natural=strait), grunne (natural=shoal), rev (natural=reef), halvøy
+// (natural=peninsula), holme/øy (place=islet/island) og navngitte skjær
+// (seamark:type=rock). Brukes KUN til etikett-innsamling — geometrien (øy-
+// overlay 001, bukt-flate 303, sjømerke-symbol 211) klassifiseres som før via
+// classifyToIsom. Krever name-tag hos kalleren; predikatet ser kun på type.
+const MARITIME_NAME_NATURAL = new Set(['bay', 'cape', 'strait', 'shoal', 'reef', 'peninsula', 'isthmus'])
+export function isMaritimeNameFeature(tags) {
+  const t = tags ?? {}
+  if (MARITIME_NAME_NATURAL.has(t.natural)) return true
+  if (t.place === 'islet' || t.place === 'island') return true
+  if (t['seamark:type'] === 'rock') return true
+  return false
+}
+
+// Maritime navne-NODER uten eget kart-symbol (bukt/nes/sund/grunne/holme/øy).
+// Disse har ingen geometri å rendre — vi samler kun navnet som sjønavn-etikett.
+// Sjømerke-skjær (seamark:type=rock) er bevisst UTELATT: de beholder punkt-
+// symbolet (ISOM 211) og får navnet i tillegg, så de skal IKKE skippes i
+// klassifiseringen.
+export function isMaritimeNameOnlyNode(tags) {
+  const t = tags ?? {}
+  if (t['seamark:type']) return false
+  return isMaritimeNameFeature(t)
+}
+
 // Flytende ferskvann tagget som FLATE: elve-/kanal-/bekkeløp (water=river osv.)
 // eller waterway-areal (riverbank/dock). Skilles ut fordi de autoritative norske
 // ferskvanns-kildene (NVE innsjø-flater, N50 vann) KUN dekker stillestående vann

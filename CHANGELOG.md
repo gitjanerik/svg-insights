@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-19 — v11.0.24: Sjønavn — geografiske navn i sjøen (eget marint lag, default på)
+
+Tidligere hadde kartet ingen navn i sjøen — bukter, vik, sund, nes, grunner, holmer og skjær var navnløse selv om OSM kjenner dem. Et nytt **«Sjønavn»**-lag i «Sjø & padling»-seksjonen (default PÅ) henter og viser disse: `natural=bay/cape/strait/shoal/reef/peninsula/isthmus` (bukt/vik/kile, nes/odde, sund, grunne, rev, halvøy), `place=islet/island` (holme/øy) og navngitte `seamark:type=rock` (skjær). Etiketten plasseres på node-punktet, way-sentroiden eller relasjonens største outer-ring-sentroid, i samme blå/italic vann-navn-stil (tema-tilpasset). Navne-noder uten egen geometri hoppes over i ISOM-klassifiseringen så de ikke lager tomme vann-/sted-buckets, mens øy-flater (001), bukt-flater (303) og sjømerke-skjær (211-symbol) beholder geometrien sin og får navnet i tillegg. `claimLabelName` kjører etter innsjø-/elv-navn så en bukt som allerede er navngitt via flate-etiketten ikke dupliseres. Long-press-detalj-lupen tvinger sjønavn synlig som de øvrige marine lagene.
+
+---
+
 ## 2026-06-19 — v11.0.23: Kart-fliser flukter med originalen (ingen søm eller sammensmelting)
 
 To relaterte feil i flis-mosaikken er rettet. (1) **Søm ved utvidelse:** når man utvidet kartet via en blå kant-knapp, ble hver nabo-flis bygd fra et grovt senter (111 km/°-tilnærming) og rutenett-snappet uavhengig, så den kunne lande ±1 rutenettcelle (10–20 m) feil og fikk en tynn søm/glipe mot originalen. Nabo-flisene utledes nå med eksakt heltalls ±bredde/±høyde-offset fra den aktive flisas (allerede snappede) UTM-extent, og denne autoritative UTM-bboksen tres rett gjennom `buildMapFromCenter` → `buildSvg` (uten ny snapping). Naboen deler dermed aktiv-gitteret bit-eksakt og legger seg helt i flukt. (2) **Sammensmelting av fremmede kart:** når man åpnet det innebygde Vardåsen-demokartet, hentet spøkelses-mosaikken inn brukerens egne nærliggende kart — bygd til ulik tid med ulik størrelse/rutenett — og forsøkte å sy dem sammen i et feiljustert trappetrinns-rot. Et nytt gitter-kompatibilitetsfilter (`tilesAreGridCompatible`) tegner nå kun nabo-fliser som deler aktiv-flisas størrelse OG ligger på samme flis-gitter; inkompatible kart skjules helt.
