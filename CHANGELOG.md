@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-19 — v11.0.23: Kart-fliser flukter med originalen (ingen søm eller sammensmelting)
+
+To relaterte feil i flis-mosaikken er rettet. (1) **Søm ved utvidelse:** når man utvidet kartet via en blå kant-knapp, ble hver nabo-flis bygd fra et grovt senter (111 km/°-tilnærming) og rutenett-snappet uavhengig, så den kunne lande ±1 rutenettcelle (10–20 m) feil og fikk en tynn søm/glipe mot originalen. Nabo-flisene utledes nå med eksakt heltalls ±bredde/±høyde-offset fra den aktive flisas (allerede snappede) UTM-extent, og denne autoritative UTM-bboksen tres rett gjennom `buildMapFromCenter` → `buildSvg` (uten ny snapping). Naboen deler dermed aktiv-gitteret bit-eksakt og legger seg helt i flukt. (2) **Sammensmelting av fremmede kart:** når man åpnet det innebygde Vardåsen-demokartet, hentet spøkelses-mosaikken inn brukerens egne nærliggende kart — bygd til ulik tid med ulik størrelse/rutenett — og forsøkte å sy dem sammen i et feiljustert trappetrinns-rot. Et nytt gitter-kompatibilitetsfilter (`tilesAreGridCompatible`) tegner nå kun nabo-fliser som deler aktiv-flisas størrelse OG ligger på samme flis-gitter; inkompatible kart skjules helt.
+
+---
+
 ## 2026-06-18 — v11.0.22: Utvidelses-fliser arver tema (ikke lenger halvt kremgult kart)
 
 Når man byttet til et mørkt tema (f.eks. Curves) og deretter utvidet kartet via kant-sonene, rendret de nybygde flisene med det lyse kremgule standard-fyllet mens den aktive flisa var mørk — kartet ble halvt mørkt, halvt kremgult. Årsaken: spøkelses-/mosaikk-flisene får `#bakgrunn`-id-en strippet (for å unngå duplikat-id i DOM-en), men da sluttet aktiv-flisas CSS-regel `.isom-map #bakgrunn rect { fill: var(--bg) }` å treffe deres bakgrunns-rektangel, så det ble hengende på det inline lyse default-fyllet. `buildGhostSvg` skriver nå bakgrunns-fyllet om til `var(--bg, <inline default>)` slik at det arver tema-variabelen fra `mapInnerRef` akkurat som den aktive flisa — mørke tema rekolorerer hele mosaikken, lys default bevares for frittstående/print.

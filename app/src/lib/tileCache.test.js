@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tileDistance, selectTilesToEvict, tileOffset, rectOverlapFraction } from './tileCache.js'
+import { tileDistance, selectTilesToEvict, tileOffset, rectOverlapFraction, tilesAreGridCompatible } from './tileCache.js'
 
 const at = (id, lat, lon) => ({ id, center: { lat, lon } })
 
@@ -107,6 +107,46 @@ describe('tileOffset', () => {
   it('returnerer null ved manglende koordinater', () => {
     expect(tileOffset(null, { minE: 1, maxN: 2 })).toBeNull()
     expect(tileOffset({ minE: 1, maxN: 2 }, { minE: 1 })).toBeNull()
+  })
+})
+
+describe('tilesAreGridCompatible', () => {
+  // aktiv flis: origo (1000, 4000), 500×600 m
+  const active = { minE: 1000, minN: 4000, widthM: 500, heightM: 600 }
+
+  it('godtar nabo rett øst (på gitteret, samme størrelse)', () => {
+    expect(tilesAreGridCompatible(active, { minE: 1500, minN: 4000, widthM: 500, heightM: 600 })).toBe(true)
+  })
+
+  it('godtar diagonal nabo på gitteret', () => {
+    expect(tilesAreGridCompatible(active, { minE: 1500, minN: 4600, widthM: 500, heightM: 600 })).toBe(true)
+  })
+
+  it('godtar nabo vest/sør (negativt offset)', () => {
+    expect(tilesAreGridCompatible(active, { minE: 500, minN: 4000, widthM: 500, heightM: 600 })).toBe(true)
+    expect(tilesAreGridCompatible(active, { minE: 1000, minN: 3400, widthM: 500, heightM: 600 })).toBe(true)
+  })
+
+  it('godtar float-rest innen toleranse (wrap-around)', () => {
+    // delta = 999.6 ≈ 2*500 - 0.4 → wrap-around-restavstand 0.4 ≤ 1
+    expect(tilesAreGridCompatible(active, { minE: 1999.6, minN: 4000, widthM: 500, heightM: 600 })).toBe(true)
+  })
+
+  it('avviser ulik størrelse (bredde/høyde utenfor toleranse)', () => {
+    expect(tilesAreGridCompatible(active, { minE: 1500, minN: 4000, widthM: 550, heightM: 600 })).toBe(false)
+    expect(tilesAreGridCompatible(active, { minE: 1500, minN: 4000, widthM: 500, heightM: 650 })).toBe(false)
+  })
+
+  it('avviser samme størrelse men utenfor gitteret', () => {
+    // forskjøvet en halv flis i øst → ikke på gitteret
+    expect(tilesAreGridCompatible(active, { minE: 1250, minN: 4000, widthM: 500, heightM: 600 })).toBe(false)
+  })
+
+  it('avviser null / 0-størrelse input', () => {
+    expect(tilesAreGridCompatible(null, active)).toBe(false)
+    expect(tilesAreGridCompatible(active, null)).toBe(false)
+    expect(tilesAreGridCompatible({ minE: 0, minN: 0, widthM: 0, heightM: 600 }, active)).toBe(false)
+    expect(tilesAreGridCompatible(active, { minE: 1500, minN: 4000, widthM: 0, heightM: 600 })).toBe(false)
   })
 })
 
