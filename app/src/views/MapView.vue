@@ -353,11 +353,15 @@ const LAYERS = [
   // de er skjulte detalj-lag som kun vises i long-press-inset-en.
   { key: 'kai',        label: 'Kai / brygge / molo' },
   { key: 'sjo-poi',    label: 'Sjø & padling' },
+  // Sjønavn — geografiske navn i/ved sjøen (bukt, vik, sund, nes, grunne,
+  // holme, øy, skjær). Default PÅ. Eget lag så man kan slå av navnerikt
+  // arkipel uten å miste padle-POI.
+  { key: 'sjo-navn',   label: 'Sjønavn' },
 ]
 // Lag som hører til den marine «Sjø & padling»-seksjonen i drawer-en
 // (skilles ut fra terreng-grid-en for ryddigere gruppering). 'kai' (ISOM 551
 // havne-strukturer) er et eget lag med egen toggle, default PÅ.
-const MARINE_LAYER_KEYS = new Set(['kai', 'sjo-poi'])
+const MARINE_LAYER_KEYS = new Set(['kai', 'sjo-poi', 'sjo-navn'])
 const landLayerButtons = LAYERS.filter(l => !MARINE_LAYER_KEYS.has(l.key))
 const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 
@@ -2699,7 +2703,7 @@ function buildDetailInset() {
 
   // Skru PÅ de skjulte detalj-lagene + sørg for at sjø-POI vises i inset-en
   // uansett hovedkart-toggle, og at dybde-tall ikke er skjult av 'navn'-av.
-  for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"], [data-layer="kai"]')) {
+  for (const g of svg.querySelectorAll('[data-detail="1"], [data-layer="sjo-poi"], [data-layer="kai"], [data-layer="sjo-navn"]')) {
     g.style.display = ''
     for (const el of g.querySelectorAll('*')) el.style.display = ''
   }
@@ -5988,7 +5992,9 @@ onUnmounted(() => {
             </div>
             <div class="text-[10px] text-white/40 leading-snug mb-2">
               Fyr, sjømerker, skjær, småbåthavner, landingssteder, toalett og
-              drikkevann. Dybdetall vises ved å holde inne et punkt på kartet.
+              drikkevann. «Sjønavn» viser geografiske navn i sjøen (bukt, vik,
+              sund, nes, grunne, holme, skjær). Dybdetall vises ved å holde inne
+              et punkt på kartet.
             </div>
             <div class="text-[10px] text-white/40 leading-snug mt-2">
               Reliefskygge er DEM-derivert hill-shading rendret som grayscale-

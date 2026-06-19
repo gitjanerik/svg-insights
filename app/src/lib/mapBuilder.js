@@ -9,6 +9,8 @@ import { wgs84ToUtm32, utm32BboxFromWgs84 } from './utm.js'
 import {
   classifyToIsom,
   isTrigPoint,
+  isMaritimeNameFeature,
+  isMaritimeNameOnlyNode,
   isTrailheadParking,
   buildIsomDefs,
   buildIsomCss,
@@ -109,6 +111,9 @@ export function buildOverpassQuery(bbox) {
   node["highway"="bus_stop"];
   node["railway"~"^(station|halt|tram_stop)$"];
   node["public_transport"="station"];
+  node["natural"~"^(bay|cape|strait|shoal|reef|peninsula|isthmus)$"]["name"];
+  way["natural"~"^(bay|cape|strait|shoal|reef|peninsula|isthmus)$"]["name"];
+  node["place"~"^(island|islet)$"]["name"];
   relation["natural"="water"];
   relation["natural"~"^(bay|strait)$"];
   relation["place"~"^(sea|ocean)$"];
@@ -869,6 +874,13 @@ export function buildSvg(elements, bbox, options = {}) {
   for (const code of LAYER_ORDER) counts[code] = 0
 
   for (const el of elements) {
+    // Marine navne-noder (bukt/vik/sund/nes/grunne/holme/øy) har ingen
+    // geometri å rendre — navnet samles separat som sjønavn-etikett (eget
+    // «Sjønavn»-lag, se seaNames under). Hopp over videre klassifisering så de
+    // ikke havner som tomme vann-/sted-buckets eller duplikat-stedsnavn.
+    // Way/relasjon (øy-flate, bukt-flate) fortsetter til geometri-
+    // klassifisering som før; sjømerke-skjær beholder sitt 211-symbol.
+    if (el.type === 'node' && isMaritimeNameOnlyNode(el.tags)) continue
     // Way-kirker (building=church / amenity=place_of_worship på en
     // bygnings-polygon) plukker vi opp UANSETT om classifyToIsom returnerer
     // bygnings-koden — også way-er som kun har amenity=place_of_worship
@@ -2459,6 +2471,50 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bekk">\n${waterwayLabelRows.join('\n')}\n  </g>\n`
     : ''
 
+  // ── Sjønavn — geografiske navn i/ved sjøen (eget marint lag) ──────────
+  // «Vi har ingen navn i sjøen»: bukt/vik/kile (natural=bay), nes/odde
+  // (natural=cape), sund (natural=strait), grunne (natural=shoal), rev
+  // (natural=reef), halvøy (natural=peninsula), holme/øy (place=islet/island)
+  // og navngitte skjær (seamark:type=rock). Etikett-ankret er node-punktet,
+  // way-sentroiden eller relasjonens største outer-ring-sentroid. Bruker
+  // samme blå/italic vann-navn-stil (themed), men ligger i et eget
+  // data-layer="sjo-navn" så det kan toggles fra «Sjø & padling»-seksjonen
+  // (default PÅ). claimLabelName kjører ETTER innsjø-/elv-navn så en bukt som
+  // allerede er navngitt via 303-flate-etiketten ikke dupliseres.
+  const seaNames = []
+  for (const el of elements) {
+    const name = (el.tags?.name ?? '').trim()
+    if (!name || !isMaritimeNameFeature(el.tags)) continue
+    let p = null
+    if (el.type === 'node') {
+      p = project(el.lat, el.lon)
+    } else if (el.type === 'way' && el.geometry) {
+      if (el.geometry.length >= 3) p = polygonCentroid(el.geometry)
+      else if (el.geometry.length === 2) {
+        const a = project(el.geometry[0].lat, el.geometry[0].lon)
+        const b = project(el.geometry[1].lat, el.geometry[1].lon)
+        p = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      }
+    } else if (el.type === 'relation' && el.members) {
+      const outerRings = assembleRelationRings(el.members, 'outer')
+      let largest = null, largestArea = 0
+      for (const ring of outerRings) {
+        const projected = ring.map(g => { const q = project(g.lat, g.lon); return [q.x, q.y] })
+        const ac = ringAreaCentroid(projected)
+        if (ac && ac.areaM2 > largestArea) { largest = ac; largestArea = ac.areaM2 }
+      }
+      if (largest) p = { x: largest.x, y: largest.y }
+    }
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+    seaNames.push({ x: p.x, y: p.y, name })
+  }
+  const seaNameRows = seaNames
+    .filter(l => claimLabelName(l.name))
+    .map(l =>
+      `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`
+    )
+  const seaNamesLayer = `  <g data-layer="sjo-navn">${seaNameRows.length ? `\n${seaNameRows.join('\n')}\n  ` : ''}</g>\n`
+
   // v8.10.9: Områdenavn — hytter med navn (offset til høyre for symbolet)
   // og navngitte arealer (myr, heath, grassland, locality-polygoner osv).
   // Toggle-bar via 'navn'-laget i MapView (default på).
@@ -2516,7 +2572,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
   // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
   // tekst) males etter vannet, som før.
-  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
