@@ -72,7 +72,13 @@ export function buildOverpassQuery(bbox) {
   way["natural"~"^(wood|scree|bare_rock)$"];
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
   way["building"];
-  way["leisure"~"^(park|pitch|playground)$"];
+  way["leisure"~"^(park|pitch|playground|stadium|sports_centre|track|horse_racing)$"];
+  way["landuse"="recreation_ground"];
+  way["building"="stadium"];
+  way["sport"="ski_jumping"];
+  node["sport"="ski_jumping"];
+  relation["leisure"~"^(stadium|sports_centre|track|horse_racing|pitch)$"];
+  relation["landuse"="recreation_ground"];
   way["leisure"="nature_reserve"]["name"];
   way["boundary"="protected_area"]["protect_class"~"^(1|1a|1b|4)$"]["name"];
   way["boundary"="national_park"]["name"];
@@ -614,7 +620,10 @@ function unionByName(elements, project) {
 // størrelsen i sjakk i tettbygde områder.
 // 512 (slalombakke) er areal-feature og rendres som ground sammen med
 // vegetasjon — under vann og over skog så bakken vises tydelig.
-const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512']
+// 513 (idrettsanlegg: stadion/idrettsbane/travbane/hoppbakke/arena) rendres
+// samme sted — et bunn-areal med anleggets «baneform» som stier/konturer/
+// veier legger seg lesbart oppå. Eget toggle-lag («Idrettsanlegg»).
+const GROUND_CODES = ['401', '403', '404', '406', '407', '408', '409', '210', '512', '513']
 // Vann-stack: dybdeareal (Sjøkart 307, diskrete blå-bånd pr dybde) først,
 // så myr-pattern, så ISOM 303/301/302 (mer mettete blå overstyrer for navn-
 // gitte vann), så bekker.
@@ -674,7 +683,7 @@ const MARINE_POINT_CODES = {
   // v9.3.37 — se STRAND_CODES + POLYGON_CODES. Ikonet er fjernet helt.
 }
 
-const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '520', '521', '522', '551', '552', '556'])
+const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '513', '520', '521', '522', '551', '552', '556'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
 /**
@@ -1779,6 +1788,11 @@ export function buildSvg(elements, bbox, options = {}) {
     if (tags.highway || tags.railway || tags.route || tags.type === 'route' ||
         tags.public_transport || tags.barrier || tags.power) continue
 
+    // Hoppbakke (sport=ski_jumping): brukeren vil ha disse navngitt. De
+    // mappes i OSM ofte som en ÅPEN profil-linje (way) eller en enkelt node,
+    // ikke et lukket areal — så de hoppes over av areal-logikken under. Vi
+    // navngir dem uansett: åpen way → midtpunkt av linja, node → punktet selv.
+    const isSkiJump = tags.sport === 'ski_jumping'
     let cent = null
     let areaM2 = 0
     if (el.type === 'way' && el.geometry && el.geometry.length >= 3) {
@@ -1788,9 +1802,20 @@ export function buildSvg(elements, bbox, options = {}) {
       const g0 = el.geometry[0]
       const gN = el.geometry[el.geometry.length - 1]
       const closed = Math.abs(g0.lat - gN.lat) < 1e-9 && Math.abs(g0.lon - gN.lon) < 1e-9
-      if (!closed) continue
-      areaM2 = polygonAreaM2(el.geometry)
-      cent = polygonCentroid(el.geometry)
+      if (!closed) {
+        if (!isSkiJump) continue
+        // Åpen hoppbakke-profil: label på midt-noden i linja.
+        const gm = el.geometry[Math.floor(el.geometry.length / 2)]
+        cent = project(gm.lat, gm.lon)
+      } else {
+        areaM2 = polygonAreaM2(el.geometry)
+        cent = polygonCentroid(el.geometry)
+      }
+    } else if (el.type === 'node' && isSkiJump) {
+      cent = project(el.lat, el.lon)
+    } else if (el.type === 'way' && el.geometry && el.geometry.length === 2 && isSkiJump) {
+      const gm = el.geometry[0]
+      cent = project(gm.lat, gm.lon)
     } else if (el.type === 'relation' && el.members) {
       const outerRings = assembleRelationRings(el.members, 'outer')
       if (outerRings.length === 0) continue
@@ -1828,7 +1853,7 @@ export function buildSvg(elements, bbox, options = {}) {
     // Hytter rendrer som lite symbol (13×13 m kvadrat) — minst krav er at
     // bygget er gjenkjent. Andre arealer trenger større minimum for å unngå
     // å spamme bbox med navn på tiny features.
-    const minArea = isBuilding ? 0 : 1000
+    const minArea = isBuilding || isSkiJump ? 0 : 1000
     if (areaM2 < minArea) continue
     // Naturreservat-mistags (gigantiske polygoner) labels også droppes —
     // speiler maxAreaM2-cappingen i POLYGON_FILTER.naturreservat.
@@ -2634,6 +2659,7 @@ function categoryFor(code) {
     case '510':                                  return 'lysloype'
     case '511':                                  return 'heistrase'
     case '512':                                  return 'slalombakke'
+    case '513':                                  return 'idrettsanlegg'
     case '515':                                  return 'tog'
     case '201': case '203':                     return 'stupkant'
     case '210': case '213':

@@ -432,6 +432,18 @@
           ]
         }
       },
+      "513": {
+        "label": "Idrettsanlegg",
+        "$comment": "Norge-spesifikk ISOM-utvidelse for stadion, idrettspark, idrettsbane, travbane, friidrettsbane, hoppbakke og arena (OSM leisure=stadium/sports_centre/pitch/track/horse_racing, landuse=recreation_ground, building=stadium, sport=ski_jumping). Rendres med anleggets faktiske form («baneform»): dempet okergul fyll med solid varm-brun omriss så banen/anlegget leses tydelig under stier/konturer/veier. Hoppbakker labels med navn (se omradenavn i mapBuilder).",
+        "fill": {
+          "color": "#f2e7c6"
+        },
+        "stroke": {
+          "color": "#b5912f",
+          "widthMm": 0.12,
+          "linejoin": "round"
+        }
+      },
       "515": {
         "label": "Jernbane",
         "$comment": "Tradisjonell jernbane-symbolikk: solid sort linje (rail) med hvite ladder-stripes (sviller) overlaid via overlayStroke. Begge paths rendres for samme geometri når overlayStroke finnes.",
@@ -1642,6 +1654,14 @@
         },
         "stroke": {
           "color": "#a89048"
+        }
+      },
+      "513": {
+        "fill": {
+          "color": "#4a4424"
+        },
+        "stroke": {
+          "color": "#b5912f"
         }
       },
       "515": {

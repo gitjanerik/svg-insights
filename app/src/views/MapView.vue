@@ -347,6 +347,7 @@ const LAYERS = [
   { key: 'lysloype',   label: 'Lysløype' },
   { key: 'heistrase',  label: 'Heistrasé' },
   { key: 'slalombakke', label: 'Slalombakke' },
+  { key: 'idrettsanlegg', label: 'Idrettsanlegg' },
   // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
   // drikkevann) + fareområde (data-layer 'sjo-poi'). Rendres i en egen
   // gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —

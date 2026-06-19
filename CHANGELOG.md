@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-19 — v11.0.25: Idrettsanlegg — nytt kartlag for stadion, baner, travbane og hoppbakke
+
+Kartet hadde ingen markering av idrettsanlegg — stadioner, idrettsparker, idrettsbaner, travbaner, friidrettsbaner, hoppbakker og arenaer forsvant i bakgrunnen. Et nytt **«Idrettsanlegg»**-lag (ISOM-utvidelse 513, default PÅ) henter og markerer disse fra OSM: `leisure=stadium/sports_centre/pitch/track/horse_racing`, `landuse=recreation_ground`, `building=stadium` og `sport=ski_jumping`. Hvert anlegg tegnes med sin faktiske form («baneform») — dempet okergul flate med solid varm-brun omriss — som et bunn-areal i samme z-lag som slalombakke, slik at stier, høydekurver og veier legger seg lesbart oppå. Laget får sin egen bryter nederst i Lag-fanen sammen med Lysløype, Heistrasé og Slalombakke. Hoppbakker navngis: `sport=ski_jumping` mappet som åpen profil-linje eller enkelt node (slik OSM ofte gjør) får etiketten på midtpunktet, ikke bare lukkede arealer. Lysløype (`leisure=track` + `sport=skiing`) forblir uendret kode 510.
+
+---
+
 ## 2026-06-19 — v11.0.24: Sjønavn — geografiske navn i sjøen (eget marint lag, default på)
 
 Tidligere hadde kartet ingen navn i sjøen — bukter, vik, sund, nes, grunner, holmer og skjær var navnløse selv om OSM kjenner dem. Et nytt **«Sjønavn»**-lag i «Sjø & padling»-seksjonen (default PÅ) henter og viser disse: `natural=bay/cape/strait/shoal/reef/peninsula/isthmus` (bukt/vik/kile, nes/odde, sund, grunne, rev, halvøy), `place=islet/island` (holme/øy) og navngitte `seamark:type=rock` (skjær). Etiketten plasseres på node-punktet, way-sentroiden eller relasjonens største outer-ring-sentroid, i samme blå/italic vann-navn-stil (tema-tilpasset). Navne-noder uten egen geometri hoppes over i ISOM-klassifiseringen så de ikke lager tomme vann-/sted-buckets, mens øy-flater (001), bukt-flater (303) og sjømerke-skjær (211-symbol) beholder geometrien sin og får navnet i tillegg. `claimLabelName` kjører etter innsjø-/elv-navn så en bukt som allerede er navngitt via flate-etiketten ikke dupliseres. Long-press-detalj-lupen tvinger sjønavn synlig som de øvrige marine lagene.
