@@ -21,7 +21,7 @@ import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
-import { pruneAutoTiles, countAutoTiles, tileOffset, rectOverlapFraction } from '../lib/tileCache.js'
+import { pruneAutoTiles, countAutoTiles, tileOffset, rectOverlapFraction, tilesAreGridCompatible } from '../lib/tileCache.js'
 import { getPerfLog, clearPerfLog } from '../lib/perfLog.js'
 import {
   viewRectSvg, expandRect, rectContains, buildCullIndex,
@@ -3915,17 +3915,32 @@ function extendMapGeometry(direction) {
   const rowAt = (yTop) => Array.from({ length: cols },
     (_, c) => ({ x: b.minX + (c + 0.5) * W, y: yTop + H / 2 }))
   const midX = (b.minX + b.maxX) / 2, midY = (b.minY + b.maxY) / 2
+  let neighborCenters, panPoint
   switch (direction) {
-    case 'N': return { neighborCenters: rowAt(b.minY - H), panPoint: { x: midX, y: b.minY + e } }
-    case 'S': return { neighborCenters: rowAt(b.maxY), panPoint: { x: midX, y: b.maxY - e } }
-    case 'E': return { neighborCenters: colAt(b.maxX), panPoint: { x: b.maxX - e, y: midY } }
-    case 'W': return { neighborCenters: colAt(b.minX - W), panPoint: { x: b.minX + e, y: midY } }
-    case 'NE': return { neighborCenters: [...colAt(b.maxX), ...rowAt(b.minY - H), { x: b.maxX + W / 2, y: b.minY - H / 2 }], panPoint: { x: b.maxX - e, y: b.minY + e } }
-    case 'NW': return { neighborCenters: [...colAt(b.minX - W), ...rowAt(b.minY - H), { x: b.minX - W / 2, y: b.minY - H / 2 }], panPoint: { x: b.minX + e, y: b.minY + e } }
-    case 'SE': return { neighborCenters: [...colAt(b.maxX), ...rowAt(b.maxY), { x: b.maxX + W / 2, y: b.maxY + H / 2 }], panPoint: { x: b.maxX - e, y: b.maxY - e } }
-    case 'SW': return { neighborCenters: [...colAt(b.minX - W), ...rowAt(b.maxY), { x: b.minX - W / 2, y: b.maxY + H / 2 }], panPoint: { x: b.minX + e, y: b.maxY - e } }
+    case 'N': neighborCenters = rowAt(b.minY - H); panPoint = { x: midX, y: b.minY + e }; break
+    case 'S': neighborCenters = rowAt(b.maxY); panPoint = { x: midX, y: b.maxY - e }; break
+    case 'E': neighborCenters = colAt(b.maxX); panPoint = { x: b.maxX - e, y: midY }; break
+    case 'W': neighborCenters = colAt(b.minX - W); panPoint = { x: b.minX + e, y: midY }; break
+    case 'NE': neighborCenters = [...colAt(b.maxX), ...rowAt(b.minY - H), { x: b.maxX + W / 2, y: b.minY - H / 2 }]; panPoint = { x: b.maxX - e, y: b.minY + e }; break
+    case 'NW': neighborCenters = [...colAt(b.minX - W), ...rowAt(b.minY - H), { x: b.minX - W / 2, y: b.minY - H / 2 }]; panPoint = { x: b.minX + e, y: b.minY + e }; break
+    case 'SE': neighborCenters = [...colAt(b.maxX), ...rowAt(b.maxY), { x: b.maxX + W / 2, y: b.maxY + H / 2 }]; panPoint = { x: b.maxX - e, y: b.maxY - e }; break
+    case 'SW': neighborCenters = [...colAt(b.minX - W), ...rowAt(b.maxY), { x: b.minX - W / 2, y: b.maxY + H / 2 }]; panPoint = { x: b.minX + e, y: b.maxY - e }; break
     default: return null
   }
+  // Autoritativ UTM-bboks per nabo, utledet med eksakt heltalls-offset fra aktiv
+  // flis' (allerede rutenett-snappede) UTM-extent. Hver senter-celle har topp-
+  // venstre (c.x - W/2, c.y - H/2) i aktiv SVG-meter-rom; SVG-y vokser nedover =
+  // UTM-nord nedover, så maxN speiles om aktiv maxN. Siden b.minX/b.minY er
+  // heltalls-multipla av W/H fra aktiv origo, lander hver nabo bit-eksakt på
+  // aktiv-gitteret → mosaikken flukter uten søm (buildMapFromCenter bruker denne
+  // direkte, ingen re-snapping). Avrund til hele meter mot float-rest.
+  const neighborBboxes = neighborCenters.map((c) => {
+    const sx = c.x - W / 2, sy = c.y - H / 2
+    const minE = Math.round(m.minE + sx)
+    const maxN = Math.round(m.maxN - sy)
+    return { minE, maxE: minE + Math.round(W), minN: maxN - Math.round(H), maxN }
+  })
+  return { neighborCenters, neighborBboxes, panPoint }
 }
 
 // Ville en ny flis sentrert i `c` (samme størrelse som aktiv flis)
@@ -3988,7 +4003,9 @@ async function extendMap(direction) {
   }
   // Hopp over naboer vi allerede har en (rutenett-flukta) flis for — da gir en
   // ny flis på samme senter ≈100 % overlapp med en eksisterende spøkelses-flis.
-  const toBuild = geom.neighborCenters.filter(c => !centerOverExistingTile(c, m))
+  const toBuild = geom.neighborCenters
+    .map((center, i) => ({ center, utmBbox: geom.neighborBboxes[i] }))
+    .filter(({ center }) => !centerOverExistingTile(center, m))
   if (!toBuild.length) {
     panTo(geom.panPoint.x, geom.panPoint.y, {
       vbWidth: m.widthM, vbHeight: m.heightM,
@@ -4011,7 +4028,8 @@ async function extendMap(direction) {
         ? `Bygger utsnitt ${i + 1} av ${toBuild.length} …`
         : 'Bygger nytt utsnitt …'
       const { id } = await buildMapFromCenter({
-        ...autoMapBuildOpts(toBuild[i]),
+        ...autoMapBuildOpts(toBuild[i].center),
+        utmBbox: toBuild[i].utmBbox,   // eksakt ±W/±H-offset → flukter med aktiv flis
         terrainFirst: false,   // full flis med en gang
         onProgress: (msg) => {
           buildingProgress.value = prefix ? `${prefix}: ${msg}` : msg
@@ -4476,6 +4494,12 @@ function buildGhostSvg(stored, activeMeta) {
   const ub = gm?.utmBbox
   const Wg = gm?.widthM, Hg = gm?.heightM
   if (!ub || !Wg || !Hg) return null
+  // Kun fliser som deler aktiv-flisas størrelse OG gitter tegnes som spøkelser.
+  // Ulik-bygde kart (innebygd demo, eldre brukerkart i annen størrelse) ville
+  // ellers feiljusteres og «smelte sammen» i trappetrinn (rapportert v11.0.22).
+  if (!tilesAreGridCompatible(
+        { minE: activeMeta.minE, minN: activeMeta.minN, widthM: activeMeta.widthM, heightM: activeMeta.heightM },
+        { minE: ub.minE, minN: ub.minN, widthM: Wg, heightM: Hg })) return null
   const off = tileOffset({ minE: activeMeta.minE, maxN: activeMeta.maxN }, { minE: ub.minE, maxN: ub.maxN })
   if (!off) return null
   // Rund offset til hele meter. Flisene er snappet til res-rutenettet (10/20/5 m)

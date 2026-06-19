@@ -94,6 +94,36 @@ export function tileOffset(active, ghost) {
 }
 
 /**
+ * Kan nabo-flisa `ghost` legges sømløst inntil `active` som spøkelses-mosaikk?
+ * Krever (1) SAMME størrelse (widthM/heightM innen `tolM`) og (2) at den ligger
+ * på SAMME flis-gitter — origo-deltaene må være ~heltalls-multipla av flis-
+ * størrelsen. Uten dette tegnes ulik-bygde kart (innebygd demo, eldre brukerkart
+ * med annen halfKm/aspect) som feiljusterte spøkelser som «smelter sammen» i
+ * trappetrinn. Ren funksjon (enhetstestet); UTM-meter-rom.
+ *
+ * @param {{minE:number, minN:number, widthM:number, heightM:number}} active
+ * @param {{minE:number, minN:number, widthM:number, heightM:number}} ghost
+ * @param {{tolM?:number}} [opts]  toleranse i meter (default 1)
+ * @returns {boolean}
+ */
+export function tilesAreGridCompatible(active, ghost, { tolM = 1 } = {}) {
+  if (!active || !ghost) return false
+  if (!(active.widthM > 0) || !(active.heightM > 0)) return false
+  if (!(ghost.widthM > 0) || !(ghost.heightM > 0)) return false
+  if (Math.abs(ghost.widthM - active.widthM) > tolM) return false
+  if (Math.abs(ghost.heightM - active.heightM) > tolM) return false
+  // Samme gitter: delta ≡ 0 (mod flis-størrelse). Håndterer negativt offset
+  // (vest/sør-nabo) og wrap-around (delta like under en hel flis ≈ 0).
+  const onLattice = (delta, size) => {
+    const r = ((delta % size) + size) % size
+    return Math.min(r, size - r) <= tolM
+  }
+  if (!onLattice(ghost.minE - active.minE, active.widthM)) return false
+  if (!onLattice(ghost.minN - active.minN, active.heightM)) return false
+  return true
+}
+
+/**
  * Andel av rektangel `a` som overlappes av `b` (0..1). Brukes for å avgjøre om
  * et nytt auto-kart (sentrert der man ser) ville duplisere en flis vi allerede
  * har — da skal auto-kart-triggeren undertrykkes (man «scroller tilbake», ikke

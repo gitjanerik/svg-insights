@@ -180,6 +180,7 @@ export async function buildMapFromCenter({
   signal,
   terrainFirst = false,
   isAuto = false,
+  utmBbox: explicitUtmBbox = null,
 }) {
   const throwIfAborted = () => {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
@@ -204,33 +205,46 @@ export async function buildMapFromCenter({
   const heightKm = (halfKm * 2 * mapAspect).toFixed(1)
   onProgress(`Henter kartdata for ${widthKm} × ${heightKm} km …`)
 
-  // Beregn UTM-bbox tidlig så fetchDEM kan startes parallelt med
-  // Overpass/N50 i stedet for å vente på dem (v8.10.18: sparer 3-10 s).
-  // Fire-hjørners UTM-extent (utm32BboxFromWgs84) så kartet blir kvadratisk for
-  // en kvadratisk bbox — SW+NE-diagonalen alene undervurderte øst-vest og ga
-  // portrett-kart vekk fra sentralmeridianen. Sendes uendret videre til buildSvg.
-  let utmBbox = utm32BboxFromWgs84(bbox)
-
   // DEM-oppløsning (probe). 10 m ved fine konturer (≤ 5 m ekvidistanse),
   // ellers 20 m. Beregnes her oppe fordi flis-cachen snapper bbox til dette
   // rutenettet (multiplum av 5/10/20 → også 5 m-justert for kyst-oppgraderingen).
   const resolutionM = equidistanceM <= 5 ? 10 : 20
 
-  // Flis-cache PÅ: snap bbox til res-rutenettet så kart-grid og flis-grid
-  // flukter eksakt (ingen resampling). Recompute WGS84-bbox fra de snappede
-  // hjørnene så Overpass/buildSvg bruker SAMME extent som DEM-en.
-  if (DEM_TILE_CACHE_ENABLED) {
-    utmBbox = snapUtmBboxToGrid(utmBbox, resolutionM)
-    // Recompute WGS84-bbox fra ALLE fire snappede hjørner (ikke bare SW+NE) så
-    // Overpass dekker hele det kvadratiske utsnittet — med bare diagonalen ble
-    // hjørnene under-dekket og OSM-data manglet i kart-kantene.
+  // Recompute WGS84-bbox fra ALLE fire UTM-hjørner (ikke bare SW+NE) så Overpass
+  // dekker hele det rektangulære utsnittet — med bare diagonalen ble hjørnene
+  // under-dekket og OSM-data manglet i kart-kantene.
+  const wgs84FromUtmCorners = (ub) => {
     const cs = [
-      utm32ToWgs84(utmBbox.minE, utmBbox.minN), utm32ToWgs84(utmBbox.maxE, utmBbox.minN),
-      utm32ToWgs84(utmBbox.minE, utmBbox.maxN), utm32ToWgs84(utmBbox.maxE, utmBbox.maxN),
+      utm32ToWgs84(ub.minE, ub.minN), utm32ToWgs84(ub.maxE, ub.minN),
+      utm32ToWgs84(ub.minE, ub.maxN), utm32ToWgs84(ub.maxE, ub.maxN),
     ]
-    bbox = {
+    return {
       south: Math.min(...cs.map(c => c.lat)), north: Math.max(...cs.map(c => c.lat)),
       west: Math.min(...cs.map(c => c.lon)), east: Math.max(...cs.map(c => c.lon)),
+    }
+  }
+
+  // Beregn UTM-bbox tidlig så fetchDEM kan startes parallelt med Overpass/N50.
+  let utmBbox
+  if (explicitUtmBbox) {
+    // Kalleren ga en autoritativ, allerede rutenett-snappet UTM-extent (kant-sone-
+    // utvidelse: nabo-flis utledet med eksakt ±W/±H-offset fra aktiv flis, så
+    // den deler aktiv-gitteret bit-eksakt → ingen søm/glipe). Bruk den direkte,
+    // IKKE re-snap (no-op på en on-grid bboks, men unngår fremtidig drift). WGS84-
+    // bboksen utledes fortsatt fra de fire hjørnene så fetch-laget dekker samme extent.
+    utmBbox = explicitUtmBbox
+    bbox = wgs84FromUtmCorners(utmBbox)
+  } else {
+    // Fire-hjørners UTM-extent (utm32BboxFromWgs84) så kartet blir kvadratisk for
+    // en kvadratisk bbox — SW+NE-diagonalen alene undervurderte øst-vest og ga
+    // portrett-kart vekk fra sentralmeridianen. Sendes uendret videre til buildSvg.
+    utmBbox = utm32BboxFromWgs84(bbox)
+    // Flis-cache PÅ: snap bbox til res-rutenettet så kart-grid og flis-grid
+    // flukter eksakt (ingen resampling). Recompute WGS84-bbox fra de snappede
+    // hjørnene så Overpass/buildSvg bruker SAMME extent som DEM-en.
+    if (DEM_TILE_CACHE_ENABLED) {
+      utmBbox = snapUtmBboxToGrid(utmBbox, resolutionM)
+      bbox = wgs84FromUtmCorners(utmBbox)
     }
   }
 
