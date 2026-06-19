@@ -2041,6 +2041,34 @@ function pointOnFreshwater(svgX, svgY) {
   return false
 }
 
+// Ligger punktet PÅ en vannflate (sjø ELLER ferskvann)? Punkt-i-fyll mot alle
+// vann-AREAL-koder (POLYGON_CODES-vannet i mapBuilder): 301/302 innsjø+elv-areal,
+// 303 sjø, 307 dybdeareal, 308/309. Linjer (304/305 elv/bekk) telles ikke — vi
+// vil bare avvise selve vannflaten. Brukes av Stifinner til å nekte start-/mål-
+// punkt i vann. Samme CTM-invers-mønster som pointOnFreshwater (øy-hull via
+// fill-rule evenodd teller som land).
+const WATER_AREA_SELECTOR = ['301', '302', '303', '307', '308', '309']
+  .map(c => `g[data-iso="${c}"] path`).join(', ')
+function pointOnWater(svgX, svgY) {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || typeof svg.createSVGPoint !== 'function') return false
+  const paths = svg.querySelectorAll(WATER_AREA_SELECTOR)
+  if (!paths.length) return false
+  const rootPt = svg.createSVGPoint()
+  rootPt.x = svgX
+  rootPt.y = svgY
+  for (const path of paths) {
+    if (typeof path.isPointInFill !== 'function') continue
+    const ctm = typeof path.getCTM === 'function' ? path.getCTM() : null
+    let local = rootPt
+    if (ctm) {
+      try { local = rootPt.matrixTransform(ctm.inverse()) } catch { continue }
+    }
+    if (path.isPointInFill(local)) return true
+  }
+  return false
+}
+
 // Parse en linje-path-d ("M x,y L x,y ... M ...") til lister av [x,y]-punkter,
 // én per subpath. mapBuilder skriver kun M/L med komma-separerte tall.
 function parseLinePoints(d) {
@@ -2532,7 +2560,7 @@ function onConfirmStart() {
   const c = visibleCenterSvg()
   const svg = svgHostRef.value?.querySelector('svg')
   if (!c || !svg) return
-  sti.confirmStart(c, svg)
+  sti.confirmStart(c, svg, { startOnWater: pointOnWater(c.x, c.y) })
   renderRoutes()
 }
 function onCancelStifinner() {
@@ -2604,9 +2632,18 @@ const ctxCanAnnotate = computed(() => {
   const isBuiltin = (route.params.id ?? 'vardasen').startsWith('vardasen')
   return !isBuiltin && !ctxBusy.value
 })
-// «Naviger hit» tilgjengelig når ingen annen modus er aktiv og kartet faktisk
-// har sti-/vei-lag å rute langs.
-const ctxCanNavigate = computed(() => !ctxBusy.value && mapHasTrails.value)
+// Long-press-punktet på en vannflate? Da gir ikke navigasjon mening (mål-
+// markøren ville lagt seg midt i vannet). Re-evalueres når punktet/menyen endres.
+const ctxPointOnWater = computed(() => {
+  const p = contextMenuPoint.value
+  if (!p || !contextMenuOpen.value) return false
+  return pointOnWater(p.svgX, p.svgY)
+})
+
+// «Naviger hit» tilgjengelig når ingen annen modus er aktiv, kartet faktisk
+// har sti-/vei-lag å rute langs, og punktet ikke ligger i vann.
+const ctxCanNavigate = computed(() =>
+  !ctxBusy.value && mapHasTrails.value && !ctxPointOnWater.value)
 
 // Pin på long-press-punktet — vises i et eget SVG-lag mens menyen er åpen,
 // så brukeren ser hvor handlingen utføres. Re-rendres ved zoom (skjerm-
