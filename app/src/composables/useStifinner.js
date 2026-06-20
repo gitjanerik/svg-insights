@@ -11,7 +11,7 @@
 // ren, testet lib (routing.js + pathUtils.parsePathSubpaths).
 
 import { ref, computed } from 'vue'
-import { buildRoutingGraph, kShortestRoutes } from '../lib/routing.js'
+import { buildRoutingGraph, planRoutes } from '../lib/routing.js'
 import { parsePathSubpaths } from '../lib/pathUtils.js'
 
 // ISOM-koder som er routbare (vei/sti/bro). Må matche ISOM_COST i routing.js.
@@ -146,7 +146,7 @@ export function useStifinner() {
     startSnap.value = { x: aNode.pos[0], y: aNode.pos[1] }
     destSnap.value = { x: bNode.pos[0], y: bNode.pos[1] }
 
-    const found = kShortestRoutes(rg, aNode.id, bNode.id, { k: 3 })
+    const found = planRoutes(rg, aNode.id, bNode.id, { k: 3 })
     if (!found.length) {
       error.value = 'Fant ingen rute mellom punktene'
       return

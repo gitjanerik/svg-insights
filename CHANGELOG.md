@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-06-20 — v11.0.29: Stifinner — broer frakoblede «snarvei»-stumper + kortest mulig uten motorvei
+
+Fant rotårsaken til Verkensvannet-tilfellet: routing-grafen slo bare sammen SAMMENFALLENDE endepunkter (innen snapM), så en sti/vei som ender midt på en annen (T-kryss) eller med et lite gap etter DP-forenkling/Chaikin-glatting i mapBuilder havnet i sin egen frakoblede komponent. Skogsbilvei-stumpen kunne dermed aldri rutes gjennom — uansett vekting. `buildRoutingGraph` broer nå hver dangle (node med grad 1) til nærmeste segment innen `bridgeM` (default 2×snapM = 12 m i Stifinner) ved å splitte segmentet og koble på. Kun dangler broes — gjennomgående stier røres ikke, så vi lager ikke falske kryss der en sti faktisk går i bro/kulvert over en annen.
+
+I tillegg: «kortest mulig»-ruta (og alle Stifinner-forslag) bruker ikke lenger motorvei (ISOM 501). En ny `lengthNoMw`-vekt blokkerer motorvei-kanter i den rene lengde-Dijkstraen, og rutene forkastes om motorvei skulle være uunngåelig. En fotgjenger skal ikke sendes ut på motorvei.
+
+---
+
+## 2026-06-20 — v11.0.28: Stifinner — alltid en garantert «kortest mulig»-rute
+
+Flate-vektingen alene (v11.0.27) holdt ikke: stifinneren kunne fortsatt svinge unna en kort vei-/skogsbilvei-stump til fordel for en lengre rute på «finere» underlag. Nå tilbyr Stifinner ALLTID den rent geometrisk korteste ruta A→B — uavhengig av sti- eller veitype — i tillegg til de flate-vektede alternativene som foretrekker natur-korridoren (sti → skogsbilvei → småveg → veg). Ny `planRoutes()` i `lib/routing.js` kjører en ren lengde-Dijkstra for garantert-korteste, fyller på med `kShortestRoutes()`-alternativer, og dedupliserer dem som i praksis er den samme ruta. Den korteste merkes med en «Kortest»-etikett i rute-lista og ligger først (valgt som standard). Dette løser Verkensvannet-tilfellet der ingen rute tok skogsbilvei-stumpen.
+
+---
+
 ## 2026-06-20 — v11.0.27: Stifinner — «kortest mulig» teller høyere enn sti over vei
 
 Justert vektingen i routing-grafen (`lib/routing.js`). Vi beholder prioriteringen sti → skogsbilvei → småveg → veg, men strammer kost-båndet kraftig: maks ~1,7× fra sti (505) til motorvei (501), mot tidligere 4× (1,0 → 4,0). Det gamle HOPPET fra natur-korridor (≤1,6) til kjørevei (2,6–4,0) gjorde at en kort, direkte rute som måtte ta en liten vei-/skogsbilvei-stump tapte mot en mye lengre ren-sti-omvei — kostnaden av stumpen oversteg en hel æresrunde på sti. Det var nettopp dette som skjedde ved Verkensvannet: ingen stifinner-rute tok skogsbilvei-stumpen, alle svingte østover (lilla forslag tok i tillegg en 360°-detour). Nå dominerer avstand: en litt lengre sti slår fortsatt en kortere kjørevei, men en stor omvei på sti taper mot en kort, direkte rute med litt vei. Nye kostnader: 505=1,0 · 506=1,05 · 507=1,12 · 504=1,15 · 503=1,3 · 502=1,5 · 501=1,7 · 509=1,0. Lagt til en regresjonstest for Verkensvannet-tilfellet.

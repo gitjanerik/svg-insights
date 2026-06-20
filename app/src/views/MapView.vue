@@ -5682,6 +5682,10 @@ onUnmounted(() => {
                 <span class="text-[11px] tabular-nums">
                   {{ formatDistance(r.lengthM) }} · {{ sti.estWalkMinutes(r.lengthM) }} min
                 </span>
+                <span v-if="r.shortest"
+                      class="text-[8px] uppercase tracking-wide bg-white/25 rounded px-1 py-px shrink-0">
+                  Kortest
+                </span>
               </button>
             </div>
             <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/80 mt-1 tabular-nums">
