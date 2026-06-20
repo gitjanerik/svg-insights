@@ -137,9 +137,9 @@ export function buildRoutingGraph(features, opts = {}) {
     return best ? { id: best.id, pos: best.pos, distM: Math.sqrt(bestD) } : null
   }
 
-  function route(fromId, toId) {
+  function route(fromId, toId, weight = 'cost') {
     if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return null
-    const path = dijkstra.bidirectional(g, fromId, toId, 'cost')
+    const path = dijkstra.bidirectional(g, fromId, toId, weight)
     if (!path) return null
     const coords = path.map(id => g.getNodeAttribute(id, 'pos'))
     const lengthM = polylineLength(coords)
@@ -228,4 +228,56 @@ export function kShortestRoutes(rg, fromId, toId, opts = {}) {
 
   chosen.sort((a, b) => a.lengthM - b.lengthM)
   return chosen
+}
+
+/**
+ * Rute-forslag for Stifinner. GARANTERER alltid en «kortest mulig»-rute
+ * (ren geometrisk korteste vei, uavhengig av sti-/veitype), og fyller på
+ * med flate-vektede alternativer som foretrekker natur-korridoren
+ * (sti → skogsbilvei → småveg → veg).
+ *
+ * Bakgrunn: flate-vektingen alene kan svinge unna en kort vei-/skogsbilvei-
+ * stump til fordel for en lengre rute på «finere» underlag (Verkensvannet-
+ * tilfellet). Ved alltid å tilby den rene korteste ruta ser brukeren alltid
+ * det faktisk korteste alternativet — og de vektede rutene gir de
+ * triveligere variantene når de finnes og er distinkte nok.
+ *
+ * Den korteste ruta merkes `shortest: true`. Resultatet er sortert på
+ * lengthM stigende (så korteste ligger først).
+ *
+ * @param {ReturnType<typeof buildRoutingGraph>} rg
+ * @param {string} fromId
+ * @param {string} toId
+ * @param {{ k?: number, penalty?: number, minShare?: number, maxLengthRatio?: number }} opts
+ * @returns {Array<{coordinates:Array<[number,number]>, lengthM:number, costM:number, nodeIds:string[], shortest?:boolean}>}
+ */
+export function planRoutes(rg, fromId, toId, opts = {}) {
+  const { k = 3, minShare = 0.6 } = opts
+  const { graph: g, route } = rg
+  if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return []
+
+  // 1. Garantert kortest mulig — ren lengde, ignorer flate-kost.
+  const shortest = route(fromId, toId, 'length')
+
+  // 2. Flate-vektede alternativer (foretrekker sti → skogsbilvei → ...).
+  const weighted = kShortestRoutes(rg, fromId, toId, opts)
+
+  const out = []
+  let shortestSet = null
+  if (shortest) {
+    out.push({ ...shortest, shortest: true })
+    shortestSet = routeEdgeSet(g, shortest.nodeIds)
+  }
+  for (const r of weighted) {
+    if (out.length >= k) break
+    // Hopp over en vektet rute som i praksis er den samme som korteste.
+    if (shortestSet) {
+      const eset = routeEdgeSet(g, r.nodeIds)
+      if (shareOf(eset, shortestSet) >= minShare && shareOf(shortestSet, eset) >= minShare) continue
+    }
+    out.push(r)
+  }
+
+  out.sort((a, b) => a.lengthM - b.lengthM)
+  return out
 }

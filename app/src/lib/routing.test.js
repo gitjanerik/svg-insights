@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRoutingGraph, kShortestRoutes } from './routing.js'
+import { buildRoutingGraph, kShortestRoutes, planRoutes } from './routing.js'
 
 // Lite rutenett i SVG-meter-rom (coordinates allerede projisert).
 // Et 2x2-grid med ekstra diagonal-snarvei, alt som ISOM 505 (sti):
@@ -216,5 +216,44 @@ describe('kShortestRoutes', () => {
     // Uten cap (svært høy ratio) skal den lange loopen kunne dukke opp.
     const uncapped = kShortestRoutes(rg, a, b, { k: 3, minShare: 0.1, maxLengthRatio: 100 })
     expect(Math.max(...uncapped.map(r => r.lengthM))).toBeGreaterThan(100 * 1.8)
+  })
+})
+
+describe('planRoutes', () => {
+  it('garanterer den kortest mulige ruta selv når den går på «dyrere» underlag', () => {
+    // A(0,0) → B(400,0). Kort direkte rute (400 m) går via en hovedvei-stump
+    // (502, dyr flate); ren-sti-omvei (505) er lengre (620 m). Den
+    // flate-vektede ruta kan velge sti-omveien, men planRoutes skal ALLTID
+    // også tilby den korteste (400 m) — uavhengig av flate.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0]], isomCode: '505' },
+      { coordinates: [[100, 0], [200, 0]], isomCode: '502' },             // dyr vei-stump
+      { coordinates: [[200, 0], [300, 0], [400, 0]], isomCode: '505' },
+      { coordinates: [[0, 0], [0, 110], [400, 110], [400, 0]], isomCode: '505' }, // sti-omvei ~620
+    ], { snapM: 2 })
+    const routes = planRoutes(rg, rg.nodeAt([0, 0]), rg.nodeAt([400, 0]), { k: 3 })
+
+    const shortest = routes.find(r => r.shortest)
+    expect(shortest).toBeTruthy()
+    expect(shortest.lengthM).toBeCloseTo(400, 0)       // tok vei-stumpen — kortest
+    expect(routes[0]).toBe(shortest)                   // sortert kortest først
+    // Korteste ruta skal aldri mangle, uansett flate.
+    expect(Math.min(...routes.map(r => r.lengthM))).toBeCloseTo(400, 0)
+  })
+
+  it('dedupliserer når korteste og den vektede ruta er den samme', () => {
+    // Bare én vei mellom A og B → korteste == eneste vektede rute. Skal ikke
+    // dukke opp to ganger.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '505' },
+    ], { snapM: 2 })
+    const routes = planRoutes(rg, rg.nodeAt([0, 0]), rg.nodeAt([200, 0]), { k: 3 })
+    expect(routes.length).toBe(1)
+    expect(routes[0].shortest).toBe(true)
+  })
+
+  it('returnerer tom liste for ugyldige noder', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    expect(planRoutes(rg, null, 'n0', {})).toEqual([])
   })
 })
