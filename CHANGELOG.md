@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-20 — v11.0.29: Stifinner — broer frakoblede «snarvei»-stumper + kortest mulig uten motorvei
+
+Fant rotårsaken til Verkensvannet-tilfellet: routing-grafen slo bare sammen SAMMENFALLENDE endepunkter (innen snapM), så en sti/vei som ender midt på en annen (T-kryss) eller med et lite gap etter DP-forenkling/Chaikin-glatting i mapBuilder havnet i sin egen frakoblede komponent. Skogsbilvei-stumpen kunne dermed aldri rutes gjennom — uansett vekting. `buildRoutingGraph` broer nå hver dangle (node med grad 1) til nærmeste segment innen `bridgeM` (default 2×snapM = 12 m i Stifinner) ved å splitte segmentet og koble på. Kun dangler broes — gjennomgående stier røres ikke, så vi lager ikke falske kryss der en sti faktisk går i bro/kulvert over en annen.
+
+I tillegg: «kortest mulig»-ruta (og alle Stifinner-forslag) bruker ikke lenger motorvei (ISOM 501). En ny `lengthNoMw`-vekt blokkerer motorvei-kanter i den rene lengde-Dijkstraen, og rutene forkastes om motorvei skulle være uunngåelig. En fotgjenger skal ikke sendes ut på motorvei.
+
+---
+
 ## 2026-06-20 — v11.0.28: Stifinner — alltid en garantert «kortest mulig»-rute
 
 Flate-vektingen alene (v11.0.27) holdt ikke: stifinneren kunne fortsatt svinge unna en kort vei-/skogsbilvei-stump til fordel for en lengre rute på «finere» underlag. Nå tilbyr Stifinner ALLTID den rent geometrisk korteste ruta A→B — uavhengig av sti- eller veitype — i tillegg til de flate-vektede alternativene som foretrekker natur-korridoren (sti → skogsbilvei → småveg → veg). Ny `planRoutes()` i `lib/routing.js` kjører en ren lengde-Dijkstra for garantert-korteste, fyller på med `kShortestRoutes()`-alternativer, og dedupliserer dem som i praksis er den samme ruta. Den korteste merkes med en «Kortest»-etikett i rute-lista og ligger først (valgt som standard). Dette løser Verkensvannet-tilfellet der ingen rute tok skogsbilvei-stumpen.

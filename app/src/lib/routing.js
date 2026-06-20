@@ -38,6 +38,35 @@ const ISOM_COST = {
   '501': 1.7,                              // motorvei — minst foretrukket å gå
 }
 
+// Sentinel-lengde for `lengthNoMw`-vekten: motorvei-kanter får denne i stedet
+// for ekte lengde, så en ren-lengde-Dijkstra unngår dem (større enn noen ekte
+// kartavstand). Brukes til «kortest mulig»-ruta, som ikke skal gå på motorvei.
+const MOTORWAY_BLOCK = 1e9
+
+/**
+ * Projiser punkt p ned på linjestykket a→b. Returnerer fotpunktet (klemt til
+ * segmentet), parameteren t∈[0,1] og avstanden. Ren geometri-hjelper for
+ * T-kryss-broing i grafen.
+ */
+export function projectPointOnSegment(p, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1]
+  const len2 = vx * vx + vy * vy
+  let t = len2 === 0 ? 0 : ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len2
+  if (t < 0) t = 0
+  else if (t > 1) t = 1
+  const px = a[0] + t * vx, py = a[1] + t * vy
+  return { point: [px, py], t, dist: Math.hypot(p[0] - px, p[1] - py) }
+}
+
+// Bruker en rute en gitt ISOM-kode på noen av kantene sine?
+function pathUsesCode(g, nodeIds, code) {
+  for (let i = 0; i + 1 < nodeIds.length; i++) {
+    const e = g.edge(nodeIds[i], nodeIds[i + 1])
+    if (e != null && g.getEdgeAttribute(e, 'isomCode') === code) return true
+  }
+  return false
+}
+
 /**
  * @typedef {Object} RoutingGraph
  * @property {Graph} graph
@@ -74,12 +103,26 @@ export function buildRoutingGraph(features, opts = {}) {
     return id
   }
 
-  let edges = 0
+  // Legg til en kant u→v med vekter avledet av ISOM-koden. lengthNoMw =
+  // ekte lengde, unntatt motorvei som blokkeres (MOTORWAY_BLOCK) så
+  // «kortest mulig» aldri går der.
+  function linkNodes(u, v, code) {
+    if (u === v || g.hasEdge(u, v)) return false
+    const pu = g.getNodeAttribute(u, 'pos'), pv = g.getNodeAttribute(v, 'pos')
+    const length = Math.hypot(pu[0] - pv[0], pu[1] - pv[1])
+    if (length === 0) return false
+    const cost = ISOM_COST[code] ?? 1
+    g.addEdge(u, v, {
+      length, cost: length * cost, isomCode: code,
+      lengthNoMw: code === '501' ? MOTORWAY_BLOCK : length,
+    })
+    return true
+  }
+
   for (const f of features) {
     const code = f.isomCode ?? f.tags?.isomCode
     if (!code) continue
-    const cost = ISOM_COST[code]
-    if (cost == null) continue       // ikke routbar
+    if (ISOM_COST[code] == null) continue   // ikke routbar
     let coords = f.coordinates
     if (!coords && f.geometry && projectFn) {
       coords = f.geometry.map(p => projectFn(p.lat, p.lon))
@@ -88,16 +131,74 @@ export function buildRoutingGraph(features, opts = {}) {
     let prev = getOrCreateNode(coords[0])
     for (let i = 1; i < coords.length; i++) {
       const here = getOrCreateNode(coords[i])
-      if (prev === here) continue
-      const seg = [coords[i - 1], coords[i]]
-      const length = polylineLength(seg)
-      if (length === 0) continue
-      if (!g.hasEdge(prev, here)) {
-        g.addEdge(prev, here, { length, cost: length * cost, isomCode: code })
-        edges++
-      }
+      linkNodes(prev, here, code)
       prev = here
     }
+  }
+
+  // T-kryss / dangler: et sti-/vei-segment som ender NÆR (men ikke på en node
+  // av) et annet segment ble tidligere stående frakoblet, fordi grafen bare
+  // slår sammen SAMMENFALLENDE endepunkter (innen snapM). DP-forenkling og
+  // Chaikin-glatting i mapBuilder kan flytte selve krysspunktet noen meter, og
+  // et T-kryss der en sti ender midt på en annen sti har uansett ingen node å
+  // snappe til. Resultat: «snarveier» (f.eks. skogsbilvei-stumpen ved
+  // Verkensvannet) havner i sin egen frakoblede komponent og kan aldri rutes
+  // gjennom. Vi broer derfor hver dangle (node med grad 1) til nærmeste segment
+  // innen bridgeM ved å splitte det segmentet og koble på. Kun dangler broes —
+  // gjennomgående stier (begge ender koblet) røres ikke, så vi lager ikke
+  // falske kryss der en sti faktisk går i bro/kulvert over en annen.
+  const bridgeM = opts.bridgeM ?? snapM * 2
+  if (bridgeM > 0) bridgeDangles(bridgeM)
+
+  function bridgeDangles(tol) {
+    const segs = []
+    g.forEachEdge((edge, attr, s, t) => {
+      const ap = g.getNodeAttribute(s, 'pos'), bp = g.getNodeAttribute(t, 'pos')
+      segs.push({
+        s, t, ap, bp, code: attr.isomCode,
+        minX: Math.min(ap[0], bp[0]), minY: Math.min(ap[1], bp[1]),
+        maxX: Math.max(ap[0], bp[0]), maxY: Math.max(ap[1], bp[1]),
+      })
+    })
+    const segIndex = new RBush()
+    segIndex.load(segs)
+
+    const dangles = []
+    g.forEachNode((id, attr) => { if (g.degree(id) === 1) dangles.push({ id, pos: attr.pos }) })
+
+    for (const d of dangles) {
+      if (!g.hasNode(d.id) || g.degree(d.id) !== 1) continue
+      const hits = segIndex.search({
+        minX: d.pos[0] - tol, minY: d.pos[1] - tol,
+        maxX: d.pos[0] + tol, maxY: d.pos[1] + tol,
+      })
+      let best = null, bestD = tol
+      for (const seg of hits) {
+        if (seg.s === d.id || seg.t === d.id) continue   // egen kant
+        if (!g.hasEdge(seg.s, seg.t)) continue           // allerede splittet
+        const proj = projectPointOnSegment(d.pos, seg.ap, seg.bp)
+        if (proj.dist < bestD) { bestD = proj.dist; best = { seg, proj } }
+      }
+      if (best) bridgeToSegment(d, best.seg, best.proj)
+    }
+  }
+
+  function bridgeToSegment(d, seg, proj) {
+    const eps = Math.max(snapM, 0.5)
+    const segLen = Math.hypot(seg.bp[0] - seg.ap[0], seg.bp[1] - seg.ap[1])
+    const distFromA = proj.t * segLen
+    // Nær et eksisterende endepunkt → koble dit, ikke splitt.
+    if (distFromA <= eps) { linkNodes(d.id, seg.s, seg.code); return }
+    if (segLen - distFromA <= eps) { linkNodes(d.id, seg.t, seg.code); return }
+
+    // Splitt segmentet i fotpunktet og koble dangle på.
+    const splitNode = getOrCreateNode(proj.point)
+    if (splitNode !== seg.s && splitNode !== seg.t && g.hasEdge(seg.s, seg.t)) {
+      g.dropEdge(seg.s, seg.t)
+      linkNodes(seg.s, splitNode, seg.code)
+      linkNodes(splitNode, seg.t, seg.code)
+    }
+    if (splitNode !== d.id) linkNodes(d.id, splitNode, seg.code)
   }
 
   function nodeAt(pos, tol = snapM) {
@@ -150,7 +251,7 @@ export function buildRoutingGraph(features, opts = {}) {
     return { coordinates: coords, lengthM, costM, nodeIds: path }
   }
 
-  return { graph: g, nodeAt, nearestNode, route, edges, nodes: g.order }
+  return { graph: g, nodeAt, nearestNode, route, edges: g.size, nodes: g.order }
 }
 
 // Sett med kant-id'er en rute bruker (undirected — graphology gir samme
@@ -245,6 +346,9 @@ export function kShortestRoutes(rg, fromId, toId, opts = {}) {
  * Den korteste ruta merkes `shortest: true`. Resultatet er sortert på
  * lengthM stigende (så korteste ligger først).
  *
+ * Motorvei (501) ekskluderes fra ALLE forslag — en fotgjenger skal ikke
+ * sendes ut på motorvei, og «kortest mulig» skal i hvert fall ikke gjøre det.
+ *
  * @param {ReturnType<typeof buildRoutingGraph>} rg
  * @param {string} fromId
  * @param {string} toId
@@ -256,11 +360,16 @@ export function planRoutes(rg, fromId, toId, opts = {}) {
   const { graph: g, route } = rg
   if (!fromId || !toId || !g.hasNode(fromId) || !g.hasNode(toId)) return []
 
-  // 1. Garantert kortest mulig — ren lengde, ignorer flate-kost.
-  const shortest = route(fromId, toId, 'length')
+  // 1. Garantert kortest mulig — ren lengde, men UTEN motorvei: 'lengthNoMw'
+  //    blokkerer 501-kanter. Skulle motorvei likevel være uunngåelig, forkast
+  //    ruta helt (ingen «Kortest» som går på motorvei).
+  let shortest = route(fromId, toId, 'lengthNoMw')
+  if (shortest && pathUsesCode(g, shortest.nodeIds, '501')) shortest = null
 
-  // 2. Flate-vektede alternativer (foretrekker sti → skogsbilvei → ...).
+  // 2. Flate-vektede alternativer (foretrekker sti → skogsbilvei → ...),
+  //    også uten motorvei.
   const weighted = kShortestRoutes(rg, fromId, toId, opts)
+    .filter(r => !pathUsesCode(g, r.nodeIds, '501'))
 
   const out = []
   let shortestSet = null

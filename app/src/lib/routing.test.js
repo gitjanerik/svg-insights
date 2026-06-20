@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRoutingGraph, kShortestRoutes, planRoutes } from './routing.js'
+import { buildRoutingGraph, kShortestRoutes, planRoutes, projectPointOnSegment } from './routing.js'
 
 // Lite rutenett i SVG-meter-rom (coordinates allerede projisert).
 // Et 2x2-grid med ekstra diagonal-snarvei, alt som ISOM 505 (sti):
@@ -255,5 +255,88 @@ describe('planRoutes', () => {
   it('returnerer tom liste for ugyldige noder', () => {
     const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
     expect(planRoutes(rg, null, 'n0', {})).toEqual([])
+  })
+
+  it('«kortest mulig» bruker IKKE motorvei selv om den er kortest', () => {
+    // Motorvei (501) rett fram 200 m vs sti-omvei (505) ~280 m. Den korteste
+    // ruta skal ta sti-omveien, ikke motorveien. Ingen offert rute skal
+    // overhodet bruke motorvei.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '501' },          // motorvei 200
+      { coordinates: [[0, 0], [0, 40], [200, 40], [200, 0]], isomCode: '505' }, // sti-omvei ~280
+    ], { snapM: 2 })
+    const routes = planRoutes(rg, rg.nodeAt([0, 0]), rg.nodeAt([200, 0]), { k: 3 })
+    const shortest = routes.find(r => r.shortest)
+    expect(shortest).toBeTruthy()
+    expect(shortest.lengthM).toBeGreaterThan(200) // tok sti-omveien, ikke motorvei
+    // Ingen offert rute er ~200 m (= motorvei-ruta).
+    expect(routes.every(r => r.lengthM > 200)).toBe(true)
+  })
+})
+
+describe('projectPointOnSegment', () => {
+  it('projiserer et punkt ned på et segment', () => {
+    const r = projectPointOnSegment([5, 3], [0, 0], [10, 0])
+    expect(r.point).toEqual([5, 0])
+    expect(r.t).toBeCloseTo(0.5)
+    expect(r.dist).toBeCloseTo(3)
+  })
+
+  it('klemmer t til [0,1] når punktet ligger utenfor segmentet', () => {
+    const r = projectPointOnSegment([-5, 4], [0, 0], [10, 0])
+    expect(r.t).toBe(0)
+    expect(r.point).toEqual([0, 0])
+  })
+})
+
+describe('broing av dangler / T-kryss', () => {
+  it('kobler en stub som ender midt på et annet segment (T-kryss)', () => {
+    // Gjennomgående sti [0,0]→[200,0] UTEN node ved x=100. Stub [100,15]→
+    // [100,40] ender 15 m fra den gjennomgående stien — et T-kryss midt på et
+    // segment, der det ikke finnes noen node å snappe til.
+    const features = [
+      { coordinates: [[0, 0], [200, 0]], isomCode: '505' },
+      { coordinates: [[100, 15], [100, 40]], isomCode: '505' },
+    ]
+    // Uten broing: stuben er en frakoblet komponent → ingen rute.
+    const without = buildRoutingGraph(features, { snapM: 2, bridgeM: 0 })
+    const a0 = without.nearestNode([0, 0]).id
+    const stub0 = without.nearestNode([100, 40]).id
+    expect(without.route(stub0, a0)).toBeNull()
+
+    // Med broing: stub-enden broes til segmentet (splittes ved [100,0]).
+    const bridged = buildRoutingGraph(features, { snapM: 2, bridgeM: 20 })
+    const a1 = bridged.nearestNode([0, 0]).id
+    const stub1 = bridged.nearestNode([100, 40]).id
+    const r = bridged.route(stub1, a1)
+    expect(r).not.toBeNull()
+    expect(r.coordinates.at(-1)).toEqual([0, 0])
+  })
+
+  it('broer en liten gap mellom to sti-ender (forenklings-drift)', () => {
+    // To stier som «skulle» møttes, men endene står 8 m fra hverandre etter
+    // forenkling. snapM=2 slår dem ikke sammen; bridgeM=12 broer gapet.
+    const features = [
+      { coordinates: [[0, 0], [100, 0]], isomCode: '505' },
+      { coordinates: [[108, 0], [200, 0]], isomCode: '505' },
+    ]
+    const without = buildRoutingGraph(features, { snapM: 2, bridgeM: 0 })
+    expect(without.route(without.nearestNode([0, 0]).id, without.nearestNode([200, 0]).id)).toBeNull()
+
+    const bridged = buildRoutingGraph(features, { snapM: 2, bridgeM: 12 })
+    expect(bridged.route(bridged.nearestNode([0, 0]).id, bridged.nearestNode([200, 0]).id)).not.toBeNull()
+  })
+
+  it('lager ikke falskt kryss der to gjennomgående stier krysser uten node (bro/kulvert)', () => {
+    // Sti A går vannrett, sti B loddrett; de krysser ved (100,0) midt på begge
+    // segmentene, men ingen av dem har en node der, og ingen dangle er i
+    // nærheten av krysset (alle ender ligger ≥50 m unna). Da skal de IKKE
+    // kobles — det modellerer en sti som går i bro/kulvert over en annen.
+    const features = [
+      { coordinates: [[0, 0], [200, 0]], isomCode: '505' },     // A vannrett
+      { coordinates: [[100, -50], [100, 50]], isomCode: '505' }, // B loddrett (krysser midt på A)
+    ]
+    const rg = buildRoutingGraph(features, { snapM: 2, bridgeM: 12 })
+    expect(rg.route(rg.nearestNode([0, 0]).id, rg.nearestNode([100, 50]).id)).toBeNull()
   })
 })
