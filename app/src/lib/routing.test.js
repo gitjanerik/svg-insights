@@ -138,27 +138,60 @@ describe('kShortestRoutes', () => {
     expect(kShortestRoutes(rg, 'nope', 'n0', {})).toEqual([])
   })
 
-  it('foretrekker skogsbilvei framfor en kortere småveg (priorisering)', () => {
+  it('foretrekker skogsbilvei framfor småveg som mild tie-breaker (liten omvei)', () => {
     // A(0,0) → B(200,0). Småveg (503) rett fram 200 m, skogsbilvei (504) som
-    // omvei ~280 m. rg.route (kost-optimal) skal velge skogsbilveien tross
-    // lengre, fordi 280×1.6=448 < 200×2.6=520. Isolerer priortering fra lengde.
+    // LITEN omvei ~216 m. Flate-forskjellen er nå en mild tie-breaker, så
+    // skogsbilveien vinner kun fordi den knapt er lengre: 216×1.15≈248 <
+    // 200×1.3=260. (Var en stor omvei før v11.0.27 — nå ville den tapt.)
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '503' },         // småveg rett fram 200
+      { coordinates: [[0, 0], [0, 8], [200, 8], [200, 0]], isomCode: '504' }, // skogsbilvei omvei ~216
+    ], { snapM: 2 })
+    const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([200, 0]))
+    expect(r.lengthM).toBeGreaterThan(200) // valgte skogsbilvei-omveien (knapt lengre)
+  })
+
+  it('velger kortere småveg framfor en stor skogsbilvei-omvei (kortest teller mest)', () => {
+    // Samme som over, men skogsbilvei-omveien er nå STOR (~280 m). Etter
+    // v11.0.27 dominerer avstand: 200×1.3=260 < 280×1.15=322, så den korte
+    // småvegen velges. Før (504=1.6, 503=2.6) vant den lange skogsbilveien.
     const rg = buildRoutingGraph([
       { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '503' },          // småveg rett fram 200
       { coordinates: [[0, 0], [0, 40], [200, 40], [200, 0]], isomCode: '504' }, // skogsbilvei omvei ~280
     ], { snapM: 2 })
     const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([200, 0]))
-    expect(r.lengthM).toBeGreaterThan(200) // valgte skogsbilvei-omveien
+    expect(r.lengthM).toBeCloseTo(200, 0) // valgte den korte småvegen
   })
 
   it('foretrekker en litt lengre sti framfor en kortere kjørevei', () => {
-    // Sti (505) omvei ~280 m vs hovedvei (502) rett fram 200 m. Natur-
-    // prioriteringen gjør stien billigst (280×1.0=280 < 200×3.4=680).
+    // Sti (505) omvei ~280 m vs hovedvei (502) rett fram 200 m. Sti-vs-vei-
+    // prioriteringen er beholdt: 280×1.0=280 < 200×1.5=300, så stien vinner
+    // tross lengre. (Marginen er mindre enn før — det er meningen.)
     const rg = buildRoutingGraph([
       { coordinates: [[0, 0], [0, 40], [200, 40], [200, 0]], isomCode: '505' }, // sti omvei ~280
       { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '502' },           // hovedvei rett fram 200
     ], { snapM: 2 })
     const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([200, 0]))
     expect(r.lengthM).toBeGreaterThan(200) // valgte stien, tross lengre
+  })
+
+  it('tar en kort, direkte rute med vei-stump framfor en lang ren-sti-omvei (Verkensvannet)', () => {
+    // Regresjon for v11.0.27. A(0,0) → B(400,0):
+    //   Direkte: sti 0–100, hovedvei-stump 100–200, sti 200–400  (400 m totalt)
+    //   Omvei:   ren sti A → sør → B                              (620 m totalt)
+    // Med gammelt bånd (502=3.4) kostet den korte vei-stumpen mer enn en hel
+    // æresrunde på sti (100+340+200=640 > 620), så stifinneren svingte unna
+    // skogsbilvei-/vei-stumpen og tok den lange omveien — akkurat som ingen
+    // rute tok skogsbilvei-stumpen ved Verkensvannet. Nå dominerer avstand:
+    // 100+150+200=450 < 620, så den korte direkte ruta velges.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0]], isomCode: '505' },              // sti
+      { coordinates: [[100, 0], [200, 0]], isomCode: '502' },            // vei-stump
+      { coordinates: [[200, 0], [300, 0], [400, 0]], isomCode: '505' },  // sti
+      { coordinates: [[0, 0], [0, 110], [400, 110], [400, 0]], isomCode: '505' }, // ren-sti-omvei ~620
+    ], { snapM: 2 })
+    const r = rg.route(rg.nodeAt([0, 0]), rg.nodeAt([400, 0]))
+    expect(r.lengthM).toBeLessThan(500) // valgte den korte direkte ruta (~400), ikke 620-omveien
   })
 
   it('utelater uforholdsmessig lange omveier (æresrunde-cap)', () => {

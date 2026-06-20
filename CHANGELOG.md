@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-20 — v11.0.27: Stifinner — «kortest mulig» teller høyere enn sti over vei
+
+Justert vektingen i routing-grafen (`lib/routing.js`). Vi beholder prioriteringen sti → skogsbilvei → småveg → veg, men strammer kost-båndet kraftig: maks ~1,7× fra sti (505) til motorvei (501), mot tidligere 4× (1,0 → 4,0). Det gamle HOPPET fra natur-korridor (≤1,6) til kjørevei (2,6–4,0) gjorde at en kort, direkte rute som måtte ta en liten vei-/skogsbilvei-stump tapte mot en mye lengre ren-sti-omvei — kostnaden av stumpen oversteg en hel æresrunde på sti. Det var nettopp dette som skjedde ved Verkensvannet: ingen stifinner-rute tok skogsbilvei-stumpen, alle svingte østover (lilla forslag tok i tillegg en 360°-detour). Nå dominerer avstand: en litt lengre sti slår fortsatt en kortere kjørevei, men en stor omvei på sti taper mot en kort, direkte rute med litt vei. Nye kostnader: 505=1,0 · 506=1,05 · 507=1,12 · 504=1,15 · 503=1,3 · 502=1,5 · 501=1,7 · 509=1,0. Lagt til en regresjonstest for Verkensvannet-tilfellet.
+
+---
+
 ## 2026-06-19 — v11.0.26: Stifinner avviser vann-punkter (ingen rute-endepunkt midt i en innsjø)
 
 Stifinner kunne plassere start- og målmarkøren midt i en vannflate: «Naviger hit» ble tilbudt uansett hva man long-presset på, og startpunktet (kikkertsiktet) ble bekreftet selv om skjermsenteret lå over en innsjø eller sjøen. Markøren tegnes der man peker, så prikkene endte i vannet selv om selve ruta snappet til nærmeste sti. Nå sjekkes begge endepunkt mot alle vann-AREAL-koder (301/302/303/307/308/309, punkt-i-fyll med øy-hull): long-presser man på vann, vises ikke lenger «Naviger hit», og er kikkertsiktet over vann ved bekreftelse får man «Fant ingen rute – startpunktet er i vann» i stedet for en villedende markør midt i innsjøen.

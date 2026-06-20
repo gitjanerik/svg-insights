@@ -15,23 +15,27 @@ import { polylineLength } from './pathUtils.js'
 
 // Kostnadsfaktor pr ISOM-kode. Større = mindre attraktiv som rute.
 //
-// PRIORITERING (v11.0.13): et turforslag skal helst gå i natur-korridoren og
-// bare bruke bilvei når det trengs. Rekkefølge fra mest til minst foretrukket:
-//   Sti (505/506/507) → Skogsbilvei (504) → Småveg (503) → Veg (502/501).
-// Tidligere var det motsatt (vei billigst), så stifinneren tok «æresrunder»
-// gjennom boligfelt på asfalt i stedet for å følge skogsbilveien rett fram.
-// Det er et tydelig HOPP i kost fra natur-korridoren (≤1.6) til kjørevei
-// (≥2.6) så Dijkstra velger sti/skogsbilvei når den finnes, men faller
-// tilbake på vei der det er eneste forbindelse.
+// PRIORITERING (v11.0.27): «kortest mulig» skal telle høyere enn «sti over
+// vei». Vi beholder rekkefølgen fra mest til minst foretrukket —
+//   Sti (505/506/507) → Skogsbilvei (504) → Småveg (503) → Veg (502/501)
+// — men STRAMMER båndet kraftig. Tidligere (v11.0.13) lå natur-korridoren
+// på ≤1.6 og kjørevei på 2.6–4.0; det HOPPET gjorde at en kort, direkte
+// rute som måtte ta en liten vei-/skogsbilvei-stump tapte mot en mye lengre
+// ren-sti-omvei (kostnaden av vei-stumpen oversteg en hel æresrunde på sti).
+// Det var nettopp dette som skjedde ved Verkensvannet: ingen rute tok
+// skogsbilvei-stumpen, alle svingte østover. Nå er forskjellen mellom
+// klassene en mild tie-breaker (maks ~1.7× fra sti til motorvei), så
+// avstand dominerer: en litt lengre sti slår fortsatt en kortere kjørevei,
+// men en stor omvei på sti taper mot en kort, direkte rute med litt vei.
 const ISOM_COST = {
   '505': 1.0,                              // sti — godt løp (mest foretrukket)
-  '506': 1.2,                              // sti — uklar
-  '507': 1.5,                              // stitråkk — vanskelig, men fortsatt sti
-  '504': 1.6,                              // skogsbilvei
+  '506': 1.05,                             // sti — uklar
+  '507': 1.12,                             // stitråkk — vanskelig, men fortsatt sti
+  '504': 1.15,                             // skogsbilvei
   '509': 1.0,                              // bro — nøytral (nødvendig kryssing)
-  '503': 2.6,                              // småveg (tertiary/residential/service)
-  '502': 3.4,                              // hovedvei
-  '501': 4.0,                              // motorvei — minst foretrukket å gå
+  '503': 1.3,                              // småveg (tertiary/residential/service)
+  '502': 1.5,                              // hovedvei
+  '501': 1.7,                              // motorvei — minst foretrukket å gå
 }
 
 /**
