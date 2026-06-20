@@ -524,6 +524,7 @@ const tabScroller = ref(null)
 const canScrollTabsLeft = ref(false)
 const canScrollTabsRight = ref(false)
 let tabResizeObs = null
+let wrapperResizeObs = null
 
 function updateTabScroll() {
   const el = tabScroller.value
@@ -2965,7 +2966,17 @@ function pxToUserUnits(cssPx) {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return cssPx
   const vb = svg.viewBox.baseVal
-  const { w, h } = wrapperSize.value
+  // v11.0.31: mål wrapperen LIVE i stedet for det snapshot-ede wrapperSize.
+  // wrapperRef har ingen CSS-transform (pinch-transformen ligger på det indre
+  // mapInnerRef), så rect-en er alltid den ekte viewport-størrelsen — upåvirket
+  // av pinch/anim, så v8.9.2-fellen (mid-animasjons-rect) gjelder ikke her.
+  // Snapshot-et kunne fryse en for-tidlig / for liten måling på iOS Safari der
+  // resize-eventet ikke fyrer etter at layouten settler eller toolbaren skjuler
+  // seg; da ble pxPerUnit altfor liten og alle skjerm-låste symboler (GPS-prikk,
+  // accuracy-ring, annoterings-ikoner) ballong-blåste til halve skjermen.
+  const r = wrapperRef.value?.getBoundingClientRect()
+  const w = r?.width || wrapperSize.value.w
+  const h = r?.height || wrapperSize.value.h
   if (!w || !h || !vb.width || !vb.height) return cssPx
   // SVG fits-with-meet til wrapperen: minste dim bestemmer pxPerUnit
   const fitPxPerUnit = Math.min(w / vb.width, h / vb.height)
@@ -5166,6 +5177,14 @@ onMounted(() => {
   }
   lockBodyScroll()
   measureWrapper()
+  // iOS Safari fyrer ikke alltid `resize` når layouten settler etter mount eller
+  // når toolbaren skjuler/viser seg. En ResizeObserver fanger den ekte
+  // wrapper-størrelsen pålitelig, så scale-baren (wrapperSize) og GPS-prikken
+  // re-skaleres mot riktig viewport i stedet for en frosset for-tidlig måling.
+  if (typeof ResizeObserver !== 'undefined' && wrapperRef.value) {
+    wrapperResizeObs = new ResizeObserver(() => { measureWrapper(); updateUserDot() })
+    wrapperResizeObs.observe(wrapperRef.value)
+  }
   window.addEventListener('resize', measureWrapper)
   window.addEventListener('resize', updateMapRect)
   window.addEventListener('resize', scheduleNameLOD)
@@ -5182,6 +5201,7 @@ onUnmounted(() => {
   stopGpsTick()
   screenWake.stop()
   tabResizeObs?.disconnect()
+  wrapperResizeObs?.disconnect()
   componentAlive = false
   window.removeEventListener('resize', scheduleNameLOD)
   desktopMq?.removeEventListener('change', updateIsDesktop)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-20 — v11.0.31: GPS-prikken ble enorm på iPhone — wrapper måles nå live
+
+Den blå GPS-posisjonsprikken (og accuracy-ringen + annoterings-ikonene) kunne bli kjempestor på iPhone, dekkende halve kartet. Alle disse skjerm-låste symbolene skaleres via `pxToUserUnits`, som delte på en `pxPerUnit` utledet fra `wrapperSize` — en størrelse som bare ble målt ved mount og på `resize`-event. På iOS Safari fyrer ikke `resize` pålitelig etter at layouten settler (eller når toolbaren skjuler/viser seg), så `wrapperSize` ble frosset på en for-tidlig, for liten måling → `pxPerUnit` ble altfor liten → symbolene ballong-blåste. Fiks: `pxToUserUnits` måler nå `wrapperRef` LIVE (den har ingen CSS-transform — pinch-transformen ligger på det indre `mapInnerRef`, så rect-en er alltid den ekte viewport-størrelsen). I tillegg holder en `ResizeObserver` på wrapperen `wrapperSize` (scale-baren) frisk og re-renderer GPS-prikken når viewporten endrer seg.
+
+---
+
 ## 2026-06-20 — v11.0.30: Sund-wedge fjernet — åpen natural=strait/bay-way gir ikke lenger trekant over sundet
 
 Fant rotårsaken til Kjerringholmen-tilfellet (Hvaler): en diger trekant-wedge skar diagonalt tvers over sundet og dekket holmer (synlig som mørkere-blått fyll med diagnose AV, knall-blått `data-src="way"` med diagnose PÅ). Overpass henter navngitte `natural=strait`/`bay`-ways for å gi sund/bukt en etikett, men i OSM tegnes disse ofte som en ÅPEN linje midt i sundet. `classifyToIsom` gir dem vann-kode 303, og way-grenen i `buildSvg` tvangslukket ENHVER way til polygon (`pathAndBboxFromGeometry` med `forceClose=true`) — en åpen linje ble da en trekant. Ekte OSM-vannflater er alltid eksplisitt lukkede ringer, så `layerSvg` hopper nå over åpne vann-ways (`cat === 'vann'` + ikke-lukket ring). Den ekte sjøen kommer uansett fra DEM-sjø/N50/`natural=water`-areal, og sund-/bukt-navnet samles separat i `sjo-navn`-laget, så etiketten beholdes.
