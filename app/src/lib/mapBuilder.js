@@ -1254,6 +1254,23 @@ export function buildSvg(elements, bbox, options = {}) {
           const areaM2 = polygonAreaM2(el.geometry)
           if (filter.minAreaM2 && areaM2 < filter.minAreaM2) continue
           if (filter.maxAreaM2 && areaM2 > filter.maxAreaM2) continue
+          // Vann-flate fra en ÅPEN way = wedge-fella. natural=strait/bay
+          // hentes navngitt fra Overpass for å gi sund/bukt en etikett, men
+          // tegnes i OSM ofte som en åpen LINJE midt i sundet. classifyToIsom
+          // gir den vann-kode 303, og else-grenen under tvangslukker enhver
+          // way til polygon (pathAndBboxFromGeometry forceClose=true) — en
+          // åpen linje ble da en diger trekant som skar tvers over sundet og
+          // dekket holmer (Kjerringholmen, Hvaler). Ekte OSM-vannflater er
+          // ALLTID eksplisitt lukkede ringer, så en åpen vann-way kan trygt
+          // hoppes over: den ekte sjøen kommer fra DEM-sjø/N50/natural=water,
+          // og sund-/bukt-navnet samles uansett separat i sjo-navn-laget.
+          if (cat === 'vann') {
+            const g0 = el.geometry[0]
+            const gN = el.geometry[el.geometry.length - 1]
+            const isClosedRing = el.geometry.length >= 4 &&
+              Math.abs(g0.lat - gN.lat) < 1e-7 && Math.abs(g0.lon - gN.lon) < 1e-7
+            if (!isClosedRing) continue
+          }
           // ISOM 521: små bygg (< 500 m², typisk hytter/uthus inkludert
           // turisthytter) erstattes med standardisert kvadrat-symbol
           // (13 m × 13 m = 1.3 mm @ 1:10k) sentrert på OSM-bygnings-

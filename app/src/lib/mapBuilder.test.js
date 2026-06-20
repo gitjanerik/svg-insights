@@ -146,6 +146,43 @@ describe('buildSvg — dybdeareal (307) rendres med Sjøkarts egen geometri', ()
   })
 })
 
+describe('åpen natural=strait/bay way gir ikke wedge-fyll (Kjerringholmen, Hvaler)', () => {
+  // natural=strait hentes navngitt fra Overpass for sund-etiketten, men tegnes
+  // i OSM ofte som en ÅPEN linje midt i sundet. Tvangslukking til polygon ga en
+  // diger trekant-wedge tvers over sundet som dekket holmer. Åpen vann-way skal
+  // derfor ikke gi vann-fyll — men navnet skal fortsatt vises.
+  const openStrait = {
+    type: 'way', id: 70,
+    tags: { natural: 'strait', name: 'Testsund' },
+    geometry: [
+      { lat: 59.045, lon: 10.01 },
+      { lat: 59.03, lon: 10.04 },
+      { lat: 59.01, lon: 10.06 },
+      { lat: 59.005, lon: 10.09 },
+    ],
+  }
+  const closedBay = {
+    type: 'way', id: 71,
+    tags: { natural: 'bay', name: 'Testbukt' },
+    geometry: ring(59.01, 10.02, 59.04, 10.07),
+  }
+
+  it('åpen sund-linje gir INGEN vann-fyll (ingen wedge)', () => {
+    const { svg } = buildSvg([openStrait], bbox, {})
+    expect(svg).not.toContain('data-name="Testsund"')
+  })
+
+  it('åpen sund-linje beholder sjø-navn-etiketten', () => {
+    const { svg } = buildSvg([openStrait], bbox, {})
+    expect(svg).toContain('>Testsund</text>')
+  })
+
+  it('lukket bukt-areal rendres fortsatt som vann-fyll', () => {
+    const { svg } = buildSvg([closedBay], bbox, {})
+    expect(svg).toContain('data-name="Testbukt"')
+  })
+})
+
 describe('OSM-vann rendres uten størrelses-filtrering (velprøvd norsk oppførsel)', () => {
   // Svensk-saga-eksperimentet med å droppe vann basert på areal/type er fjernet.
   // OSM-vann skal rendres som før: ways OG relasjoner, uansett størrelse. (Norske

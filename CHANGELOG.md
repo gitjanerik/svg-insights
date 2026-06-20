@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-06-20 — v11.0.29: Stifinner — broer frakoblede «snarvei»-stumper + kortest mulig uten motorvei
+## 2026-06-20 — v11.0.30: Sund-wedge fjernet — åpen natural=strait/bay-way gir ikke lenger trekant over sundet
+
+Fant rotårsaken til Kjerringholmen-tilfellet (Hvaler): en diger trekant-wedge skar diagonalt tvers over sundet og dekket holmer (synlig som mørkere-blått fyll med diagnose AV, knall-blått `data-src="way"` med diagnose PÅ). Overpass henter navngitte `natural=strait`/`bay`-ways for å gi sund/bukt en etikett, men i OSM tegnes disse ofte som en ÅPEN linje midt i sundet. `classifyToIsom` gir dem vann-kode 303, og way-grenen i `buildSvg` tvangslukket ENHVER way til polygon (`pathAndBboxFromGeometry` med `forceClose=true`) — en åpen linje ble da en trekant. Ekte OSM-vannflater er alltid eksplisitt lukkede ringer, så `layerSvg` hopper nå over åpne vann-ways (`cat === 'vann'` + ikke-lukket ring). Den ekte sjøen kommer uansett fra DEM-sjø/N50/`natural=water`-areal, og sund-/bukt-navnet samles separat i `sjo-navn`-laget, så etiketten beholdes.
+
+---
 
 Fant rotårsaken til Verkensvannet-tilfellet: routing-grafen slo bare sammen SAMMENFALLENDE endepunkter (innen snapM), så en sti/vei som ender midt på en annen (T-kryss) eller med et lite gap etter DP-forenkling/Chaikin-glatting i mapBuilder havnet i sin egen frakoblede komponent. Skogsbilvei-stumpen kunne dermed aldri rutes gjennom — uansett vekting. `buildRoutingGraph` broer nå hver dangle (node med grad 1) til nærmeste segment innen `bridgeM` (default 2×snapM = 12 m i Stifinner) ved å splitte segmentet og koble på. Kun dangler broes — gjennomgående stier røres ikke, så vi lager ikke falske kryss der en sti faktisk går i bro/kulvert over en annen.
 
