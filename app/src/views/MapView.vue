@@ -386,6 +386,38 @@ const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
 const visibleLayers = ref(new Set(DEFAULT_VISIBLE_LAYER_KEYS))
+
+// Lag-forhåndsvalg (v11.0.46) — ~34 enkelt-toggles er desktop-GIS på mobil.
+// Fire navngitte presets gir ett trykk til en sammenhengende kart-tilstand;
+// hele toggle-listen ligger fortsatt under for finjustering.
+//   Tur       — rent turkart: terreng + sti/vei/navn, uten marine/vinter/rot.
+//   Padling   — Tur + marine POI (kai, sjø & padling, sjønavn).
+//   Detaljert — alt på.
+//   Print     — som Tur, men uten GPS-spor (ren papir-utskrift).
+const ALL_LAYER_KEYS = LAYERS.map((l) => l.key)
+const _turExclude = new Set([
+  'kai', 'sjo-poi', 'sjo-navn',           // marine — egen Padling-preset
+  'lysloype', 'heistrase', 'slalombakke', // vinter-ting
+  'bymasse', 'idrettsanlegg',             // dekkende flater, sjelden ønsket i oversikt
+  'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
+])
+const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
+const LAYER_PRESETS = [
+  { key: 'tur', label: 'Tur', keys: PRESET_TUR },
+  { key: 'padling', label: 'Padling', keys: [...new Set([...PRESET_TUR, 'kai', 'sjo-poi', 'sjo-navn'])] },
+  { key: 'detaljert', label: 'Detaljert', keys: ALL_LAYER_KEYS.slice() },
+  { key: 'print', label: 'Print', keys: PRESET_TUR.filter((k) => k !== 'spor') },
+]
+const activePreset = computed(() => {
+  const cur = visibleLayers.value
+  const hit = LAYER_PRESETS.find((p) => p.keys.length === cur.size && p.keys.every((k) => cur.has(k)))
+  return hit?.key ?? null
+})
+function applyPreset(p) {
+  visibleLayers.value = new Set(p.keys)
+  applyLayerVisibility()
+}
+
 // «Nullstill» er aktiv kun når brukeren har avveket fra default-synligheten
 // (minst ett lag slått til motsatt av sin default-tilstand).
 const layersDirty = computed(() => {
@@ -6210,6 +6242,25 @@ onUnmounted(() => {
         <div class="flex-1 overflow-y-auto px-4 pb-6">
           <!-- ── Tab: Lag ─────────────────────────────────────────── -->
           <div v-show="activeTab === 'lag'">
+            <!-- Forhåndsvalg: ett trykk til en sammenhengende lag-tilstand.
+                 Hele toggle-listen ligger under for finjustering. -->
+            <div class="text-[11px] font-semibold text-white/55 uppercase tracking-wide mb-1.5">
+              Forhåndsvalg
+            </div>
+            <div class="grid grid-cols-4 gap-2 mb-3">
+              <button v-for="p in LAYER_PRESETS" :key="p.key"
+                      @click="applyPreset(p)"
+                      :aria-pressed="activePreset === p.key"
+                      class="px-2 py-2 rounded-lg border text-center active:scale-[0.98] transition"
+                      :class="activePreset === p.key
+                              ? 'bg-emerald-500/25 border-emerald-300/60 text-white font-medium'
+                              : 'bg-white/5 border-white/10 text-white/65'">
+                <span class="text-[12px]">{{ p.label }}</span>
+              </button>
+            </div>
+            <div class="text-[11px] font-semibold text-white/55 uppercase tracking-wide mb-1.5">
+              Enkeltlag
+            </div>
             <div class="grid grid-cols-2 gap-2 mb-2">
               <!-- Knapp #1: Nullstill lag-synlighet. Default disabled; blir
                    aktiv først når minst ett lag avviker fra default-tilstand. -->

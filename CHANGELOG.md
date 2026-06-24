@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.46: Lag-forhåndsvalg (presets) i Lag-fanen
+
+~34 enkelt-toggles for lag er desktop-GIS på en mobilskjerm — høy beslutningskost, og de viktigste valgene drukner i lista. Flåtens UX-designer og fjellvandrer anbefalte å kollapse til noen få navngitte presets. Lag-fanen har nå en «Forhåndsvalg»-rad med fire ett-trykks-tilstander øverst, og hele enkeltlag-lista beholdes under for finjustering: **Tur** (rent turkart — terreng, sti/vei, navn; uten marine/vinter/rot som tett bebyggelse, gjerde/kraft og grend/gård-navn), **Padling** (Tur + marine POI: kai, sjø & padling, sjønavn), **Detaljert** (alt på) og **Print** (som Tur, men uten GPS-spor for ren papirutskrift). Aktivt preset markeres når synlige lag matcher det eksakt. Implementert i `MapView.vue` (`LAYER_PRESETS`, `applyPreset`, `activePreset`).
+
+---
+
 ## 2026-06-24 — v11.0.45: Trinnvis kart-avsløring + lasteskjelett
 
 Den tyngste hendelsen i et kart-liv er også brukerens første: paint av hele kartet. Flåtens UX-designer pekte på at én blokkerende paint leses som «ødelagt», mens en trinnvis ankomst føles snappy selv om totaltiden er lik. To grep: (1) Lasteskjermen har nå et kart-aktig **skjelett** med rolig grunnfarge, svake kurve-bånd og et lysstrøk som sveiper over — ventetiden leses som «laster et kart», ikke en blank skjerm. (2) Når kart-SVG-en er bygget, **toner den inn trinnvis**: strukturen (bakgrunn/vann/kurver/veier) males først, så fades tekstur (vegetasjon/relieff) og labels inn et lite øyeblikk etter (`startMapReveal`, ren CSS-klasse-sekvens i `MapView.vue`). Alt hoppes over ved `prefers-reduced-motion`, og klassene fjernes etter sekvensen så ingen permanent transition koster noe under pan/zoom. Transport-komprimering (gzip/brotli) håndteres av GitHub Pages for tekst-assets — SVG-en er ren tekst og komprimerer 5–10×.
