@@ -692,10 +692,31 @@ function pushAnyGeom(feature, tags, out, nextId) {
  * @param {number} dybde meter (positivt tall = dyp)
  * @returns {string} hex-farge
  */
+// Dybde-bånd: [maxDybde (eksklusiv), tema-variabel-indeks, lys-fallback-hex].
+// Lys-hexen er den opprinnelige kystnære skalaen og brukes uendret i lys-tema
+// (og i tester). depthToFillVar pakker den i `var(--iso-depth-N, #hex)` så
+// mørke temaer kan overstyre sjøblåen via applyTheme uten å miste fallbacken.
+const DEPTH_BANDS = [
+  [2, 1, '#d8eaf2'],
+  [5, 2, '#c5e0ec'],
+  [10, 3, '#aed3e4'],
+  [20, 4, '#93c3da'],
+  [Infinity, 5, '#79b3d2'],
+]
+
+function depthBand(dybde) {
+  const d = Number.isFinite(dybde) ? dybde : 0
+  return DEPTH_BANDS.find(b => d < b[0]) ?? DEPTH_BANDS[DEPTH_BANDS.length - 1]
+}
+
 export function depthToColor(dybde) {
-  if (!Number.isFinite(dybde) || dybde < 2) return '#d8eaf2'
-  if (dybde < 5)  return '#c5e0ec'
-  if (dybde < 10) return '#aed3e4'
-  if (dybde < 20) return '#93c3da'
-  return '#79b3d2'
+  return depthBand(dybde)[2]
+}
+
+// Tema-bevisst variant: `fill`-verdi som følger valgt tema. Brukes ved bygging
+// (inline style) der live tema-bytte ellers ikke ville nådd sjø-flatene fordi
+// fargen var hardkodet hex. Mørke temaer setter --iso-depth-1..5 (applyTheme).
+export function depthToFillVar(dybde) {
+  const [, idx, hex] = depthBand(dybde)
+  return `var(--iso-depth-${idx}, ${hex})`
 }

@@ -19,7 +19,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectCliffs, detectKnauser } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
-import { depthToColor } from './sjokartFetcher.js'
+import { depthToFillVar } from './sjokartFetcher.js'
 import {
   unionRingsToSea,
   unionPolygonsToSea,
@@ -1397,7 +1397,7 @@ export function buildSvg(elements, bbox, options = {}) {
                        : Number.isFinite(maxD) ? maxD
                        : null
             if (avgD != null) {
-              inlineStyle = ` style="fill: ${depthToColor(avgD)}"`
+              inlineStyle = ` style="fill: ${depthToFillVar(avgD)}"`
               // v8.9.24: data-dybde lar MapView lage depth-shade PNG ved å
               // raster-fylle disse polygonene i gråtoner (Path2D på d-attr).
               dybdeAttr = ` data-dybde="${fmt(avgD)}"`
@@ -2299,11 +2299,17 @@ export function buildSvg(elements, bbox, options = {}) {
   // v9.2.0: dempet til å matche depthToColor sin kystnære skala. Dette er
   // en avstand-fra-land-PROXY (ikke ekte dybde), så tonene holdes i den
   // grunne enden av skalaen — lav-kontrast, underordnet terrenget.
-  const BAND_COLORS_BY_DESC_DISTANCE = ['#aed3e4', '#d8eaf2']
+  // Bånd-fyllet er tema-bevisst (var(--iso-depth-N, #fallback)) på linje med
+  // 307-dybdearealet, så grunn-gradienten følger valgt tema. Indeks 3 = ytre
+  // (dypere) bånd, indeks 1 = inderste (grunnest) bånd — samme skala som
+  // depthToFillVar. Fallback-hexene er den opprinnelige lyse skalaen.
+  const BAND_FILL_BY_DESC_DISTANCE = [
+    'var(--iso-depth-3, #aed3e4)', 'var(--iso-depth-1, #d8eaf2)',
+  ]
   const sortedBands = [...demSeaBands].sort((a, b) => b.maxDistanceM - a.maxDistanceM)
   const demSeaBandsSvg = sortedBands
     .map((band, idx) => {
-      const color = BAND_COLORS_BY_DESC_DISTANCE[idx] ?? '#cfe6f0'
+      const fill = BAND_FILL_BY_DESC_DISTANCE[idx] ?? 'var(--iso-depth-2, #cfe6f0)'
       const paths = band.polygons.map(poly => {
         const d = polygonsToPathRing(poly)
         // stroke="none" overstyrer den arvede ISOM 303-streken (#1f7aa3).
@@ -2311,7 +2317,7 @@ export function buildSvg(elements, bbox, options = {}) {
         // strandlinje — uten dette ble den strøket med en fragmentert mørkeblå
         // linje som fløt i vannet nærmest land. Den ekte kysten strøkes av
         // dem-sea-basislaget; båndene bidrar kun med gradient-fyll.
-        return d ? `    <path d="${d}" fill="${color}" stroke="none" fill-rule="evenodd"/>` : ''
+        return d ? `    <path d="${d}" style="fill: ${fill}" stroke="none" fill-rule="evenodd"/>` : ''
       }).filter(Boolean).join('\n')
       return paths
         ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea-band" data-band-m="${band.maxDistanceM}">\n${paths}\n  </g>\n`
