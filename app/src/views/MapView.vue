@@ -4973,7 +4973,10 @@ const scaleBar = computed(() => {
   if (!w || !h) return { px: 0, label: '', ticks: [] }
   const fit = Math.min(w / meta.value.widthM, h / meta.value.heightM)
   const pxPerMeter = fit * scale.value
-  const candidates = [1000, 500, 200, 100, 50, 20]
+  // Dekker hele zoom-spennet: km-verdier holder linjalen synlig når man zoomer
+  // langt ut (1000 m ble < 30 px og baren forsvant), og finere meter-verdier
+  // når man zoomer langt inn. Største verdi som passer ≤ MAX_PX velges først.
+  const candidates = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5]
   for (const m of candidates) {
     const px = m * pxPerMeter
     if (px <= SCALE_BAR_MAX_PX && px >= 30) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.41: Smartere kart-navn + alltid-synlig skala-linjal
+
+Tre forbedringer i kart-flyten på forsiden. (1) **Kart laget med den grønne GPS-knappen** heter nå «Din posisjon <dato>» i stedet for «Tur <dato>» — navnet sier hva kartet faktisk er. (2) **Kart laget ved å søke opp og velge et sted** får navnet «<sted> <dato>» (stedsnavnet pluss dagens dato) i stedet for bare stedsnavnet, så flere kart om samme sted kan skilles. (3) **Skala-linjalen i info-boksen nede til venstre forsvant når man zoomet langt ut** — kandidat-lengdene stoppet på 1000 m, som ble for kort (< 30 px) til å vises. Linjalen dekker nå hele zoom-spennet fra 5 m til 50 km og bytter automatisk fra meter til kilometer, så den alltid er synlig uansett zoomnivå.
+
+---
+
 ## 2026-06-24 — v11.0.40: Full-bredde grønn «Lag kart der du står»-knapp i tom-tilstand
 
 Tom-tilstanden for «Mine kart» har fått en full-bredde grønn primær-CTA «Lag kart der du står», som kjører samme GPS-flyt som den integrerte knappen i søkefeltet. Gir nye brukere en tydelig handling rett i tom-kortet i stedet for bare en peker oppover. Vises kun når nettleseren støtter GPS; ellers står søk-oppfordringen alene.
