@@ -148,7 +148,7 @@ async function onCreateHere() {
       // bredden så kartet blir kvadratisk (mer slingringsrom øst/vest).
       ...squareDims(),
       equidistanceM: squareEquidistance(), // auto: 20/25/50 m etter bredde
-      navn: `Tur ${stamp}`,
+      navn: `Din posisjon ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => { buildingProgress.value = msg },
     })
@@ -189,11 +189,12 @@ async function onSelectSearchResult(r) {
   buildingOnTheFly.value = true
   buildingProgress.value = 'Henter kartdata …'
   try {
+    const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
       ...squareDims(),   // kvadratisk utsnitt — standard ~4 km, eller valgt fast bredde
       equidistanceM: squareEquidistance(), // auto: 20/25/50 m etter bredde
-      navn: r.shortName,
+      navn: `${r.shortName} ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => { buildingProgress.value = msg },
     })
