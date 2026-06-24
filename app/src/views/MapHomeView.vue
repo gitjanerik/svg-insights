@@ -3,18 +3,12 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
-import { autoMapAFormat } from '../lib/mapBuilder.js'
+import { autoMapSquare } from '../lib/mapBuilder.js'
 import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
-const builtin = ref([
-  { id: 'vardasen', navn: 'Vardåsen i Asker', center: { lat: 59.813746, lon: 10.414616 }, halfKm: 2.5, builtin: true },
-])
-// Metadata for referansekart hentes fra SVG-ens data-meta (ekvidistanse,
-// DEM-kilde, bygge-tidspunkt) — keyet på id. Fylles av loadBuiltinMeta().
-const builtinMeta = ref({})
 
 async function refresh() {
   loading.value = true
@@ -27,33 +21,8 @@ async function refresh() {
   }
 }
 
-onMounted(() => { refresh(); loadBuiltinMeta() })
+onMounted(refresh)
 onActivated(refresh)
-
-// Hent data-meta fra referansekartets SVG. data-meta ligger på rot-<svg>-
-// taggen helt øverst, så vi henter kun de første KB-ene via Range. Degraderer
-// stille hvis Range/fetch feiler (kortet viser da bare størrelse).
-async function loadBuiltinMeta() {
-  for (const m of builtin.value) {
-    if (builtinMeta.value[m.id]) continue
-    try {
-      const url = `${import.meta.env.BASE_URL}maps/${m.id}.svg`
-      const res = await fetch(url, { headers: { Range: 'bytes=0-8191' } })
-      if (!res.ok) continue
-      const meta = parseSvgMeta(await res.text())
-      if (meta) builtinMeta.value = { ...builtinMeta.value, [m.id]: meta }
-    } catch { /* ignorer — kortet degraderer til bare størrelse */ }
-  }
-}
-
-function parseSvgMeta(svgText) {
-  try {
-    const mm = /data-meta='([^']*)'/.exec(svgText)
-    if (!mm) return null
-    const json = mm[1].replace(/&apos;/g, "'").replace(/\\u003c/g, '<').replace(/\\u003e/g, '>')
-    return JSON.parse(json)
-  } catch { return null }
-}
 
 function openMap(id) {
   router.push({ name: 'kart-vis', params: { id } })
@@ -162,9 +131,9 @@ async function onCreateHere() {
         lon: coords.coords.longitude,
         name: 'Min posisjon',
       },
-      // A-format stående utsnitt (~5,7 × 8 km) — print-klart + litt slingrings-
-      // rom øst/vest så man kan dra utover uten å zoome først.
-      ...autoMapAFormat(2),
+      // Kvadratisk utsnitt: beholder den skjerm-utledede høyden og utvider
+      // bredden så kartet blir kvadratisk (mer slingringsrom øst/vest).
+      ...autoMapSquare(2),
       equidistanceM: 20, // 20 m ekvidistanse
       navn: `Tur ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
@@ -209,7 +178,7 @@ async function onSelectSearchResult(r) {
   try {
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
-      ...autoMapAFormat(2),   // A-format stående utsnitt (~5,7 × 8 km), print-klart
+      ...autoMapSquare(2),   // kvadratisk utsnitt — samme høyde, bredere
       equidistanceM: 20, // 20 m ekvidistanse
       navn: r.shortName,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
@@ -332,30 +301,8 @@ async function onSelectSearchResult(r) {
       </div>
       <div v-if="searchError" class="-mt-2 mb-4 px-1 text-[11px] text-slate-300">{{ searchError }}</div>
 
-      <!-- Innebygde kart -->
-      <div class="text-white/45 text-[11px] uppercase tracking-wide mb-2">Innebygd</div>
-      <div v-for="m in builtin" :key="m.id"
-           class="w-full mb-2 rounded-lg flex items-center gap-3 px-4 py-3
-                  bg-white/[0.04] border border-white/10 active:bg-white/[0.07]"
-           @click="openMap(m.id)">
-        <div class="shrink-0 w-10 h-10 rounded-lg bg-white/[0.06] border border-white/10
-                    flex items-center justify-center text-white/70">
-          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
-            <path d="M9 4 V18 M15 6 V20"/>
-          </svg>
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-medium text-[14px] truncate text-white">{{ m.navn }}</div>
-          <div class="text-[12px] text-white/50 truncate">
-            {{ infoLine(m.halfKm * 2, builtinMeta[m.id]?.equidistance, builtinMeta[m.id]?.demResolutionM, builtinMeta[m.id]?.demSource) }}
-          </div>
-          <div v-if="formatDateTime(builtinMeta[m.id]?.generated)" class="text-[11px] text-white/35 truncate">
-            {{ formatDateTime(builtinMeta[m.id]?.generated) }}
-          </div>
-        </div>
-      </div>
+      <!-- Vardåsen-referansekartet er flyttet til «Utvikler»-fanen inne i kart-
+           visningen (debug-hjelp) — det fyller ikke lenger forsiden. -->
 
       <!-- Brukergenererte kart -->
       <div v-if="maps.length > 0 || loading"

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.32: Opprydding i kart-appen — ny «Utvikler»-fane, kvadratisk default, kant-soner synlige ved minimert drawer
+
+Fire opprydninger i kart-sporet. (1) Vardåsen-referansekartet er fjernet fra kart-forsiden (MapHomeView) og flyttet til en ny **«Utvikler»-fane** lengst til høyre i kart-visningens drawer — det er først og fremst en feilsøkings-hjelp, ikke noe forsiden trenger å fylles med. (2) **«Diagnose-modus» og «Byggetider (perf-logg)»** (samt øvrig debug-info: datakilde, auto-fliser-cache, viewport-culling) er flyttet fra «Eksport»-fanen til den nye «Utvikler»-fanen, så Eksport kun handler om deling/eksport. (3) **Default kart-proporsjon er nå kvadratisk** for forsidens søk- og GPS-flyt: vi beholder den skjerm-utledede høyden og utvider bredden så utsnittet blir kvadratisk i stedet for et smalt A-format-portrett (ny `autoMapSquare` i `mapBuilder.js`). (4) De blå sirkel-formede **«utvid kart»-knappene** (N/S/Ø/V + hjørner) skjules ikke lenger når hovedmenyen er åpen og **minimert** — drawer-en dekker bare kartflaten i ekspandert tilstand, så ved minimering (kun fane-stripen titter opp) er kant-sonene igjen synlige og klikkbare.
+
+---
+
 ## 2026-06-20 — v11.0.31: GPS-prikken ble enorm på iPhone — wrapper måles nå live
 
 Den blå GPS-posisjonsprikken (og accuracy-ringen + annoterings-ikonene) kunne bli kjempestor på iPhone, dekkende halve kartet. Alle disse skjerm-låste symbolene skaleres via `pxToUserUnits`, som delte på en `pxPerUnit` utledet fra `wrapperSize` — en størrelse som bare ble målt ved mount og på `resize`-event. På iOS Safari fyrer ikke `resize` pålitelig etter at layouten settler (eller når toolbaren skjuler/viser seg), så `wrapperSize` ble frosset på en for-tidlig, for liten måling → `pxPerUnit` ble altfor liten → symbolene ballong-blåste. Fiks: `pxToUserUnits` måler nå `wrapperRef` LIVE (den har ingen CSS-transform — pinch-transformen ligger på det indre `mapInnerRef`, så rect-en er alltid den ekte viewport-størrelsen). I tillegg holder en `ResizeObserver` på wrapperen `wrapperSize` (scale-baren) frisk og re-renderer GPS-prikken når viewporten endrer seg.
