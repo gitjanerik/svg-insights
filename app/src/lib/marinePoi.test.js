@@ -92,8 +92,10 @@ describe('buildSvg — marine POI rendres', () => {
 })
 
 describe('buildSvg — Marker ∈ Water filter for skjær', () => {
-  // N50-sjø dekker østre halvdel (lon 10.05–10.1). Et skjær i sjøen beholdes,
-  // et «skjær» på land (vest) filtreres bort.
+  // N50-sjø dekker østre halvdel (lon 10.05–10.1). Et skjær i sjøen beholdes
+  // rent; et «skjær» på land (vest) rendres FLAGGET (data-uncertain) — v11.0.49:
+  // et skjær er en fare, så det dempes og merkes «posisjon usikker» i stedet
+  // for å slettes stille (et slettet skjær er farligere enn ett tegnet litt feil).
   const n50Sea = {
     type: 'way', id: 100,
     tags: { natural: 'water', water: 'sea', salt: 'yes' },
@@ -103,13 +105,16 @@ describe('buildSvg — Marker ∈ Water filter for skjær', () => {
   const skjaerInSea = node(101, 59.025, 10.07, { 'seamark:type': 'rock' })
   const skjaerOnLand = node(102, 59.025, 10.02, { 'seamark:type': 'rock' })
 
-  it('skjær i sjøen rendres (data-iso=211 finnes)', () => {
+  it('skjær i sjøen rendres rent (data-iso=211, ikke flagget)', () => {
     const { svg } = buildSvg([n50Sea, skjaerInSea], bbox, {})
     expect(svg).toContain('data-iso="211"')
+    // skjæret i sjøen skal IKKE være merket usikkert
+    expect(/data-iso="211"[^>]*data-uncertain/.test(svg)).toBe(false)
   })
-  it('skjær på land filtreres bort (ingen 211)', () => {
+  it('skjær på land rendres FLAGGET (data-uncertain), ikke slettet', () => {
     const { svg } = buildSvg([n50Sea, skjaerOnLand], bbox, {})
-    expect(svg).not.toContain('data-iso="211"')
+    expect(svg).toContain('data-iso="211"')
+    expect(svg).toContain('data-uncertain="1"')
   })
   it('uten kyst-modell beholdes skjær uansett (gating)', () => {
     const { svg } = buildSvg([skjaerOnLand], bbox, {})

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-24 — v11.0.49: Skjær på land slettes ikke stille — flagges som usikre
+
+Flåtens kystkajakkpadler påpekte en sikkerhets-svakhet: et skjær (ISOM 211) som faller på land (typisk pga. unøyaktig posisjon i kildedata) ble filtrert bort av topologi-sjekken `Marker ∈ Water`. For en padler er et skjær en FARE — et slettet skjær er farligere enn ett tegnet litt feil. Skjær som faller utenfor den autoritative kysten rendres nå dempet (opacity 0,55) og merket `data-uncertain="1"` («posisjon usikker») i stedet for å slettes. Andre marine punkt som lander på land (bøyer/sjømerker — klare datafeil uten kollisjonsfare) droppes som før. Styres av `flagIfDry` på koden i `MARINE_POINT_CODES` (`mapBuilder.js`).
+
+Avgrensning for senere: padleren ønsket også at dybde (soundings/dybdekurver, ISOM 306) løftes fra long-press-inset til et default-på hovedlag, med en kilde/konfidens-badge (ekte Sjøkart-dybde vs. DEM-estimat). Det er en større endring som dels strider mot et tidligere bevisst valg (soundings ble skjult fordi de var «for voldsomt» på hovedkartet) og krever provenens-flagg gjennom bygge-pipelinen. Notert som eget framtidig tiltak heller enn en halvgjort variant.
+
+---
+
 ## 2026-06-24 — v11.0.48: Minste linjevekt-gulv (lesbarhet i sol/print)
 
 Flåtens tilgjengelighetsekspert flagget at tynne lineære features (gjerde, kraftlinje, bekk) faller under lesbarhetsgrensa i direkte sol og på utskrift — særlig fordi «Strek»-knotten og den automatiske tynningen på store kart kan skalere strekene ned mot ~0,1×. `sw()` i `symbolizer.js` har nå et `max(0,08 mm, …)`-gulv: ingen kartlinje rendres tynnere enn 0,08 mm uansett knott-nivå, uten å tykne normale ISOM-bredder (som ligger godt over gulvet ved nøytral knott). Samtidig bekreftet: eksport/utskrift er allerede effektivt LYST tema — tema-variablene settes på transform-wrapperen (`mapInnerRef`), ikke på selve kart-SVG-en, så den klonede/eksporterte SVG-en faller tilbake til de lyse default-fargene som er bakt inn i symbolizer-CSS-en. Redundant tekstur for vegetasjons-tetthet (fargeblind-robusthet) er en større kartografisk endring og er notert som eget framtidig tiltak.

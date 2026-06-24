@@ -681,7 +681,7 @@ const LAYER_ORDER = [
 // landingssteder, marina, toalett og drikkevann er land-/strand-side og
 // beholdes uansett. Symbol + størrelse hentes fra isomCatalog pr kode.
 const MARINE_POINT_CODES = {
-  '211': { requireWater: true },   // skjær / grunne
+  '211': { requireWater: true, flagIfDry: true },   // skjær / grunne — FARE: flagg, ikke slett
   '533': { requireWater: false },  // fyr / lykt / lanterne
   '540': { requireWater: true },   // sjømerke babord
   '541': { requireWater: true },   // sjømerke styrbord
@@ -2147,10 +2147,16 @@ export function buildSvg(elements, bbox, options = {}) {
     else if (el.geometry && el.geometry.length >= 3) p = polygonCentroid(el.geometry)
     else if (el.geometry && el.geometry.length >= 1) p = project(el.geometry[0].lat, el.geometry[0].lon)
     if (!p) return ''
-    const meta = MARINE_POINT_CODES[code]
-    if (meta?.requireWater &&
+    const mpc = MARINE_POINT_CODES[code]
+    let uncertain = false
+    if (mpc?.requireWater &&
         !pointFeatureKept(p.x, p.y, authoritativeSea, { requireWater: true })) {
-      return ''
+      // v11.0.49: et skjær (211) er en FARE — bedre å vise det dempet og merket
+      // «posisjon usikker» enn å slette det stille (et slettet skjær er farligere
+      // enn ett tegnet litt feil). Andre marine punkt (bøyer på land = klare
+      // datafeil, ingen kollisjonsfare) droppes som før.
+      if (mpc.flagIfDry) uncertain = true
+      else return ''
     }
     const def = getIsomDef(code, isomCatalog, false)
     const sym = def?.point
@@ -2159,7 +2165,8 @@ export function buildSvg(elements, bbox, options = {}) {
     if (!sid) return ''
     const sz = sym.scaleMm ?? 1.6
     const half = sz / 2
-    return `    <g data-upright="1" data-iso="${code}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
+    const flag = uncertain ? ' data-uncertain="1" opacity="0.55"' : ''
+    return `    <g data-upright="1" data-iso="${code}"${flag} transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Bro (ISOM 512-derivert): to parallelle parapet-linjer langs HELE
