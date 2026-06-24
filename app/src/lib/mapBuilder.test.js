@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSvg, bboxFromCenter, viewportAspect, autoMapAFormat, PRINT_ASPECT } from './mapBuilder.js'
+import { buildSvg, bboxFromCenter, viewportAspect, autoMapAFormat, autoMapSquare, PRINT_ASPECT } from './mapBuilder.js'
 import { syntheticDEM } from './dem.js'
 import { wgs84ToUtm32 } from './utm.js'
 
@@ -61,6 +61,25 @@ describe('autoMapAFormat — A-format stående utsnitt (v10.1.23)', () => {
     const groundHeightKm = (b.north - b.south) * 111
     const groundWidthKm = (b.east - b.west) * 111 * Math.cos(lat * Math.PI / 180)
     expect(groundHeightKm / groundWidthKm).toBeCloseTo(PRINT_ASPECT, 4)
+  })
+})
+
+describe('autoMapSquare — kvadratisk utsnitt (v11.0.32)', () => {
+  it('returnerer aspect = 1 (kvadrat)', () => {
+    expect(autoMapSquare(2).aspect).toBe(1)
+  })
+
+  it('beholder samme høyde som autoMapAFormat og utvider bredden til kvadrat', () => {
+    // I test-miljøet er viewportAspect()=1, så høyden = 2·halfKm = 4 km.
+    const sq = autoMapSquare(2)
+    const af = autoMapAFormat(2)
+    const sqHeight = 2 * sq.halfKm * sq.aspect
+    const afHeight = 2 * af.halfKm * af.aspect
+    const sqWidth = 2 * sq.halfKm
+    const afWidth = 2 * af.halfKm
+    expect(sqHeight).toBeCloseTo(afHeight, 6)   // høyden bevart
+    expect(sqWidth).toBeCloseTo(sqHeight, 6)    // bredde = høyde (kvadrat)
+    expect(sqWidth).toBeGreaterThan(afWidth)    // bredere enn A-format
   })
 })
 

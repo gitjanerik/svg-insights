@@ -258,6 +258,18 @@ export function autoMapAFormat(halfKm) {
   return { halfKm: widthKm / 2, aspect: PRINT_ASPECT }
 }
 
+// Auto-kart-dimensjoner i kvadrat (default for forsidens søk/GPS-flyt, v11.0.32).
+// Vi BEHOLDER den skjerm-utledede høyden (samme som autoMapAFormat) og utvider
+// bredden til den matcher høyden — så utsnittet blir kvadratisk i stedet for et
+// smalt A-format-portrett. Returnerer { halfKm, aspect } klart til
+// buildMapFromCenter.
+//   høyde = 2·halfKm·viewportAspect()   (uendret fra A-format)
+//   bredde = høyde                      (kvadrat ⇒ aspect = 1)
+export function autoMapSquare(halfKm) {
+  const heightKm = 2 * halfKm * viewportAspect()
+  return { halfKm: heightKm / 2, aspect: 1 }
+}
+
 // Minste avstand (meter) mellom to holdeplass-symboler før vi anser dem som
 // «samme stopp» og slår dem sammen. Store buss-/togterminaler (Asker, Sandvika)
 // har én OSM-node pr busslomme/p-plass; ett ISOM-symbol pr lomme blir en uleselig

@@ -485,8 +485,10 @@ function clearPerfLogAndRefresh() {
 const showControls = ref(false)
 
 // Drawer-faner (v8.9.6) — drawer-en hadde vokst seg ulesbar med 10+ vertikale
-// seksjoner. Splittet i 7 faner: Lag / Tema / Annotering / Måling / Sporing /
-// Eksport / Om. Annotering og Sporing skjules for built-in kart (Vardåsen).
+// seksjoner. Splittet i faner: Lag / Tema / Annotering / Måling / Sporing /
+// Eksport / Om / Utvikler. Annotering og Sporing skjules for built-in kart
+// (Vardåsen). «Utvikler» (v11.0.32) er en debug-fane lengst til høyre — åpne
+// Vardåsen-referansekartet, diagnose-modus og byggetider.
 // Aktiv fane huskes i localStorage så drawer åpner tilbake i samme kontekst.
 const ACTIVE_TAB_KEY = 'svg-insights-mapview-active-tab'
 const ALL_TABS = [
@@ -497,6 +499,7 @@ const ALL_TABS = [
   { key: 'sporing',     label: 'Sporing',    userOnly: true },
   { key: 'eksport',     label: 'Eksport' },
   { key: 'om',          label: 'Innstillinger' },
+  { key: 'utvikler',    label: 'Utvikler' },
 ]
 const activeTab = ref('lag')
 try {
@@ -3727,11 +3730,19 @@ const EXTEND_ZONE_LABEL = {
 }
 const EXTEND_ZONE_R = 16      // prikk-radius i skjermpiksler (mot-skalert)
 const EXTEND_ZONE_OFF = 30    // hvor langt UTENFOR kanten prikken sitter (px)
+// Drawer-en dekker kant-sonene kun når den er ÅPEN og i ekspandert tilstand
+// (mobil-bunnark). Når den er minimert titter bare fane-stripen opp (~32 px), så
+// prikkene som sitter utenfor kart-kanten er fortsatt synlige og klikkbare —
+// da skal de ikke skjules (v11.0.32). isMinimized er alltid false på desktop
+// (side-panel), så desktop-oppførselen er uendret.
+const drawerCoversCanvas = computed(() =>
+  showControls.value && !drawer.isMinimized.value
+)
 const extendZonesVisible = computed(() =>
   !loading.value && !loadError.value && !!meta.value &&
   !buildingOnTheFly.value && !fillingInDetails.value &&
   !curveball.active.value && !annot.isAnnotateMode.value &&
-  !measureMode.value && !sti.active.value && !searchOpen.value && !showControls.value
+  !measureMode.value && !sti.active.value && !searchOpen.value && !drawerCoversCanvas.value
 )
 
 // Mot-skalerings-faktor: 1 base-enhet i en kant-sone-gruppe rendres som 1 skjerm-
@@ -3913,7 +3924,7 @@ watch([scale, translateX, translateY, rotation], scheduleActivatableCheck)
 // eller irrelevant.
 function autoMapModeBusy() {
   return curveball.active.value || annot.isAnnotateMode.value ||
-         measureMode.value || sti.active.value || searchOpen.value || showControls.value
+         measureMode.value || sti.active.value || searchOpen.value || drawerCoversCanvas.value
 }
 
 // Bygge-parametre for en ny flis sentrert på et SVG-punkt (samme størrelse +
@@ -6499,45 +6510,7 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <div class="flex items-baseline justify-between gap-2 mb-2">
-              <span class="text-white/55 text-[11px] uppercase tracking-wide">Debug</span>
-              <span v-if="mapDataLabel" class="text-white/45 text-[11px] tabular-nums">{{ mapDataLabel }}</span>
-            </div>
-            <!-- Tile-cache: antall auto-fliser lagret (scroll-tilbake-mosaikk). -->
-            <div class="flex items-baseline justify-between gap-2 mb-2 px-1">
-              <span class="text-white/45 text-[11px]">Auto-fliser i cache</span>
-              <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ maxTiles }}</span>
-            </div>
-            <!-- Viewport-culling: hvor mange indekserte elementer som er skjult
-                 utenfor utsnittet akkurat nå + siste cull-beregning i ms. -->
-            <div v-if="cullStats.indexed" class="flex items-baseline justify-between gap-2 mb-2 px-1">
-              <span class="text-white/45 text-[11px]">Viewport-culling</span>
-              <span class="text-white/55 text-[11px] tabular-nums">
-                {{ cullStats.culled }} / {{ cullStats.indexed }} skjult · {{ cullStats.ms }} ms
-              </span>
-            </div>
-            <button @click="diagnose = !diagnose"
-                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
-                    :class="diagnose
-                            ? 'bg-slate-400/20 border-slate-300/50 text-white'
-                            : 'bg-white/5 border-white/10 text-white/75'">
-              {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
-            </button>
-            <div v-if="diagnose" class="text-[10px] text-white/55 leading-relaxed mb-3 px-1">
-              Polygon-fargen viser kilden:
-              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(180, 80%, 55%);"></span> N50,
-              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(140, 70%, 45%);"></span> NVE innsjø,
-              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(220, 80%, 60%);"></span> OSM way,
-              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
-              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
-            </div>
-            <!-- Byggetider (perf): viser localStorage-loggen så den kan kopieres
-                 og deles — mobil-konsollen er upraktisk. -->
-            <button @click="openPerfLog"
-                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]
-                           bg-white/5 border-white/10 text-white/75">
-              Byggetider (perf-logg)
-            </button>
+            <!-- Debug-info + diagnose/byggetider er flyttet til «Utvikler»-fanen. -->
           </div>
 
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
@@ -6598,6 +6571,63 @@ onUnmounted(() => {
               </button>
             </div>
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
+          </div>
+
+          <!-- ── Tab: Utvikler (debug-hjelp) ──────────────────────── -->
+          <div v-show="activeTab === 'utvikler'">
+            <!-- Vardåsen-referansekartet: flyttet hit fra forsiden. Bygges fra
+                 ekte Kartverket-data i CI og er nyttig som fast fasit ved feilsøk. -->
+            <button @click="router.push({ name: 'kart-vis', params: { id: 'vardasen' } })"
+                    class="w-full mb-3 px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center justify-center gap-2 transition
+                           bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+                <path d="M9 4 V18 M15 6 V20"/>
+              </svg>
+              <span class="font-medium">Åpne Vardåsen-referansekart</span>
+            </button>
+
+            <div class="flex items-baseline justify-between gap-2 mb-2">
+              <span class="text-white/55 text-[11px] uppercase tracking-wide">Debug</span>
+              <span v-if="mapDataLabel" class="text-white/45 text-[11px] tabular-nums">{{ mapDataLabel }}</span>
+            </div>
+            <!-- Tile-cache: antall auto-fliser lagret (scroll-tilbake-mosaikk). -->
+            <div class="flex items-baseline justify-between gap-2 mb-2 px-1">
+              <span class="text-white/45 text-[11px]">Auto-fliser i cache</span>
+              <span class="text-white/55 text-[11px] tabular-nums">{{ autoTileCount }} / {{ maxTiles }}</span>
+            </div>
+            <!-- Viewport-culling: hvor mange indekserte elementer som er skjult
+                 utenfor utsnittet akkurat nå + siste cull-beregning i ms. -->
+            <div v-if="cullStats.indexed" class="flex items-baseline justify-between gap-2 mb-2 px-1">
+              <span class="text-white/45 text-[11px]">Viewport-culling</span>
+              <span class="text-white/55 text-[11px] tabular-nums">
+                {{ cullStats.culled }} / {{ cullStats.indexed }} skjult · {{ cullStats.ms }} ms
+              </span>
+            </div>
+            <button @click="diagnose = !diagnose"
+                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
+                    :class="diagnose
+                            ? 'bg-slate-400/20 border-slate-300/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ diagnose ? 'Diagnose: AV' : 'Diagnose-modus' }}
+            </button>
+            <div v-if="diagnose" class="text-[10px] text-white/55 leading-relaxed mb-3 px-1">
+              Polygon-fargen viser kilden:
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(180, 80%, 55%);"></span> N50,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(140, 70%, 45%);"></span> NVE innsjø,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(220, 80%, 60%);"></span> OSM way,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
+              <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
+            </div>
+            <!-- Byggetider (perf): viser localStorage-loggen så den kan kopieres
+                 og deles — mobil-konsollen er upraktisk. -->
+            <button @click="openPerfLog"
+                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98]
+                           bg-white/5 border-white/10 text-white/75">
+              Byggetider (perf-logg)
+            </button>
           </div>
         </div>
       </div>
