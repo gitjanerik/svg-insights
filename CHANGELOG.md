@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.40: Full-bredde grønn «Lag kart der du står»-knapp i tom-tilstand
+
+Tom-tilstanden for «Mine kart» har fått en full-bredde grønn primær-CTA «Lag kart der du står», som kjører samme GPS-flyt som den integrerte knappen i søkefeltet. Gir nye brukere en tydelig handling rett i tom-kortet i stedet for bare en peker oppover. Vises kun når nettleseren støtter GPS; ellers står søk-oppfordringen alene.
+
+---
+
 ## 2026-06-24 — v11.0.39: Tom-tilstand for «Mine kart» — stort ton-i-ton ikon + bedre tekst
 
 Tom-tilstanden i kart-lista (når brukeren ikke har lagret noen kart ennå) er bygd om til et luftigere kort med et stort, ton-i-ton folde-kart-ikon (samme glyf som list-radene bruker). Teksten peker nå direkte på handlingen: «Trykk den grønne GPS-knappen øverst for å lage et kart der du står — eller søk opp et sted.» Faller tilbake til en ren søk-oppfordring når nettleseren ikke støtter GPS (da finnes ingen grønn knapp).

@@ -384,13 +384,28 @@ async function onSelectSearchResult(r) {
         </svg>
         <div class="mt-4 text-[15px] font-semibold text-white/80">Ingen egne kart ennå</div>
         <div v-if="supportsGeolocation" class="mt-1.5 text-[13px] text-white/45 leading-relaxed max-w-[18rem]">
-          Trykk den
-          <span class="text-emerald-300/90 font-medium">grønne GPS-knappen</span>
-          øverst for å lage et kart der du står — eller søk opp et sted.
+          Lag ditt første turkart der du står — eller søk opp et sted øverst.
         </div>
         <div v-else class="mt-1.5 text-[13px] text-white/45 leading-relaxed max-w-[18rem]">
           Søk opp et sted øverst for å lage ditt første turkart.
         </div>
+
+        <!-- Full-bredde grønn primær-CTA: lag kart der jeg står (GPS). Samme
+             handler som den integrerte GPS-knappen i søkefeltet. Kun når GPS
+             støttes — uten posisjon faller vi tilbake til søk. -->
+        <button v-if="supportsGeolocation"
+                @click="onCreateHere"
+                :disabled="buildingOnTheFly"
+                class="mt-5 w-full py-3.5 rounded-xl bg-emerald-500 text-white font-semibold
+                       flex items-center justify-center gap-2 shadow-md
+                       active:scale-[0.99] transition disabled:opacity-60">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="10" r="3"/>
+            <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
+          </svg>
+          <span>Lag kart der du står</span>
+        </button>
       </div>
 
       <!-- Slett alle (vises kun når brukeren har lagrede kart) -->
