@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.43: Dempet bro-strek som følger «Strek»-knotten
+
+Broer (way med `bridge=yes` — fylkesvei, motorvei, jernbane) ble lest som tunge, heldekkende sorte band. Roten var ikke broens egen strek, men at de to parapet-strekene ble lagt utenpå veiens/jernbanens sorte kantlinje og fylte ut forbi den. I tillegg var parapeten hardkodet i SVG-en og fulgte ikke «Strek»-knotten, så broene ble relativt sett enda mer dominerende når man tynnet ut kartet. Parapeten er nå dempet grå (`#4a4a4a`) og tynnere (`0,11 mm`), forskyvningen er strammet inn til `±0,24 mm`, og bredden følger nå `--stroke-scale` via `calc()` (samme mekanikk som veier/stier) så broene krymper i takt med resten av kartet. Endringen ligger i `mapBuilder.js` (broSvg); nye kart og det CI-bygde Vardåsen-kartet får stilen automatisk, mens allerede lagrede kart får den ved regenerering.
+
+---
+
 ## 2026-06-24 — v11.0.42: Sjøblå følger valgt tema
 
 Sjø- og dybde-flatene henger nå med når man bytter tema. Tidligere var dybdearealet (Sjøkart 307) og DEM-grunn-båndene malt med en fast lys blå-skala som ble bakt inn i SVG-en ved bygging, så den lyse sjøblåen ble hengende også i de mørke temaene (mørk, indigo, slate, mocha, forest) der den skar seg mot resten av kartet. Fargene emitteres nå som tema-variabler (`var(--iso-depth-1..5)`) med den lyse skalaen som fallback, og hvert mørkt tema har fått en egen, dempet dybde-rampe (grunnest → dypest) som `applyTheme` setter ved tema-bytte. Lys-tema er uendret (bruker fallback-hexene). 5-bånds dybde-gradienten beholdes i alle temaer.
