@@ -11,7 +11,7 @@ import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
-import { useMapSizePreference } from '../composables/useMapSizePreference.js'
+import { useMapSizePreference, equidistanceForWidthKm } from '../composables/useMapSizePreference.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
@@ -6554,6 +6554,8 @@ onUnmounted(() => {
               <div class="text-[13px] text-white font-medium mb-0.5">Kartstørrelse (nye kart)</div>
               <div class="text-[11px] text-white/55 leading-snug mb-2">
                 Bredde på nye kvadratiske kart fra søk/GPS. «Standard» tilpasser seg skjermen (~4 km).
+                Ekvidistanse settes automatisk: store kart får grovere kurver
+                ({{ mapSizeKm ? equidistanceForWidthKm(mapSizeKm) : 20 }} m for valgt størrelse).
               </div>
               <div class="flex flex-wrap gap-1.5">
                 <button @click="mapSizeKm = null"

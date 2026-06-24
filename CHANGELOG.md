@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.36: Auto-ekvidistanse etter kartstørrelse
+
+Høydekurve-intervallet trappes nå opp automatisk med kartstørrelsen (ny `equidistanceForWidthKm` i `useMapSizePreference`): < 9 km → 20 m, 9–13 km → 25 m, ≥ 14 km → 50 m. Standard (~4 km) er uendret 20 m. Uten dette druknet store kart i en svart kurve-graut (sub-piksel-tette kurver ved utzoom). Innstillings-UI-et viser den valgte størrelsens ekvidistanse, så det er tydelig hva man får.
+
+---
+
 ## 2026-06-25 — v11.0.35: Innstilling for kartstørrelse på nye kart (10–20 km kvadrat)
 
 Ny innstilling «Kartstørrelse (nye kart)» i Innstillinger-fanen i kart-visningen. Default er som før («Standard» = skjerm-utledet kvadrat, ~4 km), men man kan i stedet velge et fast kvadrat på 10, 12, 14, 16, 18 eller 20 km bredde. Valget styrer forsidens søk- og GPS-flyt (`squareDims()` i MapHomeView leser preferansen via ny `useMapSizePreference`-composable, persistert i localStorage). Påvirker ikke kartet som vises akkurat nå — kun neste nye kart. Primært et hjelpemiddel for å teste den zoom-trappede detalj-LOD-en (v11.0.34) på store, navn- og kurvetette kart.
