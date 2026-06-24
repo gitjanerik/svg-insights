@@ -4,11 +4,24 @@ import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { autoMapSquare } from '../lib/mapBuilder.js'
+import { useMapSizePreference, equidistanceForWidthKm } from '../composables/useMapSizePreference.js'
 import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
+
+// Standard kartstørrelse (settes i MapView «Innstillinger»). null = skjerm-utledet
+// kvadrat (~4 km). Tall = fast kvadrat-bredde i km. Brukes av søk-/GPS-flyten.
+const { mapSizeKm } = useMapSizePreference()
+function squareDims() {
+  return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : autoMapSquare(2)
+}
+// Ekvidistanse trappes opp med størrelsen (se equidistanceForWidthKm) så store
+// kart ikke drukner i kurver. Standard (~4 km) holder 20 m.
+function squareEquidistance() {
+  return equidistanceForWidthKm(mapSizeKm.value)
+}
 
 async function refresh() {
   loading.value = true
@@ -133,8 +146,8 @@ async function onCreateHere() {
       },
       // Kvadratisk utsnitt: beholder den skjerm-utledede høyden og utvider
       // bredden så kartet blir kvadratisk (mer slingringsrom øst/vest).
-      ...autoMapSquare(2),
-      equidistanceM: 20, // 20 m ekvidistanse
+      ...squareDims(),
+      equidistanceM: squareEquidistance(), // auto: 20/25/50 m etter bredde
       navn: `Tur ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => { buildingProgress.value = msg },
@@ -178,8 +191,8 @@ async function onSelectSearchResult(r) {
   try {
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
-      ...autoMapSquare(2),   // kvadratisk utsnitt — samme høyde, bredere
-      equidistanceM: 20, // 20 m ekvidistanse
+      ...squareDims(),   // kvadratisk utsnitt — standard ~4 km, eller valgt fast bredde
+      equidistanceM: squareEquidistance(), // auto: 20/25/50 m etter bredde
       navn: r.shortName,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
       onProgress: (msg) => { buildingProgress.value = msg },

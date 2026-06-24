@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-06-25 — v11.0.37: LOD-testverktøy — live zoom-indikator, justerbare terskler, «bygg om i ny størrelse»
+
+Tre tillegg for å kalibrere den zoom-trappede detalj-LOD-en empirisk. (1) **Zoom-LOD-indikator** i Utvikler-fanen: live-readout av gjeldende `scale`-verdi + trinn (far/mid/near) mens man panner/zoomer. (2) **Live-justerbare LOD-knotter** (`useLodTuning`, persistert): glider for detalj-terskelen (når `.zoom-near` slår inn) og for navne-tetthets-budsjettene (far/mid/near), med «Nullstill». Endrer kun runtime-parametre — re-applikeres straks uten å bygge kartet på nytt (hvilke lag som gates er fortsatt bakt inn i CSS ved bygging). Søketreff-zoomen følger nå den justerbare terskelen. (3) **«Bygg om dette området i valgt størrelse»** i Innstillinger-fanen: rebygger gjeldende kart-senter i den valgte kartstørrelsen, så man kan teste samme sted ved ulik bredde uten å gå om forsiden.
+
+---
+
+## 2026-06-25 — v11.0.36: Auto-ekvidistanse etter kartstørrelse
+
+Høydekurve-intervallet trappes nå opp automatisk med kartstørrelsen (ny `equidistanceForWidthKm` i `useMapSizePreference`): < 9 km → 20 m, 9–13 km → 25 m, ≥ 14 km → 50 m. Standard (~4 km) er uendret 20 m. Uten dette druknet store kart i en svart kurve-graut (sub-piksel-tette kurver ved utzoom). Innstillings-UI-et viser den valgte størrelsens ekvidistanse, så det er tydelig hva man får.
+
+---
+
+## 2026-06-25 — v11.0.35: Innstilling for kartstørrelse på nye kart (10–20 km kvadrat)
+
+Ny innstilling «Kartstørrelse (nye kart)» i Innstillinger-fanen i kart-visningen. Default er som før («Standard» = skjerm-utledet kvadrat, ~4 km), men man kan i stedet velge et fast kvadrat på 10, 12, 14, 16, 18 eller 20 km bredde. Valget styrer forsidens søk- og GPS-flyt (`squareDims()` i MapHomeView leser preferansen via ny `useMapSizePreference`-composable, persistert i localStorage). Påvirker ikke kartet som vises akkurat nå — kun neste nye kart. Primært et hjelpemiddel for å teste den zoom-trappede detalj-LOD-en (v11.0.34) på store, navn- og kurvetette kart.
+
+---
+
+## 2026-06-25 — v11.0.34: Zoom-trappet detalj-LOD + auto-promotering av flis (UX-opprydding)
+
+To UX-forenklinger i kart-visningen. (1) **«Gjør dette til hovedkart»-knappen er fjernet.** Den eksponerte et internt begrep (aktiv flis vs. spøkelses-flis) som vanlige brukere ikke trenger å forholde seg til. Flisa under skjermsenter auto-promoteres nå til aktiv flis etter ~1,5 s ro (`maybeAutoPromote` i MapView), gated mot måling/annotering/spill/drawer. Promoteringen var allerede sømløs (ingen spinner, beholder zoom/posisjon), så byttet er usynlig — det holder bare «aktiv flis = den du faktisk ser på», som videre kant-sone-utvidelse refererer til. (2) **Zoom-trappet detalj-LOD i tre trinn.** Kartet viser nå en ren oversikt når man er utzoomet, og avslører detaljer gradvis ved innzoom: høyde-tall (moh på høydekurver via `kontur-tall` OG i innsjøer via `vann-tall`), bekke-navn og det tette grend-/gård-navne-teppet (`stedsnavn[data-rank=minor]`) vises først på nærmeste trinn (`.zoom-near`, scale ≥ 2,5) istedenfor allerede ved 1,3 som før. Navne-tetthets-budsjettet er dessuten zoom-avhengig (60 navn på oversikt → 130 mellomnivå → 250 detalj) istedenfor fast 200. **Søk er upåvirket:** søkeindeksen leser hele kartet uavhengig av visnings-LOD, og et valgt søketreff zoomes til scale 2,5 (= `.zoom-near`) og tvinges synlig — alle navn er alltid søkbare. Mekanikken er ren CSS-klasse-toggling på SVG-host (`.zoomed-in`/`.zoom-near`), ingen re-render. Gjelder nybygde kart (og Vardåsen rebygges av CI); eldre lagrede kart beholder sin innbakte CSS.
+
+---
+
 ## 2026-06-24 — v11.0.33: «Ny versjon tilgjengelig»-banner istedenfor stille auto-reload
 
 Service worker-oppdateringer vises nå som et brukerstyrt banner nederst på skjermen («Ny versjon tilgjengelig» + «Oppdater»-knapp) istedenfor å reloade siden stille. Tidligere kalte SW-en `skipWaiting()` i install og siden auto-postet `SKIP_WAITING` + reloadet ved `controllerchange` — det fungerte stort sett, men kunne 1) reloade midt i bruk og 2) glippe helt når appen sto åpen UNDER en deploy (nettleseren hadde ikke re-sjekket SW-registreringen ennå, så `updatefound` fyrte aldri). Nå: install kaller ikke lenger `skipWaiting` (en ny versjon venter til brukeren bekrefter), og en ny reaktiv modul (`lib/swUpdate.js`) eksponerer `updateAvailable` + `applyUpdate()` som App.vue viser banneret fra. `main.js` sjekker dessuten etter ny versjon periodisk (hver time) og hver gang appen kommer i forgrunnen (`visibilitychange`), så banneret dukker opp selv om PWA-en står åpen lenge. Når brukeren trykker «Oppdater» sendes `SKIP_WAITING` til den ventende workeren → `controllerchange` → reload inn i den nye bundlen.

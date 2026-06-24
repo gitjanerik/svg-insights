@@ -591,14 +591,15 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // utenfor sin egen bounding box — trygt siden lagene allerede er klippet
   // til kartets viewBox.
   rules.push(`${root} [data-layer] { contain: paint; }`)
-  // v8.10.4 — Perf: skjul kontur-tall ved utzoomet visning. Ved fit-to-extent
-  // er tall-labels uleselig små uansett (mange hundre tall i synet samtidig);
-  // browseren bruker likevel tid på text-shaping + halo-rendering. Vis dem
-  // når MapView setter `.zoomed-in` på SVG-host (default ved scale >= 1.3).
-  // Bekk-navn skjules også siden mange OSM-bekker har samme navn repetert
-  // hver 2 km og blir visuell støy ved utzoom.
-  rules.push(`${root}:not(.zoomed-in) [data-label="kontur-tall"] { display: none; }`)
-  rules.push(`${root}:not(.zoomed-in) [data-layer="bekk"] text { display: none; }`)
+  // v8.10.4 / v11.0.34 — Detalj-LOD: høyde-tall og bekke-navn er bare lesbare
+  // (og verdt text-shaping + halo-rendering) når brukeren er «nesten helt inn».
+  // De holdes derfor igjen til MapView setter `.zoom-near` (scale >= 2.5) — ikke
+  // bare `.zoomed-in` (1.3) som før. Gjelder kontur-tall (moh på høydekurver),
+  // vann-tall (moh i innsjø-sentroid) og bekke-navn (mange OSM-bekker repeterer
+  // samme navn hver 2 km → visuell støy ved utzoom).
+  rules.push(`${root}:not(.zoom-near) [data-label="kontur-tall"] { display: none; }`)
+  rules.push(`${root}:not(.zoom-near) [data-label="vann-tall"] { display: none; }`)
+  rules.push(`${root}:not(.zoom-near) [data-layer="bekk"] text { display: none; }`)
   // Art-mode opacity for fyll-områder (skog/vann/aker/bygning osv).
   // Stroke-only features beholder full skarphet (fill-opacity påvirker ikke strokes).
   // CSS-var settes av MapView ved tema-bytte; default = 1 (vanlig modus).
@@ -737,11 +738,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   rules.push(`${root} [data-label="stedsnavn"] { font-size: ${fs(5.8)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
   rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${fs(7.2)}; }`)
   rules.push(`${root} [data-label="stedsnavn"][data-rank="minor"] { font-size: ${fs(4.8)}; }`)
-  // LOD (v9.1.12): ved utzoom (ikke .zoomed-in) skjuler vi det tette grend-/
-  // gård-/locality-teppet (rank=minor) og beholder by/tettsted/landsby for
-  // oversikts-orientering. Resten dukker opp ved innzoom. Stor frame-rate-
-  // gevinst på navn-tette 10 km-kart uten å miste planlegging-oversikten.
-  rules.push(`${root}:not(.zoomed-in) [data-label="stedsnavn"][data-rank="minor"] { display: none; }`)
+  // LOD (v9.1.12 / v11.0.34): det tette grend-/gård-/locality-teppet (rank=minor)
+  // er detalj — det dukker først opp på nærmeste trinn (.zoom-near, scale >= 2.5),
+  // mens by/tettsted/landsby (major/mid) beholdes for oversikts-orientering.
+  // Stor frame-rate-gevinst på navn-tette 10 km-kart uten å miste planleggings-
+  // oversikten. (Alle navn forblir søkbare uansett zoom — kun visning gates her.)
+  rules.push(`${root}:not(.zoom-near) [data-label="stedsnavn"][data-rank="minor"] { display: none; }`)
 
   return rules.join(' ')
 }
