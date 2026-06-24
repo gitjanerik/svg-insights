@@ -12,6 +12,8 @@ import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { useMapSizePreference, equidistanceForWidthKm } from '../composables/useMapSizePreference.js'
+import { useLodTuning } from '../composables/useLodTuning.js'
+import { autoMapSquare } from '../lib/mapBuilder.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
@@ -860,18 +862,34 @@ watch(isGesturing, (g) => {
 //   • near (.zoom-near, ≥ 2.5)  — «nesten helt inn»: høyde-tall (kontur + innsjø-
 //                                 moh), bekke-navn, små stedsnavn — alle detaljer
 // Fine labels er uleselig små (og dyre å text-shape) ved utzoom, så de holdes
-// igjen til brukeren faktisk kan lese dem. NEAR = 2.5 matcher zoom-målet når et
-// søketreff velges (selectSearchResult), så et valgt navn alltid blir synlig.
+// igjen til brukeren faktisk kan lese dem. NEAR-terskelen er live-justerbar i
+// Utvikler-fanen (useLodTuning) og matcher zoom-målet når et søketreff velges
+// (selectSearchResult), så et valgt navn alltid blir synlig.
 const ZOOMED_IN_THRESHOLD = 1.3
-const ZOOM_NEAR_THRESHOLD = 2.5
+const {
+  zoomNearThreshold, nameBudgetFar, nameBudgetMid, nameBudgetNear, resetLodTuning, LOD_DEFAULTS,
+} = useLodTuning()
 function applyZoomTierClasses(svg, s) {
   if (!svg) return
   svg.classList.toggle('zoomed-in', s >= ZOOMED_IN_THRESHOLD)
-  svg.classList.toggle('zoom-near', s >= ZOOM_NEAR_THRESHOLD)
+  svg.classList.toggle('zoom-near', s >= zoomNearThreshold.value)
 }
 watch(scale, (s) => {
   applyZoomTierClasses(svgHostRef.value?.querySelector('svg'), s)
 }, { immediate: true })
+// Gjeldende zoom-trinn (debug-indikator i Utvikler-fanen).
+const zoomTier = computed(() => {
+  const s = scale.value || 1
+  if (s >= zoomNearThreshold.value) return 'near'
+  if (s >= ZOOMED_IN_THRESHOLD) return 'mid'
+  return 'far'
+})
+// Live-justering av tuning-knottene → re-applikér klasser + navn-LOD straks.
+watch(zoomNearThreshold, () => {
+  applyZoomTierClasses(svgHostRef.value?.querySelector('svg'), scale.value)
+  scheduleNameLOD()
+})
+watch([nameBudgetFar, nameBudgetMid, nameBudgetNear], () => scheduleNameLOD())
 
 // ── Strek- og relieff-knotter (FAB) ──────────────────────────────────
 // To «volum-knotter» som har overtatt de gamle zoom-inn/ut-knappenes plass
@@ -926,6 +944,37 @@ const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELI
 // «Innstillinger»-fanen. null = skjerm-utledet kvadrat (~4 km), tall = fast
 // kvadrat-bredde i km. Endrer ikke kartet som vises nå — kun neste nye kart.
 const { mapSizeKm, MAP_SIZE_OPTIONS } = useMapSizePreference()
+
+// «Bygg om dette området i valgt størrelse» (Innstillinger-fanen): rebygger
+// samme senter på nytt i den valgte kartstørrelsen, så man kan teste LOD-en på
+// samme sted ved ulik bredde uten å gå tilbake til forsiden. Lager et NYTT kart
+// (ny id) og navigerer dit. «Standard» = skjerm-utledet kvadrat (autoMapSquare).
+async function rebuildAtChosenSize() {
+  const m = meta.value
+  if (!m?.bbox || buildingOnTheFly.value) return
+  const lat = (m.bbox.south + m.bbox.north) / 2
+  const lon = (m.bbox.west + m.bbox.east) / 2
+  const dims = mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : autoMapSquare(2)
+  closeDrawer()
+  buildingOnTheFly.value = true
+  buildingProgress.value = 'Bygger om i valgt størrelse …'
+  try {
+    const { id } = await buildMapFromCenter({
+      center: { lat, lon, name: m.navn ?? 'Kart' },
+      ...dims,
+      equidistanceM: equidistanceForWidthKm(mapSizeKm.value),
+      navn: m.navn ?? 'Kart',
+      terrainFirst: true,
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    router.push({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('Bygg-om feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    showAutoMapToast('Kunne ikke bygge om kartet')
+  }
+}
 
 // Maks kartfliser i mosaikk-cachen — bruker-innstilling (slider i Innstillinger).
 // Diskrete trinn (kvadrat-tall, matcher et n×n grid-mentalt-bilde), default 16.
@@ -1175,7 +1224,7 @@ function selectSearchResult(r) {
     r.el.classList.remove('vp-cull')
   }
   if (meta.value) {
-    panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
+    panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
   }
   searchOpen.value = false
   mapSearch.clear()
@@ -1234,7 +1283,7 @@ function nearestPoi(kind, ox, oy) {
   highlightedFeature.value = name
     ? { name, sub: `${cfg.label} · ${distLabel}`, x: best.x, y: best.y, kind }
     : { name: cfg.label, sub: `${distLabel} fra punktet`, x: best.x, y: best.y, kind }
-  panTo(best.x, best.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, 2.5) })
+  panTo(best.x, best.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
   renderHighlight()
 }
 
@@ -1255,14 +1304,12 @@ function nearestPoiFromPoint(kind) {
 //
 // v11.0.34: budsjettet er zoom-trappet — få navn på oversikt (ren bakgrunn),
 // gradvis flere når man zoomer inn. Tidligere var det fast 200 uansett zoom.
-const NAME_LOD_BUDGET_FAR  = 60    // oversikt (scale < zoomed-in)
-const NAME_LOD_BUDGET_MID  = 130   // mellomnivå (zoomed-in)
-const NAME_LOD_BUDGET_NEAR = 250   // detalj (zoom-near)
+// v11.0.37: terskel + budsjetter er live-justerbare (useLodTuning, Utvikler-fanen).
 function nameBudgetForZoom() {
   const s = scale.value || 1
-  if (s >= ZOOM_NEAR_THRESHOLD) return NAME_LOD_BUDGET_NEAR
-  if (s >= ZOOMED_IN_THRESHOLD) return NAME_LOD_BUDGET_MID
-  return NAME_LOD_BUDGET_FAR
+  if (s >= zoomNearThreshold.value) return nameBudgetNear.value
+  if (s >= ZOOMED_IN_THRESHOLD) return nameBudgetMid.value
+  return nameBudgetFar.value
 }
 const forcedVisibleNameEls = new Set()
 let nameLodTimer = null
@@ -1690,7 +1737,7 @@ function maybeHighlightFromQuery() {
   if (Number.isFinite(slat) && Number.isFinite(slon) && meta.value) {
     const { x, y } = wgs84ToSvg(slat, slon, meta.value)
     highlightedFeature.value = { name: hl ? String(hl) : 'Delt sted', x, y, kind: 'delt-sted' }
-    panTo(x, y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: 2.5 })
+    panTo(x, y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: zoomNearThreshold.value })
     renderHighlight()
     return
   }
@@ -1700,7 +1747,7 @@ function maybeHighlightFromQuery() {
   if (!match) return
   highlightedFeature.value = { name: match.name, x: match.x, y: match.y, kind: match.kind }
   if (meta.value) {
-    panTo(match.x, match.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: 2.5 })
+    panTo(match.x, match.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: zoomNearThreshold.value })
   }
   renderHighlight()
 }
@@ -6574,6 +6621,14 @@ onUnmounted(() => {
                   {{ km }} km
                 </button>
               </div>
+              <!-- Bygg om gjeldende område i valgt størrelse — slipper å gå til
+                   forsiden for å teste samme sted ved en annen bredde. -->
+              <button @click="rebuildAtChosenSize" :disabled="buildingOnTheFly || !meta?.bbox"
+                      class="w-full mt-2 px-3 py-2 rounded-lg text-[12px] font-medium border transition
+                             active:scale-[0.98] disabled:opacity-50
+                             bg-sky-500/15 border-sky-400/40 text-sky-100">
+                Bygg om dette området i valgt størrelse
+              </button>
             </div>
             <!-- Innstillinger: hold skjerm våken. Default PÅ — nyttig når
                  brukeren bruker kartet til orientering ute og ikke vil at
@@ -6648,6 +6703,40 @@ onUnmounted(() => {
               </svg>
               <span class="font-medium">Åpne Vardåsen-referansekart</span>
             </button>
+
+            <!-- Zoom-LOD: live-indikator + justerbare terskler. Endrer kun
+                 RUNTIME-parametre (når .zoom-near settes + navne-budsjett). Hvilke
+                 lag som gates er bakt inn i kartets CSS ved bygging. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="flex items-baseline justify-between gap-2 mb-1.5">
+                <span class="text-white/55 text-[11px] uppercase tracking-wide">Zoom-LOD</span>
+                <span class="text-[11px] tabular-nums"
+                      :class="{ 'text-white/45': zoomTier === 'far', 'text-sky-300': zoomTier === 'mid', 'text-emerald-300': zoomTier === 'near' }">
+                  {{ (scale || 1).toFixed(2) }}× · {{ zoomTier }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-3 mb-0.5">
+                <span class="text-white/55 text-[11px]">Detalj-terskel (.zoom-near)</span>
+                <span class="text-white/55 text-[11px] tabular-nums">{{ zoomNearThreshold.toFixed(1) }}×</span>
+              </div>
+              <input type="range" min="1.5" max="5" step="0.1" v-model.number="zoomNearThreshold"
+                     aria-label="Detalj-terskel" class="w-full accent-emerald-400 mb-2"/>
+              <div class="flex items-center justify-between gap-3 mb-0.5">
+                <span class="text-white/55 text-[11px]">Navne-budsjett (far/mid/near)</span>
+                <span class="text-white/55 text-[11px] tabular-nums">{{ nameBudgetFar }}/{{ nameBudgetMid }}/{{ nameBudgetNear }}</span>
+              </div>
+              <input type="range" min="20" max="150" step="10" v-model.number="nameBudgetFar"
+                     aria-label="Navne-budsjett oversikt" class="w-full accent-white/40"/>
+              <input type="range" min="40" max="250" step="10" v-model.number="nameBudgetMid"
+                     aria-label="Navne-budsjett mellomnivå" class="w-full accent-sky-400"/>
+              <input type="range" min="80" max="500" step="10" v-model.number="nameBudgetNear"
+                     aria-label="Navne-budsjett detalj" class="w-full accent-emerald-400"/>
+              <button @click="resetLodTuning"
+                      class="mt-1.5 w-full px-3 py-1.5 rounded-lg text-[11px] border
+                             bg-white/5 border-white/10 text-white/70 active:scale-[0.98]">
+                Nullstill ({{ LOD_DEFAULTS.near }}× · {{ LOD_DEFAULTS.budgetFar }}/{{ LOD_DEFAULTS.budgetMid }}/{{ LOD_DEFAULTS.budgetNear }})
+              </button>
+            </div>
 
             <div class="flex items-baseline justify-between gap-2 mb-2">
               <span class="text-white/55 text-[11px] uppercase tracking-wide">Debug</span>

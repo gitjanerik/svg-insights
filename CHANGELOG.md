@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.37: LOD-testverktøy — live zoom-indikator, justerbare terskler, «bygg om i ny størrelse»
+
+Tre tillegg for å kalibrere den zoom-trappede detalj-LOD-en empirisk. (1) **Zoom-LOD-indikator** i Utvikler-fanen: live-readout av gjeldende `scale`-verdi + trinn (far/mid/near) mens man panner/zoomer. (2) **Live-justerbare LOD-knotter** (`useLodTuning`, persistert): glider for detalj-terskelen (når `.zoom-near` slår inn) og for navne-tetthets-budsjettene (far/mid/near), med «Nullstill». Endrer kun runtime-parametre — re-applikeres straks uten å bygge kartet på nytt (hvilke lag som gates er fortsatt bakt inn i CSS ved bygging). Søketreff-zoomen følger nå den justerbare terskelen. (3) **«Bygg om dette området i valgt størrelse»** i Innstillinger-fanen: rebygger gjeldende kart-senter i den valgte kartstørrelsen, så man kan teste samme sted ved ulik bredde uten å gå om forsiden.
+
+---
+
 ## 2026-06-25 — v11.0.36: Auto-ekvidistanse etter kartstørrelse
 
 Høydekurve-intervallet trappes nå opp automatisk med kartstørrelsen (ny `equidistanceForWidthKm` i `useMapSizePreference`): < 9 km → 20 m, 9–13 km → 25 m, ≥ 14 km → 50 m. Standard (~4 km) er uendret 20 m. Uten dette druknet store kart i en svart kurve-graut (sub-piksel-tette kurver ved utzoom). Innstillings-UI-et viser den valgte størrelsens ekvidistanse, så det er tydelig hva man får.
