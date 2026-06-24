@@ -16,7 +16,7 @@
  *       Everything else → network only (Google Fonts, opentype from CDN, etc.)
  */
 
-const CACHE_VERSION = 'svg-insights-v11.0.41'
+const CACHE_VERSION = 'svg-insights-v11.0.42'
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`
 const BASE = '/svg-insights/'
