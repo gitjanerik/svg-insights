@@ -559,7 +559,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // `.isom-map`-roten. calc() lar brukeren justere all kartlinje-tykkelse i
   // sanntid uten re-render. Default 1 = ISOM-spec-bredder. Påvirker kun
   // kartlinjer (kategori-strokes), ikke tekst-haloer.
-  const sw = (v) => `calc(${v}mm * var(--stroke-scale, 1))`
+  // v11.0.48: legibilitet-gulv. «Strek»-knotten (og automatisk tynning på
+  // store kart) kan skalere ned mot ~0,1× — da forsvinner tynne lineære
+  // features (gjerde, kraftlinje, bekk) helt i sol/print. max() garanterer at
+  // ingen kartlinje rendres tynnere enn 0,08 mm uansett knott-nivå, uten å
+  // tykne normale ISOM-bredder (som ligger godt over gulvet ved nøytral knott).
+  const sw = (v) => `max(0.08mm, calc(${v}mm * var(--stroke-scale, 1)))`
   // Global tekst-skala: rotasjons-slidens søsken i MapView (desktop) setter
   // `--label-scale` på `.isom-map`-roten. calc() lar brukeren øke/minske ALLE
   // kart-etiketter (navn, høyde, stedsnavn, naturreservat, vann osv) i sanntid

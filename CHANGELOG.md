@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.48: Minste linjevekt-gulv (lesbarhet i sol/print)
+
+Flåtens tilgjengelighetsekspert flagget at tynne lineære features (gjerde, kraftlinje, bekk) faller under lesbarhetsgrensa i direkte sol og på utskrift — særlig fordi «Strek»-knotten og den automatiske tynningen på store kart kan skalere strekene ned mot ~0,1×. `sw()` i `symbolizer.js` har nå et `max(0,08 mm, …)`-gulv: ingen kartlinje rendres tynnere enn 0,08 mm uansett knott-nivå, uten å tykne normale ISOM-bredder (som ligger godt over gulvet ved nøytral knott). Samtidig bekreftet: eksport/utskrift er allerede effektivt LYST tema — tema-variablene settes på transform-wrapperen (`mapInnerRef`), ikke på selve kart-SVG-en, så den klonede/eksporterte SVG-en faller tilbake til de lyse default-fargene som er bakt inn i symbolizer-CSS-en. Redundant tekstur for vegetasjons-tetthet (fargeblind-robusthet) er en større kartografisk endring og er notert som eget framtidig tiltak.
+
+---
+
 ## 2026-06-24 — v11.0.47: Skarpere vegetasjonsgrenser på store kart
 
 Flåtens orienterings-kartograf påpekte at vegetasjonsgrensene blobbet ut på store kart mens høydekurvene holdt seg skarpe — en mismatch som leses som «feil». Roten: vegetasjons-forenklingen (Douglas-Peucker) skalerte med kvadratroten av kart-arealet, så et 20 km-kart fikk opptil ~6,3 m DP-toleranse på skog/åpen mark/åker, mot kurvenes faste toleranse. Vegetasjonsgrenser er navigasjons-håndtak (kanten av en lysning eller grønntunge), så formtroskap teller mer enn de få ekstra bytene. Forenklingen er nå bundet til bakke-meter (fast 3,0 m = 0,3 mm @ 1:10 000) uavhengig av kart-størrelse. Areal-filteret (`minAreaM2`) beholder areal-skaleringen — å droppe hele små polygoner er den legitime perf-leveren, mens det å runde av formen til store flater er det vi unngår. Endring i `mapBuilder.js` (`POLYGON_FILTER`); gjelder skog/eng/åker/åpen mark.
