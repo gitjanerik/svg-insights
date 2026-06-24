@@ -307,14 +307,27 @@ Når Sort hull-modus har absorbert alle sirkler til én eneste stor sirkel som h
 - **Stupkanter krever skikkelig vectorisering** — Zhang-Suen skeletonization gir mye bedre resultater enn naiv horisontal-traversal. Verifisert: 1 → 19 stupkanter på Vardåsen
 - **Versjonslogg-konvensjon (eldre)** — tidligere ble hver versjon også loggført i `AboutView.vue` med farget prikk i tidslinja. Dette er ikke lenger praksis: git-historikk + PR-titler er endringsloggen. Versjonsnummer skal fortsatt bumpes i `package.json`, `version.js`, og `sw.js` ved hver PR.
 
+## Zoom-trappet detalj-LOD (v11.0.34+) — defaults og fin-tuning
+
+Kartet viser en ren oversikt utzoomet og avslører detaljer gradvis ved innzoom. Mekanikk: MapView setter klasser på SVG-host (`applyZoomTierClasses`) — `.zoomed-in` (scale ≥ 1.3, fast) og `.zoom-near` (scale ≥ terskel). Symbolizer-CSS (`buildIsomCss`) gater lag mot `.zoom-near`: `kontur-tall`, `vann-tall` (innsjø-moh), `bekk`-tekst og `stedsnavn[data-rank=minor]` vises kun på near-trinnet. Navne-tetthet styres av et zoom-trappet budsjett (`nameBudgetForZoom`).
+
+**VIKTIG skille:** Tersklene + navne-budsjettene er RUNTIME (live-justerbare, `lib/useLodTuning.js`, Utvikler-fanen, persistert i localStorage). HVILKE lag som gates er bakt inn i kartets CSS ved BYGGING (`symbolizer.js`) — å flytte et lag mellom trinn krever kode-endring + at kartet bygges på nytt. Søk er aldri LOD-et: søkeindeksen leser hele SVG-en, og et valgt treff zoomes til near-terskelen + tvinges synlig.
+
+**Gjeldende defaults (`LOD_DEFAULTS` i `useLodTuning.js`), spikret v11.0.37 — PROVISORISKE:**
+- Detalj-terskel (`.zoom-near`): **2.5×**
+- Navne-budsjett far/mid/near: **60 / 130 / 250**
+
+> ⚠️ **Fin-tune senere.** Disse er satt etter første mobil-test («fungerer overraskende bra», 25. juni 2026), men er ikke grundig kalibrert på tvers av kartstørrelser (4–20 km) og terrengtetthet. Test med Utvikler-fanens glidere på store/tette kart og oppdater `LOD_DEFAULTS` når vi har landet på bedre tall. Vurder også om noen lag bør flytte trinn (f.eks. bekke-navn fra near → mid) — det er en symbolizer-CSS-endring, ikke bare en knott.
+
 ## Todos for neste kart-sesjon (UI-fixer)
 
 Brukeren har identifisert disse for neste sesjon:
 
 1. **Bygninger må lenger ned i z-order**. ISOM 522 bymasse-pattern dekker uleselig i tett bebygde områder (Oslo sentrum-test viste dette). Forslag: flytt 522 til etter åpen mark (rett etter 404), så vann og konturer rendres OVER bymassen. Behold 521 individuelle bygninger over veier/stier
-2. **Høyde over havet i innsjøer** — vis elevasjon som tekst-label på vann-polygoner (eller hent fra DTM-sample i sentroid)
+2. ~~**Høyde over havet i innsjøer**~~ — ✅ GJORT: `vann-tall` (DTM-sample i sentroid) rendres og gates til near-trinnet i zoom-LOD-en (v11.0.34)
 3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
 4. **Generelt UI-polish i MapView**
+5. **Fin-tune zoom-LOD-defaults** (terskel + navne-budsjett) — se «Zoom-trappet detalj-LOD»-seksjonen over
 
 ## Spillnavn — CurveInvaders (brand) / CurveBall (codename)
 
