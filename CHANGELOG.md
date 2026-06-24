@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.45: Trinnvis kart-avsløring + lasteskjelett
+
+Den tyngste hendelsen i et kart-liv er også brukerens første: paint av hele kartet. Flåtens UX-designer pekte på at én blokkerende paint leses som «ødelagt», mens en trinnvis ankomst føles snappy selv om totaltiden er lik. To grep: (1) Lasteskjermen har nå et kart-aktig **skjelett** med rolig grunnfarge, svake kurve-bånd og et lysstrøk som sveiper over — ventetiden leses som «laster et kart», ikke en blank skjerm. (2) Når kart-SVG-en er bygget, **toner den inn trinnvis**: strukturen (bakgrunn/vann/kurver/veier) males først, så fades tekstur (vegetasjon/relieff) og labels inn et lite øyeblikk etter (`startMapReveal`, ren CSS-klasse-sekvens i `MapView.vue`). Alt hoppes over ved `prefers-reduced-motion`, og klassene fjernes etter sekvensen så ingen permanent transition koster noe under pan/zoom. Transport-komprimering (gzip/brotli) håndteres av GitHub Pages for tekst-assets — SVG-en er ren tekst og komprimerer 5–10×.
+
+---
+
 ## 2026-06-24 — v11.0.44: Vektor-relieff — terrengskygge uten innbakt bitmap
 
 Et typisk 20×20 km turkart eksporterte til ~13 MB SVG, og mesteparten var én innbakt base64-PNG: hillshade-relieffet. En flåte med kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpadler, ytelsesingeniør, UX-designer, tilgjengelighetsekspert) pekte samstemt på relieffet som hovedproblemet — både for filstørrelse/minne og fordi sterkt relieff drukner de brune kotene. Relieffet kan nå lages på to måter, valgbart i Innstillinger under «Relieff-stil»: **Skarp (vektor)** — diskrete tone-bånd som rene SVG-polygoner via d3-contour (`lib/reliefBands.js`), knivskarpt ved zoom og print, tema-bart, og kun ~KB i fila — og **Mjuk (bilde)** — den klassiske myke gradient-PNG-en. Vektor er default, så nye/regenererte kart blir vesentlig lettere. Båndgeometrien bygges kun ved DEM-/tema-bytte (relieff-knotten endrer bare gruppe-opacity), og spøkelses-nabofliser dropper relieff helt i vektor-modus. Default relieff-styrke er samtidig senket fra 0,42 → 0,35 etter flåtens råd om koter-kontra-relieff-lesbarhet. Begge moduser eksporterer riktig: vektor som rene paths, mjuk som innbakt bilde (kun da oppstår de tunge bytene). Endringene ligger i `MapView.vue` (`applyHillshade` delt i raster-/vektor-vei), `lib/reliefBands.js` (ny) og `lib/reliefBands.test.js`.

@@ -4623,6 +4623,23 @@ async function retryMapDetails() {
   }
 }
 
+// Trinnvis kart-avsløring (v11.0.45). Struktur fades inn først, så tekstur +
+// labels et hakk etter — gir en «levende» ankomst i stedet for én tung paint.
+// Hopper helt over (vis straks) ved prefers-reduced-motion.
+const prefersReducedMotion = (() => {
+  try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
+})()
+function startMapReveal(svg) {
+  if (prefersReducedMotion) return
+  svg.classList.add('cb-reveal', 'cb-reveal-late')
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    svg.classList.add('cb-revealing')      // skru på opacity-transition
+    svg.classList.remove('cb-reveal')      // struktur fader 0 → 1
+    setTimeout(() => svg.classList.remove('cb-reveal-late'), 130)  // tekstur/labels etter
+    setTimeout(() => svg.classList.remove('cb-revealing'), 540)    // rydd transitions
+  }))
+}
+
 function setupHostSvg(sourceRoot) {
   const ns = 'http://www.w3.org/2000/svg'
   const host = svgHostRef.value
@@ -4670,6 +4687,11 @@ function setupHostSvg(sourceRoot) {
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
   host.appendChild(svg)
+  // v11.0.45: trinnvis avsløring — strukturen (bakgrunn/vann/kurver/veier) males
+  // først, så toner tekstur (vegetasjon/relieff) og labels inn et lite øyeblikk
+  // etter. Selv om total tid er lik, leses en trinnvis ankomst som «snappy»
+  // mens én blokkerende paint leses som treg. Ren CSS-klasse-sekvens.
+  startMapReveal(svg)
   // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
   // perf-klasser (.zoomed-in / .zoom-near / .is-zooming) basert på nåværende
   // state, siden watcheren bare reagerer på endringer.
@@ -5908,11 +5930,16 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Lasting / feil -->
-    <div v-if="loading"
-         class="absolute inset-0 flex flex-col items-center justify-center text-white/60 z-10">
-      <div class="w-8 h-8 border-2 border-white/20 border-t-white/80 rounded-full animate-spin mb-3"/>
-      <div class="text-sm">Laster kart …</div>
+    <!-- Lasting / feil. v11.0.45: kart-aktig skjelett bak spinneren så ventetiden
+         leses som «laster et kart», ikke en blank skjerm. -->
+    <div v-if="loading" class="absolute inset-0 z-10 overflow-hidden">
+      <div class="cb-skeleton absolute inset-0" :class="isDark ? 'cb-skeleton-dark' : 'cb-skeleton-light'">
+        <div class="cb-skeleton-shimmer absolute inset-0"/>
+      </div>
+      <div class="absolute inset-0 flex flex-col items-center justify-center text-white/70">
+        <div class="w-8 h-8 border-2 border-white/25 border-t-white/85 rounded-full animate-spin mb-3"/>
+        <div class="text-sm">Laster kart …</div>
+      </div>
     </div>
 
     <div v-else-if="loadError"
@@ -7539,6 +7566,28 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* v11.0.45 — kart-aktig lasteskjelett: rolig grunnfarge med svake «kurve»-bånd
+   og et lysstrøk som sveiper over. Antyder et kart under bygging. */
+.cb-skeleton-light {
+  background:
+    repeating-linear-gradient(115deg, rgba(140,110,70,.05) 0 2px, transparent 2px 26px),
+    #ece3cf;
+}
+.cb-skeleton-dark {
+  background:
+    repeating-linear-gradient(115deg, rgba(255,255,255,.035) 0 2px, transparent 2px 26px),
+    #20242b;
+}
+.cb-skeleton-shimmer {
+  background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.10) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: cb-shimmer 1.5s ease-in-out infinite;
+}
+@keyframes cb-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .cb-skeleton-shimmer { animation: none; }
+}
+
 .drawer-enter-active, .drawer-leave-active { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .drawer-enter-from, .drawer-leave-to       { transform: translateY(100%); }
 /* Desktop: side-panelet glir inn fra høyre i stedet for opp fra bunnen. */
@@ -7575,6 +7624,18 @@ onUnmounted(() => {
 <style>
 .isom-map .name-lod-off { display: none !important; }
 .isom-map .vp-cull { display: none !important; }
+
+/* v11.0.45 — trinnvis kart-avsløring. Klassene settes/fjernes i startMapReveal;
+   etter sekvensen er alle borte og kartet er upåvirket (ingen permanent
+   transition som kan koste under pan/zoom). */
+.isom-map.cb-reveal { opacity: 0; }
+.isom-map.cb-revealing { transition: opacity .26s ease; }
+.isom-map.cb-reveal-late [data-layer="navn"],
+.isom-map.cb-reveal-late [data-layer^="stedsnavn"],
+.isom-map.cb-reveal-late #hillshade-layer { opacity: 0; }
+.isom-map.cb-revealing [data-layer="navn"],
+.isom-map.cb-revealing [data-layer^="stedsnavn"],
+.isom-map.cb-revealing #hillshade-layer { transition: opacity .28s ease; }
 .isom-map.cull-debug-tint .vp-cull {
   display: revert !important;
   opacity: 0.25 !important;
