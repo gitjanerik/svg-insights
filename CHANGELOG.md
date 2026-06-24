@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.47: Skarpere vegetasjonsgrenser på store kart
+
+Flåtens orienterings-kartograf påpekte at vegetasjonsgrensene blobbet ut på store kart mens høydekurvene holdt seg skarpe — en mismatch som leses som «feil». Roten: vegetasjons-forenklingen (Douglas-Peucker) skalerte med kvadratroten av kart-arealet, så et 20 km-kart fikk opptil ~6,3 m DP-toleranse på skog/åpen mark/åker, mot kurvenes faste toleranse. Vegetasjonsgrenser er navigasjons-håndtak (kanten av en lysning eller grønntunge), så formtroskap teller mer enn de få ekstra bytene. Forenklingen er nå bundet til bakke-meter (fast 3,0 m = 0,3 mm @ 1:10 000) uavhengig av kart-størrelse. Areal-filteret (`minAreaM2`) beholder areal-skaleringen — å droppe hele små polygoner er den legitime perf-leveren, mens det å runde av formen til store flater er det vi unngår. Endring i `mapBuilder.js` (`POLYGON_FILTER`); gjelder skog/eng/åker/åpen mark.
+
+---
+
 ## 2026-06-24 — v11.0.46: Lag-forhåndsvalg (presets) i Lag-fanen
 
 ~34 enkelt-toggles for lag er desktop-GIS på en mobilskjerm — høy beslutningskost, og de viktigste valgene drukner i lista. Flåtens UX-designer og fjellvandrer anbefalte å kollapse til noen få navngitte presets. Lag-fanen har nå en «Forhåndsvalg»-rad med fire ett-trykks-tilstander øverst, og hele enkeltlag-lista beholdes under for finjustering: **Tur** (rent turkart — terreng, sti/vei, navn; uten marine/vinter/rot som tett bebyggelse, gjerde/kraft og grend/gård-navn), **Padling** (Tur + marine POI: kai, sjø & padling, sjønavn), **Detaljert** (alt på) og **Print** (som Tur, men uten GPS-spor for ren papirutskrift). Aktivt preset markeres når synlige lag matcher det eksakt. Implementert i `MapView.vue` (`LAYER_PRESETS`, `applyPreset`, `activePreset`).

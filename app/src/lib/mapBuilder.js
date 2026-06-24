@@ -845,19 +845,29 @@ export function buildSvg(elements, bbox, options = {}) {
   const sizeFactor = Math.max(0.7, Math.min(2.5, widthM / 5000))
   const simpScale = Math.sqrt(sizeFactor)
   const areaScale = sizeFactor
+  // Fast vegetasjons-DP i bakke-meter (se POLYGON_FILTER under). 3.0 m =
+  // 0,3 mm @ 1:10 000 — skarpe nok grenser, uavhengig av kart-størrelse.
+  const VEG_SIMPLIFY_M = 3.0
   const POLYGON_FILTER = {
     // v8.9.30: senket bygning-terskelene så hytter (typisk 20–60 m²) ikke
     // forsvinner. 80 m² filtrerte bort hele kategorier av småhytter i
     // marka, og simplifyM 3.0 kollapset korner på små rektangler
     // (4×4 m polygon med DP 3.0 → degenerert). 10 m² + 1.5 m DP bevarer
     // hytter og spikertelt, mens skur < 10 m² fortsatt filtreres bort.
+    // v11.0.47: vegetasjons-FORENKLING bindes til BAKKE-METER (fast 3.0 m),
+    // ikke kart-areal. Tidligere vokste den med √(sizeFactor) → opptil ~6,3 m
+    // DP på et 20 km-kart, som blobbet vegetasjonsgrensene mens konturene (fast
+    // DP i dem.js) holdt seg skarpe — en mismatch som leses som «feil».
+    // Vegetasjonsgrenser er navigasjons-håndtak (kanten av en lysning/grønntunge),
+    // så formtroskap teller mer enn de få ekstra bytene. minAreaM2 beholder
+    // areal-skaleringen — å DROPPE hele små polygoner er den legitime perf-leveren.
     bygning: { simplifyM: 1.5 * simpScale, minAreaM2: 10 * areaScale },
-    skog:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
-    eng:     { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
-    aker:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    skog:    { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
+    eng:     { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
+    aker:    { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
     myr:     { simplifyM: 2.5 * simpScale, minAreaM2: 150 * areaScale },
     vann:    { simplifyM: 2.0 * simpScale, minAreaM2: 50 * areaScale },
-    aapen:   { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    aapen:   { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
     // Naturreservat: maxAreaM2 = 200 km² er forsvar mot OSM-mistags. Norges
     // største naturreservat (Mølen) er ~7 km²; største landskapsvernområde
     // (Trillemarka-Rollagsfjell) er 147 km². 200 km² catcher alle ekte
