@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.33: «Ny versjon tilgjengelig»-banner istedenfor stille auto-reload
+
+Service worker-oppdateringer vises nå som et brukerstyrt banner nederst på skjermen («Ny versjon tilgjengelig» + «Oppdater»-knapp) istedenfor å reloade siden stille. Tidligere kalte SW-en `skipWaiting()` i install og siden auto-postet `SKIP_WAITING` + reloadet ved `controllerchange` — det fungerte stort sett, men kunne 1) reloade midt i bruk og 2) glippe helt når appen sto åpen UNDER en deploy (nettleseren hadde ikke re-sjekket SW-registreringen ennå, så `updatefound` fyrte aldri). Nå: install kaller ikke lenger `skipWaiting` (en ny versjon venter til brukeren bekrefter), og en ny reaktiv modul (`lib/swUpdate.js`) eksponerer `updateAvailable` + `applyUpdate()` som App.vue viser banneret fra. `main.js` sjekker dessuten etter ny versjon periodisk (hver time) og hver gang appen kommer i forgrunnen (`visibilitychange`), så banneret dukker opp selv om PWA-en står åpen lenge. Når brukeren trykker «Oppdater» sendes `SKIP_WAITING` til den ventende workeren → `controllerchange` → reload inn i den nye bundlen.
+
+---
+
 ## 2026-06-24 — v11.0.32: Opprydding i kart-appen — ny «Utvikler»-fane, kvadratisk default, kant-soner synlige ved minimert drawer
 
 Fire opprydninger i kart-sporet. (1) Vardåsen-referansekartet er fjernet fra kart-forsiden (MapHomeView) og flyttet til en ny **«Utvikler»-fane** lengst til høyre i kart-visningens drawer — det er først og fremst en feilsøkings-hjelp, ikke noe forsiden trenger å fylles med. (2) **«Diagnose-modus» og «Byggetider (perf-logg)»** (samt øvrig debug-info: datakilde, auto-fliser-cache, viewport-culling) er flyttet fra «Eksport»-fanen til den nye «Utvikler»-fanen, så Eksport kun handler om deling/eksport. (3) **Default kart-proporsjon er nå kvadratisk** for forsidens søk- og GPS-flyt: vi beholder den skjerm-utledede høyden og utvider bredden så utsnittet blir kvadratisk i stedet for et smalt A-format-portrett (ny `autoMapSquare` i `mapBuilder.js`). (4) De blå sirkel-formede **«utvid kart»-knappene** (N/S/Ø/V + hjørner) skjules ikke lenger når hovedmenyen er åpen og **minimert** — drawer-en dekker bare kartflaten i ekspandert tilstand, så ved minimering (kun fane-stripen titter opp) er kant-sonene igjen synlige og klikkbare.

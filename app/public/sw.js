@@ -3,8 +3,11 @@
  *
  * Strategy:
  *   - Versioned cache: bump CACHE_VERSION on each deploy to invalidate
- *   - Install: pre-cache the shell (index.html + offline essentials)
- *   - Activate: delete old caches so stale bundles don't linger
+ *   - Install: pre-cache the shell (index.html + offline essentials). Does NOT
+ *     skipWaiting — a new version waits until the user confirms via the
+ *     "Ny versjon"-banner (which posts SKIP_WAITING; see message handler below).
+ *   - Activate: delete old caches so stale bundles don't linger, then claim
+ *     clients so the reload after SKIP_WAITING lands on the new SW.
  *   - Fetch:
  *       HTML (navigation)  → network first, fall back to cached index.html
  *       Hashed assets (/assets/*-HASH.ext) → cache first, forever
@@ -13,7 +16,7 @@
  *       Everything else → network only (Google Fonts, opentype from CDN, etc.)
  */
 
-const CACHE_VERSION = 'svg-insights-v11.0.32'
+const CACHE_VERSION = 'svg-insights-v11.0.33'
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`
 const BASE = '/svg-insights/'
@@ -30,12 +33,17 @@ const SHELL_URLS = [
 ]
 
 self.addEventListener('install', (e) => {
+  // Merk: vi kaller IKKE skipWaiting() her. En ny versjon skal stå og VENTE til
+  // brukeren bekrefter via «Oppdater»-banneret (som sender SKIP_WAITING, se
+  // message-handleren nederst). Første installasjon (ingen gammel SW som
+  // kontrollerer) aktiveres uansett umiddelbart — «waiting» oppstår kun når en
+  // gammel SW allerede styrer klientene.
   e.waitUntil(
     caches.open(SHELL_CACHE).then((c) =>
       c.addAll(SHELL_URLS).catch(() => {
         // Ignore individual failures — a missing icon shouldn't block install
       })
-    ).then(() => self.skipWaiting())
+    )
   )
 })
 
