@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-06-24 — v11.0.40: Full-bredde grønn «Lag kart der du står»-knapp i tom-tilstand
+
+Tom-tilstanden for «Mine kart» har fått en full-bredde grønn primær-CTA «Lag kart der du står», som kjører samme GPS-flyt som den integrerte knappen i søkefeltet. Gir nye brukere en tydelig handling rett i tom-kortet i stedet for bare en peker oppover. Vises kun når nettleseren støtter GPS; ellers står søk-oppfordringen alene.
+
+---
+
+## 2026-06-24 — v11.0.39: Tom-tilstand for «Mine kart» — stort ton-i-ton ikon + bedre tekst
+
+Tom-tilstanden i kart-lista (når brukeren ikke har lagret noen kart ennå) er bygd om til et luftigere kort med et stort, ton-i-ton folde-kart-ikon (samme glyf som list-radene bruker). Teksten peker nå direkte på handlingen: «Trykk den grønne GPS-knappen øverst for å lage et kart der du står — eller søk opp et sted.» Faller tilbake til en ren søk-oppfordring når nettleseren ikke støtter GPS (da finnes ingen grønn knapp).
+
+---
+
+## 2026-06-24 — v11.0.38: «Flere valg» — 20 km maks + Format-velger
+
+Tre tilpasninger i kart-picker-en («Flere valg»). (1) **Maks kartstørrelse økt fra 7 til 20 km** bredde — slider, pinch og scroll-zoom klamper nå til 20 km, og preview-zoomen (`zoomForKm`) har fått to nye, lengre utzoom-trinn så ROI-rammen får plass i forhåndsvisningen ved de store utsnittene. (2) **Ny trippel toggle «Format»** erstatter avkrysningsboksen «Tilpass utsnitt til utskrift»: *Kvadratisk* (ny default), *Portrett (mobilskjerm)* (tidligere default) og *Utskrift (A4)* (= den gamle boksen). ROI-rammen inne i kartet følger valgt aspekt. Delte/utfordrings-kart låses fortsatt til portrett så «se det jeg ser» bevares. (3) **Auto-ekvidistanse beholdt** som før — de nye 7–20 km-kartene holder 20/25/50 m som aktive valg.
+
+---
+
 ## 2026-06-25 — v11.0.37: LOD-testverktøy — live zoom-indikator, justerbare terskler, «bygg om i ny størrelse»
 
 Tre tillegg for å kalibrere den zoom-trappede detalj-LOD-en empirisk. (1) **Zoom-LOD-indikator** i Utvikler-fanen: live-readout av gjeldende `scale`-verdi + trinn (far/mid/near) mens man panner/zoomer. (2) **Live-justerbare LOD-knotter** (`useLodTuning`, persistert): glider for detalj-terskelen (når `.zoom-near` slår inn) og for navne-tetthets-budsjettene (far/mid/near), med «Nullstill». Endrer kun runtime-parametre — re-applikeres straks uten å bygge kartet på nytt (hvilke lag som gates er fortsatt bakt inn i CSS ved bygging). Søketreff-zoomen følger nå den justerbare terskelen. (3) **«Bygg om dette området i valgt størrelse»** i Innstillinger-fanen: rebygger gjeldende kart-senter i den valgte kartstørrelsen, så man kan teste samme sted ved ulik bredde uten å gå om forsiden.
