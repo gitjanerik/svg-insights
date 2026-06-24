@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.39: Tom-tilstand for «Mine kart» — stort ton-i-ton ikon + bedre tekst
+
+Tom-tilstanden i kart-lista (når brukeren ikke har lagret noen kart ennå) er bygd om til et luftigere kort med et stort, ton-i-ton folde-kart-ikon (samme glyf som list-radene bruker). Teksten peker nå direkte på handlingen: «Trykk den grønne GPS-knappen øverst for å lage et kart der du står — eller søk opp et sted.» Faller tilbake til en ren søk-oppfordring når nettleseren ikke støtter GPS (da finnes ingen grønn knapp).
+
+---
+
 ## 2026-06-24 — v11.0.38: «Flere valg» — 20 km maks + Format-velger
 
 Tre tilpasninger i kart-picker-en («Flere valg»). (1) **Maks kartstørrelse økt fra 7 til 20 km** bredde — slider, pinch og scroll-zoom klamper nå til 20 km, og preview-zoomen (`zoomForKm`) har fått to nye, lengre utzoom-trinn så ROI-rammen får plass i forhåndsvisningen ved de store utsnittene. (2) **Ny trippel toggle «Format»** erstatter avkrysningsboksen «Tilpass utsnitt til utskrift»: *Kvadratisk* (ny default), *Portrett (mobilskjerm)* (tidligere default) og *Utskrift (A4)* (= den gamle boksen). ROI-rammen inne i kartet følger valgt aspekt. Delte/utfordrings-kart låses fortsatt til portrett så «se det jeg ser» bevares. (3) **Auto-ekvidistanse beholdt** som før — de nye 7–20 km-kartene holder 20/25/50 m som aktive valg.

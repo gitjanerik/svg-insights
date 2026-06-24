@@ -374,9 +374,23 @@ async function onSelectSearchResult(r) {
       </div>
 
       <div v-if="!loading && maps.length === 0"
-           class="mt-6 px-4 py-6 rounded-lg bg-white/[0.04] border border-white/10
-                  text-white/45 text-[13px] text-center">
-        Ingen egne kart ennå. Trykk «Lag nytt turkart» for å komme i gang.
+           class="mt-6 px-6 py-8 rounded-xl bg-white/[0.03] border border-white/10
+                  flex flex-col items-center text-center">
+        <!-- Stort ton-i-ton kart-ikon (samme folde-kart-glyf som lista bruker). -->
+        <svg viewBox="0 0 24 24" class="w-20 h-20 text-white/[0.08]" fill="none"
+             stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+          <path d="M9 4 V18 M15 6 V20"/>
+        </svg>
+        <div class="mt-4 text-[15px] font-semibold text-white/80">Ingen egne kart ennå</div>
+        <div v-if="supportsGeolocation" class="mt-1.5 text-[13px] text-white/45 leading-relaxed max-w-[18rem]">
+          Trykk den
+          <span class="text-emerald-300/90 font-medium">grønne GPS-knappen</span>
+          øverst for å lage et kart der du står — eller søk opp et sted.
+        </div>
+        <div v-else class="mt-1.5 text-[13px] text-white/45 leading-relaxed max-w-[18rem]">
+          Søk opp et sted øverst for å lage ditt første turkart.
+        </div>
       </div>
 
       <!-- Slett alle (vises kun når brukeren har lagrede kart) -->
