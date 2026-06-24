@@ -791,12 +791,18 @@ export function buildSvg(elements, bbox, options = {}) {
       pts = simplifyDP(pts, simplifyToleranceM)
     }
     if (pts.length === 0) return { d: '', bbox: null }
-    let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
-    for (let i = 1; i < pts.length; i++) {
-      d += `L${fmt(pts[i][0])},${fmt(pts[i][1])}`
+    // v11.0.50: heltalls-meter for polygon-koordinater (vegetasjon/vann/bygg).
+    // 1 m = 0,1 mm @ 1:10 000 — under en piksel, usynlig — men kutter ~10–15 %
+    // av path-bytene på de polygon-tunge lagene (vs. 1-desimal). Rund FØR både
+    // d og bbox bygges, så data-bbox-en (culling) matcher de emitterte koordene
+    // eksakt. `fmt` brukes også for mm-symbolstørrelser og røres ikke.
+    const rpts = pts.map((p) => [Math.round(p[0]), Math.round(p[1])])
+    let d = `M${rpts[0][0]},${rpts[0][1]}`
+    for (let i = 1; i < rpts.length; i++) {
+      d += `L${rpts[i][0]},${rpts[i][1]}`
     }
     if (close) d += 'Z'
-    return { d, bbox: bboxOfPoints(pts) }
+    return { d, bbox: bboxOfPoints(rpts) }
   }
   const pathFromGeometry = (geom, close = false, simplifyToleranceM = 0) =>
     pathAndBboxFromGeometry(geom, close, simplifyToleranceM).d

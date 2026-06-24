@@ -693,15 +693,19 @@ function pushAnyGeom(feature, tags, out, nextId) {
  * @returns {string} hex-farge
  */
 // Dybde-bånd: [maxDybde (eksklusiv), tema-variabel-indeks, lys-fallback-hex].
-// Lys-hexen er den opprinnelige kystnære skalaen og brukes uendret i lys-tema
-// (og i tester). depthToFillVar pakker den i `var(--iso-depth-N, #hex)` så
-// mørke temaer kan overstyre sjøblåen via applyTheme uten å miste fallbacken.
+// Lys-hexen er den kystnære skalaen og brukes uendret i lys-tema (og i tester).
+// depthToFillVar pakker den i `var(--iso-depth-N, #hex)` så mørke temaer kan
+// overstyre sjøblåen via applyTheme uten å miste fallbacken.
+//
+// v11.0.50: kollapset fra 5 til 3 bånd. Flåtens tilgjengelighets- og kajakk-
+// eksperter påpekte at fem nær-identiske blåtoner er umulige å skille i sol og
+// for svaksynte — og graderingen forsvinner uansett under relieffet. Tre tydelig
+// adskilte bånd (grunt / middels / dypt) leser bedre. Variabel-indeksene 1/3/5
+// beholdes så `--iso-depth-1..5` fra applyTheme fortsatt treffer.
 const DEPTH_BANDS = [
-  [2, 1, '#d8eaf2'],
-  [5, 2, '#c5e0ec'],
-  [10, 3, '#aed3e4'],
-  [20, 4, '#93c3da'],
-  [Infinity, 5, '#79b3d2'],
+  [5, 1, '#d8eaf2'],         // grunt 0–5 m — sjekk for skjær
+  [20, 3, '#a6cfe2'],        // middels 5–20 m
+  [Infinity, 5, '#79b3d2'],  // dypt 20+ m
 ]
 
 function depthBand(dybde) {

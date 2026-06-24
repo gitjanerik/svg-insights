@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.50: Byte-trimming — heltalls-koordinater + 3 dybdebånd
+
+To sammensatte byte-/lesbarhets-grep fra flåten. (1) Polygon-koordinatene for de path-tunge lagene (vegetasjon, vann, bygg via `pathAndBboxFromGeometry`) rundes nå til hele meter i stedet for én desimal. 1 m = 0,1 mm @ 1:10 000 — under en piksel, usynlig — men kutter ~10–15 % av path-bytene på disse lagene. Koordinatene rundes før både `d` og `data-bbox` bygges, så culling-boksene matcher eksakt. (`fmt` røres ikke — den brukes også for mm-symbolstørrelser; høydekurvene beholder 0,1 m via `pathUtils`, som deles med font-sporet.) (2) Dybde-skalaen (ISOM 307) er kollapset fra fem til **tre** bånd (grunt 0–5 m / middels 5–20 m / dypt 20+ m): fem nær-identiske blåtoner var umulige å skille i sol og for svaksynte, og graderingen forsvant uansett under relieffet. Tre tydelig adskilte bånd leser bedre. Endringer i `mapBuilder.js` og `sjokartFetcher.js`.
+
+---
+
 ## 2026-06-24 — v11.0.49: Skjær på land slettes ikke stille — flagges som usikre
 
 Flåtens kystkajakkpadler påpekte en sikkerhets-svakhet: et skjær (ISOM 211) som faller på land (typisk pga. unøyaktig posisjon i kildedata) ble filtrert bort av topologi-sjekken `Marker ∈ Water`. For en padler er et skjær en FARE — et slettet skjær er farligere enn ett tegnet litt feil. Skjær som faller utenfor den autoritative kysten rendres nå dempet (opacity 0,55) og merket `data-uncertain="1"` («posisjon usikker») i stedet for å slettes. Andre marine punkt som lander på land (bøyer/sjømerker — klare datafeil uten kollisjonsfare) droppes som før. Styres av `flagIfDry` på koden i `MARINE_POINT_CODES` (`mapBuilder.js`).
