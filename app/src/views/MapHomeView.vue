@@ -4,11 +4,19 @@ import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { autoMapSquare } from '../lib/mapBuilder.js'
+import { useMapSizePreference } from '../composables/useMapSizePreference.js'
 import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
+
+// Standard kartstørrelse (settes i MapView «Innstillinger»). null = skjerm-utledet
+// kvadrat (~4 km). Tall = fast kvadrat-bredde i km. Brukes av søk-/GPS-flyten.
+const { mapSizeKm } = useMapSizePreference()
+function squareDims() {
+  return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : autoMapSquare(2)
+}
 
 async function refresh() {
   loading.value = true
@@ -133,7 +141,7 @@ async function onCreateHere() {
       },
       // Kvadratisk utsnitt: beholder den skjerm-utledede høyden og utvider
       // bredden så kartet blir kvadratisk (mer slingringsrom øst/vest).
-      ...autoMapSquare(2),
+      ...squareDims(),
       equidistanceM: 20, // 20 m ekvidistanse
       navn: `Tur ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
@@ -178,7 +186,7 @@ async function onSelectSearchResult(r) {
   try {
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
-      ...autoMapSquare(2),   // kvadratisk utsnitt — samme høyde, bredere
+      ...squareDims(),   // kvadratisk utsnitt — standard ~4 km, eller valgt fast bredde
       equidistanceM: 20, // 20 m ekvidistanse
       navn: r.shortName,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen

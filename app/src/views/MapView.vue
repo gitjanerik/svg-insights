@@ -11,6 +11,7 @@ import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
+import { useMapSizePreference } from '../composables/useMapSizePreference.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
@@ -920,6 +921,11 @@ function strokeSizeBase(widthM) {
 }
 const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
+
+// Standard kartstørrelse for NYE kart (forsidens søk/GPS-flyt). Velges i
+// «Innstillinger»-fanen. null = skjerm-utledet kvadrat (~4 km), tall = fast
+// kvadrat-bredde i km. Endrer ikke kartet som vises nå — kun neste nye kart.
+const { mapSizeKm, MAP_SIZE_OPTIONS } = useMapSizePreference()
 
 // Maks kartfliser i mosaikk-cachen — bruker-innstilling (slider i Innstillinger).
 // Diskrete trinn (kvadrat-tall, matcher et n×n grid-mentalt-bilde), default 16.
@@ -6540,6 +6546,33 @@ onUnmounted(() => {
 
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
           <div v-show="activeTab === 'om'">
+            <!-- Kartstørrelse for NYE kart (søk/GPS på forsiden). «Standard» =
+                 skjerm-utledet kvadrat (~4 km). De faste valgene lager et større
+                 kvadrat — nyttig for å teste detalj-LOD på store, tette kart.
+                 Påvirker ikke kartet som vises nå, kun neste nye kart. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="text-[13px] text-white font-medium mb-0.5">Kartstørrelse (nye kart)</div>
+              <div class="text-[11px] text-white/55 leading-snug mb-2">
+                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» tilpasser seg skjermen (~4 km).
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                <button @click="mapSizeKm = null"
+                        class="px-2.5 py-1.5 rounded-lg text-[12px] font-medium border transition active:scale-95"
+                        :class="mapSizeKm == null
+                                ? 'bg-emerald-500 text-white border-emerald-400'
+                                : 'bg-white/5 text-white/75 border-white/10'">
+                  Standard
+                </button>
+                <button v-for="km in MAP_SIZE_OPTIONS" :key="km"
+                        @click="mapSizeKm = km"
+                        class="px-2.5 py-1.5 rounded-lg text-[12px] font-medium border transition active:scale-95 tabular-nums"
+                        :class="mapSizeKm === km
+                                ? 'bg-emerald-500 text-white border-emerald-400'
+                                : 'bg-white/5 text-white/75 border-white/10'">
+                  {{ km }} km
+                </button>
+              </div>
+            </div>
             <!-- Innstillinger: hold skjerm våken. Default PÅ — nyttig når
                  brukeren bruker kartet til orientering ute og ikke vil at
                  telefonen skal låse skjermen midt i navigasjonen. -->

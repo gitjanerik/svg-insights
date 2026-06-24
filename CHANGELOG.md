@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.35: Innstilling for kartstørrelse på nye kart (10–20 km kvadrat)
+
+Ny innstilling «Kartstørrelse (nye kart)» i Innstillinger-fanen i kart-visningen. Default er som før («Standard» = skjerm-utledet kvadrat, ~4 km), men man kan i stedet velge et fast kvadrat på 10, 12, 14, 16, 18 eller 20 km bredde. Valget styrer forsidens søk- og GPS-flyt (`squareDims()` i MapHomeView leser preferansen via ny `useMapSizePreference`-composable, persistert i localStorage). Påvirker ikke kartet som vises akkurat nå — kun neste nye kart. Primært et hjelpemiddel for å teste den zoom-trappede detalj-LOD-en (v11.0.34) på store, navn- og kurvetette kart.
+
+---
+
 ## 2026-06-25 — v11.0.34: Zoom-trappet detalj-LOD + auto-promotering av flis (UX-opprydding)
 
 To UX-forenklinger i kart-visningen. (1) **«Gjør dette til hovedkart»-knappen er fjernet.** Den eksponerte et internt begrep (aktiv flis vs. spøkelses-flis) som vanlige brukere ikke trenger å forholde seg til. Flisa under skjermsenter auto-promoteres nå til aktiv flis etter ~1,5 s ro (`maybeAutoPromote` i MapView), gated mot måling/annotering/spill/drawer. Promoteringen var allerede sømløs (ingen spinner, beholder zoom/posisjon), så byttet er usynlig — det holder bare «aktiv flis = den du faktisk ser på», som videre kant-sone-utvidelse refererer til. (2) **Zoom-trappet detalj-LOD i tre trinn.** Kartet viser nå en ren oversikt når man er utzoomet, og avslører detaljer gradvis ved innzoom: høyde-tall (moh på høydekurver via `kontur-tall` OG i innsjøer via `vann-tall`), bekke-navn og det tette grend-/gård-navne-teppet (`stedsnavn[data-rank=minor]`) vises først på nærmeste trinn (`.zoom-near`, scale ≥ 2,5) istedenfor allerede ved 1,3 som før. Navne-tetthets-budsjettet er dessuten zoom-avhengig (60 navn på oversikt → 130 mellomnivå → 250 detalj) istedenfor fast 200. **Søk er upåvirket:** søkeindeksen leser hele kartet uavhengig av visnings-LOD, og et valgt søketreff zoomes til scale 2,5 (= `.zoom-near`) og tvinges synlig — alle navn er alltid søkbare. Mekanikken er ren CSS-klasse-toggling på SVG-host (`.zoomed-in`/`.zoom-near`), ingen re-render. Gjelder nybygde kart (og Vardåsen rebygges av CI); eldre lagrede kart beholder sin innbakte CSS.
