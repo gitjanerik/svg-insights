@@ -5020,6 +5020,10 @@ function applyTheme() {
     root.style.removeProperty(`--label-${name}-fill`)
     root.style.removeProperty(`--label-${name}-halo`)
   }
+  // Dybde-skala-variabler (sjø/dybdeareal). Ryddes ALLTID først — også før
+  // lys-tema sin tidlige retur — så et mørkt temas dybde-skala ikke henger
+  // igjen ved bytte tilbake til lys (der inline-fallbacken skal gjelde).
+  for (let i = 1; i <= 5; i++) root.style.removeProperty(`--iso-depth-${i}`)
   const t = themes[currentTheme.value]
   // Viewport-bakgrunn: mal kartets bakgrunnsfarge på den FASTE (utransformerte)
   // viewporten, så hele kartflaten har riktig base-farge — også letterbox-kanter
@@ -5043,6 +5047,11 @@ function applyTheme() {
     if (def.fill?.color) root.style.setProperty(`--iso-${code}-fill`, def.fill.color)
     if (def.stroke?.color) root.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
     if (def.overlayStroke?.color) root.style.setProperty(`--iso-${code}-overlay-stroke`, def.overlayStroke.color)
+  }
+  // Tema-tilpasset dybde-skala (grunnest → dypest). Uten dette ble sjø-/dybde-
+  // flatene hengende på den lyse standard-skalaen i mørke temaer.
+  if (Array.isArray(t.depthScale)) {
+    t.depthScale.forEach((c, i) => root.style.setProperty(`--iso-depth-${i + 1}`, c))
   }
   for (const [name, def] of Object.entries(t.labels ?? {})) {
     if (def.color) root.style.setProperty(`--label-${name}-fill`, def.color)

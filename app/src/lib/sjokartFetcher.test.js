@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { depthToColor, sjokartToElements } from './sjokartFetcher.js'
+import { depthToColor, depthToFillVar, sjokartToElements } from './sjokartFetcher.js'
 
 describe('sjokartToElements — dybdeareal bevarer øy-hull', () => {
   // Et dybdeareal med en øy (Holmen-tilfellet): GML-polygon med outer + ett
@@ -59,6 +59,17 @@ describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
   it('ugyldig/manglende dybde faller til grunneste bånd', () => {
     expect(depthToColor(NaN)).toBe(depthToColor(0))
     expect(depthToColor(undefined)).toBe(depthToColor(0))
+  })
+
+  it('depthToFillVar pakker hver dybde i tema-variabel med lys-hex som fallback', () => {
+    // var(--iso-depth-N, #hex) — N følger båndet, hexen er depthToColor-verdien.
+    expect(depthToFillVar(1)).toBe(`var(--iso-depth-1, ${depthToColor(1)})`)
+    expect(depthToFillVar(3)).toBe(`var(--iso-depth-2, ${depthToColor(3)})`)
+    expect(depthToFillVar(7)).toBe(`var(--iso-depth-3, ${depthToColor(7)})`)
+    expect(depthToFillVar(15)).toBe(`var(--iso-depth-4, ${depthToColor(15)})`)
+    expect(depthToFillVar(40)).toBe(`var(--iso-depth-5, ${depthToColor(40)})`)
+    // ugyldig dybde → grunneste bånd (samme som depthToColor)
+    expect(depthToFillVar(NaN)).toBe(`var(--iso-depth-1, ${depthToColor(0)})`)
   })
 
   it('alle bånd er dempede lav-kontrast blåtoner (smalt verdi-spenn)', () => {

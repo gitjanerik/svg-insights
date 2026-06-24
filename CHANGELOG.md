@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.42: Sjøblå følger valgt tema
+
+Sjø- og dybde-flatene henger nå med når man bytter tema. Tidligere var dybdearealet (Sjøkart 307) og DEM-grunn-båndene malt med en fast lys blå-skala som ble bakt inn i SVG-en ved bygging, så den lyse sjøblåen ble hengende også i de mørke temaene (mørk, indigo, slate, mocha, forest) der den skar seg mot resten av kartet. Fargene emitteres nå som tema-variabler (`var(--iso-depth-1..5)`) med den lyse skalaen som fallback, og hvert mørkt tema har fått en egen, dempet dybde-rampe (grunnest → dypest) som `applyTheme` setter ved tema-bytte. Lys-tema er uendret (bruker fallback-hexene). 5-bånds dybde-gradienten beholdes i alle temaer.
+
+---
+
 ## 2026-06-24 — v11.0.41: Smartere kart-navn + alltid-synlig skala-linjal
 
 Tre forbedringer i kart-flyten på forsiden. (1) **Kart laget med den grønne GPS-knappen** heter nå «Din posisjon <dato>» i stedet for «Tur <dato>» — navnet sier hva kartet faktisk er. (2) **Kart laget ved å søke opp og velge et sted** får navnet «<sted> <dato>» (stedsnavnet pluss dagens dato) i stedet for bare stedsnavnet, så flere kart om samme sted kan skilles. (3) **Skala-linjalen i info-boksen nede til venstre forsvant når man zoomet langt ut** — kandidat-lengdene stoppet på 1000 m, som ble for kort (< 30 px) til å vises. Linjalen dekker nå hele zoom-spennet fra 5 m til 50 km og bytter automatisk fra meter til kilometer, så den alltid er synlig uansett zoomnivå.
