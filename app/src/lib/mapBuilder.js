@@ -2152,15 +2152,22 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g data-upright="1" data-iso="${code}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
-  // Bro (ISOM 512-derivert): to parallelle sorte parapet-linjer langs HELE
+  // Bro (ISOM 512-derivert): to parallelle parapet-linjer langs HELE
   // bro-veiens lengde. Tidligere ble broen tegnet som ETT fast 1.8 mm symbol
   // på midtpunktet → en liten firkant midt i vannet uansett brolengde. Nå
   // forskyves bro-way-ens geometri perpendikulært ±broOffsetM til hver side
   // og rendres som to streker, så broen dekker korrekt fra ende til ende.
+  // Dempet grå (#4a4a4a) + 0.11 mm så broen ikke blir et tungt sort band der
+  // parapeten stables utenpå veiens/jernbanens kantlinje. Bredden følger
+  // «Strek»-knotten via calc() + var(--stroke-scale) (som veier/stier), så
+  // broen krymper i takt med kartet — stroke-width som presentasjonsattributt
+  // støtter ikke calc(), derfor inline style. Forskyvningen er geometri og
+  // bakes inn ved bygging (skalerer ikke live).
   // mm→meter: root-viewBox er i meter, og 1 mm = scaleDenom/1000 meter — så
   // strek-bredde i "mm" og en mm-basert offset er trygt på root-nivå (i
   // motsetning til den nestede symbol-viewBox-en, jf. anker-fiksen).
-  const broOffsetM = 0.30 * (scaleDenom / 1000)   // halv avstand mellom parapet-linjene (mm→m)
+  const broOffsetM = 0.24 * (scaleDenom / 1000)   // halv avstand mellom parapet-linjene (mm→m)
+  const broStyle = 'stroke:#4a4a4a;stroke-width:calc(0.11mm * var(--stroke-scale, 1))'
   const broSvg = broer.map(el => {
     if (!el.geometry || el.geometry.length < 2) return ''
     const pts = el.geometry.map(g => project(g.lat, g.lon))
@@ -2182,7 +2189,7 @@ export function buildSvg(elements, bbox, options = {}) {
       right.push({ x: pts[i].x - nx * broOffsetM, y: pts[i].y - ny * broOffsetM })
     }
     const toPath = poly => 'M' + poly.map(p => `${fmt(p.x)} ${fmt(p.y)}`).join(' L')
-    return `    <path d="${toPath(left)}" fill="none" stroke="#1a1a1a" stroke-width="0.13mm" stroke-linecap="round" stroke-linejoin="round"/>\n    <path d="${toPath(right)}" fill="none" stroke="#1a1a1a" stroke-width="0.13mm" stroke-linecap="round" stroke-linejoin="round"/>`
+    return `    <path d="${toPath(left)}" fill="none" style="${broStyle}" stroke-linecap="round" stroke-linejoin="round"/>\n    <path d="${toPath(right)}" fill="none" style="${broStyle}" stroke-linecap="round" stroke-linejoin="round"/>`
   }).filter(Boolean).join('\n')
 
   // Cliff-teeth (ISOM 203): perpendikulær tann på nedside. Hvis vi har
