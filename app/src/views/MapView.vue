@@ -852,16 +852,24 @@ watch(isGesturing, (g) => {
   }
 })
 
-// v8.10.4: Toggle `.zoomed-in` ved scale >= ZOOMED_IN_THRESHOLD så fine
-// labels (kontur-tall, bekk-navn) bare rendres når brukeren faktisk kan
-// lese dem. Ved fit-to-extent er de uleselig små men dyre å text-shape +
-// halo-rendre. CSS i symbolizer.js gjør resten.
+// v8.10.4 / v11.0.34: zoom-trappet detalj-LOD via klasser på SVG-host. CSS i
+// symbolizer.js gjør selve skjulingen. Tre trinn:
+//   • far  (scale < MID)        — oversikt: terreng, vann, kurver, hovednavn
+//   • mid  (.zoomed-in, ≥ 1.3)  — + mellomnivå-detaljer (uendret fra før)
+//   • near (.zoom-near, ≥ 2.5)  — «nesten helt inn»: høyde-tall (kontur + innsjø-
+//                                 moh), bekke-navn, små stedsnavn — alle detaljer
+// Fine labels er uleselig små (og dyre å text-shape) ved utzoom, så de holdes
+// igjen til brukeren faktisk kan lese dem. NEAR = 2.5 matcher zoom-målet når et
+// søketreff velges (selectSearchResult), så et valgt navn alltid blir synlig.
 const ZOOMED_IN_THRESHOLD = 1.3
-watch(scale, (s) => {
-  const svg = svgHostRef.value?.querySelector('svg')
+const ZOOM_NEAR_THRESHOLD = 2.5
+function applyZoomTierClasses(svg, s) {
   if (!svg) return
-  if (s >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
-  else svg.classList.remove('zoomed-in')
+  svg.classList.toggle('zoomed-in', s >= ZOOMED_IN_THRESHOLD)
+  svg.classList.toggle('zoom-near', s >= ZOOM_NEAR_THRESHOLD)
+}
+watch(scale, (s) => {
+  applyZoomTierClasses(svgHostRef.value?.querySelector('svg'), s)
 }, { immediate: true })
 
 // ── Strek- og relieff-knotter (FAB) ──────────────────────────────────
@@ -1233,14 +1241,23 @@ function nearestPoiFromPoint(kind) {
 }
 
 // ── Navn-LOD: skjul overflødige stedsnavn i tett-befolkede utsnitt ─────────
-// Når et synlig kartutsnitt inneholder mer enn NAME_LOD_BUDGET søkbare navn,
+// Når et synlig kartutsnitt inneholder mer enn navne-budsjettet søkbare navn,
 // skjules de minst prioriterte. Vann/elver/bekker og «store» stedsnavn (by/
-// tettsted) prioriteres og skjules aldri av denne mekanismen. Alle navn
-// forblir søkbare — et treff som velges i søk tvinges synlig (over).
+// tettsted) prioriteres og skjules aldri av denne mekanismen. Alle navn forblir
+// søkbare — søkeindeksen (useMapSearch) leser hele SVG-en uavhengig av denne
+// visnings-LOD-en, og et treff som velges tvinges synlig (forcedVisibleNameEls).
 //
-// Hensikten er ren ytelse/lesbarhet: ved innzooming krymper det synlige
-// utsnittet, færre navn faller innenfor, og flere vises automatisk.
-const NAME_LOD_BUDGET = 200
+// v11.0.34: budsjettet er zoom-trappet — få navn på oversikt (ren bakgrunn),
+// gradvis flere når man zoomer inn. Tidligere var det fast 200 uansett zoom.
+const NAME_LOD_BUDGET_FAR  = 60    // oversikt (scale < zoomed-in)
+const NAME_LOD_BUDGET_MID  = 130   // mellomnivå (zoomed-in)
+const NAME_LOD_BUDGET_NEAR = 250   // detalj (zoom-near)
+function nameBudgetForZoom() {
+  const s = scale.value || 1
+  if (s >= ZOOM_NEAR_THRESHOLD) return NAME_LOD_BUDGET_NEAR
+  if (s >= ZOOMED_IN_THRESHOLD) return NAME_LOD_BUDGET_MID
+  return NAME_LOD_BUDGET_FAR
+}
 const forcedVisibleNameEls = new Set()
 let nameLodTimer = null
 
@@ -1297,7 +1314,7 @@ function applyNameLOD() {
   // Prioriterte vises alltid. Resten fyller opp til budsjettet, sortert etter
   // viktighet (så samme navn holder seg synlig mellom re-beregninger).
   reducible.sort((a, b) => namePriority(a) - namePriority(b) || a.name.localeCompare(b.name, 'no'))
-  const budget = Math.max(0, NAME_LOD_BUDGET - priority.length)
+  const budget = Math.max(0, nameBudgetForZoom() - priority.length)
   for (const e of priority) e.el.classList.remove('name-lod-off')
   reducible.forEach((e, i) => {
     const show = i < budget || forcedVisibleNameEls.has(e.el)
@@ -3888,19 +3905,29 @@ function visibleCenterSvg() {
 }
 
 // «Gjør aktiv»-deteksjon: når skjermsenteret glir inn på en nabo-flis (utenfor
-// aktiv flis, inni en spøkelses-rect) eksponerer vi den som `activatableTile` så
-// en knapp kan tilby å gjøre den til aktiv flis. Debouncet (kjøres etter at
-// gesten har satt seg) — INGEN automatisk bytting (det gjør brukeren via knappen).
+// aktiv flis, inni en spøkelses-rect) eksponerer vi den som `activatableTile`.
+// v11.0.34: ingen manuell knapp lenger — flisa under senter auto-promoteres til
+// aktiv flis etter litt ro (AUTO_PROMOTE_MS). Gated mot måling/annotering/spill/
+// drawer via autoMapModeBusy, og promoteTile er sømløs (ingen spinner, beholder
+// zoom/posisjon), så byttet er usynlig for brukeren — det holder bare «aktiv
+// flis = den du faktisk ser på», som videre utvidelse (kant-soner) refererer til.
 const activatableTile = ref(null)   // { id, x, y, w, h, isAuto } eller null
 let activatableTimer = null
+let autoPromoteTimer = null
+const AUTO_PROMOTE_MS = 1500
+function clearAutoPromote() {
+  if (autoPromoteTimer) { clearTimeout(autoPromoteTimer); autoPromoteTimer = null }
+}
 function scheduleActivatableCheck() {
   if (activatableTimer) clearTimeout(activatableTimer)
+  clearAutoPromote()   // bevegelse nullstiller ro-telleren for auto-promotering
   activatableTimer = setTimeout(() => {
     if (isGesturing && isGesturing.value) { scheduleActivatableCheck(); return }
     updateActivatableTile()
   }, 250)
 }
 function updateActivatableTile() {
+  clearAutoPromote()
   if (!ghostRects.value.length || autoMapModeBusy() || buildingOnTheFly.value || fillingInDetails.value) {
     activatableTile.value = null
     return
@@ -3916,6 +3943,24 @@ function updateActivatableTile() {
   activatableTile.value = ghostRects.value.find(
     r => c.x >= r.x && c.x <= r.x + r.w && c.y >= r.y && c.y <= r.y + r.h
   ) ?? null
+  // Kandidat funnet og senteret står i ro → auto-promoter etter en kort dvale.
+  if (activatableTile.value) {
+    autoPromoteTimer = setTimeout(maybeAutoPromote, AUTO_PROMOTE_MS)
+  }
+}
+// Promoter flisa under senter til aktiv, men kun hvis den fortsatt er gyldig når
+// dvale-timeren fyrer (brukeren kan ha pannet/zoomet videre i mellomtiden).
+function maybeAutoPromote() {
+  autoPromoteTimer = null
+  const g = activatableTile.value
+  if (!g) return
+  if (autoMapModeBusy() || buildingOnTheFly.value || fillingInDetails.value) return
+  if (isGesturing && isGesturing.value) { autoPromoteTimer = setTimeout(maybeAutoPromote, AUTO_PROMOTE_MS); return }
+  const c = visibleCenterSvg()
+  if (!c) return
+  if (c.x >= g.x && c.x <= g.x + g.w && c.y >= g.y && c.y <= g.y + g.h) {
+    promoteTile(g, c)
+  }
 }
 watch([scale, translateX, translateY, rotation], scheduleActivatableCheck)
 
@@ -4036,14 +4081,6 @@ function promoteTile(g, c) {
   } catch { /* noop */ }
   activatableTile.value = null
   router.replace({ name: 'kart-vis', params: { id: g.id } })
-}
-
-// «Gjør dette til hovedkart»-knappen: gjør flisa under skjermsenter aktiv (for videre
-// utvidelse/kjeding utover).
-function activateTileUnderCenter() {
-  const g = activatableTile.value
-  const c = visibleCenterSvg()
-  if (g && c) promoteTile(g, c)
 }
 
 // Manuell kant-sone-utvidelse. Navigerer IKKE — det aktive kartet beholdes, de
@@ -4519,9 +4556,9 @@ function setupHostSvg(sourceRoot) {
   svg.appendChild(userLayer)
   host.appendChild(svg)
   // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
-  // perf-klasser (.zoomed-in / .is-zooming) basert på nåværende state,
-  // siden watcheren bare reagerer på endringer.
-  if (scale.value >= ZOOMED_IN_THRESHOLD) svg.classList.add('zoomed-in')
+  // perf-klasser (.zoomed-in / .zoom-near / .is-zooming) basert på nåværende
+  // state, siden watcheren bare reagerer på endringer.
+  applyZoomTierClasses(svg, scale.value)
   if (isGesturing && isGesturing.value) svg.classList.add('is-zooming')
   // Stifinner: nytt kart → avbryt evt. aktiv modus + rydd rute-overlay, og
   // avgjør om kartet har routbare sti-/vei-lag (styrer «Naviger hit»).
@@ -5218,6 +5255,7 @@ onUnmounted(() => {
   desktopMq?.removeEventListener('change', updateIsDesktop)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (activatableTimer) clearTimeout(activatableTimer)
+  clearAutoPromote()
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
 })
 </script>
@@ -5788,22 +5826,9 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- «Gjør dette til hovedkart»: skjermsenteret står over en nabo-flis i mosaikken.
-         Eksplisitt bytte av aktiv flis (for videre utvidelse) — sømløst, ingen
-         spinner. Vises kun når en kandidat finnes og ingen annen modus eier UI-en. -->
-    <button v-if="!loading && activatableTile && !curveball.active.value && !showControls"
-            @click="activateTileUnderCenter"
-            class="absolute bottom-32 left-1/2 -translate-x-1/2 z-20 px-4 py-2
-                   rounded-full backdrop-blur bg-sky-600/95 border border-sky-300/40
-                   text-white text-[12px] font-medium shadow-lg active:scale-[0.97]
-                   flex items-center gap-2 transition-[left] duration-200"
-            :style="mapCenterStyle">
-      <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/>
-      </svg>
-      Gjør dette til hovedkart
-    </button>
+    <!-- «Gjør dette til hovedkart»-knappen er fjernet (v11.0.34): flisa under
+         skjermsenter auto-promoteres til aktiv flis etter litt ro (se
+         maybeAutoPromote). Sømløst — ingen knapp, ingen spinner. -->
 
     <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
          feilet, så kartet viser bare terreng. Lesbart, bryter på flere linjer,
