@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.44: Vektor-relieff — terrengskygge uten innbakt bitmap
+
+Et typisk 20×20 km turkart eksporterte til ~13 MB SVG, og mesteparten var én innbakt base64-PNG: hillshade-relieffet. En flåte med kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpadler, ytelsesingeniør, UX-designer, tilgjengelighetsekspert) pekte samstemt på relieffet som hovedproblemet — både for filstørrelse/minne og fordi sterkt relieff drukner de brune kotene. Relieffet kan nå lages på to måter, valgbart i Innstillinger under «Relieff-stil»: **Skarp (vektor)** — diskrete tone-bånd som rene SVG-polygoner via d3-contour (`lib/reliefBands.js`), knivskarpt ved zoom og print, tema-bart, og kun ~KB i fila — og **Mjuk (bilde)** — den klassiske myke gradient-PNG-en. Vektor er default, så nye/regenererte kart blir vesentlig lettere. Båndgeometrien bygges kun ved DEM-/tema-bytte (relieff-knotten endrer bare gruppe-opacity), og spøkelses-nabofliser dropper relieff helt i vektor-modus. Default relieff-styrke er samtidig senket fra 0,42 → 0,35 etter flåtens råd om koter-kontra-relieff-lesbarhet. Begge moduser eksporterer riktig: vektor som rene paths, mjuk som innbakt bilde (kun da oppstår de tunge bytene). Endringene ligger i `MapView.vue` (`applyHillshade` delt i raster-/vektor-vei), `lib/reliefBands.js` (ny) og `lib/reliefBands.test.js`.
+
+---
+
 ## 2026-06-24 — v11.0.43: Dempet bro-strek som følger «Strek»-knotten
 
 Broer (way med `bridge=yes` — fylkesvei, motorvei, jernbane) ble lest som tunge, heldekkende sorte band. Roten var ikke broens egen strek, men at de to parapet-strekene ble lagt utenpå veiens/jernbanens sorte kantlinje og fylte ut forbi den. I tillegg var parapeten hardkodet i SVG-en og fulgte ikke «Strek»-knotten, så broene ble relativt sett enda mer dominerende når man tynnet ut kartet. Parapeten er nå dempet grå (`#4a4a4a`) og tynnere (`0,11 mm`), forskyvningen er strammet inn til `±0,24 mm`, og bredden følger nå `--stroke-scale` via `calc()` (samme mekanikk som veier/stier) så broene krymper i takt med resten av kartet. Endringen ligger i `mapBuilder.js` (broSvg); nye kart og det CI-bygde Vardåsen-kartet får stilen automatisk, mens allerede lagrede kart får den ved regenerering.

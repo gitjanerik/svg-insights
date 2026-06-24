@@ -21,6 +21,7 @@ import { isomCatalog, buildPointSymbolDef, buildIsomDefs, buildIsomCss } from '.
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
 import { unpackDem, findHighestPoint, cropDem } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
+import { buildReliefBands } from '../lib/reliefBands.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
 import { fetchDEM } from '../lib/demFetcher.js'
 import { buildMapFromCenter, consumeMapFinalize } from '../lib/createMapFlow.js'
@@ -912,8 +913,11 @@ watch([nameBudgetFar, nameBudgetMid, nameBudgetNear], () => scheduleNameLOD())
 // 30%-kuttet lander effektiv maks på drøyt 1 på både små og store kart.
 const STROKE_STEPS = [0.28, 0.42, 0.6, 0.84, 1.12, 1.54]
 const STROKE_DEFAULT_IDX = 2  // 0.6× (var 0.85×) etter 30%-nedjustering
-const RELIEF_STEPS = [0, 0.18, 0.30, 0.42, 0.58, 0.72]
-const RELIEF_DEFAULT_IDX = 3
+// v11.0.44: default-relieff senket fra 0.42 → 0.35 (idx 3 → 2). Flåten av
+// kart-eksperter (orientering + tilgjengelighet) fant at sterkt relieff drukner
+// brune koter i skyggesidene der landform-detalj bor. idx 2 = 0.35 ≈ «35 %».
+const RELIEF_STEPS = [0, 0.18, 0.35, 0.48, 0.60, 0.72]
+const RELIEF_DEFAULT_IDX = 2
 // Ferske kart får minst dette relieff-nivået («litt relieff») hvis relieffet er
 // skrudd HELT av (idx 0) — så et globalt persistert «av» ikke gjør alle nye
 // kart blast. Et bevisst lavt nivå (idx 1 = 0.18) respekteres.
@@ -992,6 +996,18 @@ const maxTiles = computed(() => MAX_TILE_STEPS[maxTileIndex.value])
 const RELIEF_ENABLED_LS_KEY = 'svg-insights-relief-enabled'
 const reliefEnabled = ref((() => {
   try { return localStorage.getItem(RELIEF_ENABLED_LS_KEY) !== '0' } catch { return true }
+})())
+
+// Relieff-stil (v11.0.44) — 'vektor' (default) = diskrete tone-bånd som rene
+// SVG-polygoner: knivskarpt ved zoom/print, tema-bart, og ~KB i SVG-en. 'mjuk'
+// = den klassiske myke gradient-PNG-en (<image>), som bærer en multi-MB base64-
+// streng i live-DOM og bakes inn ved .svg-eksport. Vektor er default fordi den
+// løser filstørrelse-/minne-problemet; brukeren kan velge mjuk for det myke
+// foto-relieffet. Bånd-relieffet hoppes over på spøkelses-naboflisene (perf).
+const RELIEF_MODE_LS_KEY = 'svg-insights-relief-mode'
+const RELIEF_BANDS = 5
+const reliefMode = ref((() => {
+  try { return localStorage.getItem(RELIEF_MODE_LS_KEY) === 'mjuk' ? 'mjuk' : 'vektor' } catch { return 'vektor' }
 })())
 
 // Tekststørrelse-slider (desktop) — søsken til rotasjons-sliden. Verdien er
@@ -1095,6 +1111,18 @@ watch(reliefEnabled, () => {
   applyHillshade()
   void renderGhostTiles()
   flashKnobHint(reliefEnabled.value ? 'Relieff på' : 'Relieff av')
+})
+
+// Relieff-stil bytte: fjern eksisterende relieff-lag (kan være feil element-type),
+// nullstill bånd-cachen, bygg på nytt, og re-render mosaikken (spøkelses-relieff
+// gates på modus i buildGhostSvg).
+watch(reliefMode, () => {
+  try { localStorage.setItem(RELIEF_MODE_LS_KEY, reliefMode.value) } catch { /* noop */ }
+  svgHostRef.value?.querySelector('svg #hillshade-layer')?.remove()
+  cachedBandsKey = null
+  applyHillshade()
+  void renderGhostTiles()
+  flashKnobHint(reliefMode.value === 'vektor' ? 'Skarpt relieff (vektor)' : 'Mjukt relieff (bilde)')
 })
 
 // Tap = step (wrap), lang-trykk (500 ms) = nullstill til default.
@@ -1799,6 +1827,7 @@ let cachedHillshadeUrl = null   // memoize: avhenger av (DEM, blend-modus)
 let cachedHillshadeDem = null
 let cachedShade = null          // rå grayscale-skygge — re-tones ved tema-bytte uten DEM-rekalk
 let cachedHillshadeMode = null
+let cachedBandsKey = null       // vektor-relieff: `${blend}|${bands}`; nullstilles ved DEM-bytte
 
 // Relieff-blend velges per tema: lyse bakgrunner mørkner naturlig med
 // `multiply`, mens mørke/art-tema (Curves) får `screen` så terrenget lyser
@@ -1815,60 +1844,30 @@ function reliefBlendMode() {
   return hexLuminance(bg) < 0.4 ? 'screen' : 'multiply'
 }
 
-async function applyHillshade() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg || !meta.value) return
-  // v9.1.13: knaus er nå malt inn i hillshade-bildet (ett relieff-lag). Rydd
-  // vekk et evt. gammelt separat knaus-lag fra tidligere klient-versjoner.
-  svg.querySelector('#knaus-relief-layer')?.remove()
-  // Relieff slås MIDLERTIDIG helt av mens CurveBall kjører (rent spillbrett,
-  // uten hillshade-PNG-en som forstyrrer ball/kontur-lesbarheten). Brukerens
-  // valgte relieff-nivå røres ikke — applyHillshade kjøres på nytt når spillet
-  // avsluttes (se curveball.active-watch) og restaurerer nivået.
-  const wantOn = reliefEnabled.value && reliefOpacity.value > 0 && !curveball.active.value
+// Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
+// relieffet UNDER det første vann-laget (men over vegetasjon/konturer/stupkant),
+// så det opake vannet dekker relieffet over innsjø/sjø: ren flat vannflate uten
+// skygge-frynse langs strandlinja, og land-relieffet leses med mer kontrast.
+// Faller tilbake til toppen av kropps-innholdet (under klient-overlays) når
+// kartet ikke har vann.
+function reliefInsertBefore(svg) {
+  return svg.querySelector('[data-layer="vann"]')
+      ?? svg.querySelector('#user-layer')
+      ?? svg.querySelector('#annotation-layer')
+      ?? svg.querySelector('#track-layer')
+      ?? svg.querySelector('#measure-layer')
+}
+
+// Mjukt relieff (v9.3.39): blend-modus bakt inn i PNG-alfa (svart/multiply for
+// lyse tema, hvit/screen for mørke) så <image> tegnes med NORMAL kompositt —
+// pikselidentisk med mix-blend-mode, men uten dyr per-frame backdrop-blending.
+function applyReliefRaster(svg, mode) {
   let img = svg.querySelector('#hillshade-layer')
-  if (!wantOn) {
-    if (img) img.remove()
-    return
-  }
-  // Lazy-last DEM hvis nødvendig — built-in Vardåsen fetcher fra Kartverket WCS
-  await ensureDem()
-  if (!storedDem.value) {
-    if (img) img.remove()
-    return
-  }
-  if (cachedHillshadeDem !== storedDem.value) {
-    // v9.1.17: ren hillshade. Knaus er flyttet tilbake til en vektor-<path>
-    // i selve kart-SVG-en (mapBuilder, ISOM 213) — knivskarp og billig — så
-    // relieff-bildet skygger nå kun terreng.
-    cachedShade = computeHillshade(storedDem.value)
-    cachedHillshadeDem = storedDem.value
-    cachedHillshadeUrl = null   // tving re-toning
-  }
-  // v9.3.39: bak blend-modus inn i alfa (svart/multiply for lyse tema, hvit/
-  // screen for mørke) så <image> tegnes med NORMAL kompositt — pikselidentisk
-  // med mix-blend-mode, men uten den dyre per-frame backdrop-blendingen på
-  // mobil. Re-tones kun når DEM eller tema-modus endres.
-  const mode = reliefBlendMode()
-  // Kartet vises i full skjerm (ingen periferi-ring) → relieffet fyller hele
-  // kartet uten vignette/kant-feather.
+  if (img && img.tagName.toLowerCase() !== 'image') { img.remove(); img = null }
   if (!cachedHillshadeUrl || cachedHillshadeMode !== mode) {
     cachedHillshadeUrl = hillshadeToDataURL(cachedShade, { mode })
     cachedHillshadeMode = mode
   }
-  // Plasser-strategi (v9.3.36): relieffet skal DRAPERE LAND, ikke vann. Sett
-  // hillshade-bildet UNDER det første vann-laget (men over vegetasjon/konturer/
-  // stupkant), så det opake vannet dekker relieffet over innsjø/sjø: ren flat
-  // vannflate uten skygge-frynse langs strandlinja (der DTM-en stepper fra
-  // innsjø ≈ 0 m opp til land), og land-relieffet leses med mer kontrast.
-  // Faller tilbake til toppen av kropps-innholdet (under klient-overlays) når
-  // kartet ikke har vann — settes inn foran første overlay-lag (GPS/annotering/
-  // spor/måling), så relieffet drapérer land men ligger under overlays.
-  const insertBefore = svg.querySelector('[data-layer="vann"]')
-                    ?? svg.querySelector('#user-layer')
-                    ?? svg.querySelector('#annotation-layer')
-                    ?? svg.querySelector('#track-layer')
-                    ?? svg.querySelector('#measure-layer')
   if (!img) {
     const ns = 'http://www.w3.org/2000/svg'
     img = document.createElementNS(ns, 'image')
@@ -1877,10 +1876,10 @@ async function applyHillshade() {
     img.setAttribute('preserveAspectRatio', 'none')
     img.setAttribute('pointer-events', 'none')
     img.setAttribute('image-rendering', 'auto')
-    // v10.1.2 perf: la nettleseren dekode relieff-PNG-en asynkront utenfor
-    // hovedtråden, så den ikke blokkerer ved første paint / DEM-bytte.
+    // v10.1.2 perf: la nettleseren dekode relieff-PNG-en asynkront.
     img.setAttribute('decoding', 'async')
   }
+  const insertBefore = reliefInsertBefore(svg)
   if (insertBefore) svg.insertBefore(img, insertBefore)
   else svg.appendChild(img)
   img.setAttribute('x', '0'); img.setAttribute('y', '0')
@@ -1888,10 +1887,73 @@ async function applyHillshade() {
   img.setAttribute('height', String(meta.value.heightM))
   img.setAttribute('href', cachedHillshadeUrl)
   img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', cachedHillshadeUrl)
-  // Styrt av relieff-knotten: opacity fra valgt nivå. Blend-modusen er nå bakt
-  // inn i PNG-ens alfa (se over) — normal kompositt, ingen mix-blend-mode.
   img.setAttribute('opacity', String(reliefOpacity.value))
   img.style.mixBlendMode = 'normal'
+}
+
+// Skarpt relieff (v11.0.44): diskrete tone-bånd som rene SVG-polygoner. Bånd-
+// geometrien bygges kun ved DEM-/tema-bytte (cachedBandsKey); knott-justering
+// endrer bare gruppe-opacityen — billig. Selve filstørrelses-vinningen: ~KB
+// vektor i stedet for multi-MB base64-PNG.
+function applyReliefVector(svg, mode) {
+  const ns = 'http://www.w3.org/2000/svg'
+  let g = svg.querySelector('#hillshade-layer')
+  if (g && g.tagName.toLowerCase() !== 'g') { g.remove(); g = null }
+  const key = `${mode}|${RELIEF_BANDS}`
+  if (!g || cachedBandsKey !== key) {
+    const bands = buildReliefBands(cachedShade, {
+      bands: RELIEF_BANDS,
+      blend: mode,
+      widthM: meta.value.widthM,
+      heightM: meta.value.heightM,
+    })
+    if (!g) {
+      g = document.createElementNS(ns, 'g')
+      g.setAttribute('id', 'hillshade-layer')
+      g.setAttribute('data-layer', 'hillshade')
+      g.setAttribute('pointer-events', 'none')
+    }
+    while (g.firstChild) g.removeChild(g.firstChild)
+    for (const b of bands) {
+      const p = document.createElementNS(ns, 'path')
+      p.setAttribute('d', b.d)
+      p.setAttribute('fill', b.fill)
+      p.setAttribute('fill-rule', 'evenodd')
+      p.setAttribute('fill-opacity', String(b.fillOpacity))
+      g.appendChild(p)
+    }
+    cachedBandsKey = key
+  }
+  const insertBefore = reliefInsertBefore(svg)
+  if (insertBefore) svg.insertBefore(g, insertBefore)
+  else svg.appendChild(g)
+  g.setAttribute('opacity', String(reliefOpacity.value))
+}
+
+async function applyHillshade() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg || !meta.value) return
+  // v9.1.13: knaus er nå malt inn i relieffet. Rydd vekk et evt. gammelt
+  // separat knaus-lag fra tidligere klient-versjoner.
+  svg.querySelector('#knaus-relief-layer')?.remove()
+  // Relieff slås MIDLERTIDIG helt av mens CurveBall kjører (rent spillbrett).
+  // Brukerens valgte relieff-nivå røres ikke — applyHillshade kjøres på nytt
+  // når spillet avsluttes (se curveball.active-watch).
+  const wantOn = reliefEnabled.value && reliefOpacity.value > 0 && !curveball.active.value
+  if (!wantOn) { svg.querySelector('#hillshade-layer')?.remove(); return }
+  // Lazy-last DEM hvis nødvendig — built-in Vardåsen fetcher fra Kartverket WCS
+  await ensureDem()
+  if (!storedDem.value) { svg.querySelector('#hillshade-layer')?.remove(); return }
+  if (cachedHillshadeDem !== storedDem.value) {
+    // v9.1.17: ren hillshade — relieffet skygger kun terreng.
+    cachedShade = computeHillshade(storedDem.value)
+    cachedHillshadeDem = storedDem.value
+    cachedHillshadeUrl = null   // tving re-toning
+    cachedBandsKey = null       // tving re-banding
+  }
+  const mode = reliefBlendMode()
+  if (reliefMode.value === 'vektor') applyReliefVector(svg, mode)
+  else applyReliefRaster(svg, mode)
 }
 
 // Re-render relieffet når DEM-en lastes eller temaet byttes (blend-modus
@@ -4686,8 +4748,10 @@ function buildGhostSvg(stored, activeMeta) {
   // Relieff fra flisas egen DEM, UNDER vann-laget (finn vann FØR data-layer
   // strippes) — samme hillshade-pipeline + blend-modus som aktiv flis. Hoppes
   // over når relieff er av (eller knotten på 0) → ingen hillshade-PNG genereres/
-  // dekodes for spøkelser (sparer GPU/RAM).
-  if (stored.dem && reliefEnabled.value && reliefOpacity.value > 0) {
+  // dekodes for spøkelser (sparer GPU/RAM). v11.0.44: spøkelses-relieff kun i
+  // 'mjuk'-modus — i 'vektor'-modus dropper vi nabo-relieff helt (perf + unngå
+  // myk/skarp-søm mellom aktiv flis og naboer).
+  if (stored.dem && reliefEnabled.value && reliefOpacity.value > 0 && reliefMode.value === 'mjuk') {
     const url = ghostHillshadeUrl(stored)
     if (url) {
       const ns = 'http://www.w3.org/2000/svg'
@@ -6696,6 +6760,29 @@ onUnmounted(() => {
                 <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
                       :class="reliefEnabled ? 'left-5' : 'left-0.5'" />
               </button>
+            </div>
+            <!-- Relieff-stil: vektor (skarpe tone-bånd, liten fil, best print) vs
+                 mjuk (myk PNG-gradient, men multi-MB i fil/eksport). -->
+            <div v-if="reliefEnabled" class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="text-[13px] text-white font-medium mb-2">Relieff-stil</div>
+              <div class="flex gap-2" role="group" aria-label="Relieff-stil">
+                <button @click="reliefMode = 'vektor'"
+                        :aria-pressed="reliefMode === 'vektor'"
+                        class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
+                        :class="reliefMode === 'vektor' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                  Skarp (vektor)
+                </button>
+                <button @click="reliefMode = 'mjuk'"
+                        :aria-pressed="reliefMode === 'mjuk'"
+                        class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
+                        :class="reliefMode === 'mjuk' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                  Mjuk (bilde)
+                </button>
+              </div>
+              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                Skarp = tone-bånd som vektor: liten fil, knivskarpt ved zoom og print.
+                Mjuk = myk gradient (foto-relieff), men gir et tungt bilde i kart-fila.
+              </div>
             </div>
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
           </div>
