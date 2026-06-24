@@ -34,7 +34,9 @@ export function zoomForKm(km) {
   if (km <= 3)   return 14
   if (km <= 6)   return 13
   if (km <= 12)  return 12
-  return 11
+  if (km <= 18)  return 11
+  if (km <= 36)  return 10
+  return 9
 }
 
 /**

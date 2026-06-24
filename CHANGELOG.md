@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-24 — v11.0.38: «Flere valg» — 20 km maks + Format-velger
+
+Tre tilpasninger i kart-picker-en («Flere valg»). (1) **Maks kartstørrelse økt fra 7 til 20 km** bredde — slider, pinch og scroll-zoom klamper nå til 20 km, og preview-zoomen (`zoomForKm`) har fått to nye, lengre utzoom-trinn så ROI-rammen får plass i forhåndsvisningen ved de store utsnittene. (2) **Ny trippel toggle «Format»** erstatter avkrysningsboksen «Tilpass utsnitt til utskrift»: *Kvadratisk* (ny default), *Portrett (mobilskjerm)* (tidligere default) og *Utskrift (A4)* (= den gamle boksen). ROI-rammen inne i kartet følger valgt aspekt. Delte/utfordrings-kart låses fortsatt til portrett så «se det jeg ser» bevares. (3) **Auto-ekvidistanse beholdt** som før — de nye 7–20 km-kartene holder 20/25/50 m som aktive valg.
+
+---
+
 ## 2026-06-25 — v11.0.37: LOD-testverktøy — live zoom-indikator, justerbare terskler, «bygg om i ny størrelse»
 
 Tre tillegg for å kalibrere den zoom-trappede detalj-LOD-en empirisk. (1) **Zoom-LOD-indikator** i Utvikler-fanen: live-readout av gjeldende `scale`-verdi + trinn (far/mid/near) mens man panner/zoomer. (2) **Live-justerbare LOD-knotter** (`useLodTuning`, persistert): glider for detalj-terskelen (når `.zoom-near` slår inn) og for navne-tetthets-budsjettene (far/mid/near), med «Nullstill». Endrer kun runtime-parametre — re-applikeres straks uten å bygge kartet på nytt (hvilke lag som gates er fortsatt bakt inn i CSS ved bygging). Søketreff-zoomen følger nå den justerbare terskelen. (3) **«Bygg om dette området i valgt størrelse»** i Innstillinger-fanen: rebygger gjeldende kart-senter i den valgte kartstørrelsen, så man kan teste samme sted ved ulik bredde uten å gå om forsiden.

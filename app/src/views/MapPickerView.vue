@@ -30,12 +30,22 @@ const mapAspect = ref(viewportAspect())
 const equidistanceM = ref(20)  // høydekurve-intervall, 5/10/20/25/50 m
 const customName = ref('')
 
-// «Tilpass utsnitt til utskrift» (default AV). PÅ → lås utsnittet til stående
-// A-format (høyde/bredde = √2 ≈ 1,4142) i stedet for skjerm-formatet, så kartet
-// passer rett på et A-ark ved print/PDF/SVG-eksport. Bredden styres fortsatt av
-// slideren; høyden utledes av A-format.
-const fitToPrint = ref(false)
-const effectiveAspect = computed(() => fitToPrint.value ? PRINT_ASPECT : mapAspect.value)
+// Format-velger (trippel toggle). Styrer utsnittets høyde/bredde-forhold;
+// bredden styres uansett av slideren, høyden utledes av valgt aspekt.
+//   'square'   → kvadrat (aspect = 1) — default
+//   'portrait' → skjerm-format (mobilskjerm, ~1:2,2) — tidligere default
+//   'print'    → stående A-format (√2 ≈ 1,4142) for ren utskrift / PDF / SVG
+const FORMAT_OPTIONS = [
+  { value: 'square',   label: 'Kvadratisk', sub: '' },
+  { value: 'portrait', label: 'Portrett',   sub: 'mobilskjerm' },
+  { value: 'print',    label: 'Utskrift',   sub: 'A4' },
+]
+const format = ref('square')
+const effectiveAspect = computed(() => {
+  if (format.value === 'portrait') return mapAspect.value
+  if (format.value === 'print') return PRINT_ASPECT
+  return 1
+})
 
 // v8.5.1: Sentrer på GPS. Forhindrer at brukeren ender med et kart sentrert
 // på Nominatim-koordinaten for stedsnavnet (som kan ligge en stund vekk fra
@@ -142,8 +152,11 @@ function parseShareQuery() {
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 14) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
+  // Delte/utfordrings-kart ble bygd før Format-velgeren med skjerm-format —
+  // behold portrett så mottaker ser nøyaktig samme utsnitt («se det jeg ser»).
+  format.value = 'portrait'
   const name = String(q.n).slice(0, 3).toUpperCase()
   customName.value = t('challenge.from', { name })
   return {
@@ -168,8 +181,9 @@ function parseShareInvite() {
   const eq = parseInt(q.eq, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 14) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
+  format.value = 'portrait'
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
   // «Del kart og sted»: slat/slon er stedets eksakte koordinater. Forwardes
   // til MapView så mottakeren får en rosa markering på nøyaktig samme punkt.
@@ -194,12 +208,12 @@ const EQUIDISTANCE_OPTIONS = [
 
 // v10.1.x: minste tillatte ekvidistanse skaleres med bbox-bredde. Tett
 // kontur-rendering er meningsløst på store kart (overlappende streker,
-// rotete kart uten lesbarhet). Maks kartstørrelse er nå 7×7 km (var 14),
-// så terskel-tabellen er skalert ned til det nye domenet (1–7 km):
+// rotete kart uten lesbarhet). Maks kartstørrelse er nå 20×20 km, men terskel-
+// tabellen topper på 20 m: store kart (≥ 6 km, inkl. de nye 7–20 km) beholder
+// 20/25/50 m som aktive valg, slik at 25 og 50 m alltid er tilgjengelig:
 //   bredde <  4 km  → alle valg (5/10/20/25/50)
 //   4 ≤ bredde < 6  → min 10 m (5 m utelukket)
-//   bredde ≥ 6 km   → min 20 m (5/10 m utelukket — ved 6–7 km blir tette
-//     kurver uleselige). 25/50 m forblir alltid valgbare som grovere valg.
+//   bredde ≥ 6 km   → min 20 m (5/10 m utelukket). 20/25/50 m forblir valgbare.
 const minEquidistance = computed(() => {
   const km = halfKm.value * 2
   if (km >= 6) return 20
@@ -382,7 +396,7 @@ function onPreviewTouchMove(e) {
     const d = touchDist(e)
     const ratio = d / lastDist
     const next = halfKm.value / ratio
-    halfKm.value = Math.max(0.5, Math.min(3.5, next))
+    halfKm.value = Math.max(0.5, Math.min(10, next))
     lastDist = d
   } else if (panning && e.touches.length === 1 && panStart) {
     e.preventDefault()
@@ -432,7 +446,7 @@ function onPreviewWheel(e) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
-  halfKm.value = Math.max(0.5, Math.min(3.5, next))
+  halfKm.value = Math.max(0.5, Math.min(10, next))
 }
 
 onMounted(() => {
@@ -673,11 +687,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="3.5" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="10" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>4 km</span><span>7 km</span>
+          <span>1 km</span><span>10 km</span><span>20 km</span>
         </div>
       </div>
 
@@ -705,32 +719,39 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Tilpass utsnitt til utskrift (A-format). Default AV. PÅ → previewen
-           (og det genererte kartet) låses til stående A-ark-forhold √2, så det
-           passer rett på et A4/A3-ark i print/PDF/SVG. -->
+      <!-- Format-velger (trippel toggle). Styrer utsnittets høyde/bredde-forhold:
+           Kvadratisk (default), Portrett (mobilskjerm) eller Utskrift (stående
+           A-format √2 for ren utskrift / PDF / SVG). Previewen og det genererte
+           kartet følger valget. -->
       <div class="rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3">
-        <label class="flex items-center gap-3 cursor-pointer"
-               :class="controlsLocked ? 'opacity-50 cursor-not-allowed' : ''">
-          <input type="checkbox" v-model="fitToPrint" :disabled="controlsLocked"
-                 class="w-4 h-4 accent-slate-400 shrink-0 disabled:cursor-not-allowed" />
-          <div class="min-w-0">
-            <div class="text-[13px] font-medium text-white/85">Tilpass utsnitt til utskrift</div>
-            <div class="text-[10px] text-white/40 leading-tight mt-0.5">
-              Låser utsnittet til stående A-format (A4/A3 …) for ren utskrift / PDF / SVG.
-            </div>
-          </div>
-        </label>
+        <div class="text-[11px] text-white/50 uppercase tracking-wide mb-2">Format</div>
+        <div class="grid grid-cols-3 gap-1.5">
+          <button v-for="opt in FORMAT_OPTIONS" :key="opt.value"
+                  :disabled="controlsLocked"
+                  @click="format = opt.value"
+                  class="px-2 py-1.5 rounded-md border text-[12px] font-medium active:scale-95 transition
+                         flex flex-col items-center justify-center gap-0.5
+                         disabled:cursor-not-allowed disabled:opacity-40"
+                  :class="format === opt.value
+                          ? 'bg-slate-400/20 border-slate-300/60 text-slate-100'
+                          : 'bg-white/5 border-white/10 text-white/65'">
+            <span>{{ opt.label }}</span>
+            <span v-if="opt.sub" class="text-[9px] font-normal text-white/45 leading-none">{{ opt.sub }}</span>
+          </button>
+        </div>
       </div>
 
       <div v-if="!shareInvite" class="text-white/65 text-[11px] uppercase tracking-wide">
         <template v-if="controlsLocked">{{ lockedPreviewHint }}</template>
         <template v-else>Forhåndsvisning — dra kartet for å plassere, pinch / scroll for størrelse</template>
       </div>
-      <!-- v8.2.2: preview er nå et kvadrat slik at brukeren tydelig ser at
-           sluttkartet blir kvadratisk. Bruttokartet (tile-mosaikken) fyller
-           hele kvadratet på 100% opacity — ingen lysegrå semitransparent
-           maskering rundt netto-rammen. Netto-rammen er bare en stiplet
-           kontur med subtilt fokus (drop-shadow + indre kant). -->
+      <!-- v8.2.2: preview-containeren er et kvadrat; netto-rammen (ROI) inni
+           viser det FAKTISKE utsnittet — kvadrat, portrett eller A-format alt
+           etter Format-valget (bboxOverlayPx følger effectiveAspect).
+           Bruttokartet (tile-mosaikken) fyller hele kvadratet på 100% opacity —
+           ingen lysegrå semitransparent maskering rundt netto-rammen. Netto-
+           rammen er bare en stiplet kontur med subtilt fokus (drop-shadow +
+           indre kant). -->
       <!-- v9.1.x: når utsnittet er låst (delt kart / utfordring) skal touch/scroll
            OVER kartet rulle siden — ikke pan/pinch/rotere forhåndsvisningen.
            Derfor `touch-auto` ved lås, `touch-none` (fang gesten) ellers.
