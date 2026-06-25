@@ -30,14 +30,13 @@ describe('sjokartToElements — dybdeareal bevarer øy-hull', () => {
   })
 })
 
-describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
-  it('5 distinkte bånd over kyst-relevante dyp', () => {
-    const colors = [depthToColor(1), depthToColor(3), depthToColor(7),
-                    depthToColor(15), depthToColor(40)]
-    expect(new Set(colors).size).toBe(5)   // alle fem ulike
+describe('depthToColor — kystnær dempet dybdeskala (v11.0.50: 3 bånd)', () => {
+  it('3 distinkte bånd over kyst-relevante dyp', () => {
+    const colors = [depthToColor(2), depthToColor(12), depthToColor(40)]
+    expect(new Set(colors).size).toBe(3)   // grunt / middels / dypt
   })
 
-  it('grunnest bånd (0–2 m) er lysest, dypest (20+) er mørkest', () => {
+  it('grunnest bånd (0–5 m) er lysest, dypest (20+) er mørkest', () => {
     const lum = (hex) => {
       const n = parseInt(hex.slice(1), 16)
       return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255)
@@ -46,14 +45,12 @@ describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
   })
 
   it('grensene treffer riktig bånd', () => {
-    expect(depthToColor(0)).toBe(depthToColor(1.9))    // < 2
-    expect(depthToColor(2)).toBe(depthToColor(4.9))    // 2–5
-    expect(depthToColor(5)).toBe(depthToColor(9.9))    // 5–10
-    expect(depthToColor(10)).toBe(depthToColor(19.9))  // 10–20
+    expect(depthToColor(0)).toBe(depthToColor(4.9))    // 0–5
+    expect(depthToColor(5)).toBe(depthToColor(19.9))   // 5–20
     expect(depthToColor(20)).toBe(depthToColor(200))   // 20+
     // og at nabobånd faktisk skiller seg
-    expect(depthToColor(1.9)).not.toBe(depthToColor(2))
-    expect(depthToColor(9.9)).not.toBe(depthToColor(10))
+    expect(depthToColor(4.9)).not.toBe(depthToColor(5))
+    expect(depthToColor(19.9)).not.toBe(depthToColor(20))
   })
 
   it('ugyldig/manglende dybde faller til grunneste bånd', () => {
@@ -62,12 +59,10 @@ describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
   })
 
   it('depthToFillVar pakker hver dybde i tema-variabel med lys-hex som fallback', () => {
-    // var(--iso-depth-N, #hex) — N følger båndet, hexen er depthToColor-verdien.
-    expect(depthToFillVar(1)).toBe(`var(--iso-depth-1, ${depthToColor(1)})`)
-    expect(depthToFillVar(3)).toBe(`var(--iso-depth-2, ${depthToColor(3)})`)
-    expect(depthToFillVar(7)).toBe(`var(--iso-depth-3, ${depthToColor(7)})`)
-    expect(depthToFillVar(15)).toBe(`var(--iso-depth-4, ${depthToColor(15)})`)
-    expect(depthToFillVar(40)).toBe(`var(--iso-depth-5, ${depthToColor(40)})`)
+    // var(--iso-depth-N, #hex) — N følger båndet (1/3/5), hexen er depthToColor.
+    expect(depthToFillVar(2)).toBe(`var(--iso-depth-1, ${depthToColor(2)})`)   // grunt
+    expect(depthToFillVar(12)).toBe(`var(--iso-depth-3, ${depthToColor(12)})`) // middels
+    expect(depthToFillVar(40)).toBe(`var(--iso-depth-5, ${depthToColor(40)})`) // dypt
     // ugyldig dybde → grunneste bånd (samme som depthToColor)
     expect(depthToFillVar(NaN)).toBe(`var(--iso-depth-1, ${depthToColor(0)})`)
   })
@@ -77,7 +72,7 @@ describe('depthToColor — Fase 2 kystnær dempet dybdeskala', () => {
       const n = parseInt(hex.slice(1), 16)
       return (((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255)) / 3
     }
-    const lums = [1, 3, 7, 15, 40].map(d => lum(depthToColor(d)))
+    const lums = [2, 12, 40].map(d => lum(depthToColor(d)))
     // Lav kontrast: spennet mellom lysest og mørkest skal være moderat
     // (ikke fra nesten-hvit til mørk marineblå). Holdes < 90 av 255.
     expect(Math.max(...lums) - Math.min(...lums)).toBeLessThan(90)

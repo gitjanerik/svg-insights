@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-06-24 — v11.0.50: Byte-trimming — heltalls-koordinater + 3 dybdebånd
+
+To sammensatte byte-/lesbarhets-grep fra flåten. (1) Polygon-koordinatene for de path-tunge lagene (vegetasjon, vann, bygg via `pathAndBboxFromGeometry`) rundes nå til hele meter i stedet for én desimal. 1 m = 0,1 mm @ 1:10 000 — under en piksel, usynlig — men kutter ~10–15 % av path-bytene på disse lagene. Koordinatene rundes før både `d` og `data-bbox` bygges, så culling-boksene matcher eksakt. (`fmt` røres ikke — den brukes også for mm-symbolstørrelser; høydekurvene beholder 0,1 m via `pathUtils`, som deles med font-sporet.) (2) Dybde-skalaen (ISOM 307) er kollapset fra fem til **tre** bånd (grunt 0–5 m / middels 5–20 m / dypt 20+ m): fem nær-identiske blåtoner var umulige å skille i sol og for svaksynte, og graderingen forsvant uansett under relieffet. Tre tydelig adskilte bånd leser bedre. Endringer i `mapBuilder.js` og `sjokartFetcher.js`.
+
+---
+
+## 2026-06-24 — v11.0.49: Skjær på land slettes ikke stille — flagges som usikre
+
+Flåtens kystkajakkpadler påpekte en sikkerhets-svakhet: et skjær (ISOM 211) som faller på land (typisk pga. unøyaktig posisjon i kildedata) ble filtrert bort av topologi-sjekken `Marker ∈ Water`. For en padler er et skjær en FARE — et slettet skjær er farligere enn ett tegnet litt feil. Skjær som faller utenfor den autoritative kysten rendres nå dempet (opacity 0,55) og merket `data-uncertain="1"` («posisjon usikker») i stedet for å slettes. Andre marine punkt som lander på land (bøyer/sjømerker — klare datafeil uten kollisjonsfare) droppes som før. Styres av `flagIfDry` på koden i `MARINE_POINT_CODES` (`mapBuilder.js`).
+
+Avgrensning for senere: padleren ønsket også at dybde (soundings/dybdekurver, ISOM 306) løftes fra long-press-inset til et default-på hovedlag, med en kilde/konfidens-badge (ekte Sjøkart-dybde vs. DEM-estimat). Det er en større endring som dels strider mot et tidligere bevisst valg (soundings ble skjult fordi de var «for voldsomt» på hovedkartet) og krever provenens-flagg gjennom bygge-pipelinen. Notert som eget framtidig tiltak heller enn en halvgjort variant.
+
+---
+
+## 2026-06-24 — v11.0.48: Minste linjevekt-gulv (lesbarhet i sol/print)
+
+Flåtens tilgjengelighetsekspert flagget at tynne lineære features (gjerde, kraftlinje, bekk) faller under lesbarhetsgrensa i direkte sol og på utskrift — særlig fordi «Strek»-knotten og den automatiske tynningen på store kart kan skalere strekene ned mot ~0,1×. `sw()` i `symbolizer.js` har nå et `max(0,08 mm, …)`-gulv: ingen kartlinje rendres tynnere enn 0,08 mm uansett knott-nivå, uten å tykne normale ISOM-bredder (som ligger godt over gulvet ved nøytral knott). Samtidig bekreftet: eksport/utskrift er allerede effektivt LYST tema — tema-variablene settes på transform-wrapperen (`mapInnerRef`), ikke på selve kart-SVG-en, så den klonede/eksporterte SVG-en faller tilbake til de lyse default-fargene som er bakt inn i symbolizer-CSS-en. Redundant tekstur for vegetasjons-tetthet (fargeblind-robusthet) er en større kartografisk endring og er notert som eget framtidig tiltak.
+
+---
+
+## 2026-06-24 — v11.0.47: Skarpere vegetasjonsgrenser på store kart
+
+Flåtens orienterings-kartograf påpekte at vegetasjonsgrensene blobbet ut på store kart mens høydekurvene holdt seg skarpe — en mismatch som leses som «feil». Roten: vegetasjons-forenklingen (Douglas-Peucker) skalerte med kvadratroten av kart-arealet, så et 20 km-kart fikk opptil ~6,3 m DP-toleranse på skog/åpen mark/åker, mot kurvenes faste toleranse. Vegetasjonsgrenser er navigasjons-håndtak (kanten av en lysning eller grønntunge), så formtroskap teller mer enn de få ekstra bytene. Forenklingen er nå bundet til bakke-meter (fast 3,0 m = 0,3 mm @ 1:10 000) uavhengig av kart-størrelse. Areal-filteret (`minAreaM2`) beholder areal-skaleringen — å droppe hele små polygoner er den legitime perf-leveren, mens det å runde av formen til store flater er det vi unngår. Endring i `mapBuilder.js` (`POLYGON_FILTER`); gjelder skog/eng/åker/åpen mark.
+
+---
+
+## 2026-06-24 — v11.0.46: Lag-forhåndsvalg (presets) i Lag-fanen
+
+~34 enkelt-toggles for lag er desktop-GIS på en mobilskjerm — høy beslutningskost, og de viktigste valgene drukner i lista. Flåtens UX-designer og fjellvandrer anbefalte å kollapse til noen få navngitte presets. Lag-fanen har nå en «Forhåndsvalg»-rad med fire ett-trykks-tilstander øverst, og hele enkeltlag-lista beholdes under for finjustering: **Tur** (rent turkart — terreng, sti/vei, navn; uten marine/vinter/rot som tett bebyggelse, gjerde/kraft og grend/gård-navn), **Padling** (Tur + marine POI: kai, sjø & padling, sjønavn), **Detaljert** (alt på) og **Print** (som Tur, men uten GPS-spor for ren papirutskrift). Aktivt preset markeres når synlige lag matcher det eksakt. Implementert i `MapView.vue` (`LAYER_PRESETS`, `applyPreset`, `activePreset`).
+
+---
+
+## 2026-06-24 — v11.0.45: Trinnvis kart-avsløring + lasteskjelett
+
+Den tyngste hendelsen i et kart-liv er også brukerens første: paint av hele kartet. Flåtens UX-designer pekte på at én blokkerende paint leses som «ødelagt», mens en trinnvis ankomst føles snappy selv om totaltiden er lik. To grep: (1) Lasteskjermen har nå et kart-aktig **skjelett** med rolig grunnfarge, svake kurve-bånd og et lysstrøk som sveiper over — ventetiden leses som «laster et kart», ikke en blank skjerm. (2) Når kart-SVG-en er bygget, **toner den inn trinnvis**: strukturen (bakgrunn/vann/kurver/veier) males først, så fades tekstur (vegetasjon/relieff) og labels inn et lite øyeblikk etter (`startMapReveal`, ren CSS-klasse-sekvens i `MapView.vue`). Alt hoppes over ved `prefers-reduced-motion`, og klassene fjernes etter sekvensen så ingen permanent transition koster noe under pan/zoom. Transport-komprimering (gzip/brotli) håndteres av GitHub Pages for tekst-assets — SVG-en er ren tekst og komprimerer 5–10×.
+
+---
+
+## 2026-06-24 — v11.0.44: Vektor-relieff — terrengskygge uten innbakt bitmap
+
+Et typisk 20×20 km turkart eksporterte til ~13 MB SVG, og mesteparten var én innbakt base64-PNG: hillshade-relieffet. En flåte med kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpadler, ytelsesingeniør, UX-designer, tilgjengelighetsekspert) pekte samstemt på relieffet som hovedproblemet — både for filstørrelse/minne og fordi sterkt relieff drukner de brune kotene. Relieffet kan nå lages på to måter, valgbart i Innstillinger under «Relieff-stil»: **Skarp (vektor)** — diskrete tone-bånd som rene SVG-polygoner via d3-contour (`lib/reliefBands.js`), knivskarpt ved zoom og print, tema-bart, og kun ~KB i fila — og **Mjuk (bilde)** — den klassiske myke gradient-PNG-en. Vektor er default, så nye/regenererte kart blir vesentlig lettere. Båndgeometrien bygges kun ved DEM-/tema-bytte (relieff-knotten endrer bare gruppe-opacity), og spøkelses-nabofliser dropper relieff helt i vektor-modus. Default relieff-styrke er samtidig senket fra 0,42 → 0,35 etter flåtens råd om koter-kontra-relieff-lesbarhet. Begge moduser eksporterer riktig: vektor som rene paths, mjuk som innbakt bilde (kun da oppstår de tunge bytene). Endringene ligger i `MapView.vue` (`applyHillshade` delt i raster-/vektor-vei), `lib/reliefBands.js` (ny) og `lib/reliefBands.test.js`.
+
+---
+
 ## 2026-06-24 — v11.0.43: Dempet bro-strek som følger «Strek»-knotten
 
 Broer (way med `bridge=yes` — fylkesvei, motorvei, jernbane) ble lest som tunge, heldekkende sorte band. Roten var ikke broens egen strek, men at de to parapet-strekene ble lagt utenpå veiens/jernbanens sorte kantlinje og fylte ut forbi den. I tillegg var parapeten hardkodet i SVG-en og fulgte ikke «Strek»-knotten, så broene ble relativt sett enda mer dominerende når man tynnet ut kartet. Parapeten er nå dempet grå (`#4a4a4a`) og tynnere (`0,11 mm`), forskyvningen er strammet inn til `±0,24 mm`, og bredden følger nå `--stroke-scale` via `calc()` (samme mekanikk som veier/stier) så broene krymper i takt med resten av kartet. Endringen ligger i `mapBuilder.js` (broSvg); nye kart og det CI-bygde Vardåsen-kartet får stilen automatisk, mens allerede lagrede kart får den ved regenerering.

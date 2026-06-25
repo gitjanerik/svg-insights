@@ -681,7 +681,7 @@ const LAYER_ORDER = [
 // landingssteder, marina, toalett og drikkevann er land-/strand-side og
 // beholdes uansett. Symbol + størrelse hentes fra isomCatalog pr kode.
 const MARINE_POINT_CODES = {
-  '211': { requireWater: true },   // skjær / grunne
+  '211': { requireWater: true, flagIfDry: true },   // skjær / grunne — FARE: flagg, ikke slett
   '533': { requireWater: false },  // fyr / lykt / lanterne
   '540': { requireWater: true },   // sjømerke babord
   '541': { requireWater: true },   // sjømerke styrbord
@@ -791,12 +791,18 @@ export function buildSvg(elements, bbox, options = {}) {
       pts = simplifyDP(pts, simplifyToleranceM)
     }
     if (pts.length === 0) return { d: '', bbox: null }
-    let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
-    for (let i = 1; i < pts.length; i++) {
-      d += `L${fmt(pts[i][0])},${fmt(pts[i][1])}`
+    // v11.0.50: heltalls-meter for polygon-koordinater (vegetasjon/vann/bygg).
+    // 1 m = 0,1 mm @ 1:10 000 — under en piksel, usynlig — men kutter ~10–15 %
+    // av path-bytene på de polygon-tunge lagene (vs. 1-desimal). Rund FØR både
+    // d og bbox bygges, så data-bbox-en (culling) matcher de emitterte koordene
+    // eksakt. `fmt` brukes også for mm-symbolstørrelser og røres ikke.
+    const rpts = pts.map((p) => [Math.round(p[0]), Math.round(p[1])])
+    let d = `M${rpts[0][0]},${rpts[0][1]}`
+    for (let i = 1; i < rpts.length; i++) {
+      d += `L${rpts[i][0]},${rpts[i][1]}`
     }
     if (close) d += 'Z'
-    return { d, bbox: bboxOfPoints(pts) }
+    return { d, bbox: bboxOfPoints(rpts) }
   }
   const pathFromGeometry = (geom, close = false, simplifyToleranceM = 0) =>
     pathAndBboxFromGeometry(geom, close, simplifyToleranceM).d
@@ -845,19 +851,29 @@ export function buildSvg(elements, bbox, options = {}) {
   const sizeFactor = Math.max(0.7, Math.min(2.5, widthM / 5000))
   const simpScale = Math.sqrt(sizeFactor)
   const areaScale = sizeFactor
+  // Fast vegetasjons-DP i bakke-meter (se POLYGON_FILTER under). 3.0 m =
+  // 0,3 mm @ 1:10 000 — skarpe nok grenser, uavhengig av kart-størrelse.
+  const VEG_SIMPLIFY_M = 3.0
   const POLYGON_FILTER = {
     // v8.9.30: senket bygning-terskelene så hytter (typisk 20–60 m²) ikke
     // forsvinner. 80 m² filtrerte bort hele kategorier av småhytter i
     // marka, og simplifyM 3.0 kollapset korner på små rektangler
     // (4×4 m polygon med DP 3.0 → degenerert). 10 m² + 1.5 m DP bevarer
     // hytter og spikertelt, mens skur < 10 m² fortsatt filtreres bort.
+    // v11.0.47: vegetasjons-FORENKLING bindes til BAKKE-METER (fast 3.0 m),
+    // ikke kart-areal. Tidligere vokste den med √(sizeFactor) → opptil ~6,3 m
+    // DP på et 20 km-kart, som blobbet vegetasjonsgrensene mens konturene (fast
+    // DP i dem.js) holdt seg skarpe — en mismatch som leses som «feil».
+    // Vegetasjonsgrenser er navigasjons-håndtak (kanten av en lysning/grønntunge),
+    // så formtroskap teller mer enn de få ekstra bytene. minAreaM2 beholder
+    // areal-skaleringen — å DROPPE hele små polygoner er den legitime perf-leveren.
     bygning: { simplifyM: 1.5 * simpScale, minAreaM2: 10 * areaScale },
-    skog:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
-    eng:     { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
-    aker:    { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    skog:    { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
+    eng:     { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
+    aker:    { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
     myr:     { simplifyM: 2.5 * simpScale, minAreaM2: 150 * areaScale },
     vann:    { simplifyM: 2.0 * simpScale, minAreaM2: 50 * areaScale },
-    aapen:   { simplifyM: 4.0 * simpScale, minAreaM2: 300 * areaScale },
+    aapen:   { simplifyM: VEG_SIMPLIFY_M, minAreaM2: 300 * areaScale },
     // Naturreservat: maxAreaM2 = 200 km² er forsvar mot OSM-mistags. Norges
     // største naturreservat (Mølen) er ~7 km²; største landskapsvernområde
     // (Trillemarka-Rollagsfjell) er 147 km². 200 km² catcher alle ekte
@@ -2137,10 +2153,16 @@ export function buildSvg(elements, bbox, options = {}) {
     else if (el.geometry && el.geometry.length >= 3) p = polygonCentroid(el.geometry)
     else if (el.geometry && el.geometry.length >= 1) p = project(el.geometry[0].lat, el.geometry[0].lon)
     if (!p) return ''
-    const meta = MARINE_POINT_CODES[code]
-    if (meta?.requireWater &&
+    const mpc = MARINE_POINT_CODES[code]
+    let uncertain = false
+    if (mpc?.requireWater &&
         !pointFeatureKept(p.x, p.y, authoritativeSea, { requireWater: true })) {
-      return ''
+      // v11.0.49: et skjær (211) er en FARE — bedre å vise det dempet og merket
+      // «posisjon usikker» enn å slette det stille (et slettet skjær er farligere
+      // enn ett tegnet litt feil). Andre marine punkt (bøyer på land = klare
+      // datafeil, ingen kollisjonsfare) droppes som før.
+      if (mpc.flagIfDry) uncertain = true
+      else return ''
     }
     const def = getIsomDef(code, isomCatalog, false)
     const sym = def?.point
@@ -2149,7 +2171,8 @@ export function buildSvg(elements, bbox, options = {}) {
     if (!sid) return ''
     const sz = sym.scaleMm ?? 1.6
     const half = sz / 2
-    return `    <g data-upright="1" data-iso="${code}" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
+    const flag = uncertain ? ' data-uncertain="1" opacity="0.55"' : ''
+    return `    <g data-upright="1" data-iso="${code}"${flag} transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
   // Bro (ISOM 512-derivert): to parallelle parapet-linjer langs HELE
