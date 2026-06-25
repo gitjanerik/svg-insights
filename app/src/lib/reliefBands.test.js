@@ -40,13 +40,31 @@ describe('buildReliefBands', () => {
     }
   })
 
-  it('lager INGEN firkantet full-rekt ramme (ingen hjørne-trekant-artefakt)', () => {
-    // Regresjon: tidligere brukte bånd 0 et manuelt rektangel med firkantede
-    // hjørner mot d3-contours avfasede region → fire mørke hjørne-trekanter.
-    // Nå skal ingen bånd inneholde det manuelle rektangelet.
-    const bands = buildReliefBands(shade, opts)
-    for (const b of bands) {
-      expect(b.d).not.toContain('M0,0L1000,0L1000,1000L0,1000Z')
+  it('fyller IKKE hjørnene på flatt/lyst terreng (ingen hjørne-trekant-artefakt)', () => {
+    // Regresjon for den vedvarende hjørne-trekant-feilen: på terreng der hele
+    // rasteret er lyst (skygge ≫ terskel) skal det mørkeste båndet (0) være tomt
+    // i hjørnene. Tidligere ga ulik glatting av to hele-raster-rammer fire mørke
+    // trekanter; nå emitteres ramme-ringer som ett eksakt rektangel som kanselleres.
+    const flat = (() => {
+      const c = 60, r = 60, rgba = new Uint8ClampedArray(c * r * 4)
+      for (let i = 0; i < c * r; i++) { const v = 190; const o = i * 4; rgba[o] = v; rgba[o + 1] = v; rgba[o + 2] = v; rgba[o + 3] = 255 }
+      return { rgba, cols: c, rows: r }
+    })()
+    const bands = buildReliefBands(flat, { bands: 5, blend: 'multiply', widthM: 1000, heightM: 1000 })
+    // punkt-i-polygon (even-odd) over alle subpaths
+    const inPath = (d, px, py) => {
+      let inside = false
+      for (const s of d.split('M').filter(Boolean)) {
+        const pts = ('M' + s).replace(/Z/g, '').slice(1).split('L').map((p) => p.split(',').map(Number))
+        for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+          const [xi, yi] = pts[i]; const [xj, yj] = pts[j]
+          if (((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside
+        }
+      }
+      return inside
+    }
+    for (const [x, y] of [[15, 15], [985, 15], [15, 985], [985, 985]]) {
+      expect(inPath(bands[0].d, x, y)).toBe(false)
     }
   })
 

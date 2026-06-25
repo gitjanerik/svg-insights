@@ -17,24 +17,32 @@ import { simplifyDP, chaikin } from './pathUtils.js'
 
 function fmt(n) { return Number(n.toFixed(1)) }
 
-function ringsToPath(multiPolygon, sx, sy, widthM, heightM, tolM, smooth) {
+function ringsToPath(multiPolygon, sx, sy, cols, rows, widthM, heightM, tolM, smooth) {
   let d = ''
   for (const poly of multiPolygon) {
     for (const ring of poly) {
+      // Detekter hele-raster-rammen (ringen som følger kartkanten). d3-contour
+      // gir slike for enhver terskel under lokal min-skygge, og de spenner hele
+      // rasteret. Chaikin-glattingen avfaser da rektangel-hjørnene til en oktagon,
+      // og to nær-identiske rammer (region≥0 vs region≥t1) glattes litt ulikt →
+      // differansen ble fire mørke hjørne-trekanter pr flis. Vi emitterer derfor
+      // ramme-ringer som ET EKSAKT, skarpt rektangel — da kanselleres de presist
+      // i even-odd, og ingen hjørne-artefakt oppstår. Indre kontur-former glattes
+      // som før.
+      let gminx = Infinity, gmaxx = -Infinity, gminy = Infinity, gmaxy = -Infinity
+      for (const [x, y] of ring) {
+        if (x < gminx) gminx = x; if (x > gmaxx) gmaxx = x
+        if (y < gminy) gminy = y; if (y > gmaxy) gmaxy = y
+      }
+      const isFrame = gminx <= 1 && gmaxx >= cols - 1 && gminy <= 1 && gmaxy >= rows - 1
+      if (isFrame) {
+        d += `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
+        continue
+      }
       let pts = ring.map(([x, y]) => [x * sx, y * sy])
       if (pts.length > 4) {
         pts = simplifyDP(pts, tolM)
         if (smooth) pts = chaikin(pts, 1, true)
-      }
-      // Snap punkter nær kart-kanten til EKSAKT kant. d3-contour gir hele-raster-
-      // regioner (terskel under min-skygge) som spenner kanten, men chaikin avfaser
-      // rektangel-hjørnene til en oktagon. Da kansellerte ikke bånd 0 (region≥0
-      // minus region≥t1) i flate områder, og differansen ble fire mørke hjørne-
-      // trekanter pr flis. Snapping gjør kant-spennende regioner til skarpe
-      // rektangler som kanselleres eksakt; indre kontur-former røres ikke.
-      for (const p of pts) {
-        if (p[0] <= sx) p[0] = 0; else if (p[0] >= widthM - sx) p[0] = widthM
-        if (p[1] <= sy) p[1] = 0; else if (p[1] >= heightM - sy) p[1] = heightM
       }
       if (pts.length < 3) continue
       d += 'M' + pts.map((p) => fmt(p[0]) + ',' + fmt(p[1])).join('L') + 'Z'
@@ -84,8 +92,8 @@ export function buildReliefBands(shade, opts) {
     if (alpha <= 0.001) continue
 
     // Ytre = region (s ≥ k/bands). Hull = region (s ≥ (k+1)/bands).
-    let d = ringsToPath(levels[k].coordinates, sx, sy, widthM, heightM, tolM, smooth)
-    if (k < bands - 1) d += ringsToPath(levels[k + 1].coordinates, sx, sy, widthM, heightM, tolM, smooth)
+    let d = ringsToPath(levels[k].coordinates, sx, sy, cols, rows, widthM, heightM, tolM, smooth)
+    if (k < bands - 1) d += ringsToPath(levels[k + 1].coordinates, sx, sy, cols, rows, widthM, heightM, tolM, smooth)
 
     if (!d) continue
     out.push({ d, fill: white ? '#ffffff' : '#000000', fillOpacity: Number(alpha.toFixed(3)) })
