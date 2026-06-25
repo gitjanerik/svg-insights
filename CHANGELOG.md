@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.54: Vann-søk — kategori-lista kappet ikke lenger ved bokstaven H
+
+Søk på «vann» (og synonymene «innsjø»/«tjern») skal vise alle ferskvann i kartutsnittet, men resultatlista stoppet halvveis i alfabetet — typisk rundt bokstaven H. Årsaken: `filterIndex` kappet alltid til 60 treff, og siden treffene sorteres alfabetisk forsvant alt etter det 60. navnet. I et tett norsk skogskart finnes lett over 60 navngitte tjern, så f.eks. «Landfalltjern» (L) dukket aldri opp selv om det lå i utsnittet. Fiks: kategori-søk («vann»/«innsjø»/«tjern»/«parkering») kappes ikke lenger — de er en oversikt og resultatlista ligger uansett i en scroll-container. Fritekst-navnesøk beholder grensen på 60 (man vil ha topp-N, ikke alt). Endring i `composables/useMapSearch.js` + nye regresjonstester.
+
+---
+
 ## 2026-06-25 — v11.0.53: Relieff-hjørnetrekanter — ramme-ring som skarpt rektangel
 
 Hjørne-trekantene overlevde v11.0.52. Kant-snappingen der traff feil mekanisme: Chaikin-glattingen avfaser en hele-raster-ramme på ~25 % av kantlengden (når Douglas-Peucker har redusert den rette kanten til få punkter), og de avfasede punktene ligger PÅ kanten men langt fra hjørnet — snapping kunne ikke trekke dem tilbake til et skarpt hjørne. To nær-identiske rammer (region≥0 vs region≥t1) glattes dessuten litt ulikt i ekte data, så de kanselleres ikke i even-odd → fire mørke trekanter pr flis-hjørne. Fiks: `ringsToPath` detekterer nå en ramme-ring (bbox spenner hele rasteret) og emitterer den som ETT eksakt, skarpt rektangel — da blir region≥0 og region≥t1 byte-identiske rammer som kanselleres presist, uavhengig av kant-støy. Verifisert med punkt-i-polygon-test på både flatt terreng og adversarisk støy-på-terskel-terreng (hjørnene tomme i begge). Indre kontur-former glattes som før. Gjelder aktiv flis + nabofliser. Endring i `lib/reliefBands.js` (+ oppdatert regresjonstest).
