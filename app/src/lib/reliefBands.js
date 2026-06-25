@@ -57,9 +57,14 @@ export function buildReliefBands(shade, opts) {
   const tolM = simplifyM ?? Math.max(2, widthM / 400)
   const white = blend === 'screen'
 
-  // Terskler t_k = k/bands for k = 1..bands-1. levels[k-1] = region (s ≥ k/bands).
+  // Terskler t_k = k/bands for k = 0..bands-1. levels[k] = region (s ≥ k/bands).
+  // Vi tar med k=0 (region ≥ 0 = hele rasteret) som ytre ramme for bånd 0 i
+  // stedet for et manuelt rektangel: d3-contour avfaser hjørnene på regionene,
+  // så et firkantet manuelt rektangel minus en avfaset region etterlot fire
+  // mørke hjørne-trekanter (v11.0.50-bug). Nå avfaser ytre og indre likt → ingen
+  // hjørne-artefakt.
   const thresholds = []
-  for (let k = 1; k < bands; k++) thresholds.push(k / bands)
+  for (let k = 0; k < bands; k++) thresholds.push(k / bands)
   const levels = d3Contours().size([cols, rows]).thresholds(thresholds)(values)
 
   const out = []
@@ -68,11 +73,9 @@ export function buildReliefBands(shade, opts) {
     const alpha = white ? sMid : 1 - sMid
     if (alpha <= 0.001) continue
 
-    // Ytre = region (s ≥ k/bands); bånd 0 = hele kartet. Hull = region (s ≥ (k+1)/bands).
-    let d = (k === 0)
-      ? `M0,0L${fmt(widthM)},0L${fmt(widthM)},${fmt(heightM)}L0,${fmt(heightM)}Z`
-      : ringsToPath(levels[k - 1].coordinates, sx, sy, tolM, smooth)
-    if (k < bands - 1) d += ringsToPath(levels[k].coordinates, sx, sy, tolM, smooth)
+    // Ytre = region (s ≥ k/bands). Hull = region (s ≥ (k+1)/bands).
+    let d = ringsToPath(levels[k].coordinates, sx, sy, tolM, smooth)
+    if (k < bands - 1) d += ringsToPath(levels[k + 1].coordinates, sx, sy, tolM, smooth)
 
     if (!d) continue
     out.push({ d, fill: white ? '#ffffff' : '#000000', fillOpacity: Number(alpha.toFixed(3)) })

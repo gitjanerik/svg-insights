@@ -471,6 +471,9 @@ const GHOST_TRIGGER_SUPPRESS_FRAC = 0.35  // overlapp-andel som undertrykker aut
 // per flis endrer seg ikke, så vi slipper å re-beregne hillshade ved scroll
 // frem/tilbake. Tømmes ikke (bundet av MAX_AUTO_TILES-fliser × 2 blend-modi).
 const ghostShadeCache = new Map()
+// Vektor-relieff-bånd pr spøkelses-flis (id:blend:bands → bånd-array). Egen cache
+// fordi d3-contour pr flis ikke er gratis; gjenbrukes ved scroll frem/tilbake.
+const ghostBandsCache = new Map()
 // Pattern-id-mappingen (navn → iso-pat-id) for å bygge supplerende ISOM-CSS for
 // spøkelses-fliser, se ensureGhostIsomStyles. Katalogen er statisk → regn én gang.
 const { patternIds: ghostPatternIds } = buildIsomDefs(isomCatalog)
@@ -860,7 +863,8 @@ function setGesturePerfMode(svg, on) {
   // v10.1.17 — gjelder ALLE synlige fliser: både aktiv-flisas #hillshade-layer
   // OG mosaikk-spøkelsenes relieff (image[data-ghost-relief]), ellers «henger»
   // nabofliser igjen med relieff mens aktiv-flisa flater ut → visuell ulikhet.
-  const reliefImgs = svg.querySelectorAll('#hillshade-layer, #ghost-tiles image[data-ghost-relief]')
+  // v11.0.51: matcher BÅDE <image> (mjuk) og <g> (vektor) ghost-relieff.
+  const reliefImgs = svg.querySelectorAll('#hillshade-layer, #ghost-tiles [data-ghost-relief]')
   for (const hs of reliefImgs) hs.style.visibility = on ? 'hidden' : ''
   // v9.1.15 — Perf: stiplet strek (sti 505-508, gjerde/kraft, jernbane osv)
   // er den desidert dyreste å rastere på mobil-GPU under gest — på et 10 km-
@@ -4802,29 +4806,51 @@ function buildGhostSvg(stored, activeMeta) {
   // Relieff fra flisas egen DEM, UNDER vann-laget (finn vann FØR data-layer
   // strippes) — samme hillshade-pipeline + blend-modus som aktiv flis. Hoppes
   // over når relieff er av (eller knotten på 0) → ingen hillshade-PNG genereres/
-  // dekodes for spøkelser (sparer GPU/RAM). v11.0.44: spøkelses-relieff kun i
-  // 'mjuk'-modus — i 'vektor'-modus dropper vi nabo-relieff helt (perf + unngå
-  // myk/skarp-søm mellom aktiv flis og naboer).
-  if (stored.dem && reliefEnabled.value && reliefOpacity.value > 0 && reliefMode.value === 'mjuk') {
-    const url = ghostHillshadeUrl(stored)
-    if (url) {
-      const ns = 'http://www.w3.org/2000/svg'
-      const img = document.createElementNS(ns, 'image')
-      img.setAttribute('x', '0'); img.setAttribute('y', '0')
-      img.setAttribute('width', String(Wg)); img.setAttribute('height', String(Hg))
-      img.setAttribute('preserveAspectRatio', 'none')
-      img.setAttribute('pointer-events', 'none')
-      img.setAttribute('decoding', 'async')
-      img.setAttribute('href', url)
-      img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
-      img.setAttribute('opacity', String(reliefOpacity.value))
-      img.setAttribute('data-ghost-relief', '1')
-      // Bygges spøkelset midt i en gest (sjelden), start relieffet skjult som
-      // aktiv-flisa — isGesturing-watcheren slår det på igjen når gesten slipper.
-      if (isGesturing && isGesturing.value) img.style.visibility = 'hidden'
-      const vann = gsvg.querySelector('[data-layer="vann"]')
-      if (vann) gsvg.insertBefore(img, vann)
-      else gsvg.appendChild(img)
+  // dekodes for spøkelser (sparer GPU/RAM). v11.0.51: relieff på ALLE fliser i
+  // BEGGE moduser — brukerens relieff-preferanse gjelder hele kartet, ikke bare
+  // aktiv flis. Mjuk = data-URL-<image>, vektor = bånd-<g> fra flisas DEM (cachet
+  // pr flis). Begge merkes `data-ghost-relief` så gest-skjuling + opacity-knott
+  // treffer dem.
+  if (stored.dem && reliefEnabled.value && reliefOpacity.value > 0) {
+    const ns = 'http://www.w3.org/2000/svg'
+    const doc = gsvg.ownerDocument
+    const vann = gsvg.querySelector('[data-layer="vann"]')
+    const insert = (node) => { if (vann) gsvg.insertBefore(node, vann); else gsvg.appendChild(node) }
+    const gesturing = isGesturing && isGesturing.value
+    if (reliefMode.value === 'mjuk') {
+      const url = ghostHillshadeUrl(stored)
+      if (url) {
+        const img = doc.createElementNS(ns, 'image')
+        img.setAttribute('x', '0'); img.setAttribute('y', '0')
+        img.setAttribute('width', String(Wg)); img.setAttribute('height', String(Hg))
+        img.setAttribute('preserveAspectRatio', 'none')
+        img.setAttribute('pointer-events', 'none')
+        img.setAttribute('decoding', 'async')
+        img.setAttribute('href', url)
+        img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
+        img.setAttribute('opacity', String(reliefOpacity.value))
+        img.setAttribute('data-ghost-relief', '1')
+        if (gesturing) img.style.visibility = 'hidden'
+        insert(img)
+      }
+    } else {
+      const bands = ghostReliefBands(stored, reliefBlendMode())
+      if (bands && bands.length) {
+        const g = doc.createElementNS(ns, 'g')
+        g.setAttribute('data-ghost-relief', '1')
+        g.setAttribute('pointer-events', 'none')
+        g.setAttribute('opacity', String(reliefOpacity.value))
+        for (const b of bands) {
+          const p = doc.createElementNS(ns, 'path')
+          p.setAttribute('d', b.d)
+          p.setAttribute('fill', b.fill)
+          p.setAttribute('fill-rule', 'evenodd')
+          p.setAttribute('fill-opacity', String(b.fillOpacity))
+          g.appendChild(p)
+        }
+        if (gesturing) g.style.visibility = 'hidden'
+        insert(g)
+      }
     }
   }
 
@@ -4861,7 +4887,7 @@ function buildGhostSvg(stored, activeMeta) {
 // Oppdater opacity på spøkelses-relieffet live når relieff-knotten endres
 // (billig — ingen re-render / DEM-relast). href/blend-modus uendret.
 function updateGhostReliefOpacity() {
-  const imgs = svgHostRef.value?.querySelector('svg #ghost-tiles')?.querySelectorAll('image[data-ghost-relief]')
+  const imgs = svgHostRef.value?.querySelector('svg #ghost-tiles')?.querySelectorAll('[data-ghost-relief]')
   if (!imgs) return
   for (const im of imgs) im.setAttribute('opacity', String(reliefOpacity.value))
 }
@@ -4880,6 +4906,26 @@ function ghostHillshadeUrl(stored) {
   } catch { url = null }
   ghostShadeCache.set(key, url)
   return url
+}
+
+// Vektor-relieff-bånd for en spøkelses-flis (v11.0.51). Cachet på id:blend:bands
+// (d3-contour pr flis er ikke gratis). Returnerer null/[] ved manglende DEM.
+function ghostReliefBands(stored, blend) {
+  const key = `${stored.id ?? stored.navn}:${blend}:${RELIEF_BANDS}`
+  const hit = ghostBandsCache.get(key)
+  if (hit !== undefined) return hit
+  let bands = null
+  try {
+    const dem = unpackDem(stored.dem)
+    if (dem) {
+      const sh = computeHillshade(dem)
+      bands = buildReliefBands(sh, {
+        bands: RELIEF_BANDS, blend, widthM: sh.widthM, heightM: sh.heightM,
+      })
+    }
+  } catch { bands = null }
+  ghostBandsCache.set(key, bands)
+  return bands
 }
 
 // Tegn falmede nabo-fliser rundt den aktive. Asynkront + token-vaktet (avbrytes
@@ -5962,9 +6008,12 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Lasting / feil. v11.0.45: kart-aktig skjelett bak spinneren så ventetiden
-         leses som «laster et kart», ikke en blank skjerm. -->
-    <div v-if="loading" class="absolute inset-0 z-10 overflow-hidden">
+    <!-- Lasting / feil. v11.0.45: kart-aktig skjelett ved FØRSTE last (ingen kart
+         ennå). v11.0.51: når et kart allerede vises (bytte/promotering av flis),
+         dekker vi IKKE kartet med et opakt skjelett — da ville den hvite «Laster
+         kart»-teksten bli nesten usynlig oppå kremgult kart. Vis i stedet en liten
+         lesbar mørk pille i hjørnet. -->
+    <div v-if="loading && !meta" class="absolute inset-0 z-10 overflow-hidden">
       <div class="cb-skeleton absolute inset-0" :class="isDark ? 'cb-skeleton-dark' : 'cb-skeleton-light'">
         <div class="cb-skeleton-shimmer absolute inset-0"/>
       </div>
@@ -5972,6 +6021,12 @@ onUnmounted(() => {
         <div class="w-8 h-8 border-2 border-white/25 border-t-white/85 rounded-full animate-spin mb-3"/>
         <div class="text-sm">Laster kart …</div>
       </div>
+    </div>
+    <div v-else-if="loading"
+         class="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full
+                bg-zinc-950/85 text-white/90 text-[12px] flex items-center gap-2 shadow-lg pointer-events-none">
+      <span class="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white/85 animate-spin shrink-0"/>
+      <span>Laster kart …</span>
     </div>
 
     <div v-else-if="loadError"
