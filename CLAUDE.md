@@ -328,6 +328,8 @@ En agentflåte av kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpa
 
 3. **Redundant tekstur for vegetasjons-tetthet** (tilgjengelighet/fargeblind). I dag skilles løpbar/tett skog kun på grønn-nyanse (406–409) → deuteranoper mister den viktigste areal-distinksjonen. ISOM tillater mønster (vertikal-strek «sakte løp» / kratt-prikk) i tillegg til farge. Katalogen har allerede noen mønstre (`iso-pat-kratt`, `iso-pat-halv-aapen`) — utvid til tetthets-koding.
 
+   **Minste-linjevekt-gulv (lesbarhet i sol/print):** forsøkt i v11.0.48 som `max(0,08 mm, …)` i `symbolizer.js#sw()`, men **revertert i v11.0.51** fordi 0,08 mm klampet de tynneste basisstrekene (høydekurve 101 = 0,07 mm) allerede ved nøytral «Strek»-knott → de røde kurvene sluttet å følge knotten (en svært karakteristisk, brukerstyrt egenskap). Et nytt forsøk MÅ enten ligge under alle basis-bredder (≤ ~0,04 mm, så det bare fanger ekstrem nedskalering) eller være per-kategori (kun gjerde/kraft/bekk), så `--stroke-scale` forblir fri for kurvene.
+
 4. **Marine bøye-varianter (540–543) → ett «sjømerke»-symbol** (kajakkpadler). Babord/styrbord/cardinal/generisk som fire symboler er chart-pedanteri på denne skala; slå sammen, behold fyr (533) og skjær (211) tydelige.
 
 5. **Auto-ekvidistanse finnes allerede** (`equidistanceForWidthKm`: 20/25/50 m etter bredde) — IKKE et todo, men husk at orienterings-kartografen ville hatt finere (5/10/20). Vurder kun hvis brukeren ber om det; tettere kurver = mer kontur-rot + større fil.

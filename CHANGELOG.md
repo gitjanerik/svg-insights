@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.51: Fire relieff-/UI-fikser etter brukertesting
+
+Etter brukertesting av vektor-relieffet (v11.0.44-pakken): (1) **Mørke hjørne-trekanter borte.** Vektor-relieffet la et firkantet manuelt rektangel som bånd 0 mot d3-contours *avfasede* region-hjørner → differansen ble fire mørke trekanter i hvert hjørne av aktiv flis, uavhengig av terreng. Bånd 0 henter nå sin ytre ramme fra d3-contour (terskel 0) som avfaser likt → ingen hjørne-artefakt (regresjonstest lagt til). (2) **Relieff på HELE kartet.** Vektor-modus rendret kun aktiv-flisas relieff; nabofliser (spøkelser) var uten. Nå får alle fliser relieff i begge moduser (bånd-`<g>` pr flis, cachet) — brukerens relieff-knott gjelder hele kartet. (3) **Lasteskjelettet dekker ikke lenger et eksisterende kart.** Det opake kremgule skjelettet ble vist ved flis-bytte/promotering midt i panorering, med nesten usynlig hvit «Laster kart»-tekst oppå kartet. Skjelettet vises nå kun ved første last (`!meta`); når et kart allerede vises får man en liten lesbar mørk pille i toppen. (4) **Røde høydekurver følger «Strek»-knotten igjen.** Linjevekt-gulvet fra v11.0.48 (0,08 mm) klampet de tynneste basisstrekene (kurve 101 = 0,07 mm) allerede ved nøytral knott, så knotten sluttet å påvirke kurvene — en svært karakteristisk, brukerstyrt egenskap. Gulvet er revertert; strek-skalaen er fri og fullt dynamisk igjen.
+
+---
+
 ## 2026-06-24 — v11.0.50: Byte-trimming — heltalls-koordinater + 3 dybdebånd
 
 To sammensatte byte-/lesbarhets-grep fra flåten. (1) Polygon-koordinatene for de path-tunge lagene (vegetasjon, vann, bygg via `pathAndBboxFromGeometry`) rundes nå til hele meter i stedet for én desimal. 1 m = 0,1 mm @ 1:10 000 — under en piksel, usynlig — men kutter ~10–15 % av path-bytene på disse lagene. Koordinatene rundes før både `d` og `data-bbox` bygges, så culling-boksene matcher eksakt. (`fmt` røres ikke — den brukes også for mm-symbolstørrelser; høydekurvene beholder 0,1 m via `pathUtils`, som deles med font-sporet.) (2) Dybde-skalaen (ISOM 307) er kollapset fra fem til **tre** bånd (grunt 0–5 m / middels 5–20 m / dypt 20+ m): fem nær-identiske blåtoner var umulige å skille i sol og for svaksynte, og graderingen forsvant uansett under relieffet. Tre tydelig adskilte bånd leser bedre. Endringer i `mapBuilder.js` og `sjokartFetcher.js`.
