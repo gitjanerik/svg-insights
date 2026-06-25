@@ -316,6 +316,24 @@ Brukeren har identifisert disse for neste sesjon:
 3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
 4. **Generelt UI-polish i MapView**
 
+## Ytelses-/UX-pakke (v11.0.44–v11.0.50) — utsatte oppfølginger
+
+En agentflåte av kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpadler, ytelsesingeniør, UX-designer, tilgjengelighet) analyserte 13,2 MB-kartet. **Ferdig** (på branch `claude/svg-map-performance-boclce`, ev. allerede merget): T1 vektor-relieff (default skarp, relieff-PNG ut av SVG-en — hovedlever for filstørrelse), T2 trinnvis avsløring + lasteskjelett, T3 lag-presets (Tur/Padling/Detaljert/Print), T4 vegetasjons-DP bundet til bakke-meter, T5 minste linjevekt-gulv 0,08 mm, T6 skjær-på-land flagges (`data-uncertain`) ikke slettes, T7 heltalls-koordinater + 3 dybdebånd.
+
+**Bevisst UTSATT (gjør disse senere, egne PR-er):**
+
+1. **Dybde på hovedkartet + kilde/konfidens-badge** (kajakkpadlerens #1). Soundings + dybdekurver (306) ligger i dag som skjulte detalj-lag (`data-detail="1"`), kun synlige i long-press-inset — de ble bevisst skjult fordi de var «for voldsomt» på hovedkartet. Ønsket: løft dem til et default-på (toggle-bart) hovedlag MED en permanent badge som sier om dybden er ekte Sjøkart-data eller bare et DEM-avstand-fra-land-estimat (fragil WFS faller stille tilbake til estimatet i dag — en sikkerhets-svakhet). Krever: provenens-flagg gjennom bygge-pipelinen (`buildSvg`-meta → attribusjons-boksen i `MapView.vue`, ~linje 6099) + LOD-gating så hovedlaget ikke blir rot. Merk konflikten med «for voldsomt»-valget — design tetthet/LOD bevisst.
+
+2. **Tørrfalls-/fjære-sone (0–0,5 m) som eget mønster** (kajakkpadler). DEM-sjøen (`seaFromDem.js`) har allerede en ≤0,5 m-terskel; marker den sonen som distinkt «tørrfall/usikkert»-skravur i stedet for blå vannflate — det er der avstand-proxyen er mest feil og der landinger/snarveier avgjøres.
+
+3. **Redundant tekstur for vegetasjons-tetthet** (tilgjengelighet/fargeblind). I dag skilles løpbar/tett skog kun på grønn-nyanse (406–409) → deuteranoper mister den viktigste areal-distinksjonen. ISOM tillater mønster (vertikal-strek «sakte løp» / kratt-prikk) i tillegg til farge. Katalogen har allerede noen mønstre (`iso-pat-kratt`, `iso-pat-halv-aapen`) — utvid til tetthets-koding.
+
+4. **Marine bøye-varianter (540–543) → ett «sjømerke»-symbol** (kajakkpadler). Babord/styrbord/cardinal/generisk som fire symboler er chart-pedanteri på denne skala; slå sammen, behold fyr (533) og skjær (211) tydelige.
+
+5. **Auto-ekvidistanse finnes allerede** (`equidistanceForWidthKm`: 20/25/50 m etter bredde) — IKKE et todo, men husk at orienterings-kartografen ville hatt finere (5/10/20). Vurder kun hvis brukeren ber om det; tettere kurver = mer kontur-rot + større fil.
+
+6. **Relieff i mjuk-modus: blob-URL i stedet for base64-data-URL** (ytelse). I dag bruker mjuk-modus fortsatt `hillshadeToDataURL` (multi-MB base64 i live-DOM + ved eksport). En `URL.createObjectURL(blob)`-variant ville fjerne base64-strengen fra DOM/minne også for mjuk-modus (eksport må da re-embedde ved behov). Lav prioritet siden default er vektor.
+
 ## Spillnavn — CurveInvaders (brand) / CurveBall (codename)
 
 Spillet het tidligere «FlippKart» (norskspesifikk og uten schwung). Rebrandet 10. mai 2026 til **CurveInvaders** i v8.0.0. Samme PR introduserte en lett-vekt i18n-modul (`src/lib/i18n.js`) — norsk bokmål er default, engelsk-stub følger med. Brand-navnet «CurveInvaders» er konstant på tvers av locales.
