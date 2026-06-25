@@ -695,6 +695,22 @@
         }
       ]
     },
+    "torrfall": {
+      "$comment": "Tørrfall / fjære-sone (grunnest DEM-sjø-bånd, ≤50 m fra land): diagonal hatch som markerer at avstand-fra-land-dybden er mest usikker her — der landinger/snarveier avgjøres. Transparent bakgrunn så det blå båndet skinner gjennom.",
+      "widthMm": 1.4,
+      "heightMm": 1.4,
+      "elements": [
+        {
+          "type": "line",
+          "x1": 0,
+          "y1": 1.4,
+          "x2": 1.4,
+          "y2": 0,
+          "stroke": "#5a93b0",
+          "widthMm": 0.08
+        }
+      ]
+    },
     "kratt": {
       "$comment": "Mørkegrønn med små blader",
       "widthMm": 2,

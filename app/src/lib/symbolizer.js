@@ -271,15 +271,13 @@ export function classifyToIsom(el) {
   const seamark = t['seamark:type']
   if (seamark) {
     if (/light/.test(seamark)) return { code: '533', cat: 'point' }   // fyr/lykt
-    if (/lateral/.test(seamark)) {
-      const lc = t['seamark:buoy_lateral:category'] || t['seamark:beacon_lateral:category'] || ''
-      if (lc === 'port')      return { code: '540', cat: 'point' }     // rød babord
-      if (lc === 'starboard') return { code: '541', cat: 'point' }     // grønn styrbord
+    // v11.0.54 (kajakkpadler): babord/styrbord/cardinal/generisk slått sammen
+    // til ETT «sjømerke» (543). Fire varianter med farge-koding er chart-
+    // pedanteri på turkart-skala; fyr (533) og skjær (211) holdes tydelige.
+    if (/rock|obstruction|wreck/.test(seamark)) return { code: '211', cat: 'point' }  // skjær/grunne
+    if (/lateral|cardinal|beacon|buoy|pile|stake|mooring/.test(seamark)) {
       return { code: '543', cat: 'point' }
     }
-    if (/cardinal/.test(seamark))               return { code: '542', cat: 'point' }
-    if (/rock|obstruction|wreck/.test(seamark)) return { code: '211', cat: 'point' }  // skjær/grunne
-    if (/beacon|buoy|pile|stake|mooring/.test(seamark)) return { code: '543', cat: 'point' }
   }
   if (t.leisure === 'marina')          return { code: '553', cat: 'point' }  // småbåthavn
   if (t.leisure === 'slipway')         return { code: '550', cat: 'point' }  // landingssted
