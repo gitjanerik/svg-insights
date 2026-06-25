@@ -74,6 +74,20 @@ const searchInputRef = ref(null)
 const loading = ref(true)
 const loadError = ref(null)
 const meta = ref(null)
+// v11.0.52: forsinket «laster»-pille når et kart ALLEREDE vises. Ved zoom/pan nær
+// randsonen kan en frisk-bygget eller cachet nabo-flis lastes på <½ sekund —
+// da skal ingen loader blinke. Pillen vises kun hvis lastingen faktisk varer
+// (>450 ms). Førstegangs-last (uten meta) bruker fullskjerm-skjelettet umiddelbart.
+const loadPillVisible = ref(false)
+let loadPillTimer = null
+watch(loading, (v) => {
+  if (loadPillTimer) { clearTimeout(loadPillTimer); loadPillTimer = null }
+  if (v && meta.value) {
+    loadPillTimer = setTimeout(() => { loadPillVisible.value = true }, 450)
+  } else {
+    loadPillVisible.value = false
+  }
+})
 const mapTitle = ref('Turkart')
 
 const curveball = useCurveBall()
@@ -6022,7 +6036,7 @@ onUnmounted(() => {
         <div class="text-sm">Laster kart …</div>
       </div>
     </div>
-    <div v-else-if="loading"
+    <div v-else-if="loading && loadPillVisible"
          class="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 rounded-full
                 bg-zinc-950/85 text-white/90 text-[12px] flex items-center gap-2 shadow-lg pointer-events-none">
       <span class="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white/85 animate-spin shrink-0"/>
