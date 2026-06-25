@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-25 — v11.0.53: Relieff-hjørnetrekanter — ramme-ring som skarpt rektangel
+
+Hjørne-trekantene overlevde v11.0.52. Kant-snappingen der traff feil mekanisme: Chaikin-glattingen avfaser en hele-raster-ramme på ~25 % av kantlengden (når Douglas-Peucker har redusert den rette kanten til få punkter), og de avfasede punktene ligger PÅ kanten men langt fra hjørnet — snapping kunne ikke trekke dem tilbake til et skarpt hjørne. To nær-identiske rammer (region≥0 vs region≥t1) glattes dessuten litt ulikt i ekte data, så de kanselleres ikke i even-odd → fire mørke trekanter pr flis-hjørne. Fiks: `ringsToPath` detekterer nå en ramme-ring (bbox spenner hele rasteret) og emitterer den som ETT eksakt, skarpt rektangel — da blir region≥0 og region≥t1 byte-identiske rammer som kanselleres presist, uavhengig av kant-støy. Verifisert med punkt-i-polygon-test på både flatt terreng og adversarisk støy-på-terskel-terreng (hjørnene tomme i begge). Indre kontur-former glattes som før. Gjelder aktiv flis + nabofliser. Endring i `lib/reliefBands.js` (+ oppdatert regresjonstest).
+
+---
+
 ## 2026-06-25 — v11.0.52: Ekte fiks for relieff-hjørnetrekanter + rolig laster
 
 To gjenstående feil fra brukertestingen. (1) **Hjørne-trekantene var IKKE løst i v11.0.51.** Rotårsaken viste seg å være *Chaikin-glattingen*: d3-contour returnerer korrekt hele-raster-regioner (terskel under min-skygge) som spenner hele kartet, men corner-cutting-glattingen avfaset rektangel-hjørnene til en oktagon. Bånd 0 (region≥0 minus region≥t1) kanselleres da ikke i flate områder fordi de to nær-identiske rammene glattes litt ulikt → differansen ble fire mørke trekanter i HVERT flis-hjørne (bekreftet med punkt-i-polygon-test). Fiks: punkter nær kart-kanten snappes til EKSAKT kant etter glatting, så kant-spennende regioner blir skarpe rektangler som kanselleres presist; indre kontur-former røres ikke. Gjelder både aktiv flis og nabofliser. (2) **Roligere laster.** «Laster»-pillen blinket opp ved zoom/pan nær randsonen når en frisk-bygget eller cachet nabo-flis lastes på under et halvt sekund. Pillen vises nå kun hvis lastingen faktisk varer (>450 ms); førstegangs-last (uten kart ennå) bruker fullskjerm-skjelettet umiddelbart som før. Endringer i `lib/reliefBands.js` (+ regresjons-PIP-dekning via eksisterende test) og `views/MapView.vue`.
