@@ -31,11 +31,12 @@ const SKIP_LABELS = new Set([
 ])
 
 const LABEL_LUT = {
-  'stedsnavn':  'Sted',
-  'vann-navn':  'Vann',
-  'peak':       'Topp',
-  'sted':       'Sted',
-  'parkering':  'Parkering',
+  'stedsnavn':   'Sted',
+  'vann-navn':   'Vann',
+  'peak':        'Topp',
+  'sted':        'Sted',
+  'parkering':   'Parkering',
+  'hoydepunkt':  'Høyde',
 }
 
 function labelFor(kind) {
@@ -61,10 +62,65 @@ const CATEGORY_ALIASES = {
 // navn. Et eget modus (ikke en vanlig kategori) fordi resultatet er en
 // rangert topp-liste, ikke «alle entries med en tag».
 const PEAK_KEYWORDS = new Set(['topp', 'topper'])
-const TOP_PEAKS_COUNT = 5
+// «Topp 10» er et innarbeidet begrep i lokale turarrangementer, så vi lister
+// de ti høyeste (ikke fem).
+const TOP_PEAKS_COUNT = 10
 
 // Hvor nær et navngitt sted må ligge en navnløs topp for at vi låner navnet.
 const PEAK_NAME_RADIUS_M = 50
+
+// To like høydetall innen denne radiusen regnes som samme høydepunkt (kontur-
+// etiketter gjentar samme tall langs en kurve / rundt en topp). Brukes i
+// kontur-tall-fallbacken for «topp»-søket når kartet mangler ekte topp-markører.
+const DUP_HEIGHT_RADIUS_M = 200
+
+/**
+ * Klynge-dedupliser høydepunkter: grupper punkter med samme (avrundede) høyde
+ * som ligger innen DUP_HEIGHT_RADIUS_M av hverandre (transitivt), og behold ett
+ * pr klynge — det «midterste» (nærmest klynge-sentroiden). Ren funksjon
+ * (testbar). `points`: [{ x, y, ele }] → samme form, redusert.
+ */
+export function dedupeHeightPoints(points, radiusM = DUP_HEIGHT_RADIUS_M) {
+  const byEle = new Map()
+  for (const p of points) {
+    if (!Number.isFinite(p.ele)) continue
+    const key = Math.round(p.ele)
+    if (!byEle.has(key)) byEle.set(key, [])
+    byEle.get(key).push(p)
+  }
+  const r2 = radiusM * radiusM
+  const out = []
+  for (const group of byEle.values()) {
+    const used = new Array(group.length).fill(false)
+    for (let i = 0; i < group.length; i++) {
+      if (used[i]) continue
+      const cluster = [i]
+      used[i] = true
+      // BFS: dra inn alle like-høyde-punkter innen radius av klyngen.
+      for (let qi = 0; qi < cluster.length; qi++) {
+        const a = group[cluster[qi]]
+        for (let j = 0; j < group.length; j++) {
+          if (used[j]) continue
+          const b = group[j]
+          if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 <= r2) {
+            used[j] = true
+            cluster.push(j)
+          }
+        }
+      }
+      let cx = 0, cy = 0
+      for (const idx of cluster) { cx += group[idx].x; cy += group[idx].y }
+      cx /= cluster.length; cy /= cluster.length
+      let best = cluster[0], bestD2 = Infinity
+      for (const idx of cluster) {
+        const d2 = (group[idx].x - cx) ** 2 + (group[idx].y - cy) ** 2
+        if (d2 < bestD2) { bestD2 = d2; best = idx }
+      }
+      out.push(group[best])
+    }
+  }
+  return out
+}
 
 /**
  * Foldec ASCII-substitusjon for fuzzy match: ALT enkel diakritikk
@@ -430,6 +486,28 @@ export function buildSearchIndex(svgEl) {
     })
   }
 
+  // 5) Høydepunkt-fallback fra kontur-tall (de røde høydekurve-tallene). Kun
+  //    brukt av «topp»-søket NÅR kartet ikke har noen ekte topp-markører (brun
+  //    skrift) — da finner vi de høyeste punktene via kontur-etikettene istedet.
+  //    Etikettene ligger som <g data-label="kontur-tall"><text>200</text>…>
+  //    (data-label på GRUPPEN, ikke på hvert <text>), så pass 1 plukker dem ikke.
+  //    Like tall innen 200 m (kontur-etiketter gjentas langs en kurve) kollapses
+  //    til ett — det midterste — så «topp»-lista ikke fylles av samme høyde.
+  const contourPts = []
+  for (const t of svgEl.querySelectorAll('[data-label="kontur-tall"] text')) {
+    const ele = parseFloat((t.textContent || '').trim())
+    if (!Number.isFinite(ele)) continue
+    const pos = elementPosition(svgEl, t)
+    if (!pos) continue
+    contourPts.push({ x: pos.x, y: pos.y, ele })
+  }
+  for (const p of dedupeHeightPoints(contourPts)) {
+    const name = nearestNamedName(p.x, p.y) ?? 'Høyde'
+    // el = null: ingen egen tekst-node å tvinge synlig / LOD-toggle (kontur-
+    // tallet er allerede rendret på kartet); søk panner bare dit.
+    pushRaw(out, name, 'hoydepunkt', { x: p.x, y: p.y }, null, { ele: p.ele })
+  }
+
   // Dedupe på navn: samme folded navn = samme «sted» for søke-formål. Beholder
   // FØRSTE forekomst i indekseringsrekkefølgen — viktig for elver/bekker
   // som har samme navn-label gjentatt langs path-en (typisk hver ~2 km i
@@ -446,7 +524,8 @@ export function buildSearchIndex(svgEl) {
     // f.eks. en topp og et tettsted som heter det samme, eller flere
     // navnløse «Topp») → dedupe på unik id så ingen forsvinner. Andre
     // entries deduperes på navn (samme folded navn = samme sted).
-    const key = (r.kind === 'vann-omrade' || r.kind === 'peak') ? r.id : r.folded
+    const key = (r.kind === 'vann-omrade' || r.kind === 'peak' || r.kind === 'hoydepunkt')
+      ? r.id : r.folded
     const existing = seen.get(key)
     if (existing) {
       // Bevar kategori-tags fra senere entries hvis vi første gang så
@@ -475,10 +554,17 @@ export function filterIndex(index, query, limit = 60) {
   if (!q) return []
   // «topp»-søk: kartets N høyeste punkter, sortert på høyde desc. Egen gren
   // (returnerer før den vanlige navne-/kategori-filtreringen) fordi resultatet
-  // er en rangert topp-liste, ikke et substring-/kategori-treff.
+  // er en rangert topp-liste, ikke et substring-/kategori-treff. Har kartet ekte
+  // topp-markører (brun skrift) bruker vi dem; ellers faller vi tilbake til de
+  // høyeste kontur-tallene (røde tall) — det navnløse innlandskartet uten OSM-
+  // peaks får da likevel en topp-liste.
   if (PEAK_KEYWORDS.has(q)) {
-    return index
-      .filter(r => r.kind === 'peak' && Number.isFinite(r.ele))
+    const peaks = index.filter(r => r.kind === 'peak' && Number.isFinite(r.ele))
+    const pool = peaks.length
+      ? peaks
+      : index.filter(r => r.kind === 'hoydepunkt' && Number.isFinite(r.ele))
+    return pool
+      .slice()
       .sort((a, b) => b.ele - a.ele || a.name.localeCompare(b.name, 'no'))
       .slice(0, TOP_PEAKS_COUNT)
   }
@@ -493,6 +579,9 @@ export function filterIndex(index, query, limit = 60) {
   const out = []
   const seenIds = new Set()
   for (const r of index) {
+    // Kontur-deriverte høydepunkter er KUN for «topp»-fallbacken — de skal
+    // aldri dukke opp i vanlig navne-/kategori-søk (de har syntetiske navn).
+    if (r.kind === 'hoydepunkt') continue
     const idx = r.folded.indexOf(q)
     const nameMatch = idx >= 0
     const catMatch = categoryTag != null && r.categories && r.categories.includes(categoryTag)
