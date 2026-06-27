@@ -3,22 +3,21 @@ import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
-import { autoMapSquare } from '../lib/mapBuilder.js'
-import { useMapSizePreference, equidistanceForWidthKm } from '../composables/useMapSizePreference.js'
+import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims } from '../composables/useMapSizePreference.js'
 import { useNominatim } from '../composables/useNominatim.js'
 
 const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
 
-// Standard kartstørrelse (settes i MapView «Innstillinger»). null = skjerm-utledet
-// kvadrat (~4 km). Tall = fast kvadrat-bredde i km. Brukes av søk-/GPS-flyten.
+// Standard kartstørrelse (settes i MapView «Innstillinger»). null = fast 4 km
+// kvadrat (defaultMapDims). Tall = fast kvadrat-bredde i km. Brukes av søk-/GPS-flyten.
 const { mapSizeKm } = useMapSizePreference()
 function squareDims() {
-  return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : autoMapSquare(2)
+  return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : defaultMapDims()
 }
 // Ekvidistanse trappes opp med størrelsen (se equidistanceForWidthKm) så store
-// kart ikke drukner i kurver. Standard (~4 km) holder 20 m.
+// kart ikke drukner i kurver. Standard (4 km) holder 20 m.
 function squareEquidistance() {
   return equidistanceForWidthKm(mapSizeKm.value)
 }
