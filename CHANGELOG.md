@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.78: Fiks (endelig): long-press-siktet er nå et HTML-overlay UTENFOR kart-transformen
+
+Roten til hele saga-en: markøren lå INNE i den pinch-skalerte kart-SVG-en, og alt der skaleres med zoom-transformen. Hver «skjerm-konstant»-utregning (pxToUserUnits, getScreenCTM, viewBox-brøk) prøvde å kompensere ved å dele på en skala/måling som kunne komme i utakt med den faktiske transformen → markøren ballong-blåste (v11.0.77 droppet kompensasjonen og skalerte da uhemmet med zoom — verre når man zoomet inn). Løsning: siktet er nå et lite HTML-element rendret UTENFOR pinch-transformen (søsken av det transformerte kart-laget). Det har en LITERAL CSS-piksel-størrelse (34 px) som fysisk ikke kan skaleres av zoom. Vi flytter det bare i posisjon — long-press-punktets skjerm-koordinat via getScreenCTM, limt til punktet gjennom pinch (live scale/translate) og gjennom 200ms-zoom-animasjoner (rAF-løkke). Størrelsen røres aldri. Ren runtime-fiks; appen må laste ny kode.
+
+---
+
 ## 2026-06-27 — v11.0.77: Fiks (ny strategi): long-press-markøren dimensjoneres fra viewBox-brøk, ikke skjerm-måling
 
 Etter flere forsøk på «skjerm-konstant» størrelse (pxToUserUnits, getScreenCTM, viewBox/scale) som alle ballong-blåste, droppes hele den tilnærmingen. Alle tre bygde på en måling eller scale-ref som kunne komme i utakt med den FAKTISKE rendrings-transformen (midt i bottom-sheet-/zoom-animasjon), og en markør dimensjonert for én skala men rendret ved en annen blåses opp. Markøren dimensjoneres nå som en FAST BRØK av kartets eget viewBox (`min(width,height) * konstant`) — nøyaktig samme prinsipp som detalj-inset-ens sikte, som aldri har vært feil. viewBox-tallene er deterministiske og alltid tilgjengelige, helt uavhengig av zoom-tilstand, layout og animasjon, så markøren KAN ikke blåse opp. Bytte-handelen: den er ikke lenger pixel-konstant på skjermen — den skalerer med zoom som kart-innholdet ellers (større innzoomet, mindre utzoomet), men alltid en fornuftig, bundet størrelse. Fjernet samtidig all scale-watch/settle-timeout-logikken som de forrige forsøkene la til (ikke lenger nødvendig). Ren runtime-fiks; appen må laste ny kode.

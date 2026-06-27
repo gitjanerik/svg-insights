@@ -2957,84 +2957,49 @@ const ctxPointOnWater = computed(() => {
 const ctxCanNavigate = computed(() =>
   !ctxBusy.value && mapHasTrails.value && !ctxPointOnWater.value)
 
-// Pin på long-press-punktet — vises i et eget SVG-lag mens menyen er åpen,
-// så brukeren ser hvor handlingen utføres. Re-rendres ved zoom (skjerm-
-// konstant størrelse) og når punktet endres.
-function renderContextPin() {
-  const svg = svgHostRef.value?.querySelector('svg')
-  if (!svg) return
-  const ns = 'http://www.w3.org/2000/svg'
-  let layer = svg.querySelector('#contextmenu-pin-layer')
+// Long-press-markøren (rødt sikte) er et HTML-overlay UTENFOR pinch-transformen
+// (barn av wrapperRef, søsken av det transformerte mapInnerRef) — IKKE et SVG-lag
+// inne i kartet. Det er hele poenget: alt som ligger inne i den pinch-skalerte
+// SVG-en skaleres med transformen, og hver «skjerm-konstant»-utregning (pxToUser
+// Units / getScreenCTM / viewBox-brøk) kunne komme i utakt med den faktiske
+// skalaen → markøren ballong-blåste. Som et HTML-element har den en LITERAL
+// CSS-piksel-størrelse (se template) som FYSISK ikke kan blåses opp uansett zoom.
+// Vi flytter den bare i posisjon: long-press-punktets skjerm-koordinat via
+// getScreenCTM (samme matrise som mapper trykk → kart-koordinat, så den er
+// pålitelig), oversatt til wrapperRef-rommet.
+const contextPinElRef = ref(null)
+function positionContextPin() {
+  const el = contextPinElRef.value
+  if (!el) return
   const p = contextMenuPoint.value
-  if (!p || !contextMenuOpen.value) {
-    if (layer) layer.remove()
-    return
-  }
-  if (!layer) {
-    layer = document.createElementNS(ns, 'g')
-    layer.setAttribute('id', 'contextmenu-pin-layer')
-    layer.setAttribute('data-layer', 'contextmenu-pin')
-    layer.setAttribute('pointer-events', 'none')
-    svg.appendChild(layer)
-  }
-  layer.replaceChildren()
-  // Rødt fadenkreuz — IKKE en blå sirkel. Tidligere var long-press-markøren en
-  // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
-  // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
-  // en i info-arket), så hovedkart og infodrawer viser samme markør.
-  // Størrelse: en FAST BRØK av kartets eget viewBox — IKKE pxToUserUnits,
-  // getScreenCTM eller scale.value. Alle tre forsøkene på «skjerm-konstant»
-  // størrelse ballong-blåste fordi de bygde på en måling/ref som kunne komme i
-  // utakt med den faktiske rendrings-transformen (mid-animasjon, mid-layout).
-  // viewBox-tallene er derimot deterministiske og ALLTID tilgjengelige, så
-  // markøren kan rett og slett ikke blåse opp. Den skalerer da med zoom (som
-  // detalj-inset-ens sikte, som aldri har vært feil), men er alltid en fornuftig,
-  // bundet størrelse. min(width,height) → kortsiden ≈ skjermbredden ved full
-  // visning, så brøken leses som «andel av skjermen».
-  const vb = svg.viewBox.baseVal
-  const span = Math.min(vb.width || 0, vb.height || 0) || 1000
-  const arm = span * 0.030          // krysslengde fra senter (~12 px ved full visning)
-  const ringR = span * 0.016        // senterring-radius
-  const sw = span * 0.007           // rød strek
-  const halo = span * 0.011         // hvit halo under for synlighet
-  const RED = '#e11d48'
-  const mkLine = (d, stroke, width) => {
-    const ln = document.createElementNS(ns, 'path')
-    ln.setAttribute('d', d)
-    ln.setAttribute('stroke', stroke)
-    ln.setAttribute('stroke-width', String(width))
-    ln.setAttribute('fill', 'none')
-    ln.setAttribute('stroke-linecap', 'round')
-    return ln
-  }
-  const hLine = `M${p.svgX - arm},${p.svgY} L${p.svgX + arm},${p.svgY}`
-  const vLine = `M${p.svgX},${p.svgY - arm} L${p.svgX},${p.svgY + arm}`
-  // Hvit halo først (bredere), så rød strek oppå.
-  layer.appendChild(mkLine(hLine, '#fff', sw + halo))
-  layer.appendChild(mkLine(vLine, '#fff', sw + halo))
-  const haloRing = document.createElementNS(ns, 'circle')
-  haloRing.setAttribute('cx', p.svgX); haloRing.setAttribute('cy', p.svgY)
-  haloRing.setAttribute('r', String(ringR))
-  haloRing.setAttribute('fill', 'none')
-  haloRing.setAttribute('stroke', '#fff')
-  haloRing.setAttribute('stroke-width', String(sw + halo))
-  layer.appendChild(haloRing)
-  layer.appendChild(mkLine(hLine, RED, sw))
-  layer.appendChild(mkLine(vLine, RED, sw))
-  const ring = document.createElementNS(ns, 'circle')
-  ring.setAttribute('cx', p.svgX); ring.setAttribute('cy', p.svgY)
-  ring.setAttribute('r', String(ringR))
-  ring.setAttribute('fill', 'none')
-  ring.setAttribute('stroke', RED)
-  ring.setAttribute('stroke-width', String(sw))
-  layer.appendChild(ring)
+  const svg = svgHostRef.value?.querySelector('svg')
+  const wrap = wrapperRef.value?.getBoundingClientRect()
+  if (!p || !contextMenuOpen.value || !svg || !wrap) return
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return
+  const pt = svg.createSVGPoint()
+  pt.x = p.svgX; pt.y = p.svgY
+  const scr = pt.matrixTransform(ctm)   // viewport (skjerm)-koordinat
+  el.style.left = (scr.x - wrap.left) + 'px'
+  el.style.top = (scr.y - wrap.top) + 'px'
 }
-// Størrelsen er nå en fast brøk av viewBox (se renderContextPin) → den henger
-// ikke på scale/animasjons-tilstand og trenger derfor INGEN re-render ved zoom
-// eller animasjons-settling. Markøren tegnes når menyen åpnes / punktet endres,
-// og skalerer naturlig med kartet (som detalj-inset-ens sikte). Det fjerner hele
-// klassen av «ballong-blås»-bugs fra de tidligere skjerm-konstant-forsøkene.
-watch([contextMenuOpen, contextMenuPoint], renderContextPin)
+// Hold markøren limt til punktet gjennom pinch (scale/translate oppdateres live)
+// OG gjennom CSS-transition-animasjoner (animating): under en transition er
+// scale-ref-en allerede på mål, men den faktiske transformen glir over 200ms, så
+// vi rAF-løkker posisjonen til animasjonen er ferdig. Størrelsen røres aldri.
+let contextPinRaf = 0
+function contextPinRafLoop() {
+  positionContextPin()
+  if (animating.value && contextMenuOpen.value) {
+    contextPinRaf = requestAnimationFrame(contextPinRafLoop)
+  } else {
+    contextPinRaf = 0
+  }
+}
+watch([contextMenuOpen, contextMenuPoint, scale, translateX, translateY, rotation], positionContextPin)
+watch(animating, (v) => {
+  if (v && contextMenuOpen.value && !contextPinRaf) contextPinRaf = requestAnimationFrame(contextPinRafLoop)
+})
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // ── Long-press detalj-inset ──────────────────────────────────────────────
@@ -5963,6 +5928,25 @@ onUnmounted(() => {
           :offset="cbOffset"
           @drop="onCurveBallContinue"/>
       </div>
+      <!-- Long-press-sikte: HTML-overlay UTENFOR pinch-transformen (søsken av det
+           transformerte mapInnerRef), så størrelsen er en LITERAL CSS-piksel-
+           verdi som ikke kan skaleres/blåses opp av zoom. Posisjoneres via
+           positionContextPin (getScreenCTM). 34px boks, sentrert på punktet. -->
+      <div v-show="contextMenuOpen && contextMenuPoint"
+           ref="contextPinElRef"
+           class="absolute top-0 left-0 pointer-events-none z-[6]"
+           style="width:34px;height:34px;margin-left:-17px;margin-top:-17px;">
+        <svg viewBox="0 0 34 34" width="34" height="34" aria-hidden="true">
+          <g fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round">
+            <path d="M17 3.5 V30.5 M3.5 17 H30.5"/>
+            <circle cx="17" cy="17" r="6.6"/>
+          </g>
+          <g fill="none" stroke="#e11d48" stroke-width="2.4" stroke-linecap="round">
+            <path d="M17 3.5 V30.5 M3.5 17 H30.5"/>
+            <circle cx="17" cy="17" r="6.6"/>
+          </g>
+        </svg>
+      </div>
     </div>
 
     <!-- Stifinner: fast midt-kikkertsikte mens startpunkt velges. Brukeren
@@ -7268,9 +7252,8 @@ onUnmounted(() => {
          høyreklikk på kartet. Viser koordinater, høyde, nærmeste sted/sti,
          og handlinger for det valgte punktet. -->
     <Transition name="overlay-fade">
-      <!-- Ingen backdrop-blur her: kontekstmenyen legger en evig-pulserende
-           SMIL-pin (renderContextPin) i kart-SVG-en BAK dette overlayet.
-           backdrop-filter:blur tvinger re-blurring av hele den komplekse
+      <!-- Ingen backdrop-blur her: long-press-siktet er et HTML-overlay foran
+           kartet, og backdrop-filter:blur tvinger re-blurring av hele den komplekse
            kart-SVG-en på HVER animasjons-frame → mobil-kompositoren låser seg
            (frys på store/innebygde kart, men ikke på små 1×1). Vanlig
            halv-opak dimming er billig og fryser ikke. -->
