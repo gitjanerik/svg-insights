@@ -331,8 +331,13 @@ export async function buildMapFromCenter({
       const { dem: filled, filled: didFill, replaced } =
         await fillDemVoidsFromTerrarium(dem, utmBbox, { signal })
       if (didFill) {
-        console.log(`[Terrarium] fylte ${replaced} celler utenfor norsk dekning`)
-        onProgress(`Fyller terreng utenfor norsk dekning fra global høydemodell …`)
+        // MERK: «utenfor norsk dekning» = celler uten Kartverket-LiDAR. Det er
+        // IKKE det samme som «utenfor Norge» — på kystkart er disse cellene
+        // sjø (ingen LiDAR-retur over vann), ikke utland. Den gamle teksten
+        // («utenfor norsk dekning») leste som «du er i utlandet» midt i
+        // Oslofjorden. Nøytral, korrekt ordlyd i stedet.
+        console.log(`[Terrarium] fylte ${replaced} celler uten norsk LiDAR-dekning (sjø/grenseområde)`)
+        onProgress(`Fyller inn manglende høydedata fra global modell …`)
         return filled
       }
     } catch (e) {

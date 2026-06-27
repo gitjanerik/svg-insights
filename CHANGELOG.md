@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.58: Kystkart laster stier/detaljer igjen + ærlig høyde-fyll-melding
+
+To feil på store kystkart (rapportert på Nesøya, Asker). (1) **«Fikk ikke lastet stier og detaljer» på store kyst-/by-kart:** Overpass-klientens ventetid var fast på 30 s — romslig for et lite kart (~4 km / ~16 km²), men et stort utsnitt (14–20 km, satt via kartstørrelse → ~200–400 km²) i et tett område som Oslofjorden gir en spørring som lovlig bruker 40–80 s på serveren. Det faste taket avbrøt det gyldige svaret klient-side før det kom, tre forsøk på rad → detalj-fyllingen feilet selv om terrenget allerede var tegnet (store kart venter ikke på Overpass før terrenget vises). Klient-taket skalerer nå med bbox-arealet, opp mot serverens egen 90 s-grense (`overpassTimeoutForBbox`), så store kart får tid til å fullføre. Små kart er uendret (30 s). (2) **«Fyller terreng utenfor norsk dekning»-meldingen** leste som «du er i utlandet» midt i fjorden. På kystkart er cellene den globale høydemodellen fyller inn **sjø** (ingen LiDAR-retur over vann), ikke utland — meldingen er nå nøytral: «Fyller inn manglende høydedata fra global modell …».
+
+---
+
 ## 2026-06-27 — v11.0.57: Dybde-lag med kilde-badge, tørrfall-sone, ett sjømerke
 
 Oppfølginger fra kart-ekspert-flåten. (1) **Dybde på hovedkartet (B1, kajakkpadlerens #1):** soundings + dybdekurver kan nå løftes fra long-press-inset til et hovedlag via en «Dybde (Sjøkart)»-toggle i Sjø & padling-seksjonen — **default av** (respekterer det tidligere «for voldsomt»-valget), og vises kun når kartet faktisk har ekte Sjøkart-dybde. En permanent **kilde-badge** i attribusjons-boksen sier nå om dybden er ekte **Sjøkart** eller bare et **DEM-avstand-fra-land-estimat** («ikke for navigasjon») — den fragile WFS-en faller stille tilbake til estimatet, så padleren må vite hva hun ser. Provenens føres gjennom `buildSvg`-meta (`depthSource`). (2) **Tørrfalls-/fjære-sone (B2):** det grunneste DEM-sjø-båndet (≤50 m fra land) får en diskret diagonal «tørrfall/usikkert»-hatch oppå det blå — det er der avstand-proxyen er mest feil og der landinger/snarveier avgjøres. (3) **Ett sjømerke (B4):** babord/styrbord/cardinal/generisk (540–543) er slått sammen til ett «sjømerke» (543); fyr (533) og skjær (211) holdes tydelige.
