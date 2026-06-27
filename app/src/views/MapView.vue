@@ -610,10 +610,13 @@ watch([showControls, visibleTabs], () => {
   })
 })
 
-const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32, maxHeight: 0.85 })
+// Maks-visning lar en tynn kart-stripe stå igjen i toppen (100dvh − denne) så
+// bruker ser at det ligger et kart under: 32px header-knapp + 12px lik marg over/under.
+const MAX_DRAWER_TOP_GAP_PX = 56
+const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX })
 // Eget bunn-ark for long-press kontekstmeny: standard ↔ maksimert, ingen minimer
-// (lukkes med X). Dra-håndtaket lar bruker øke til ~85dvh for lange infotekster.
-const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, maxHeight: 0.85, allowMinimize: false })
+// (lukkes med X). Dra-håndtaket lar bruker øke til nær full høyde for lange infotekster.
+const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: false })
 
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.56: Høyere maks-visning på kart-skuffene
+
+Maks-visningen («dra håndtaket helt opp») på både hovedmenyen og long-press-info-arket er nå nær full skjermhøyde. I stedet for en fast brøkdel (85dvh) er høyden `100dvh − 56px`, der de 56 pikslene tilsvarer header-knappens høyde (32px) pluss lik marg over og under. Det står dermed igjen en tynn kart-stripe i toppen så man ser at det ligger et kart under skuffen. `useDraggableDrawer` fikk en ny `maxTopGapPx`-opsjon som overstyrer den brøk-baserte `maxHeight`; uten den er oppførselen uendret (ViewerView urørt).
+
+---
+
 ## 2026-06-27 — v11.0.55: Maksimerbar drawer + tekststørrelse i kart
 
 To UX-forbedringer i kartvisningen. (1) Både hovedmenyen (hamburger) og info-arket ved long-press kan nå dras opp i topp-håndtaket fra standard ~45dvh til ~85dvh — info-arket fikk et nytt dra-håndtak (var fast høyde uten håndtak før). Når hovedmenyen maksimeres skjules FAB-knappene så drawer legger seg oppå dem. Komposablen `useDraggableDrawer` har fått et valgfritt tredje snap-punkt (`maxHeight`) og snapper nå til nærmeste punkt; uten `maxHeight` er oppførselen uendret (ViewerView-bruken er urørt). (2) Ny tekststørrelse-kontroll («Aa», 100/125/150 %) i begge headerne skalerer infoteksten inne i appen via CSS `zoom` og huskes i `localStorage`. Dette erstatter behovet for browser-pinch-zoom, som ikke kan nullstilles fra kode i en standalone-PWA (`visualViewport.scale` er read-only) og som tidligere etterlot appen zoomet og panorert med tapt oversikt.
