@@ -222,6 +222,18 @@ describe('OSM-vann rendres uten størrelses-filtrering (velprøvd norsk oppførs
   it('OSM-innsjø-RELASJON rendres (Bondivannet på innebygd kart — ikke droppet)', () => {
     expect(freshShown(buildSvg([osmLakeRel], bbox, {}).svg)).toBe(true)
   })
+
+  it('overlappende navnløse vann-flater (samme kilde) males som EGNE paths — ikke ett evenodd-hull (Ulvenvann-fiks)', () => {
+    // To konsentriske navnløse OSM-vann-ways (samme bbox-senter → samme bucket-
+    // celle). Slått sammen i én fill-rule="evenodd"-path ville den indre blitt
+    // et hull (vikletall 2 = ikke fylt) → innsjø som beige hull i blått vann.
+    // Skal nå emitteres som to separate opake paths.
+    const bigWater = { type: 'way', id: 60, tags: { natural: 'water' }, geometry: ring(59.01, 10.02, 59.04, 10.08) }
+    const nestedWater = { type: 'way', id: 61, tags: { natural: 'water' }, geometry: ring(59.022, 10.045, 59.028, 10.055) }
+    const { svg } = buildSvg([bigWater, nestedWater], bbox, {})
+    const wayPaths = svg.split('data-src="way"').length - 1
+    expect(wayPaths).toBe(2)
+  })
 })
 
 describe('område-navn — lineære features får ALDRI areal-label (tullenavn-fiks v10.2.43)', () => {
