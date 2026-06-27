@@ -1,11 +1,31 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchOverpass } from './mapBuilder.js'
+import { fetchOverpass, overpassTimeoutForBbox } from './mapBuilder.js'
 
 const bbox = { south: 59, north: 59.01, west: 10, east: 10.01 }
 const okRes = (payload) => ({ ok: true, json: async () => payload })
 const errRes = (status) => ({ ok: false, status, text: async () => 'feil' })
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+
+describe('overpassTimeoutForBbox — areal-skalert klient-tak', () => {
+  it('lite kart (~1 km²) bruker baseline 30 s', () => {
+    expect(overpassTimeoutForBbox(bbox)).toBe(30000)
+  })
+  it('stort kyst-/by-kart (~14 km, ~190 km²) klatrer mot 90 s', () => {
+    // 14 km bredt kvadrat rundt 59.8°N
+    const big = { south: 59.74, north: 59.866, west: 10.3, east: 10.54 }
+    const t = overpassTimeoutForBbox(big)
+    expect(t).toBeGreaterThan(60000)
+    expect(t).toBeLessThanOrEqual(90000)
+  })
+  it('klamper aldri over serverens 90 s-grense', () => {
+    const huge = { south: 59, north: 60, west: 10, east: 12 }
+    expect(overpassTimeoutForBbox(huge)).toBe(90000)
+  })
+  it('tåler manglende bbox', () => {
+    expect(overpassTimeoutForBbox(null)).toBe(30000)
+  })
+})
 
 describe('fetchOverpass speil-kappløp', () => {
   it('returnerer det første speilet som svarer (det raske vinner)', async () => {

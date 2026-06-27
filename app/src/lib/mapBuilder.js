@@ -49,8 +49,30 @@ const OVERPASS_HEADERS = {
 // Klient-side tak PER FORSØK på Overpass-ventetid. Server-spørringen har
 // timeout:90, men uten et klient-tak henger «Fyller inn stier og detaljer …»-
 // spinneren til server-timeouten slår inn (føltes som «det skjer ikke noe mer»).
-// 30 s er romslig: vellykkede svar for et par km² kommer typisk på 5–15 s.
+// 30 s er romslig for et par km² (svar kommer typisk på 5–15 s) — men taket
+// MÅ skalere med arealet: et stort kart (14–20 km bredde = ~200–400 km², 100×
+// et 4 km-kart) i et tett kyst-/byområde (Oslofjorden, Nesøya) gir en spørring
+// som lovlig bruker 40–80 s på serveren. Med et fast 30 s-tak ble den avbrutt
+// klient-side FØR svaret kom, 3 forsøk på rad → «Fikk ikke lastet stier og
+// detaljer» selv om terrenget (som ikke venter på Overpass på store kart)
+// allerede var tegnet. Vi lar derfor taket vokse med bbox-arealet opp mot
+// serverens egen 90 s-grense. Se overpassTimeoutForBbox.
 const OVERPASS_TIMEOUT_MS = 30000
+const OVERPASS_TIMEOUT_MAX_MS = 90000   // matcher [timeout:90] i spørringen
+
+// Skaler klient-taket med kart-arealet. ~16 km² (4×4) → 30 s; ~200 km² (≈14 km)
+// → 90 s; klampet til [30, 90] s. Et større utsnitt = flere OSM-elementer =
+// lengre lovlig server-tid, så taket må følge med ellers avbryter vi gyldige svar.
+export function overpassTimeoutForBbox(bbox) {
+  if (!bbox) return OVERPASS_TIMEOUT_MS
+  const midLat = (bbox.north + bbox.south) / 2
+  const heightKm = Math.abs(bbox.north - bbox.south) * 111
+  const widthKm = Math.abs(bbox.east - bbox.west) * 111 * Math.cos(midLat * Math.PI / 180)
+  const areaKm2 = heightKm * widthKm
+  // 30 s baseline + 0.34 s per km² over 16 km² → ~90 s ved ~190 km².
+  const scaled = OVERPASS_TIMEOUT_MS + Math.max(0, areaKm2 - 16) * 340
+  return Math.round(Math.min(OVERPASS_TIMEOUT_MAX_MS, Math.max(OVERPASS_TIMEOUT_MS, scaled)))
+}
 // Overpass-speilene feiler ofte forbigående (429/502/504/timeout under last) og
 // lykkes på neste forsøk. Detalj-fyllingen er den vanligste klagen, så vi prøver
 // på nytt med backoff i stedet for å gi opp etter ett kappløp. Terreng vises
@@ -138,13 +160,13 @@ out geom;
 // ekstern signal slik at prefetch-avbrudd stopper alle. Klient-tak avbryter alle
 // hvis ingen har svart, så et hengende endpoint ikke fryser oss til server-
 // timeouten (90 s). Kaster ved feil; retry-laget i fetchOverpass håndterer det.
-async function raceOverpassMirrors(body, { signal } = {}) {
+async function raceOverpassMirrors(body, { signal, timeoutMs = OVERPASS_TIMEOUT_MS } = {}) {
   if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
   const controllers = OVERPASS_MIRRORS.map(() => new AbortController())
   const abortAll = () => controllers.forEach(c => { try { c.abort() } catch { /* noop */ } })
   if (signal) signal.addEventListener('abort', abortAll, { once: true })
   let timedOut = false
-  const timeoutTimer = setTimeout(() => { timedOut = true; abortAll() }, OVERPASS_TIMEOUT_MS)
+  const timeoutTimer = setTimeout(() => { timedOut = true; abortAll() }, timeoutMs)
 
   const attempts = OVERPASS_MIRRORS.map((url, i) => (async () => {
     const res = await fetch(url, {
@@ -166,7 +188,7 @@ async function raceOverpassMirrors(body, { signal } = {}) {
     return data
   } catch (e) {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
-    if (timedOut) throw new Error(`Overpass svarte ikke innen ${OVERPASS_TIMEOUT_MS / 1000} s`)
+    if (timedOut) throw new Error(`Overpass svarte ikke innen ${Math.round(timeoutMs / 1000)} s`)
     // Promise.any → AggregateError når ALLE speil feilet.
     const errs = e?.errors ?? [e]
     throw new Error(`Alle Overpass-speil feilet: ${errs.map(x => x?.message ?? String(x)).join(' | ')}`)
@@ -188,6 +210,9 @@ export async function fetchOverpass(bbox, { signal, query } = {}) {
   // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
   // periferi-spørringen for 3×3-fliser); default er den fulle.
   const body = 'data=' + encodeURIComponent(query ?? buildOverpassQuery(bbox))
+  // Areal-skalert klient-tak: store kyst-/by-kart trenger mer tid på serveren
+  // enn et lite kart, ellers avbryter vi et gyldig (men tregt) svar for tidlig.
+  const timeoutMs = overpassTimeoutForBbox(bbox)
   // Prøv på nytt med backoff: speilene feiler ofte forbigående under last, og
   // detalj-fyllingen feilet for ofte med kun ett forsøk. Avbrudd (AbortError fra
   // prefetch/signal) prøves IKKE på nytt — det er en bevisst kansellering.
@@ -200,7 +225,7 @@ export async function fetchOverpass(bbox, { signal, query } = {}) {
       await delay(backoff, signal)
     }
     try {
-      return await raceOverpassMirrors(body, { signal })
+      return await raceOverpassMirrors(body, { signal, timeoutMs })
     } catch (e) {
       if (e?.name === 'AbortError' || signal?.aborted) throw e
       lastErr = e
