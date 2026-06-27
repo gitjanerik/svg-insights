@@ -348,7 +348,10 @@ export function buildSearchIndex(svgEl) {
     // fra sin søsken-label `peak-ele`, og navnløse topper (label = bare
     // tallet) skal også med i topp-rangeringen.
     if (kind === 'peak') continue
-    const name = (t.textContent || '').trim()
+    // data-name-full holder det fulle flerspråklige navnet (norsk - samisk -
+    // finsk) når MapView viser kun det norske leddet. Indekser det fulle navnet
+    // så søk treffer alle språk uansett hva som vises på kartet.
+    const name = (t.getAttribute('data-name-full') ?? t.textContent ?? '').trim()
     if (!name) continue
     if (NUMERIC_RE.test(name)) continue
     const pos = elementPosition(svgEl, t)
@@ -445,7 +448,7 @@ export function buildSearchIndex(svgEl) {
     let rec = peakRecs.get(g)
     if (!rec) { rec = { g, name: null, ele: NaN, nameEl: null }; peakRecs.set(g, rec) }
     const lbl = t.getAttribute('data-label')
-    const txt = (t.textContent || '').trim()
+    const txt = (t.getAttribute('data-name-full') ?? t.textContent ?? '').trim()
     if (lbl === 'peak-ele') {
       const n = parseFloat(txt)
       if (Number.isFinite(n)) rec.ele = n

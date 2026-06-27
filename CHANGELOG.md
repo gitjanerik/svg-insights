@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.67: Vis kun norske navn (flerspråklige navn i Nord-Norge)
+
+I Nord-Norge har mange steder navn på norsk, samisk og kvensk samtidig, lagret i ett OSM-felt adskilt med mellomrom-omkranset bindestrek/skråstrek («Bugøynes - Buođggák - Pykeijä», «Svinøya - Spiidnesuolu»). Det gjorde kartet rotete. Nytt: kartet viser nå **kun det norske (første) leddet** som default, og en bryter **«Vis fulle navn»** under Innstillinger slår på hele det flerspråklige navnet igjen. Gjelder steder, innsjøer/sjønavn, topper, hytter og naturreservat. Splittingen krever mellomrom rundt skilletegnet, så ekte bindestreksnavn («Sør-Trøndelag», «Nord-Norge») røres aldri. **Søk treffer alle språk uansett innstilling** — det fulle navnet bevares i `data-name-full` og indekseres av søket, så et samisk/kvensk søkeord fortsatt finner stedet. Logikken er ren i `lib/placeName.js` (enhetstestet), brukes på live-DOM i MapView, så også eksisterende lagrede kart blir renere uten ombygging.
+
+---
+
 ## 2026-06-27 — v11.0.66: «Topp»-søk bruker EKTE topper fra DEM, ikke kontur-tall
 
 Kontur-fallbacken fra v11.0.65 rangerte bare de høyeste kontur-TALLENE (røde ekvidistanse-etiketter) — men et kontur-tall som «1950» ligger like gjerne midt i en li på vei opp mot noe høyere, ikke på en topp. På et høyfjellskart (Memurubu/Lom) ga «topp»-søket derfor en liste med 1950/1900/1850/1800… — rene hellings-tall, ingen faktiske topper, og den ekte toppen (uten kontur-etikett) manglet helt. Nå detekterer mapBuilder **ekte topper som lokale høyde-maksima direkte fra DEM-en** (`detectSummits` i `dem.js`): et punkt er en topp bare hvis ingen celle innen 250 m er høyere (med en prominens-vakt mot platå-/rygg-støy og en kant-margin så terreng som stiger forbi kartkanten ikke teller som topp). Toppene emitteres som et skjult, søkbart lag (`<g data-label="dem-topp">`) og «topp»-søket bruker dem som primær kilde når kartet mangler OSM-toppmarkører. Kontur-tall beholdes kun som nødløsning for eldre kart bygget før dette. **Eksisterende kart må bygges på nytt** for å få ekte topper.
