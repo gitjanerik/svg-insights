@@ -2982,18 +2982,21 @@ function renderContextPin() {
   // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
   // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
   // en i info-arket), så hovedkart og infodrawer viser samme markør.
-  // Skjerm-konstant størrelse via pxToUserUnits — NØYAKTIG samme funksjon som
-  // GPS-prikken (updateUserDot) bruker, og den er bevist riktig størrelse på
-  // samme skjerm/kart. Nøkkelen er ikke HVILKEN måling vi bruker, men at
-  // markøren re-rendres på et SETTLED tidspunkt: GPS-prikken treffer riktig
-  // fordi den re-rendres kontinuerlig (scale-watch + GPS-oppdateringer), mens
-  // context-pin-en tidligere rendret ÉN gang midt i bottom-sheet-/zoom-
-  // animasjonen og aldri ble korrigert. Re-render-planen i watchen under (settle-
-  // timeouts + scale-watch) sørger nå for en korrekt render etter at alt har satt seg.
-  const arm = pxToUserUnits(11)     // krysslengde fra senter
-  const ringR = pxToUserUnits(6)    // senterring-radius
-  const sw = pxToUserUnits(2.1)     // rød strek
-  const halo = pxToUserUnits(3.6)   // hvit halo under for synlighet
+  // Størrelse: en FAST BRØK av kartets eget viewBox — IKKE pxToUserUnits,
+  // getScreenCTM eller scale.value. Alle tre forsøkene på «skjerm-konstant»
+  // størrelse ballong-blåste fordi de bygde på en måling/ref som kunne komme i
+  // utakt med den faktiske rendrings-transformen (mid-animasjon, mid-layout).
+  // viewBox-tallene er derimot deterministiske og ALLTID tilgjengelige, så
+  // markøren kan rett og slett ikke blåse opp. Den skalerer da med zoom (som
+  // detalj-inset-ens sikte, som aldri har vært feil), men er alltid en fornuftig,
+  // bundet størrelse. min(width,height) → kortsiden ≈ skjermbredden ved full
+  // visning, så brøken leses som «andel av skjermen».
+  const vb = svg.viewBox.baseVal
+  const span = Math.min(vb.width || 0, vb.height || 0) || 1000
+  const arm = span * 0.030          // krysslengde fra senter (~12 px ved full visning)
+  const ringR = span * 0.016        // senterring-radius
+  const sw = span * 0.007           // rød strek
+  const halo = span * 0.011         // hvit halo under for synlighet
   const RED = '#e11d48'
   const mkLine = (d, stroke, width) => {
     const ln = document.createElementNS(ns, 'path')
@@ -3026,38 +3029,12 @@ function renderContextPin() {
   ring.setAttribute('stroke-width', String(sw))
   layer.appendChild(ring)
 }
-// Re-render også når en zoom-/pan-animasjon settler seg. Mens `animating` er
-// true har transformen en 200ms CSS-transition (mapTransformStyle), så den
-// FAKTISKE transformen (og getScreenCTM) lagger bak scale-ref-en. Skalerte vi
-// markøren midt i animasjonen, ble den dimensjonert for start-skalaen og rendret
-// ved slutt-skalaen → den ballong-blåste når long-press-en utløste en innzoom på
-// slipp. Derfor: hopp over render mens animasjonen pågår, og render på nytt når
-// den er ferdig (`animating` i deps fanger true→false).
-// Settle-planlegger: long-press åpner et bottom-sheet (0.3s transition) og kan
-// utløse en innzoom (0.2s transition). pxToUserUnits/getScreenCTM gir feil
-// størrelse mens disse animerer, og en enkelt render ved åpning fanget den
-// transiente tilstanden og ble aldri korrigert → markøren ballong-blåste. Vi
-// re-rendrer derfor på flere tidspunkt ETTER at animasjonene har satt seg.
-let contextPinSettleTimers = []
-function clearContextPinSettleTimers() {
-  for (const t of contextPinSettleTimers) clearTimeout(t)
-  contextPinSettleTimers = []
-}
-function scheduleContextPinRender() {
-  clearContextPinSettleTimers()
-  renderContextPin()
-  // Etter sheet- (0.3s) og zoom- (0.2s) transisjonene: endelig, korrekt render.
-  for (const ms of [160, 360, 600]) {
-    contextPinSettleTimers.push(setTimeout(renderContextPin, ms))
-  }
-}
-watch([contextMenuOpen, contextMenuPoint], () => {
-  if (!contextMenuOpen.value) { clearContextPinSettleTimers(); renderContextPin(); return }
-  scheduleContextPinRender()
-})
-// Følg zoom kontinuerlig — SAMME trigger som GPS-prikken (linje ~3288), så
-// markøren holder konstant skjerm-størrelse gjennom og etter enhver zoom.
-watch(scale, () => { if (contextMenuOpen.value) renderContextPin() })
+// Størrelsen er nå en fast brøk av viewBox (se renderContextPin) → den henger
+// ikke på scale/animasjons-tilstand og trenger derfor INGEN re-render ved zoom
+// eller animasjons-settling. Markøren tegnes når menyen åpnes / punktet endres,
+// og skalerer naturlig med kartet (som detalj-inset-ens sikte). Det fjerner hele
+// klassen av «ballong-blås»-bugs fra de tidligere skjerm-konstant-forsøkene.
+watch([contextMenuOpen, contextMenuPoint], renderContextPin)
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // ── Long-press detalj-inset ──────────────────────────────────────────────

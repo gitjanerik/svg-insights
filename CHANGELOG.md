@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.77: Fiks (ny strategi): long-press-markøren dimensjoneres fra viewBox-brøk, ikke skjerm-måling
+
+Etter flere forsøk på «skjerm-konstant» størrelse (pxToUserUnits, getScreenCTM, viewBox/scale) som alle ballong-blåste, droppes hele den tilnærmingen. Alle tre bygde på en måling eller scale-ref som kunne komme i utakt med den FAKTISKE rendrings-transformen (midt i bottom-sheet-/zoom-animasjon), og en markør dimensjonert for én skala men rendret ved en annen blåses opp. Markøren dimensjoneres nå som en FAST BRØK av kartets eget viewBox (`min(width,height) * konstant`) — nøyaktig samme prinsipp som detalj-inset-ens sikte, som aldri har vært feil. viewBox-tallene er deterministiske og alltid tilgjengelige, helt uavhengig av zoom-tilstand, layout og animasjon, så markøren KAN ikke blåse opp. Bytte-handelen: den er ikke lenger pixel-konstant på skjermen — den skalerer med zoom som kart-innholdet ellers (større innzoomet, mindre utzoomet), men alltid en fornuftig, bundet størrelse. Fjernet samtidig all scale-watch/settle-timeout-logikken som de forrige forsøkene la til (ikke lenger nødvendig). Ren runtime-fiks; appen må laste ny kode.
+
+---
+
 ## 2026-06-27 — v11.0.76: Fiks: long-press-markøren — re-render etter at sheet/zoom har satt seg (speiler GPS-prikken)
 
 Markøren ballong-blåste fortsatt etter slipp. Nøkkel-observasjon: den blå GPS-prikken (samme SVG, samme `pxToUserUnits`) har ALLTID riktig størrelse — fordi den re-rendres kontinuerlig (scale-watch + GPS-oppdateringer) og dermed treffer et SETTLED tidspunkt. Long-press-markøren ble derimot rendret ÉN gang, midt i bottom-sheet- (0.3s) og innzoom- (0.2s) transisjonene, da måle-grunnlaget (pxToUserUnits/getScreenCTM) ennå var transient — og ble aldri korrigert. Markøren bruker nå `pxToUserUnits` (identisk med GPS-prikken) og re-rendres på flere tidspunkt etter åpning (160/360/600 ms — etter at sheet+zoom har satt seg) PLUSS på hver scale-endring (samme trigger som GPS-prikken). Ren runtime-fiks; appen må laste ny kode. Sjekk versjonen under «Om» — skal vise 11.0.76.
