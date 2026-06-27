@@ -2982,21 +2982,18 @@ function renderContextPin() {
   // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
   // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
   // en i info-arket), så hovedkart og infodrawer viser samme markør.
-  // Skjerm-konstant størrelse via den FAKTISKE transform-matrisen
-  // (getScreenCTM — nøyaktig samme som long-press bruker for å mappe trykk →
-  // kart-koordinat, linje ~2260). ctm.a/b gir user-units → skjerm-px INKLUDERT
-  // CSS-pinch-transformen, så markøren kan ikke komme i utakt med en stale
-  // scale-ref eller en mid-layout wrapper-måling — begge tidligere forsøk
-  // (pxToUserUnits, viewBox/scale) ballong-blåste fordi de stolte på en verdi
-  // som ikke var den som FAKTISK ble rendret. Her bruker vi rendrings-matrisen
-  // selv → marker = ønsket px-størrelse uansett zoom/animasjons-tilstand.
-  const ctm = svg.getScreenCTM()
-  const pxPerUnit = ctm ? Math.hypot(ctm.a, ctm.b) : 0
-  const u = (px) => (pxPerUnit > 0 ? px / pxPerUnit : px)
-  const arm = u(11)                 // krysslengde fra senter
-  const ringR = u(6)                // senterring-radius
-  const sw = u(2.1)                 // rød strek
-  const halo = u(3.6)               // hvit halo under for synlighet
+  // Skjerm-konstant størrelse via pxToUserUnits — NØYAKTIG samme funksjon som
+  // GPS-prikken (updateUserDot) bruker, og den er bevist riktig størrelse på
+  // samme skjerm/kart. Nøkkelen er ikke HVILKEN måling vi bruker, men at
+  // markøren re-rendres på et SETTLED tidspunkt: GPS-prikken treffer riktig
+  // fordi den re-rendres kontinuerlig (scale-watch + GPS-oppdateringer), mens
+  // context-pin-en tidligere rendret ÉN gang midt i bottom-sheet-/zoom-
+  // animasjonen og aldri ble korrigert. Re-render-planen i watchen under (settle-
+  // timeouts + scale-watch) sørger nå for en korrekt render etter at alt har satt seg.
+  const arm = pxToUserUnits(11)     // krysslengde fra senter
+  const ringR = pxToUserUnits(6)    // senterring-radius
+  const sw = pxToUserUnits(2.1)     // rød strek
+  const halo = pxToUserUnits(3.6)   // hvit halo under for synlighet
   const RED = '#e11d48'
   const mkLine = (d, stroke, width) => {
     const ln = document.createElementNS(ns, 'path')
@@ -3036,19 +3033,31 @@ function renderContextPin() {
 // ved slutt-skalaen → den ballong-blåste når long-press-en utløste en innzoom på
 // slipp. Derfor: hopp over render mens animasjonen pågår, og render på nytt når
 // den er ferdig (`animating` i deps fanger true→false).
-watch([contextMenuOpen, contextMenuPoint, scale, animating], () => {
-  if (animating.value) {
-    // Skjul markøren mens transformen animerer — den eksisterende (korrekt
-    // dimensjonerte) markøren ville ellers skalert med 200ms-zoomen og blåst
-    // opp transient. Den re-rendres i riktig størrelse straks animasjonen
-    // settler (animating → false trigger-er dette watchen på nytt).
-    const svg = svgHostRef.value?.querySelector('svg')
-    const layer = svg?.querySelector('#contextmenu-pin-layer')
-    if (layer) layer.replaceChildren()
-    return
-  }
+// Settle-planlegger: long-press åpner et bottom-sheet (0.3s transition) og kan
+// utløse en innzoom (0.2s transition). pxToUserUnits/getScreenCTM gir feil
+// størrelse mens disse animerer, og en enkelt render ved åpning fanget den
+// transiente tilstanden og ble aldri korrigert → markøren ballong-blåste. Vi
+// re-rendrer derfor på flere tidspunkt ETTER at animasjonene har satt seg.
+let contextPinSettleTimers = []
+function clearContextPinSettleTimers() {
+  for (const t of contextPinSettleTimers) clearTimeout(t)
+  contextPinSettleTimers = []
+}
+function scheduleContextPinRender() {
+  clearContextPinSettleTimers()
   renderContextPin()
+  // Etter sheet- (0.3s) og zoom- (0.2s) transisjonene: endelig, korrekt render.
+  for (const ms of [160, 360, 600]) {
+    contextPinSettleTimers.push(setTimeout(renderContextPin, ms))
+  }
+}
+watch([contextMenuOpen, contextMenuPoint], () => {
+  if (!contextMenuOpen.value) { clearContextPinSettleTimers(); renderContextPin(); return }
+  scheduleContextPinRender()
 })
+// Følg zoom kontinuerlig — SAMME trigger som GPS-prikken (linje ~3288), så
+// markøren holder konstant skjerm-størrelse gjennom og etter enhver zoom.
+watch(scale, () => { if (contextMenuOpen.value) renderContextPin() })
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // ── Long-press detalj-inset ──────────────────────────────────────────────
