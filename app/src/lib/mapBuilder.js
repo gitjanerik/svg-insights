@@ -1768,6 +1768,92 @@ export function buildSvg(elements, bbox, options = {}) {
     return { areaM2: Math.abs(a) / 2, x: cx / (3 * a), y: cy / (3 * a) }
   }
 
+  // v11.0.79: navne-plassering for vann som bare delvis er i utsnittet.
+  // Et stort vann (f.eks. Setten, 11,6 km²) der mesteparten ligger utenfor
+  // bboksen har sitt ekte tyngdepunkt utenfor lerretet — navnet havnet da
+  // off-canvas (usynlig + utenfor søkeindeksen). Disse hjelperne klipper
+  // ringen mot kart-rektangelet [0,widthM]×[0,heightM] og finner et punkt
+  // GARANTERT på den synlige biten. Ren label-geometri; vann-fyllet røres
+  // ikke (det klippes allerede av viewBox).
+  const clipRingToBounds = (ring) => {
+    if (!ring || ring.length < 3) return []
+    const clipEdge = (pts, inside, intersect) => {
+      const out = []
+      for (let i = 0; i < pts.length; i++) {
+        const cur = pts[i]
+        const prev = pts[(i + pts.length - 1) % pts.length]
+        const curIn = inside(cur)
+        if (inside(prev)) {
+          if (curIn) out.push(cur)
+          else out.push(intersect(prev, cur))
+        } else if (curIn) {
+          out.push(intersect(prev, cur))
+          out.push(cur)
+        }
+      }
+      return out
+    }
+    let pts = ring
+    pts = clipEdge(pts, p => p[0] >= 0, (a, b) => { const t = (0 - a[0]) / (b[0] - a[0]); return [0, a[1] + t * (b[1] - a[1])] })
+    if (pts.length < 3) return []
+    pts = clipEdge(pts, p => p[0] <= widthM, (a, b) => { const t = (widthM - a[0]) / (b[0] - a[0]); return [widthM, a[1] + t * (b[1] - a[1])] })
+    if (pts.length < 3) return []
+    pts = clipEdge(pts, p => p[1] >= 0, (a, b) => { const t = (0 - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), 0] })
+    if (pts.length < 3) return []
+    pts = clipEdge(pts, p => p[1] <= heightM, (a, b) => { const t = (heightM - a[1]) / (b[1] - a[1]); return [a[0] + t * (b[0] - a[0]), heightM] })
+    return pts.length >= 3 ? pts : []
+  }
+
+  const pointInRing = (pt, ring) => {
+    let inside = false
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1]
+      if (((yi > pt[1]) !== (yj > pt[1])) &&
+          (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi)) inside = !inside
+    }
+    return inside
+  }
+
+  // Punkt godt inne i en (klippet) ring: sentroiden hvis den ligger inni,
+  // ellers det rutenett-punktet med størst avstand til kanten (grov
+  // «pole of inaccessibility»). Garanterer navn PÅ vann, ikke på land.
+  const interiorLabelPoint = (ring) => {
+    const ac = ringAreaCentroid(ring)
+    if (ac && pointInRing([ac.x, ac.y], ring)) return { x: ac.x, y: ac.y }
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity
+    for (const p of ring) {
+      if (p[0] < minx) minx = p[0]
+      if (p[0] > maxx) maxx = p[0]
+      if (p[1] < miny) miny = p[1]
+      if (p[1] > maxy) maxy = p[1]
+    }
+    const segDistSq = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax, dy = by - ay
+      const l2 = dx * dx + dy * dy
+      let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0
+      t = t < 0 ? 0 : t > 1 ? 1 : t
+      const qx = ax + t * dx, qy = ay + t * dy
+      return (px - qx) * (px - qx) + (py - qy) * (py - qy)
+    }
+    const N = 12
+    let best = null, bestD = -Infinity
+    for (let ix = 1; ix < N; ix++) {
+      for (let iy = 1; iy < N; iy++) {
+        const x = minx + (maxx - minx) * ix / N
+        const y = miny + (maxy - miny) * iy / N
+        if (!pointInRing([x, y], ring)) continue
+        let d = Infinity
+        for (let i = 0, n = ring.length; i < n; i++) {
+          const j = (i + 1) % n
+          const dd = segDistSq(x, y, ring[i][0], ring[i][1], ring[j][0], ring[j][1])
+          if (dd < d) d = dd
+        }
+        if (d > bestD) { bestD = d; best = { x, y } }
+      }
+    }
+    return best ?? (ac ? { x: ac.x, y: ac.y } : null)
+  }
+
   // v7.1.14: utvidet med 303 (saltvann/bukt/sund/fjord). For padlekart er
   // navn på bukter/sund/poll viktige orienteringspunkter. 303-features
   // kommer fra OSM-relations med natural=bay/strait/water=sea og har ofte
@@ -1778,6 +1864,7 @@ export function buildSvg(elements, bbox, options = {}) {
     for (const el of buckets[code] ?? []) {
       let areaM2 = 0
       let centroid = null
+      let outerRingSvg = null
 
       if (el.type === 'merged-water' && el._mergedRings && el._mergedRings.length) {
         // Bruk største outer-ring (første polygon, første ring) som proxy
@@ -1786,9 +1873,14 @@ export function buildSvg(elements, bbox, options = {}) {
         if (!ac) continue
         areaM2 = ac.areaM2
         centroid = { x: ac.x, y: ac.y }
+        outerRingSvg = ring
       } else if (el.type === 'way' && el.geometry) {
         areaM2 = polygonAreaM2(el.geometry)
         centroid = polygonCentroid(el.geometry)
+        outerRingSvg = el.geometry.map(g => {
+          const p = project(g.lat, g.lon)
+          return [p.x, p.y]
+        })
       } else if (el.type === 'relation' && el.members) {
         // OSM-relation (typisk for saltvann/fjord). Bygg outer-rings og
         // bruk største ring som sentroid-proxy.
@@ -1800,18 +1892,32 @@ export function buildSvg(elements, bbox, options = {}) {
             return [p.x, p.y]
           })
         )
-        let largest = null, largestArea = 0
+        let largest = null, largestArea = 0, largestRing = null
         for (const r of projectedRings) {
           const ac = ringAreaCentroid(r)
-          if (ac && ac.areaM2 > largestArea) { largest = ac; largestArea = ac.areaM2 }
+          if (ac && ac.areaM2 > largestArea) { largest = ac; largestArea = ac.areaM2; largestRing = r }
         }
         if (!largest) continue
         areaM2 = largestArea
         centroid = { x: largest.x, y: largest.y }
+        outerRingSvg = largestRing
       } else {
         continue
       }
       if (!centroid) continue
+
+      // Faller tyngdepunktet utenfor lerretet (stort vann bare delvis i
+      // utsnittet)? Klipp ringen mot kart-rektangelet og plasser navnet på
+      // den synlige biten i stedet — ellers blir det rendret off-canvas og
+      // forsvinner fra både kart og søk.
+      const inView = centroid.x >= 0 && centroid.x <= widthM &&
+                     centroid.y >= 0 && centroid.y <= heightM
+      if (!inView) {
+        const clipped = outerRingSvg ? clipRingToBounds(outerRingSvg) : []
+        const pt = clipped.length ? interiorLabelPoint(clipped) : null
+        if (!pt) continue
+        centroid = pt
+      }
 
       // Saltvann har lavere areal-terskel siden et lite "Pollen" eller
       // "Bukta" er like viktig for orientering som en stor fjord.

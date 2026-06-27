@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.79: Navn på store vann som bare delvis er i kartutsnittet
+
+Et stort vann (f.eks. Setten, 11,6 km²) der mesteparten ligger utenfor bboksen fikk navnet plassert ved sitt ekte tyngdepunkt — som da lå utenfor lerretet. Resultat: navnet ble rendret off-canvas (usynlig på kartet) og forsvant fra søket, som leser den rendrede SVG-en. Infopanelet viste likevel navn + areal fordi det henter fra et NVE punkt-oppslag, uavhengig av utsnittet. Fiks: i `mapBuilder.js` klippes vann-ringen mot kart-rektangelet (Sutherland–Hodgman) og navnet plasseres på den synlige biten (sentroide hvis den ligger inni, ellers grov «pole of inaccessibility»). Vann-fyllet er urørt — det klippes allerede av viewBox. Fullt synlige vann beholder navn ved tyngdepunktet (byte-identisk).
+
+---
+
 ## 2026-06-27 — v11.0.78: Fiks (endelig): long-press-siktet er nå et HTML-overlay UTENFOR kart-transformen
 
 Roten til hele saga-en: markøren lå INNE i den pinch-skalerte kart-SVG-en, og alt der skaleres med zoom-transformen. Hver «skjerm-konstant»-utregning (pxToUserUnits, getScreenCTM, viewBox-brøk) prøvde å kompensere ved å dele på en skala/måling som kunne komme i utakt med den faktiske transformen → markøren ballong-blåste (v11.0.77 droppet kompensasjonen og skalerte da uhemmet med zoom — verre når man zoomet inn). Løsning: siktet er nå et lite HTML-element rendret UTENFOR pinch-transformen (søsken av det transformerte kart-laget). Det har en LITERAL CSS-piksel-størrelse (34 px) som fysisk ikke kan skaleres av zoom. Vi flytter det bare i posisjon — long-press-punktets skjerm-koordinat via getScreenCTM, limt til punktet gjennom pinch (live scale/translate) og gjennom 200ms-zoom-animasjoner (rAF-løkke). Størrelsen røres aldri. Ren runtime-fiks; appen må laste ny kode.
