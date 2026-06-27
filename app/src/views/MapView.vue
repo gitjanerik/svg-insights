@@ -610,7 +610,22 @@ watch([showControls, visibleTabs], () => {
   })
 })
 
-const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32 })
+const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32, maxHeight: 0.85 })
+// Eget bunn-ark for long-press kontekstmeny: standard ↔ maksimert, ingen minimer
+// (lukkes med X). Dra-håndtaket lar bruker øke til ~85dvh for lange infotekster.
+const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, maxHeight: 0.85, allowMinimize: false })
+
+// Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
+// — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
+// container-font-size. Erstatter behovet for browser-pinch-zoom (som ikke kan
+// nullstilles i standalone-PWA).
+const UI_TEXT_SCALES = [1, 1.25, 1.5]
+const uiTextScale = ref(Number(localStorage.getItem('map-ui-text-scale')) || 1)
+function cycleTextScale() {
+  const i = UI_TEXT_SCALES.indexOf(uiTextScale.value)
+  uiTextScale.value = UI_TEXT_SCALES[(i + 1) % UI_TEXT_SCALES.length]
+  try { localStorage.setItem('map-ui-text-scale', String(uiTextScale.value)) } catch {}
+}
 // Desktop: drawer er et høyrestilt side-panel med dra-bar venstrekant
 // (min 360px, maks 50vw, bredde lagret i localStorage per spor).
 const panel = useResizablePanel('map-panel-width')
@@ -2150,6 +2165,7 @@ function openContextMenuAt(clientX, clientY) {
     clientX, clientY,
   }
   contextMenuOpen.value = true
+  contextDrawer.reset()
   closeDrawer()
   // v9.3.3: INGEN auto-pan av hovedkartet. Brukeren har allerede plassert/
   // zoomet/rotert kartet slik de vil — å flytte det ved long-press var
@@ -5709,7 +5725,7 @@ onUnmounted(() => {
     <!-- FAB-bunn løftes kun når bunn-arket er åpent (mobil). På desktop er
          drawer et side-panel, så FAB-en beholder sin bunn og skyves i stedet
          til venstre for panelet. -->
-    <div v-if="!curveball.active.value && !searchOpen"
+    <div v-if="!curveball.active.value && !searchOpen && !(!isDesktop && showControls && drawer.isMaximized.value)"
          class="absolute z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom,right] duration-200"
          :style="{
            right: floatRightStyle.right,
@@ -6205,14 +6221,23 @@ onUnmounted(() => {
           <div class="px-4 pb-2 flex items-center justify-between"
                :class="isDesktop ? 'pt-3' : ''">
             <div class="text-white text-sm font-semibold">Innstillinger</div>
-            <button @pointerdown.stop @click.stop="closeDrawer"
-                    class="w-8 h-8 -mr-1 rounded-full flex items-center justify-center
-                           text-white/70 active:bg-white/10">
-              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-              </svg>
-            </button>
+            <div class="flex items-center gap-1">
+              <button @pointerdown.stop @click.stop="cycleTextScale"
+                      aria-label="Tekststørrelse"
+                      class="h-8 px-2 -mr-0.5 rounded-full flex items-center gap-1
+                             text-white/70 active:bg-white/10">
+                <span class="font-semibold leading-none"><span class="text-[12px]">A</span><span class="text-[16px]">A</span></span>
+                <span v-if="uiTextScale !== 1" class="text-[10px] tabular-nums text-white/50">{{ Math.round(uiTextScale * 100) }}%</span>
+              </button>
+              <button @pointerdown.stop @click.stop="closeDrawer"
+                      class="w-8 h-8 -mr-1 rounded-full flex items-center justify-center
+                             text-white/70 active:bg-white/10">
+                <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -6308,7 +6333,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto px-4 pb-6">
+        <div class="flex-1 overflow-y-auto px-4 pb-6" :style="{ zoom: uiTextScale }">
           <!-- ── Tab: Lag ─────────────────────────────────────────── -->
           <div v-show="activeTab === 'lag'">
             <!-- Forhåndsvalg: ett trykk til en sammenhengende lag-tilstand.
@@ -7055,11 +7080,19 @@ onUnmounted(() => {
            class="absolute inset-0 z-40 bg-black/60 flex items-end justify-center"
            @click.self="closeContextMenu">
         <div ref="contextSheetRef"
-             class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl
-                    max-h-[65dvh] overflow-y-auto"
-             :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
+             class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col"
+             :style="contextDrawer.drawerHeightStyle.value">
+          <!-- Dra-håndtak: dra opp for å maksimere (~85dvh), ned for standard. -->
+          <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-2 pb-1 flex justify-center"
+               @pointerdown="contextDrawer.onPointerDown($event)"
+               @pointermove="contextDrawer.onPointerMove($event)"
+               @pointerup="contextDrawer.onPointerUp($event)"
+               @pointercancel="contextDrawer.onPointerUp($event)">
+            <div class="w-10 h-1 rounded-full bg-white/40"
+                 :style="{ opacity: contextDrawer.handleOpacity.value }"></div>
+          </div>
           <!-- Header: koordinater + lukk -->
-          <div class="sticky top-0 px-4 pt-3 pb-2.5 bg-zinc-900/95 backdrop-blur
+          <div class="shrink-0 px-4 pb-2.5 bg-zinc-900/95
                       border-b border-white/8 flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="text-[10px] uppercase tracking-wide text-white/45">Punkt</div>
@@ -7070,16 +7103,28 @@ onUnmounted(() => {
                 Utenfor kart-utsnittet
               </div>
             </div>
-            <button @click="closeContextMenu"
-                    aria-label="Lukk"
-                    class="w-8 h-8 -mr-1 -mt-0.5 rounded-full flex items-center justify-center
-                           bg-white/5 border border-white/10 text-white/70 active:scale-90 shrink-0">
-              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
-                   stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
-              </svg>
-            </button>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button @click="cycleTextScale"
+                      aria-label="Tekststørrelse"
+                      class="h-8 px-2 rounded-full flex items-center gap-1
+                             bg-white/5 border border-white/10 text-white/70 active:scale-90">
+                <span class="font-semibold leading-none"><span class="text-[12px]">A</span><span class="text-[16px]">A</span></span>
+                <span v-if="uiTextScale !== 1" class="text-[10px] tabular-nums text-white/50">{{ Math.round(uiTextScale * 100) }}%</span>
+              </button>
+              <button @click="closeContextMenu"
+                      aria-label="Lukk"
+                      class="w-8 h-8 -mr-1 -mt-0.5 rounded-full flex items-center justify-center
+                             bg-white/5 border border-white/10 text-white/70 active:scale-90">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                </svg>
+              </button>
+            </div>
           </div>
+          <!-- Scrollbar kropp: detalj-inset (uten zoom) + tekst-info (zoom-bar). -->
+          <div class="flex-1 overflow-y-auto"
+               :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
 
           <!-- Detalj-inset: roambart 500×500 m utsnitt (start 250 m) med alle
                detaljer (dybdetall, dybdekurver, sjø-POI) avslørt. Pan + zoom,
@@ -7096,6 +7141,8 @@ onUnmounted(() => {
                         border border-white/10 bg-[#fefae0] touch-none"></div>
           </div>
 
+          <!-- Tekst-info-blokk: skaleres av tekststørrelse-kontrollen (zoom). -->
+          <div :style="{ zoom: uiTextScale }">
           <!-- Info-seksjon: høyde / sted / sti / avstand-fra-deg -->
           <div class="px-4 pt-3 space-y-1.5">
             <!-- Innsjø med ekte data fra NVE Innsjødatabase (+ HydAPI sanntid). -->
@@ -7521,6 +7568,8 @@ onUnmounted(() => {
               Avslutt pågående {{ measureMode ? 'måling' : 'sporing' }} for flere valg.
             </template>
           </div>
+          </div><!-- /zoom-blokk -->
+          </div><!-- /scrollbar kropp -->
         </div>
       </div>
     </Transition>
