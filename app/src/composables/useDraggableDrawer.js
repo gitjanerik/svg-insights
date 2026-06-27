@@ -27,6 +27,7 @@ export function useDraggableDrawer({
   expandedHeight = 0.45,  // fraction of viewport height when expanded (default)
   minimizedPeek = 28,     // px of the handle strip still visible when minimized
   maxHeight = null,       // fraction of viewport height when maximized (null = no maximize snap)
+  maxTopGapPx = null,     // px of map left visible at the top when maximized (overrides maxHeight)
   allowMinimize = true,   // whether the drawer can be dragged down to the peek
   snapThreshold = 1 / 3,  // legacy magnet ratio (kept for two-state callers)
   springMs = 220,         // snap animation duration
@@ -72,7 +73,9 @@ export function useDraggableDrawer({
     const vh = window.innerHeight || 800
     expandedPx.value = Math.max(minimizedPeek + 100, vh * expandedHeight)
     dragRangePx.value = expandedPx.value - minimizedPeek
-    maxPx.value = maxHeight ? Math.max(expandedPx.value, vh * maxHeight) : 0
+    maxPx.value = maxTopGapPx != null
+      ? Math.max(expandedPx.value, vh - maxTopGapPx)
+      : (maxHeight ? Math.max(expandedPx.value, vh * maxHeight) : 0)
   }
   computeRange()
   window.addEventListener('resize', computeRange, { passive: true })
