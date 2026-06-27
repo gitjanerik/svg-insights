@@ -146,6 +146,35 @@ describe('useMapSearch', () => {
       expect(results[0].name).toBe('Trondheimsfjorden')
     })
 
+    it('category search is NOT truncated by limit (alphabetical list must not stop halfway)', () => {
+      // 100 navngitte tjern, alfabetisk a000…a099, alle med vann-kategori.
+      // Med en limit på 60 ville lista stoppet ved a059 og «Landfalltjern»-
+      // analogen aldri vist. Kategori-søk skal returnere ALLE.
+      const many = Array.from({ length: 100 }, (_, i) => {
+        const name = `Tjern ${String(i).padStart(3, '0')}`
+        return {
+          id: `t${i}`, name, folded: foldName(name), kind: 'omrade',
+          label: 'Vann', x: i, y: i, categories: ['vann'], areaM2: 1000,
+        }
+      })
+      const results = filterIndex(many, 'vann', 60)
+      expect(results.length).toBe(100)
+      expect(results[results.length - 1].name).toBe('Tjern 099')
+    })
+
+    it('free-text name search still respects the limit', () => {
+      const many = Array.from({ length: 100 }, (_, i) => {
+        const name = `Bekk ${String(i).padStart(3, '0')}`
+        return {
+          id: `b${i}`, name, folded: foldName(name), kind: 'omrade',
+          label: 'Vann', x: i, y: i, categories: null, areaM2: null,
+        }
+      })
+      // "bekk" er ikke et kategori-keyword → fritekst, limit gjelder.
+      const results = filterIndex(many, 'bekk', 60)
+      expect(results.length).toBe(60)
+    })
+
     describe('parkering-kategori (utfartsparkering)', () => {
       // folded settes via foldName så vi ikke hardkoder feil (å → a, ikke aa)
       const entry = (id, name, extra) => ({ id, name, folded: foldName(name), ...extra })

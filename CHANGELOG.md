@@ -1,6 +1,6 @@
 # Changelog
 
-## 2026-06-25 — v11.0.54: Dybde-lag med kilde-badge, tørrfall-sone, ett sjømerke
+## 2026-06-27 — v11.0.57: Dybde-lag med kilde-badge, tørrfall-sone, ett sjømerke
 
 Oppfølginger fra kart-ekspert-flåten. (1) **Dybde på hovedkartet (B1, kajakkpadlerens #1):** soundings + dybdekurver kan nå løftes fra long-press-inset til et hovedlag via en «Dybde (Sjøkart)»-toggle i Sjø & padling-seksjonen — **default av** (respekterer det tidligere «for voldsomt»-valget), og vises kun når kartet faktisk har ekte Sjøkart-dybde. En permanent **kilde-badge** i attribusjons-boksen sier nå om dybden er ekte **Sjøkart** eller bare et **DEM-avstand-fra-land-estimat** («ikke for navigasjon») — den fragile WFS-en faller stille tilbake til estimatet, så padleren må vite hva hun ser. Provenens føres gjennom `buildSvg`-meta (`depthSource`). (2) **Tørrfalls-/fjære-sone (B2):** det grunneste DEM-sjø-båndet (≤50 m fra land) får en diskret diagonal «tørrfall/usikkert»-hatch oppå det blå — det er der avstand-proxyen er mest feil og der landinger/snarveier avgjøres. (3) **Ett sjømerke (B4):** babord/styrbord/cardinal/generisk (540–543) er slått sammen til ett «sjømerke» (543); fyr (533) og skjær (211) holdes tydelige.
 
@@ -8,6 +8,21 @@ Allerede gjort fra før (eldre todo-liste var utdatert): bygninger (522) ligger 
 
 ---
 
+## 2026-06-27 — v11.0.56: Høyere maks-visning på kart-skuffene
+
+Maks-visningen («dra håndtaket helt opp») på både hovedmenyen og long-press-info-arket er nå nær full skjermhøyde. I stedet for en fast brøkdel (85dvh) er høyden `100dvh − 56px`, der de 56 pikslene tilsvarer header-knappens høyde (32px) pluss lik marg over og under. Det står dermed igjen en tynn kart-stripe i toppen så man ser at det ligger et kart under skuffen. `useDraggableDrawer` fikk en ny `maxTopGapPx`-opsjon som overstyrer den brøk-baserte `maxHeight`; uten den er oppførselen uendret (ViewerView urørt).
+
+---
+
+## 2026-06-27 — v11.0.55: Maksimerbar drawer + tekststørrelse i kart
+
+To UX-forbedringer i kartvisningen. (1) Både hovedmenyen (hamburger) og info-arket ved long-press kan nå dras opp i topp-håndtaket fra standard ~45dvh til ~85dvh — info-arket fikk et nytt dra-håndtak (var fast høyde uten håndtak før). Når hovedmenyen maksimeres skjules FAB-knappene så drawer legger seg oppå dem. Komposablen `useDraggableDrawer` har fått et valgfritt tredje snap-punkt (`maxHeight`) og snapper nå til nærmeste punkt; uten `maxHeight` er oppførselen uendret (ViewerView-bruken er urørt). (2) Ny tekststørrelse-kontroll («Aa», 100/125/150 %) i begge headerne skalerer infoteksten inne i appen via CSS `zoom` og huskes i `localStorage`. Dette erstatter behovet for browser-pinch-zoom, som ikke kan nullstilles fra kode i en standalone-PWA (`visualViewport.scale` er read-only) og som tidligere etterlot appen zoomet og panorert med tapt oversikt.
+
+---
+
+## 2026-06-25 — v11.0.54: Vann-søk — kategori-lista kappet ikke lenger ved bokstaven H
+
+Søk på «vann» (og synonymene «innsjø»/«tjern») skal vise alle ferskvann i kartutsnittet, men resultatlista stoppet halvveis i alfabetet — typisk rundt bokstaven H. Årsaken: `filterIndex` kappet alltid til 60 treff, og siden treffene sorteres alfabetisk forsvant alt etter det 60. navnet. I et tett norsk skogskart finnes lett over 60 navngitte tjern, så f.eks. «Landfalltjern» (L) dukket aldri opp selv om det lå i utsnittet. Fiks: kategori-søk («vann»/«innsjø»/«tjern»/«parkering») kappes ikke lenger — de er en oversikt og resultatlista ligger uansett i en scroll-container. Fritekst-navnesøk beholder grensen på 60 (man vil ha topp-N, ikke alt). Endring i `composables/useMapSearch.js` + nye regresjonstester.
 ## 2026-06-25 — v11.0.53: Relieff-hjørnetrekanter — ramme-ring som skarpt rektangel
 
 Hjørne-trekantene overlevde v11.0.52. Kant-snappingen der traff feil mekanisme: Chaikin-glattingen avfaser en hele-raster-ramme på ~25 % av kantlengden (når Douglas-Peucker har redusert den rette kanten til få punkter), og de avfasede punktene ligger PÅ kanten men langt fra hjørnet — snapping kunne ikke trekke dem tilbake til et skarpt hjørne. To nær-identiske rammer (region≥0 vs region≥t1) glattes dessuten litt ulikt i ekte data, så de kanselleres ikke i even-odd → fire mørke trekanter pr flis-hjørne. Fiks: `ringsToPath` detekterer nå en ramme-ring (bbox spenner hele rasteret) og emitterer den som ETT eksakt, skarpt rektangel — da blir region≥0 og region≥t1 byte-identiske rammer som kanselleres presist, uavhengig av kant-støy. Verifisert med punkt-i-polygon-test på både flatt terreng og adversarisk støy-på-terskel-terreng (hjørnene tomme i begge). Indre kontur-former glattes som før. Gjelder aktiv flis + nabofliser. Endring i `lib/reliefBands.js` (+ oppdatert regresjonstest).

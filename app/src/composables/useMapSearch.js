@@ -400,6 +400,13 @@ export function filterIndex(index, query, limit = 60) {
   const q = foldName(query)
   if (!q) return []
   const categoryTag = CATEGORY_ALIASES[q] ?? null
+  // Kategori-søk ("vann"/"innsjø"/"tjern"/"parkering") er en OVERSIKT — UI-en
+  // lover «alle ferskvann i utsnittet». Et tett norsk skogskart har lett >60
+  // navngitte tjern; siden treffene sorteres alfabetisk kappet limit=60 lista
+  // rundt bokstaven H, så f.eks. «Landfalltjern» (L) aldri dukket opp.
+  // Resultatlista ligger i en scroll-container, så vi kapper IKKE kategori-
+  // søk. Fritekst-navnesøk beholder limit (man vil ha topp-N, ikke alt).
+  const effLimit = categoryTag != null ? Infinity : limit
   const out = []
   const seenIds = new Set()
   for (const r of index) {
@@ -429,7 +436,7 @@ export function filterIndex(index, query, limit = 60) {
     }
     return a.name.localeCompare(b.name, 'no')
   })
-  return out.slice(0, limit)
+  return out.slice(0, effLimit)
 }
 
 /**
