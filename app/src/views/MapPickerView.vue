@@ -152,7 +152,7 @@ function parseShareQuery() {
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   // Delte/utfordrings-kart ble bygd før Format-velgeren med skjerm-format —
   // behold portrett så mottaker ser nøyaktig samme utsnitt («se det jeg ser»).
@@ -181,7 +181,7 @@ function parseShareInvite() {
   const eq = parseInt(q.eq, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 20) halfKm.value = km / 2
+  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = km / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   format.value = 'portrait'
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
@@ -208,8 +208,8 @@ const EQUIDISTANCE_OPTIONS = [
 
 // v10.1.x: minste tillatte ekvidistanse skaleres med bbox-bredde. Tett
 // kontur-rendering er meningsløst på store kart (overlappende streker,
-// rotete kart uten lesbarhet). Maks kartstørrelse er nå 20×20 km, men terskel-
-// tabellen topper på 20 m: store kart (≥ 6 km, inkl. de nye 7–20 km) beholder
+// rotete kart uten lesbarhet). Maks kartstørrelse er nå 12×12 km, men terskel-
+// tabellen topper på 20 m: store kart (≥ 6 km, inkl. de nye 7–12 km) beholder
 // 20/25/50 m som aktive valg, slik at 25 og 50 m alltid er tilgjengelig:
 //   bredde <  4 km  → alle valg (5/10/20/25/50)
 //   4 ≤ bredde < 6  → min 10 m (5 m utelukket)
@@ -396,7 +396,7 @@ function onPreviewTouchMove(e) {
     const d = touchDist(e)
     const ratio = d / lastDist
     const next = halfKm.value / ratio
-    halfKm.value = Math.max(0.5, Math.min(10, next))
+    halfKm.value = Math.max(0.5, Math.min(6, next))
     lastDist = d
   } else if (panning && e.touches.length === 1 && panStart) {
     e.preventDefault()
@@ -446,7 +446,7 @@ function onPreviewWheel(e) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
-  halfKm.value = Math.max(0.5, Math.min(10, next))
+  halfKm.value = Math.max(0.5, Math.min(6, next))
 }
 
 onMounted(() => {
@@ -687,11 +687,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="10" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="6" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>10 km</span><span>20 km</span>
+          <span>1 km</span><span>6 km</span><span>12 km</span>
         </div>
       </div>
 
@@ -851,6 +851,11 @@ onMounted(() => {
       </div>
       <div class="mt-3 text-[10px] text-white/40 text-center">
         Henter data fra OpenStreetMap (ODbL) via Overpass API.
+        <span class="text-white/25">·</span>
+        <button @click="router.push({ name: 'kart-vis', params: { id: 'vardasen' } })"
+                class="underline decoration-dotted underline-offset-2 hover:text-white/70 transition">
+          Åpne innebygd kart
+        </button>
       </div>
     </div>
   </div>

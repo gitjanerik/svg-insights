@@ -14,9 +14,9 @@ describe('defaultMapDims — Standard-kartet er et fast 10 km kvadrat', () => {
 })
 
 describe('slider-grenser', () => {
-  it('1–20 km', () => {
+  it('1–12 km', () => {
     expect(MAP_SIZE_MIN_KM).toBe(1)
-    expect(MAP_SIZE_MAX_KM).toBe(20)
+    expect(MAP_SIZE_MAX_KM).toBe(12)
   })
 })
 

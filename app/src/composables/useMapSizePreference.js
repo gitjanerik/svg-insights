@@ -13,14 +13,15 @@ import { ref, watch } from 'vue'
 // v11.0.61: størrelsen er nå en fri SLIDER 1–20 km (default 10). Auto-
 // ekvidistansen følger «Flere valg»-gulvet (minste TILLATTE = fineste):
 // < 4 km → 5 m, 4–6 km → 10 m, ≥ 6 km → 20 m (samme tabell som
-// MapPickerView.minEquidistance). En lagret verdi utenfor [1, 20] klampes/
+// MapPickerView.minEquidistance). En lagret verdi utenfor [1, maks] klampes/
 // ignoreres i load() → faller til DEFAULT.
+// v11.0.70: maks redusert fra 20 til 12 km (samme grense som «Flere valg»).
 //
 // Modul-nivå ref ⇒ delt singleton mellom MapHomeView (leser) og MapView (skriver).
 const KEY = 'svg-insights-map-size-km'
 
 export const MAP_SIZE_MIN_KM = 1
-export const MAP_SIZE_MAX_KM = 20
+export const MAP_SIZE_MAX_KM = 12
 // «Standard»-bredden (km) for nye kart når brukeren ikke har valgt noe.
 // Fast kvadrat — IKKE skjerm-skalert (se v11.0.59-merknaden over).
 export const DEFAULT_MAP_WIDTH_KM = 10
