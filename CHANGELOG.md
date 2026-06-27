@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.64: Levende hovedkart bak info-arket (standard/minimert)
+
+Long-press-info-arket dimmet og sperret hele kartet bak seg uansett tilstand. Nå dimmer/sperrer kun den **maksimerte** tilstanden (der kartet uansett er nesten helt skjult — modal med tapp-utenfor-for-å-lukke). I **standard** (halvt) og **minimert** tilstand står hovedkartet synlig og fullt interaktivt bak arket (`pointer-events-none` på bakgrunns-laget, arket selv beholder sine egne trykk). Da kan man panorere/zoome hovedkartet for kontekst mens detalj-insettet i arket holder sitt eget zoom-nivå — to uavhengige zoom-nivåer samtidig. Punkt-markøren (pulsende pin) blir stående på det valgte punktet når man zoomer hovedkartet.
+
+---
+
 ## 2026-06-27 — v11.0.63: Kortere hjelpetekst i kartsøket
 
 Den tomme søke-skjermens hjelpetekst er strammet inn: «Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann …» er nå bare «Skriv «vann» for å se alle innsjøer i utsnittet», og «topp»-linjen dropper detalj-parentesen om høyde/navn. Kun visningsteksten er kortet ned — søkebegrepene «innsjø» og «tjern» fungerer fortsatt som synonymer for «vann».

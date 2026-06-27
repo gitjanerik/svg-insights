@@ -7177,11 +7177,16 @@ onUnmounted(() => {
            kart-SVG-en på HVER animasjons-frame → mobil-kompositoren låser seg
            (frys på store/innebygde kart, men ikke på små 1×1). Vanlig
            halv-opak dimming er billig og fryser ikke. -->
+      <!-- Bare maksimert tilstand dimmer + sperrer kartet (modal: tapp utenfor
+           = lukk). Standard/minimert lar kartet stå synlig og interaktivt bak
+           arket (pointer-events-none) så man kan panorere/zoome hovedkartet for
+           kontekst, uavhengig av mini-kartets eget zoom-nivå i arket. -->
       <div v-if="contextMenuOpen && contextMenuInfo"
-           class="absolute inset-0 z-40 bg-black/60 flex items-end justify-center"
+           class="absolute inset-0 z-40 flex items-end justify-center transition-colors duration-200"
+           :class="contextDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
            @click.self="closeContextMenu">
         <div ref="contextSheetRef"
-             class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col"
+             class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col pointer-events-auto"
              :style="contextDrawer.drawerHeightStyle.value">
           <!-- Dra-håndtak: dra opp for å maksimere (~85dvh), ned for standard. -->
           <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-2 pb-1 flex justify-center"
