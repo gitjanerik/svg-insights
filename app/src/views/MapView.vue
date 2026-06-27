@@ -14,6 +14,7 @@ import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from '../composables/useMapSizePreference.js'
 import { useLodTuning } from '../composables/useLodTuning.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
+import { norwegianName } from '../lib/placeName.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog, buildPointSymbolDef, buildIsomDefs, buildIsomCss } from '../lib/symbolizer.js'
@@ -824,6 +825,39 @@ function applyLayerVisibility() {
   applyDepthLayer()
 }
 
+// Navne-labels som kan være flerspråklige (norsk - samisk - finsk). Tall-labels
+// (kontur-tall, dybde-tall osv.) er ikke med.
+const NAME_LABEL_KINDS = new Set([
+  'stedsnavn', 'omrade-navn', 'vann-navn', 'peak', 'hytte-navn', 'naturreservat-navn',
+])
+
+// Vis kun det norske leddet (default) eller hele det flerspråklige navnet.
+// Det fulle navnet lagres i data-name-full ved første kjøring slik at vi kan
+// veksle frem og tilbake uten å miste de øvrige språkene — og slik at
+// søkeindeksen (useMapSearch) finner alle språk uansett hva som vises.
+function applyNameLanguage() {
+  const root = svgHostRef.value?.querySelector('svg')
+  if (!root) return
+  for (const t of root.querySelectorAll('text[data-label]')) {
+    if (!NAME_LABEL_KINDS.has(t.getAttribute('data-label'))) continue
+    let full = t.getAttribute('data-name-full')
+    if (full == null) {
+      full = (t.textContent || '').trim()
+      if (!full) continue
+      t.setAttribute('data-name-full', full)
+    }
+    const next = showFullNames.value ? full : norwegianName(full)
+    if (t.textContent !== next) t.textContent = next
+  }
+}
+
+watch(showFullNames, () => {
+  try { localStorage.setItem(SHOW_FULL_NAMES_LS_KEY, showFullNames.value ? '1' : '0') } catch { /* noop */ }
+  applyNameLanguage()
+  // Navnene endret bredde → la navn-LOD revurdere hvilke som får plass.
+  scheduleNameLOD()
+})
+
 // Pinch/pan/rotate fryses kun i CurveBall-modus (kartet skal stå i ro under
 // spill) og mens aller første last pågår (ingen kart-DOM ennå). Mens et ferskt
 // kart fyller inn stier og detaljer (terreng-først) ELLER mens et nytt kart
@@ -1127,6 +1161,15 @@ const RELIEF_MODE_LS_KEY = 'svg-insights-relief-mode'
 const RELIEF_BANDS = 5
 const reliefMode = ref((() => {
   try { return localStorage.getItem(RELIEF_MODE_LS_KEY) === 'mjuk' ? 'mjuk' : 'vektor' } catch { return 'vektor' }
+})())
+
+// Flerspråklige navn (norsk - samisk - finsk) i Nord-Norge. Default AV = vis
+// kun det norske leddet for et renere kart; PÅ = vis hele det flerspråklige
+// navnet slik OSM lagrer det. Søk treffer alltid alle språk (useMapSearch
+// leser data-name-full uavhengig av hva som vises).
+const SHOW_FULL_NAMES_LS_KEY = 'svg-insights-show-full-names'
+const showFullNames = ref((() => {
+  try { return localStorage.getItem(SHOW_FULL_NAMES_LS_KEY) === '1' } catch { return false }
 })())
 
 // Tekststørrelse-slider (desktop) — søsken til rotasjons-sliden. Verdien er
@@ -4643,6 +4686,10 @@ async function loadMap({ silent = false } = {}) {
     // Hill-shading (med innbakt knaus-relieff) er default ON — fire-and-forget.
     // Lazy DEM-load skjer internt hvis nødvendig (Vardåsen).
     applyHillshade()
+    // Flerspråklige navn → vis kun norsk (eller fullt, etter innstilling).
+    // Må kjøre FØR søkeindeksen bygges: applyNameLanguage stempler det fulle
+    // navnet i data-name-full, som useMapSearch indekserer (alle språk søkbare).
+    applyNameLanguage()
     // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
     // i host-en (getBBox()+getCTM() krever attached element).
     mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
@@ -6977,6 +7024,28 @@ onUnmounted(() => {
                              active:scale-[0.98] disabled:opacity-50
                              bg-sky-500/15 border-sky-400/40 text-sky-100">
                 Bygg om dette området i valgt størrelse
+              </button>
+            </div>
+            <!-- Flerspråklige navn (norsk - samisk - finsk) i Nord-Norge.
+                 Default AV = vis kun det norske navnet for et renere kart.
+                 PÅ = vis hele det flerspråklige navnet. Søk finner alle språk
+                 uansett. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3 flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] text-white font-medium">Vis fulle navn</div>
+                <div class="text-[11px] text-white/55 leading-snug">
+                  I Nord-Norge har mange steder navn på norsk, samisk og kvensk.
+                  Av: vis kun det norske navnet (renere kart). På: vis hele det
+                  flerspråklige navnet. Søk finner alle språk uansett.
+                </div>
+              </div>
+              <button @click="showFullNames = !showFullNames"
+                      :aria-pressed="showFullNames"
+                      :aria-label="showFullNames ? 'Vis kun norske navn' : 'Vis fulle navn'"
+                      class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+                      :class="showFullNames ? 'bg-emerald-500' : 'bg-white/15'">
+                <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                      :class="showFullNames ? 'left-5' : 'left-0.5'" />
               </button>
             </div>
             <!-- Innstillinger: hold skjerm våken. Default PÅ — nyttig når
