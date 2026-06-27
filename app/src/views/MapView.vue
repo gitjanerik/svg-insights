@@ -2982,10 +2982,17 @@ function renderContextPin() {
   // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
   // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
   // en i info-arket), så hovedkart og infodrawer viser samme markør.
-  const arm = pxToUserUnits(11)         // krysslengde fra senter
-  const ringR = pxToUserUnits(6)        // senterring-radius
-  const sw = pxToUserUnits(2.1)         // rød strek
-  const halo = pxToUserUnits(3.6)       // hvit halo under for synlighet
+  // Størrelse fra viewBox + zoom — IKKE pxToUserUnits. pxToUserUnits måler
+  // wrapperen live (getBoundingClientRect), og idet info-arket åpnes (long-
+  // press → bottom-sheet) kan den måles mid-layout med nær-null høyde, så
+  // markøren ballong-blåste til en diger flekk. En brøk av synlig viewBox-
+  // utstrekning delt på zoom er deterministisk og skjerm-konstant.
+  const vb = svg.viewBox.baseVal
+  const span = Math.min(vb.width, vb.height) / (scale.value || 1)
+  const arm = span * 0.028          // krysslengde fra senter
+  const ringR = span * 0.016        // senterring-radius
+  const sw = span * 0.006           // rød strek
+  const halo = span * 0.010         // hvit halo under for synlighet
   const RED = '#e11d48'
   const mkLine = (d, stroke, width) => {
     const ln = document.createElementNS(ns, 'path')

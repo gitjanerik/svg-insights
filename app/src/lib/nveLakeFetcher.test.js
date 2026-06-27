@@ -185,7 +185,7 @@ describe('nveIdentifyToWater — identify-respons → vann-elementer', () => {
     expect(nveIdentifyToWater(json)).toHaveLength(1)
   })
 
-  it('dedup-er på bbox-signatur når vatnLnr mangler (navnløst tjern)', () => {
+  it('dedup-er på form-signatur når vatnLnr mangler (navnløst tjern)', () => {
     const ring = [[10, 60], [10, 60.001], [10.002, 60.001], [10.002, 60], [10, 60]]
     // Litt ulik generalisering pr lag (ekstra punkt), men samme omriss → dedup.
     const ringGeneralized = [[10, 60], [10, 60.0005], [10, 60.001], [10.002, 60.001], [10.002, 60], [10, 60]]
@@ -193,6 +193,23 @@ describe('nveIdentifyToWater — identify-respons → vann-elementer', () => {
       results: [
         { layerName: 'Innsjø', geometry: { rings: [ring] }, attributes: { hoyde: 216 } },
         { layerName: 'Innsjø (generalisert)', geometry: { rings: [ringGeneralized] }, attributes: {} },
+      ],
+    }
+    expect(nveIdentifyToWater(json)).toHaveLength(1)
+  })
+
+  it('dedup-er samme innsjø selv når et lag flytter et ekstrempunkt litt (form stabil)', () => {
+    // Regresjonen Ulvenvann-tilfellet avdekket: per-lag-generalisering flytter
+    // ÉT ekstrempunkt nok til at en bbox-hjørne-signatur (kvantisert ~11 m)
+    // ga to ulike nøkler → dedup bommet → evenodd-merge kansellerte fyllet.
+    // Areal-vektet sentroid + areal er nær uendret av ett flyttet punkt → dedup.
+    const ring = [[10, 60], [10, 60.01], [10.02, 60.01], [10.02, 60], [10, 60]]
+    // Samme innsjø, men ett hjørne dratt ~20 m utover i det andre laget.
+    const ringShifted = [[10, 60], [10, 60.0102], [10.0202, 60.0101], [10.02, 60], [10, 60]]
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [ring] }, attributes: { hoyde: 188 } },
+        { layerName: 'Innsjø dyp', geometry: { rings: [ringShifted] }, attributes: {} },
       ],
     }
     expect(nveIdentifyToWater(json)).toHaveLength(1)
