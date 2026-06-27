@@ -5699,10 +5699,9 @@ onUnmounted(() => {
           <div v-else-if="!searchQuery"
                class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
             Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
-            Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann i utsnittet.
+            Skriv «vann» for å se alle innsjøer i utsnittet.
             Skriv «parkering» for å liste utfartsparkeringene.
-            Skriv «topp» for kartets fem høyeste punkter — med høyde (moh) og navn
-            (toppens eget, ellers nærmeste sted innenfor 50 m).
+            Skriv «topp» for kartets fem høyeste punkter.
           </div>
           <button v-for="r in searchResults" :key="r.id"
                   @click="selectSearchResult(r)"
