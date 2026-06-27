@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.75: Fiks: long-press-markøren blåste opp etter zoom-animasjonen på slipp
+
+v11.0.74 (getScreenCTM) gjorde markøren riktig WHILE fingeren holdt, men den blåste opp idet man slapp. Årsak: long-press utløser en innzoom-animasjon på slipp, og transformen har en 200ms CSS-transition (`mapTransformStyle` når `animating`). `scale`-watchen kjørte `renderContextPin` ved animasjons-START, da `getScreenCTM()` fortsatt leste den gamle (utzoomede) skalaen → markøren ble dimensjonert for liten skala (store user-units) og rendret ved den nye, innzoomede skalaen → diger. Ingen re-render etter at animasjonen satte seg. Fiks: markøren skjules mens `animating` er true og re-rendres i riktig størrelse straks animasjonen settler (`animating` → false), målt mot den FERDIGE transformen. Ren runtime-fiks; appen må laste ny kode (Oppdater-banner / hard refresh).
+
+---
+
 ## 2026-06-27 — v11.0.74: Fiks (på ekte): kjempestor long-press-markør — dimensjoner fra rendrings-matrisen
 
 Tredje (og forhåpentlig siste) forsøk på den gigantiske røde long-press-markøren. De to forrige (v11.0.70 `pxToUserUnits`, v11.0.71 viewBox/scale) dimensjonerte markøren ut fra en verdi som IKKE nødvendigvis var den som faktisk ble rendret: `pxToUserUnits` måler kart-wrapperen live og kan treffe en mid-layout-måling idet info-arket åpnes, og viewBox/`scale.value`-varianten antok at zoom-ref-en var i takt med den faktiske CSS-pinch-transformen. Når antakelsen sviktet, ble user-unit-størrelsen ganget opp av en mye større faktisk transform → markøren ballong-blåste til en diger flekk. `renderContextPin` henter nå skala rett fra `svg.getScreenCTM()` — nøyaktig samme matrise long-press bruker for å mappe trykk → kart-koordinat — som per definisjon ER rendrings-transformen (inkl. CSS-pinch). Markøren blir da ønsket px-størrelse uansett zoom- eller animasjons-tilstand. Ren runtime-fiks; ingen rebuild nødvendig, men appen må laste den nye koden (trykk «Oppdater» på ny-versjon-banneret / hard refresh).

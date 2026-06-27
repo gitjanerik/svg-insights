@@ -3029,7 +3029,26 @@ function renderContextPin() {
   ring.setAttribute('stroke-width', String(sw))
   layer.appendChild(ring)
 }
-watch([contextMenuOpen, contextMenuPoint, scale], renderContextPin)
+// Re-render også når en zoom-/pan-animasjon settler seg. Mens `animating` er
+// true har transformen en 200ms CSS-transition (mapTransformStyle), så den
+// FAKTISKE transformen (og getScreenCTM) lagger bak scale-ref-en. Skalerte vi
+// markøren midt i animasjonen, ble den dimensjonert for start-skalaen og rendret
+// ved slutt-skalaen → den ballong-blåste når long-press-en utløste en innzoom på
+// slipp. Derfor: hopp over render mens animasjonen pågår, og render på nytt når
+// den er ferdig (`animating` i deps fanger true→false).
+watch([contextMenuOpen, contextMenuPoint, scale, animating], () => {
+  if (animating.value) {
+    // Skjul markøren mens transformen animerer — den eksisterende (korrekt
+    // dimensjonerte) markøren ville ellers skalert med 200ms-zoomen og blåst
+    // opp transient. Den re-rendres i riktig størrelse straks animasjonen
+    // settler (animating → false trigger-er dette watchen på nytt).
+    const svg = svgHostRef.value?.querySelector('svg')
+    const layer = svg?.querySelector('#contextmenu-pin-layer')
+    if (layer) layer.replaceChildren()
+    return
+  }
+  renderContextPin()
+})
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // ── Long-press detalj-inset ──────────────────────────────────────────────
