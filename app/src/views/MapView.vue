@@ -417,7 +417,10 @@ const _turExclude = new Set([
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
 const LAYER_PRESETS = [
   { key: 'tur', label: 'Tur', keys: PRESET_TUR },
-  { key: 'padling', label: 'Padling', keys: [...new Set([...PRESET_TUR, 'kai', 'sjo-poi', 'sjo-navn'])] },
+  // Padling tar med 'dybde' så dybde-tall/-kurver (Sjøkart) vises på HOVEDkartet,
+  // ikke bare i long-press-inset-en — padleren vil se dyp uten ekstra trykk.
+  // No-op på kart uten ekte Sjøkart-dybde (ingen detalj-lag å vise).
+  { key: 'padling', label: 'Padling', keys: [...new Set([...PRESET_TUR, 'kai', 'sjo-poi', 'sjo-navn', 'dybde'])] },
   { key: 'detaljert', label: 'Detaljert', keys: ALL_LAYER_KEYS.slice() },
   { key: 'print', label: 'Print', keys: PRESET_TUR.filter((k) => k !== 'spor') },
 ]
@@ -1047,14 +1050,14 @@ const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STRO
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
 
 // Standard kartstørrelse for NYE kart (forsidens søk/GPS-flyt). Velges i
-// «Innstillinger»-fanen. null = skjerm-utledet kvadrat (~4 km), tall = fast
+// «Innstillinger»-fanen. null = fast 10 km kvadrat, tall = fast
 // kvadrat-bredde i km. Endrer ikke kartet som vises nå — kun neste nye kart.
 const { mapSizeKm, MAP_SIZE_OPTIONS } = useMapSizePreference()
 
 // «Bygg om dette området i valgt størrelse» (Innstillinger-fanen): rebygger
 // samme senter på nytt i den valgte kartstørrelsen, så man kan teste LOD-en på
 // samme sted ved ulik bredde uten å gå tilbake til forsiden. Lager et NYTT kart
-// (ny id) og navigerer dit. «Standard» = fast 4 km kvadrat (defaultMapDims).
+// (ny id) og navigerer dit. «Standard» = fast 10 km kvadrat (defaultMapDims).
 async function rebuildAtChosenSize() {
   const m = meta.value
   if (!m?.bbox || buildingOnTheFly.value) return
@@ -6086,8 +6089,12 @@ onUnmounted(() => {
       <div class="cb-skeleton absolute inset-0" :class="isDark ? 'cb-skeleton-dark' : 'cb-skeleton-light'">
         <div class="cb-skeleton-shimmer absolute inset-0"/>
       </div>
-      <div class="absolute inset-0 flex flex-col items-center justify-center text-white/70">
-        <div class="w-8 h-8 border-2 border-white/25 border-t-white/85 rounded-full animate-spin mb-3"/>
+      <!-- Tekst + spinner er tema-bevisste: hvitt på kremgult lyst skjelett ble
+           nesten usynlig. Mørk på lyst tema, lys på mørkt. -->
+      <div class="absolute inset-0 flex flex-col items-center justify-center"
+           :class="isDark ? 'text-white/70' : 'text-zinc-800/80'">
+        <div class="w-8 h-8 border-2 rounded-full animate-spin mb-3"
+             :class="isDark ? 'border-white/25 border-t-white/85' : 'border-zinc-900/20 border-t-zinc-900/80'"/>
         <div class="text-sm">Laster kart …</div>
       </div>
     </div>
@@ -6898,14 +6905,14 @@ onUnmounted(() => {
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
           <div v-show="activeTab === 'om'">
             <!-- Kartstørrelse for NYE kart (søk/GPS på forsiden). «Standard» =
-                 fast 4 km kvadrat (raskt å bygge). De faste valgene lager et større
-                 kvadrat — nyttig for å teste detalj-LOD på store, tette kart, men
-                 tregere. Påvirker ikke kartet som vises nå, kun neste nye kart. -->
+                 fast 10 km kvadrat. De faste valgene lager et MINDRE kvadrat
+                 (4/6/8 km) — raskere å bygge i tette kyst-/byområder. Påvirker
+                 ikke kartet som vises nå, kun neste nye kart. -->
             <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
               <div class="text-[13px] text-white font-medium mb-0.5">Kartstørrelse (nye kart)</div>
               <div class="text-[11px] text-white/55 leading-snug mb-2">
-                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» er et raskt 4 km kvadrat.
-                Ekvidistanse settes automatisk: store kart får grovere kurver
+                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» er et 10 km kvadrat;
+                de mindre valgene bygger raskere. Ekvidistanse settes automatisk
                 ({{ mapSizeKm ? equidistanceForWidthKm(mapSizeKm) : 20 }} m for valgt størrelse).
               </div>
               <div class="flex flex-wrap gap-1.5">
