@@ -2982,17 +2982,21 @@ function renderContextPin() {
   // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
   // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
   // en i info-arket), så hovedkart og infodrawer viser samme markør.
-  // Størrelse fra viewBox + zoom — IKKE pxToUserUnits. pxToUserUnits måler
-  // wrapperen live (getBoundingClientRect), og idet info-arket åpnes (long-
-  // press → bottom-sheet) kan den måles mid-layout med nær-null høyde, så
-  // markøren ballong-blåste til en diger flekk. En brøk av synlig viewBox-
-  // utstrekning delt på zoom er deterministisk og skjerm-konstant.
-  const vb = svg.viewBox.baseVal
-  const span = Math.min(vb.width, vb.height) / (scale.value || 1)
-  const arm = span * 0.028          // krysslengde fra senter
-  const ringR = span * 0.016        // senterring-radius
-  const sw = span * 0.006           // rød strek
-  const halo = span * 0.010         // hvit halo under for synlighet
+  // Skjerm-konstant størrelse via den FAKTISKE transform-matrisen
+  // (getScreenCTM — nøyaktig samme som long-press bruker for å mappe trykk →
+  // kart-koordinat, linje ~2260). ctm.a/b gir user-units → skjerm-px INKLUDERT
+  // CSS-pinch-transformen, så markøren kan ikke komme i utakt med en stale
+  // scale-ref eller en mid-layout wrapper-måling — begge tidligere forsøk
+  // (pxToUserUnits, viewBox/scale) ballong-blåste fordi de stolte på en verdi
+  // som ikke var den som FAKTISK ble rendret. Her bruker vi rendrings-matrisen
+  // selv → marker = ønsket px-størrelse uansett zoom/animasjons-tilstand.
+  const ctm = svg.getScreenCTM()
+  const pxPerUnit = ctm ? Math.hypot(ctm.a, ctm.b) : 0
+  const u = (px) => (pxPerUnit > 0 ? px / pxPerUnit : px)
+  const arm = u(11)                 // krysslengde fra senter
+  const ringR = u(6)                // senterring-radius
+  const sw = u(2.1)                 // rød strek
+  const halo = u(3.6)               // hvit halo under for synlighet
   const RED = '#e11d48'
   const mkLine = (d, stroke, width) => {
     const ln = document.createElementNS(ns, 'path')

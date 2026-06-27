@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.74: Fiks (på ekte): kjempestor long-press-markør — dimensjoner fra rendrings-matrisen
+
+Tredje (og forhåpentlig siste) forsøk på den gigantiske røde long-press-markøren. De to forrige (v11.0.70 `pxToUserUnits`, v11.0.71 viewBox/scale) dimensjonerte markøren ut fra en verdi som IKKE nødvendigvis var den som faktisk ble rendret: `pxToUserUnits` måler kart-wrapperen live og kan treffe en mid-layout-måling idet info-arket åpnes, og viewBox/`scale.value`-varianten antok at zoom-ref-en var i takt med den faktiske CSS-pinch-transformen. Når antakelsen sviktet, ble user-unit-størrelsen ganget opp av en mye større faktisk transform → markøren ballong-blåste til en diger flekk. `renderContextPin` henter nå skala rett fra `svg.getScreenCTM()` — nøyaktig samme matrise long-press bruker for å mappe trykk → kart-koordinat — som per definisjon ER rendrings-transformen (inkl. CSS-pinch). Markøren blir da ønsket px-størrelse uansett zoom- eller animasjons-tilstand. Ren runtime-fiks; ingen rebuild nødvendig, men appen må laste den nye koden (trykk «Oppdater» på ny-versjon-banneret / hard refresh).
+
+---
+
 ## 2026-06-27 — v11.0.73: Fiks: hele innsjøer forsvant der NVE-responsen var ufullstendig (Ulvenvatnet)
 
 Sammenligning med Kartverket-kart avslørte at Ulvenvatnet i Dikemark manglet HELT i vårt kart (rendret som land + vegetasjon, ikke engang et omriss), mens nabolakene (Padderudvannet, Nordvannet) viste fint. Rotårsak i `createMapFlow.filterOsmWaterElements`: så snart NVE returnerte ÉN innsjø ble ALT OSM-ferskvann undertrykt (NVE antatt autoritativt for innsjøer, for å hindre at mistaggede flom-innsjøer som Røssvatnet renner ut over land). Men NVEs ArcGIS-`identify`-respons har en record-cap og er ofte UFULLSTENDIG for bbox-er med mange vann — innsjøer NVE ikke rakk å returnere forsvant da helt, siden OSM-versjonen var undertrykt og NVE manglet den. Undertrykkingen er nå PER FLATE: en OSM-innsjø droppes kun når sentroiden faktisk ligger inne i en NVE-innsjø-ring (NVE autoritativ DER den har data), ellers beholdes OSM-innsjøen (fyller NVE-hullene). Mistaggede flom-innsjøer dekkes fortsatt av sin NVE-innsjø → undertrykt som før. Sammen med v11.0.72 (vann males som egne opake paths) er begge feilmodusene — NVE-tilgjengelig og NVE-utilgjengelig — nå dekket. Eksisterende lagrede kart må bygges på nytt.
