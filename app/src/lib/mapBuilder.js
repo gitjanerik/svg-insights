@@ -1456,6 +1456,19 @@ export function buildSvg(elements, bbox, options = {}) {
             standalonePaths.push(
               `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
             )
+          } else if (cat === 'vann') {
+            // Vann-flater males OPAKT som egne paths — ALDRI slått sammen i en
+            // delt `fill-rule="evenodd"`-bucket. Overlappende/nestede vann-
+            // polygoner fra samme kilde (en stor OSM-vann-way som omslutter et
+            // mindre tjern, eller et duplikat med samme bbox-senter → samme
+            // bucket-celle) kansellerte ellers hverandres fyll (evenodd:
+            // vikletall 2 = partall = ikke fylt), så innsjøen ble et beige hull
+            // i blått vann (Ulvenvann-tilfellet). Hver polygon beholder sin EGEN
+            // evenodd (outer + øy-hull), så holmer kuttes fortsatt korrekt, men
+            // separate paths overlapper opakt uten å kansellere.
+            standalonePaths.push(
+              `    <path d="${d}" fill-rule="evenodd"${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}"/>`
+            )
           } else {
             pushToGroup(d, src, isSmall, bbox)
           }
