@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.76: Fiks: long-press-markøren — re-render etter at sheet/zoom har satt seg (speiler GPS-prikken)
+
+Markøren ballong-blåste fortsatt etter slipp. Nøkkel-observasjon: den blå GPS-prikken (samme SVG, samme `pxToUserUnits`) har ALLTID riktig størrelse — fordi den re-rendres kontinuerlig (scale-watch + GPS-oppdateringer) og dermed treffer et SETTLED tidspunkt. Long-press-markøren ble derimot rendret ÉN gang, midt i bottom-sheet- (0.3s) og innzoom- (0.2s) transisjonene, da måle-grunnlaget (pxToUserUnits/getScreenCTM) ennå var transient — og ble aldri korrigert. Markøren bruker nå `pxToUserUnits` (identisk med GPS-prikken) og re-rendres på flere tidspunkt etter åpning (160/360/600 ms — etter at sheet+zoom har satt seg) PLUSS på hver scale-endring (samme trigger som GPS-prikken). Ren runtime-fiks; appen må laste ny kode. Sjekk versjonen under «Om» — skal vise 11.0.76.
+
+---
+
 ## 2026-06-27 — v11.0.75: Fiks: long-press-markøren blåste opp etter zoom-animasjonen på slipp
 
 v11.0.74 (getScreenCTM) gjorde markøren riktig WHILE fingeren holdt, men den blåste opp idet man slapp. Årsak: long-press utløser en innzoom-animasjon på slipp, og transformen har en 200ms CSS-transition (`mapTransformStyle` når `animating`). `scale`-watchen kjørte `renderContextPin` ved animasjons-START, da `getScreenCTM()` fortsatt leste den gamle (utzoomede) skalaen → markøren ble dimensjonert for liten skala (store user-units) og rendret ved den nye, innzoomede skalaen → diger. Ingen re-render etter at animasjonen satte seg. Fiks: markøren skjules mens `animating` er true og re-rendres i riktig størrelse straks animasjonen settler (`animating` → false), målt mot den FERDIGE transformen. Ren runtime-fiks; appen må laste ny kode (Oppdater-banner / hard refresh).
