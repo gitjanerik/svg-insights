@@ -170,4 +170,56 @@ describe('nveIdentifyToWater — identify-respons → vann-elementer', () => {
     expect(nveIdentifyToWater({ results: [] })).toEqual([])
     expect(nveIdentifyToWater(null)).toEqual([])
   })
+
+  it('dedup-er samme innsjø som returneres fra flere lag (samme vatnLnr)', () => {
+    // identify med layers:'all' gir samme innsjø fra både høyde- og dyp-laget.
+    // Uten dedup blir det to overlappende polygoner → fyllet kanselleres i
+    // buildSvgs evenodd-merge for navnløse vann (blått omriss, ingen flate).
+    const ring = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [ring] }, attributes: { vatnLnr: 42, hoyde: 162 } },
+        { layerName: 'Dybdedata', geometry: { rings: [ring] }, attributes: { vatnLnr: 42, maksdyp: 3 } },
+      ],
+    }
+    expect(nveIdentifyToWater(json)).toHaveLength(1)
+  })
+
+  it('dedup-er på bbox-signatur når vatnLnr mangler (navnløst tjern)', () => {
+    const ring = [[10, 60], [10, 60.001], [10.002, 60.001], [10.002, 60], [10, 60]]
+    // Litt ulik generalisering pr lag (ekstra punkt), men samme omriss → dedup.
+    const ringGeneralized = [[10, 60], [10, 60.0005], [10, 60.001], [10.002, 60.001], [10.002, 60], [10, 60]]
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [ring] }, attributes: { hoyde: 216 } },
+        { layerName: 'Innsjø (generalisert)', geometry: { rings: [ringGeneralized] }, attributes: {} },
+      ],
+    }
+    expect(nveIdentifyToWater(json)).toHaveLength(1)
+  })
+
+  it('beholder navnet når et duplikat-lag har det selv om det første ikke har', () => {
+    const ring = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [ring] }, attributes: { vatnLnr: 7 } },
+        { layerName: 'Innsjø navn', geometry: { rings: [ring] }, attributes: { vatnLnr: 7, navn: 'Suoidnejávri' } },
+      ],
+    }
+    const els = nveIdentifyToWater(json)
+    expect(els).toHaveLength(1)
+    expect(els[0].tags.name).toBe('Suoidnejávri')
+  })
+
+  it('beholder distinkte innsjøer (ulik geometri) som separate elementer', () => {
+    const a = [[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]]
+    const b = [[5, 5], [5, 6], [6, 6], [6, 5], [5, 5]]
+    const json = {
+      results: [
+        { layerName: 'Innsjø', geometry: { rings: [a] }, attributes: { hoyde: 161 } },
+        { layerName: 'Innsjø', geometry: { rings: [b] }, attributes: { hoyde: 262 } },
+      ],
+    }
+    expect(nveIdentifyToWater(json)).toHaveLength(2)
+  })
 })
