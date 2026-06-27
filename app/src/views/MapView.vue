@@ -11,7 +11,7 @@ import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
-import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims } from '../composables/useMapSizePreference.js'
+import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from '../composables/useMapSizePreference.js'
 import { useLodTuning } from '../composables/useLodTuning.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
@@ -615,10 +615,18 @@ watch([showControls, visibleTabs], () => {
 // Maks-visning lar en tynn kart-stripe stå igjen i toppen (100dvh − denne) så
 // bruker ser at det ligger et kart under: 32px header-knapp + 12px lik marg over/under.
 const MAX_DRAWER_TOP_GAP_PX = 56
-const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: 32, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX })
-// Eget bunn-ark for long-press kontekstmeny: standard ↔ maksimert, ingen minimer
-// (lukkes med X). Dra-håndtaket lar bruker øke til nær full høyde for lange infotekster.
-const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: false })
+// «Minimert» peek for hovedmeny-skuffen: høy nok til at håndtak + tittel +
+// hurtigvalg-raden (Tegnforklaring/GPS/Kompass) er synlig (v11.0.61) — før
+// viste 32 px bare håndtaket, som forsvant bak nav-baren. Fane-innholdet
+// renderes da under skjermkanten. Juster ved behov etter tekststørrelse.
+const MAIN_DRAWER_PEEK_PX = 138
+// Kontekst-skuffens minimerte peek: håndtak + koordinat-header synlig.
+const CONTEXT_DRAWER_PEEK_PX = 76
+const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: MAIN_DRAWER_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX })
+// Long-press kontekstmeny: nå SAMME UX som hovedmenyen — maksimer / standard /
+// minimer (v11.0.61). Minimert viser håndtak + koordinat-header; resten (inset
+// + info) skjules under skjermkanten. Lukkes fortsatt helt med X.
+const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: CONTEXT_DRAWER_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
 
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
@@ -1049,10 +1057,16 @@ function strokeSizeBase(widthM) {
 const strokeStepIndex = ref(loadKnobStep(STROKE_LS_KEY, STROKE_DEFAULT_IDX, STROKE_STEPS.length))
 const reliefStepIndex = ref(loadKnobStep(RELIEF_LS_KEY, RELIEF_DEFAULT_IDX, RELIEF_STEPS.length))
 
-// Standard kartstørrelse for NYE kart (forsidens søk/GPS-flyt). Velges i
-// «Innstillinger»-fanen. null = fast 10 km kvadrat, tall = fast
-// kvadrat-bredde i km. Endrer ikke kartet som vises nå — kun neste nye kart.
-const { mapSizeKm, MAP_SIZE_OPTIONS } = useMapSizePreference()
+// Standard kartstørrelse for NYE kart (forsidens søk/GPS-flyt). Velges med en
+// slider (1–20 km) i «Innstillinger»-fanen. null = DEFAULT_MAP_WIDTH_KM (10 km).
+// Endrer ikke kartet som vises nå — kun neste nye kart.
+const { mapSizeKm } = useMapSizePreference()
+// Slider-binding: viser 10 km når intet er valgt; lagrer null når brukeren
+// står på default (så en framtidig default-endring slår gjennom), ellers tallet.
+const mapSizeSlider = computed({
+  get: () => mapSizeKm.value ?? DEFAULT_MAP_WIDTH_KM,
+  set: (v) => { mapSizeKm.value = (v === DEFAULT_MAP_WIDTH_KM ? null : v) },
+})
 
 // «Bygg om dette området i valgt størrelse» (Innstillinger-fanen): rebygger
 // samme senter på nytt i den valgte kartstørrelsen, så man kan teste LOD-en på
@@ -1305,6 +1319,17 @@ const mapTransformStyle = computed(() => {
 
 const userPos = useUserPosition(() => meta.value)
 const compass = useCompass()
+
+// Kompass-rosen (oppe til høyre): tap setter kart-NORD som «opp» (rotateTo 0).
+// Supplerer «Sentrer»-FAB-en nederst (som nullstiller zoom OG rotasjon) ved å
+// kun uvri rotasjonen — zoom/posisjon beholdes. Kompass-FØLGE (heading-modus)
+// roterer kartet etter enhetens retning, så det gir ingen mening å «låse nord»
+// mens den er på → vi slår den av først. Følge-toggelen finnes fortsatt som
+// «Kompass»-knappen i Innstillinger-skuffen.
+function pointNorth() {
+  if (compass.isActive) compass.stop()
+  rotateTo(0)
+}
 
 // Annoteringsmodus — point-symboler over auto-generert kart
 const mapId = computed(() => route.params.id ?? 'vardasen')
@@ -2957,8 +2982,8 @@ function buildDetailInset() {
   const ns = 'http://www.w3.org/2000/svg'
 
   const svg = document.createElementNS(ns, 'svg')
-  // viewBox settes av attachInsetPanZoom (start: 250×250 m sentrert = 25 %
-  // av det 500 m roambare vinduet).
+  // viewBox settes av attachInsetPanZoom (start: ~600 m synlig bredde i det
+  // 1 km roambare vinduet, 16:9-aspekt).
   svg.setAttribute('xmlns', ns)
   svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   svg.setAttribute('class', 'isom-map')
@@ -3010,12 +3035,12 @@ function buildDetailInset() {
   // Fadenkreuz på senterpunktet (samme posisjon som long-press-pin-en).
   const cross = document.createElementNS(ns, 'g')
   cross.setAttribute('pointer-events', 'none')
-  const r = 6  // meter
+  const r = 9  // meter (v11.0.61: +50 % for bedre synlighet i inset-en)
   const mk = (d) => {
     const ln = document.createElementNS(ns, 'path')
     ln.setAttribute('d', d)
     ln.setAttribute('stroke', '#e11d48')
-    ln.setAttribute('stroke-width', '1.4')
+    ln.setAttribute('stroke-width', '2.1')
     ln.setAttribute('fill', 'none')
     ln.setAttribute('stroke-linecap', 'round')
     return ln
@@ -3024,10 +3049,10 @@ function buildDetailInset() {
   cross.appendChild(mk(`M${p.svgX},${p.svgY - r} L${p.svgX},${p.svgY + r}`))
   const ring = document.createElementNS(ns, 'circle')
   ring.setAttribute('cx', p.svgX); ring.setAttribute('cy', p.svgY)
-  ring.setAttribute('r', 3.2)
+  ring.setAttribute('r', 4.8)
   ring.setAttribute('fill', 'none')
   ring.setAttribute('stroke', '#e11d48')
-  ring.setAttribute('stroke-width', '1.2')
+  ring.setAttribute('stroke-width', '1.8')
   cross.appendChild(ring)
   svg.appendChild(cross)
 
@@ -3042,7 +3067,7 @@ function buildDetailInset() {
 // 250×250 m (= 25 % av arealet). Vektor-skarp ved enhver zoom siden vi
 // manipulerer viewBox, ikke en CSS-transform.
 function attachInsetPanZoom(svg, cx, cy, mapW, mapH) {
-  const ASPECT = 3 / 2                   // matcher inset-boksen (aspect-[3/2])
+  const ASPECT = 16 / 9                  // matcher inset-boksen (aspect-[16/9])
   const WINDOW = DETAIL_INSET_M          // 1×1 km roambar utstrekning (m)
   const MIN_W = 40                       // maks zoom-inn (synlig bredde)
   // Alt D — kamera-clamp: den roambare regionen er snittet av 1 km-vinduet
@@ -3059,9 +3084,10 @@ function attachInsetPanZoom(svg, cx, cy, mapW, mapH) {
   // regionen i noen retning).
   const maxVw = () => Math.min(regionW, regionH * ASPECT)
 
-  // Start-visning: ~350 m synlig bredde (god for å lese dybdetall),
-  // capped til regionen ved kanten. Zoom ut til 1 km, inn til 40 m.
-  let vw = Math.min(maxVw(), 350)
+  // Start-visning: ~600 m synlig bredde (v11.0.61 — var 350). Lavere start-zoom
+  // gir rom til å zoome BÅDE inn (mot 40 m) OG ut (mot 1 km-vinduet); 350 m lå
+  // nesten på maks-zoom-ut for et midt-kart, så det føltes som «kun innover».
+  let vw = Math.min(maxVw(), 600)
   let vh = vw / ASPECT
   let vx = cx - vw / 2, vy = cy - vh / 2
 
@@ -5703,7 +5729,8 @@ onUnmounted(() => {
          class="absolute top-20 z-20 pointer-events-auto select-none flex flex-col items-end
                 transition-[right] duration-200"
          :style="floatRightStyle">
-      <button @click="compass.isActive ? compass.stop() : compass.start()"
+      <button @click="pointNorth"
+              aria-label="Sett nord opp (nullstill rotasjon)"
               class="w-14 h-14 rounded-full bg-zinc-950
                      flex items-center justify-center text-white shadow-lg active:scale-95 transition">
         <svg viewBox="-50 -50 100 100" class="w-12 h-12"
@@ -6340,8 +6367,10 @@ onUnmounted(() => {
         <!-- Tab-bar — understreket aktiv fane (samme stil som illustrasjons-
              sporet). Horisontal scroll når labels ikke får plass. Pil
              venstre/høyre (v9.3.6) er alltid synlig som hint om flere faner,
-             og disables i hver ende. -->
-        <div class="shrink-0 mx-4 mb-2 flex items-stretch border-b border-white/10">
+             og disables i hver ende. Skjult når skuffen er minimert (v11.0.61)
+             så minimert-peeken viser kun håndtak + tittel + hurtigvalg. -->
+        <div v-show="!drawer.isMinimized.value"
+             class="shrink-0 mx-4 mb-2 flex items-stretch border-b border-white/10">
           <!-- Pil venstre -->
           <button type="button" @click="scrollTabs(-1)"
                   :disabled="!canScrollTabsLeft"
@@ -6385,7 +6414,8 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="flex-1 overflow-y-auto px-4 pb-6" :style="{ zoom: uiTextScale }">
+        <div v-show="!drawer.isMinimized.value"
+             class="flex-1 overflow-y-auto px-4 pb-6" :style="{ zoom: uiTextScale }">
           <!-- ── Tab: Lag ─────────────────────────────────────────── -->
           <div v-show="activeTab === 'lag'">
             <!-- Forhåndsvalg: ett trykk til en sammenhengende lag-tilstand.
@@ -6904,33 +6934,37 @@ onUnmounted(() => {
 
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
           <div v-show="activeTab === 'om'">
-            <!-- Kartstørrelse for NYE kart (søk/GPS på forsiden). «Standard» =
-                 fast 10 km kvadrat. De faste valgene lager et MINDRE kvadrat
-                 (4/6/8 km) — raskere å bygge i tette kyst-/byområder. Påvirker
+            <!-- Kartstørrelse for NYE kart (søk/GPS på forsiden). Slider 1–20 km,
+                 default 10 km. Ekvidistansen settes automatisk til den fineste
+                 tillatte for bredden (samme regel som «Flere valg»). Påvirker
                  ikke kartet som vises nå, kun neste nye kart. -->
             <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
-              <div class="text-[13px] text-white font-medium mb-0.5">Kartstørrelse (nye kart)</div>
-              <div class="text-[11px] text-white/55 leading-snug mb-2">
-                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» er et 10 km kvadrat;
-                de mindre valgene bygger raskere. Ekvidistanse settes automatisk
-                ({{ mapSizeKm ? equidistanceForWidthKm(mapSizeKm) : 20 }} m for valgt størrelse).
+              <div class="flex items-baseline justify-between mb-0.5">
+                <div class="text-[13px] text-white font-medium">Kartstørrelse (nye kart)</div>
+                <div class="text-[13px] text-white font-semibold tabular-nums">{{ mapSizeSlider }} × {{ mapSizeSlider }} km</div>
               </div>
-              <div class="flex flex-wrap gap-1.5">
-                <button @click="mapSizeKm = null"
-                        class="px-2.5 py-1.5 rounded-lg text-[12px] font-medium border transition active:scale-95"
+              <div class="text-[11px] text-white/55 leading-snug mb-2">
+                Bredde på nye kvadratiske kart fra søk/GPS. Ekvidistanse settes
+                automatisk — fineste tillatte for bredden
+                ({{ equidistanceForWidthKm(mapSizeSlider) }} m for {{ mapSizeSlider }} km).
+                Større kart tar lengre tid å bygge.
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="range" :min="MAP_SIZE_MIN_KM" :max="MAP_SIZE_MAX_KM" step="1"
+                       v-model.number="mapSizeSlider"
+                       aria-label="Kartstørrelse i km (bredde på nye kart)"
+                       class="flex-1 accent-emerald-400 cursor-pointer" />
+                <button @click="mapSizeSlider = DEFAULT_MAP_WIDTH_KM"
+                        class="shrink-0 px-2 py-1 rounded-lg text-[11px] font-medium border transition active:scale-95"
                         :class="mapSizeKm == null
-                                ? 'bg-emerald-500 text-white border-emerald-400'
-                                : 'bg-white/5 text-white/75 border-white/10'">
+                                ? 'bg-emerald-500/20 text-white border-emerald-400/50'
+                                : 'bg-white/5 text-white/70 border-white/10'">
                   Standard
                 </button>
-                <button v-for="km in MAP_SIZE_OPTIONS" :key="km"
-                        @click="mapSizeKm = km"
-                        class="px-2.5 py-1.5 rounded-lg text-[12px] font-medium border transition active:scale-95 tabular-nums"
-                        :class="mapSizeKm === km
-                                ? 'bg-emerald-500 text-white border-emerald-400'
-                                : 'bg-white/5 text-white/75 border-white/10'">
-                  {{ km }} km
-                </button>
+              </div>
+              <div class="flex justify-between text-[10px] text-white/35 tabular-nums mt-1 px-0.5">
+                <span>{{ MAP_SIZE_MIN_KM }} km</span>
+                <span>{{ MAP_SIZE_MAX_KM }} km</span>
               </div>
               <!-- Bygg om gjeldende område i valgt størrelse — slipper å gå til
                    forsiden for å teste samme sted ved en annen bredde. -->
@@ -7185,8 +7219,11 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
-          <!-- Scrollbar kropp: detalj-inset (uten zoom) + tekst-info (zoom-bar). -->
-          <div class="flex-1 overflow-y-auto"
+          <!-- Scrollbar kropp: detalj-inset (uten zoom) + tekst-info (zoom-bar).
+               Skjult når skuffen er minimert (v11.0.61) → kun koordinat-header
+               peeker, lik hovedmenyen. -->
+          <div v-show="!contextDrawer.isMinimized.value"
+               class="flex-1 overflow-y-auto"
                :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
 
           <!-- Detalj-inset: roambart 500×500 m utsnitt (start 250 m) med alle
@@ -7200,7 +7237,7 @@ onUnmounted(() => {
               <span class="text-[10px] text-white/30">dra · knip for zoom</span>
             </div>
             <div ref="detailInsetRef"
-                 class="w-full aspect-[3/2] max-w-[480px] mx-auto rounded-lg overflow-hidden
+                 class="w-[90%] aspect-[16/9] max-w-[380px] mx-auto rounded-lg overflow-hidden
                         border border-white/10 bg-[#fefae0] touch-none"></div>
           </div>
 

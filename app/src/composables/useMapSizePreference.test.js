@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { defaultMapDims, equidistanceForWidthKm, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_OPTIONS } from './useMapSizePreference.js'
+import { defaultMapDims, equidistanceForWidthKm, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from './useMapSizePreference.js'
 
 describe('defaultMapDims — Standard-kartet er et fast 10 km kvadrat', () => {
   it('er 10 km bredt (ikke skjerm-skalert)', () => {
@@ -13,22 +13,29 @@ describe('defaultMapDims — Standard-kartet er et fast 10 km kvadrat', () => {
   })
 })
 
-describe('MAP_SIZE_OPTIONS — kun mindre-enn-Standard valg, ingen store kart', () => {
-  it('topper ut på ≤ 10 km (de gamle 12–20 km er fjernet)', () => {
-    expect(Math.max(...MAP_SIZE_OPTIONS)).toBeLessThanOrEqual(10)
-    expect(MAP_SIZE_OPTIONS).not.toContain(20)
+describe('slider-grenser', () => {
+  it('1–20 km', () => {
+    expect(MAP_SIZE_MIN_KM).toBe(1)
+    expect(MAP_SIZE_MAX_KM).toBe(20)
   })
 })
 
-describe('equidistanceForWidthKm', () => {
-  it('Standard (null) holder 20 m', () => {
+describe('equidistanceForWidthKm — fineste tillatte (samme gulv som «Flere valg»)', () => {
+  it('Standard (null → 10 km) → 20 m', () => {
     expect(equidistanceForWidthKm(null)).toBe(20)
+    expect(equidistanceForWidthKm(DEFAULT_MAP_WIDTH_KM)).toBe(20)
   })
-  it('de mindre valgene (4/6/8 km) holder 20 m', () => {
-    for (const km of MAP_SIZE_OPTIONS) expect(equidistanceForWidthKm(km)).toBe(20)
+  it('< 4 km → 5 m', () => {
+    expect(equidistanceForWidthKm(1)).toBe(5)
+    expect(equidistanceForWidthKm(3)).toBe(5)
   })
-  it('trapper fortsatt opp for større bredder (andre kilder)', () => {
-    expect(equidistanceForWidthKm(10)).toBe(25)
-    expect(equidistanceForWidthKm(14)).toBe(50)
+  it('4–6 km → 10 m', () => {
+    expect(equidistanceForWidthKm(4)).toBe(10)
+    expect(equidistanceForWidthKm(5)).toBe(10)
+  })
+  it('≥ 6 km → 20 m (også store kart)', () => {
+    expect(equidistanceForWidthKm(6)).toBe(20)
+    expect(equidistanceForWidthKm(14)).toBe(20)
+    expect(equidistanceForWidthKm(20)).toBe(20)
   })
 })
