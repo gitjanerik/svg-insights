@@ -17,7 +17,7 @@ import {
   getIsomDef,
   isomCatalog,
 } from './symbolizer.js'
-import { buildContours, detectCliffs, detectKnauser } from './dem.js'
+import { buildContours, detectCliffs, detectKnauser, detectSummits } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
 import { depthToFillVar } from './sjokartFetcher.js'
 import {
@@ -1099,6 +1099,7 @@ export function buildSvg(elements, bbox, options = {}) {
   let demFeatures = { contours: { features: [] }, cliffs: [], equidistanceM: null }
   let demSeaPolygons = []
   let demSeaBands = []
+  let demSummits = []
   if (usableDem) {
     const c = _time('contours', () => buildContours(usableDem, contourIntervalM, 5))
     const cl = includeCliffs ? _time('cliffs', () => detectCliffs(usableDem, 45, 10)) : []
@@ -1112,6 +1113,9 @@ export function buildSvg(elements, bbox, options = {}) {
     // knaus-detalj hører ikke hjemme.
     const k = (includeKnauser && contourIntervalM === 5) ? _time('knauser', () => detectKnauser(usableDem, 5, 2.5)) : []
     demFeatures = { contours: c, cliffs: cl, knauser: k, equidistanceM: contourIntervalM }
+    // Ekte topper (lokale høyde-maksima) for «topp»-søket. Brukes kun når kartet
+    // ikke har OSM-toppmarkører; emitteres som skjult søkbart lag uansett.
+    demSummits = _time('summits', () => detectSummits(usableDem, { windowM: 250, minProminenceM: 15, maxCount: 60 }))
     // Sjø-deteksjon fra DTM: Kartverket NHM_DTM_25832 returnerer havflaten på
     // 0 m. Områder ≤ 0.5 m blir blå sjø-polygon (ISOM 303). FALLBACK når
     // WMTS-vannmaske ikke leverte data — heuristikken kan "smitte" inn på
@@ -2462,6 +2466,16 @@ export function buildSvg(elements, bbox, options = {}) {
       `  </g>\n`
     : ''
 
+  // Skjult, søkbart lag med ekte topper (lokale høyde-maksima fra DEM). Brukes
+  // av «topp»-søket på kart uten OSM-toppmarkører — ikke rendret på kartet (det
+  // er kontur-bildet som viser terrenget), kun lest av søkeindeksen.
+  const summitLayerSvg = demSummits.length
+    ? `  <g data-label="dem-topp" style="display:none">\n${demSummits.map(s => {
+        const [px, py] = demProject([s.x, s.y])
+        return `    <text x="${fmt(px)}" y="${fmt(py)}">${Math.round(s.ele)}</text>`
+      }).join('\n')}\n  </g>\n`
+    : ''
+
   // Font-størrelsen på vann-labels skaleres med kartstørrelse i symbolizer
   // (labelScale = min(3, max(1, widthM/4000))). dy-stablingen mellom navn og
   // høyde-over-havet må følge SAMME skala — ellers vokser teksten på et 10 km-
@@ -2701,7 +2715,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
   // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
   // tekst) males etter vannet, som før.
-  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${summitLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])

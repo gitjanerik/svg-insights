@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.66: «Topp»-søk bruker EKTE topper fra DEM, ikke kontur-tall
+
+Kontur-fallbacken fra v11.0.65 rangerte bare de høyeste kontur-TALLENE (røde ekvidistanse-etiketter) — men et kontur-tall som «1950» ligger like gjerne midt i en li på vei opp mot noe høyere, ikke på en topp. På et høyfjellskart (Memurubu/Lom) ga «topp»-søket derfor en liste med 1950/1900/1850/1800… — rene hellings-tall, ingen faktiske topper, og den ekte toppen (uten kontur-etikett) manglet helt. Nå detekterer mapBuilder **ekte topper som lokale høyde-maksima direkte fra DEM-en** (`detectSummits` i `dem.js`): et punkt er en topp bare hvis ingen celle innen 250 m er høyere (med en prominens-vakt mot platå-/rygg-støy og en kant-margin så terreng som stiger forbi kartkanten ikke teller som topp). Toppene emitteres som et skjult, søkbart lag (`<g data-label="dem-topp">`) og «topp»-søket bruker dem som primær kilde når kartet mangler OSM-toppmarkører. Kontur-tall beholdes kun som nødløsning for eldre kart bygget før dette. **Eksisterende kart må bygges på nytt** for å få ekte topper.
+
+---
+
 ## 2026-06-27 — v11.0.65: «Topp»-søk → ti høyeste + kontur-fallback
 
 Tre forbedringer i «topp»-søket. (1) **Topp 10:** søket lister nå kartets ti høyeste punkter (var fem) — «Topp 10» er et innarbeidet begrep i lokale turarrangementer. (2) **Kontur-fallback:** har kartet ingen ekte topp-markører (de brune høyde-/navne-tallene fra OSM-peaks), finner søket de høyeste punktene via de røde kontur-tallene (høydekurve-etiketter) i stedet, så et navnløst innlandskart uten registrerte topper likevel får en topp-liste. (3) **Dedup av like høyder:** like kontur-tall innen 200 m (samme tall gjentas langs en høydekurve / rundt en kolle) kollapses til ett — det midterste (nærmest klynge-sentroiden) — så lista ikke fylles av samme høyde flere ganger. Hvert treff viser fortsatt høyde (moh) + navn (toppens eget, ellers nærmeste sted innenfor 50 m, ellers «Topp»/«Høyde»).

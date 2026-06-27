@@ -486,25 +486,40 @@ export function buildSearchIndex(svgEl) {
     })
   }
 
-  // 5) Høydepunkt-fallback fra kontur-tall (de røde høydekurve-tallene). Kun
-  //    brukt av «topp»-søket NÅR kartet ikke har noen ekte topp-markører (brun
-  //    skrift) — da finner vi de høyeste punktene via kontur-etikettene istedet.
-  //    Etikettene ligger som <g data-label="kontur-tall"><text>200</text>…>
-  //    (data-label på GRUPPEN, ikke på hvert <text>), så pass 1 plukker dem ikke.
-  //    Like tall innen 200 m (kontur-etiketter gjentas langs en kurve) kollapses
-  //    til ett — det midterste — så «topp»-lista ikke fylles av samme høyde.
-  const contourPts = []
-  for (const t of svgEl.querySelectorAll('[data-label="kontur-tall"] text')) {
-    const ele = parseFloat((t.textContent || '').trim())
-    if (!Number.isFinite(ele)) continue
-    const pos = elementPosition(svgEl, t)
-    if (!pos) continue
-    contourPts.push({ x: pos.x, y: pos.y, ele })
+  // 5) Høydepunkt-fallback for «topp»-søket NÅR kartet ikke har ekte
+  //    topp-markører (brun skrift / OSM-peaks).
+  //
+  //    PRIMÆRT: DEM-deriverte EKTE topper — skjult <g data-label="dem-topp">,
+  //    lokale høyde-maksima funnet i mapBuilder (detectSummits). Dette er
+  //    faktiske topper, ikke kontur-tall midt i en li «på vei opp» mot noe
+  //    høyere (kontur-etiketter er bare ekvidistanse-tall langs en kurve).
+  //
+  //    SEKUNDÆRT (eldre kart bygget før dem-topp fantes): de høyeste
+  //    kontur-tallene, dedup'et. Dårligere — kan vise hellings-tall som «topp»
+  //    — men bedre enn ingenting til kartet bygges på nytt.
+  //
+  //    Begge ligger som <g data-label="…"><text>540</text>…> (data-label på
+  //    GRUPPEN, ikke hvert <text>), så pass 1 plukker dem ikke.
+  const readHeightTexts = (sel) => {
+    const pts = []
+    for (const t of svgEl.querySelectorAll(sel)) {
+      const ele = parseFloat((t.textContent || '').trim())
+      if (!Number.isFinite(ele)) continue
+      const pos = elementPosition(svgEl, t)
+      if (!pos) continue
+      pts.push({ x: pos.x, y: pos.y, ele })
+    }
+    return pts
   }
-  for (const p of dedupeHeightPoints(contourPts)) {
+  const demTopPts = readHeightTexts('[data-label="dem-topp"] text')
+  // detectSummits har allerede romlig dedup; kontur-fallbacken må dedup'es.
+  const heightPts = demTopPts.length
+    ? demTopPts
+    : dedupeHeightPoints(readHeightTexts('[data-label="kontur-tall"] text'))
+  for (const p of heightPts) {
     const name = nearestNamedName(p.x, p.y) ?? 'Høyde'
-    // el = null: ingen egen tekst-node å tvinge synlig / LOD-toggle (kontur-
-    // tallet er allerede rendret på kartet); søk panner bare dit.
+    // el = null: ingen egen tekst-node å tvinge synlig / LOD-toggle (toppen
+    // er ikke rendret som markør på kartet); søk panner bare dit.
     pushRaw(out, name, 'hoydepunkt', { x: p.x, y: p.y }, null, { ele: p.ele })
   }
 

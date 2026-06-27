@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fillNoData, buildContours } from './dem.js'
+import { fillNoData, buildContours, detectSummits } from './dem.js'
 
 const NO_DATA = -9999
 
@@ -50,6 +50,55 @@ describe('fillNoData', () => {
       expect(Number.isFinite(v)).toBe(true)
       expect(v).not.toBe(NO_DATA)
     }
+  })
+})
+
+describe('detectSummits', () => {
+  // Bygg en DEM som er en jevn skråning fra V (lav) mot Ø (høy), med ÉN ekte
+  // kolle midt på skråningen. Skråningens høyeste celle (Ø-kant) er IKKE en
+  // topp (det stiger forbi vindus-kanten ikke, men den er global maks) — for å
+  // teste «på vei opp»-tilfellet legger vi kollen lavere enn Ø-kanten.
+  function rampWithBump(cols, rows, res, bump) {
+    const vals = new Array(cols * rows)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        vals[y * cols + x] = 1000 + x * 5   // jevn øst-stigning, 5 m pr celle
+      }
+    }
+    // legg en lokal kolle
+    const { cx, cy, r, h } = bump
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const d = Math.hypot(x - cx, y - cy)
+        if (d <= r) vals[y * cols + x] += h * (1 - d / r)
+      }
+    }
+    return makeDem(vals, cols, rows, { res })
+  }
+
+  it('finner en ekte kolle, ikke et hellings-tall «på vei opp»', () => {
+    const cols = 60, rows = 30, res = 10
+    // Kolle ved (15, 15), radius 6 celler, +80 m over rampa der.
+    const dem = rampWithBump(cols, rows, res, { cx: 15, cy: 15, r: 6, h: 80 })
+    const summits = detectSummits(dem, { windowM: 100, minProminenceM: 15, maxCount: 10 })
+    // Kollen skal være blant toppene; ingen topp skal ligge midt på den rene
+    // rampa (der en celle alltid har en høyere nabo mot øst).
+    expect(summits.length).toBeGreaterThan(0)
+    const top = summits.find(s => Math.abs(s.gx - 15) <= 3 && Math.abs(s.gy - 15) <= 3)
+    expect(top).toBeTruthy()
+    // Ingen «topp» midt på rampa (f.eks. gx=30,gy=25 langt fra kollen): en
+    // ren skråning har ingen lokale maksima i et 100 m-vindu.
+    const onRamp = summits.some(s => s.gx === 30 && s.gy === 25)
+    expect(onRamp).toBe(false)
+  })
+
+  it('kollapser doble maksima i samme kolle til ett punkt', () => {
+    const cols = 40, rows = 40, res = 10
+    const dem = rampWithBump(cols, rows, res, { cx: 20, cy: 20, r: 8, h: 100 })
+    const summits = detectSummits(dem, { windowM: 150, minProminenceM: 20, maxCount: 10 })
+    // Én kolle → maks ett toppunkt innenfor dens radius.
+    const near = summits.filter(s => Math.hypot(s.gx - 20, s.gy - 20) <= 8)
+    expect(near.length).toBe(1)
   })
 })
 

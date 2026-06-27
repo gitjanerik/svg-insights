@@ -378,6 +378,68 @@ export function detectKnauser(dem, tpiRadius = 5, tpiThresholdM = 1.5) {
 }
 
 /**
+ * Detekter EKTE topper (lokale høyde-maksima) direkte fra DEM-en. I motsetning
+ * til kontur-etiketter — som bare er ekvidistanse-tall langs en kurve og like
+ * gjerne ligger midt i en li «på vei opp» mot noe høyere — er disse faktiske
+ * topp-punkter: ingen celle innen `windowM` er høyere.
+ *
+ * Brukes som kilde for «topp»-søket på kart UTEN OSM-toppmarkører (typisk
+ * høyfjell der få topper er navngitt i OSM). Returnerer punkter sortert på
+ * høyde desc, maks `maxCount`.
+ *
+ *   - windowM:        radius (meter) en celle må være maks innenfor for å regnes
+ *                     som topp. Styrer også min-avstand mellom to topper.
+ *   - minProminenceM: toppen må stige minst så mye over det laveste i vinduet —
+ *                     luker bort platå-/rygg-støy (der «ingen nabo er høyere»
+ *                     ellers gjør hver flate-celle til en falsk topp).
+ */
+export function detectSummits(dem, { windowM = 250, minProminenceM = 15, maxCount = 60 } = {}) {
+  const { data, cols, rows, transform, noData } = dem
+  const cellSize = Math.abs(transform.pixelWidth) || 10
+  const win = Math.max(2, Math.round(windowM / cellSize))
+  const cand = []
+  // Hopp over en `win`-bred kant-margin: en celle der vinduet stikker utenfor
+  // griddet kan ikke bekreftes som maks (terrenget kan stige videre forbi
+  // kartkanten — nettopp «på vei opp»-feilen). Krev fullt vindu i bounds.
+  for (let y = win; y < rows - win; y++) {
+    for (let x = win; x < cols - win; x++) {
+      const c = data[y * cols + x]
+      if (c === noData || !Number.isFinite(c)) continue
+      let isMax = true
+      let minNb = Infinity
+      for (let dy = -win; dy <= win && isMax; dy++) {
+        const yy = y + dy
+        for (let dx = -win; dx <= win; dx++) {
+          const xx = x + dx
+          if (dx === 0 && dy === 0) continue
+          const v = data[yy * cols + xx]
+          if (v === noData || !Number.isFinite(v)) continue
+          if (v > c) { isMax = false; break }
+          if (v < minNb) minNb = v
+        }
+      }
+      if (!isMax) continue
+      // Platå/rygg-vakt: en ekte topp faller merkbart av mot vindus-kanten.
+      if (!Number.isFinite(minNb) || (c - minNb) < minProminenceM) continue
+      const [wx, wy] = gridToWorld([x, y], transform)
+      cand.push({ x: wx, y: wy, gx: x, gy: y, ele: c })
+    }
+  }
+  // Høyeste først, så grådig romlig dedup: like-høye nabo-maksima (platå-topp,
+  // eller to celler i samme topp) kollapses til én innen `windowM`.
+  cand.sort((a, b) => b.ele - a.ele)
+  const minSep2 = (windowM * windowM)
+  const kept = []
+  for (const s of cand) {
+    if (kept.every(k => (k.x - s.x) ** 2 + (k.y - s.y) ** 2 >= minSep2)) {
+      kept.push(s)
+      if (kept.length >= maxCount) break
+    }
+  }
+  return kept
+}
+
+/**
  * Detekter stupkanter via slope-terskel + skeletonization + vectorisering.
  *
  * Algoritme:
