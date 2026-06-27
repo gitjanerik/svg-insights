@@ -319,14 +319,14 @@ Kartet viser en ren oversikt utzoomet og avslører detaljer gradvis ved innzoom.
 
 > ⚠️ **Fin-tune senere.** Disse er satt etter første mobil-test («fungerer overraskende bra», 25. juni 2026), men er ikke grundig kalibrert på tvers av kartstørrelser (4–20 km) og terrengtetthet. Test med Utvikler-fanens glidere på store/tette kart og oppdater `LOD_DEFAULTS` når vi har landet på bedre tall. Vurder også om noen lag bør flytte trinn (f.eks. bekke-navn fra near → mid) — det er en symbolizer-CSS-endring, ikke bare en knott.
 
-## Todos for neste kart-sesjon (UI-fixer)
+## Todos for neste kart-sesjon (UI-fixer) — STATUS
 
-Brukeren har identifisert disse for neste sesjon:
+Disse var på lista, men ved gjennomgang (v11.0.54) viste 1–3 seg ALLEREDE implementert:
 
-1. **Bygninger må lenger ned i z-order**. ISOM 522 bymasse-pattern dekker uleselig i tett bebygde områder (Oslo sentrum-test viste dette). Forslag: flytt 522 til etter åpen mark (rett etter 404), så vann og konturer rendres OVER bymassen. Behold 521 individuelle bygninger over veier/stier
-2. ~~**Høyde over havet i innsjøer**~~ — ✅ GJORT: `vann-tall` (DTM-sample i sentroid) rendres og gates til near-trinnet i zoom-LOD-en (v11.0.34)
-3. **Saltvann skal være mer blått** — i dag er all `natural=water` lik blå. Sjekke OSM-tags `salt=yes` eller `water=fjord/sea` og bruke ISOM 304 saltvann-blå
-4. **Generelt UI-polish i MapView**
+1. ✅ **Bygninger lenger ned i z-order** — `urbanMassLayerSvg` (522) assembles rett etter ground og FØR konturer/vann (`mapBuilder.js` body), så vann + konturer rendres over bymassen. 522 er dessuten default-av.
+2. ✅ **Høyde over havet i innsjøer** — `lakeLabels` sampler DTM og emitterer `data-label="vann-tall"` (moh) i innsjø-sentroide (saltvann hoppes over).
+3. ✅ **Saltvann mer blått** — kode 303 «Saltvann / fjord» har egen dypere blå (`#6fb6da` vs innsjø `#a8d4e8`); `isOsmWaterSalty` ruter salt → 303.
+4. **Generelt UI-polish i MapView** — udefinert; tas når noe konkret dukker opp (hoppet over i v11.0.54).
 5. **Fin-tune zoom-LOD-defaults** (terskel + navne-budsjett) — se «Zoom-trappet detalj-LOD»-seksjonen over
 
 ## Ytelses-/UX-pakke (v11.0.44–v11.0.50) — utsatte oppfølginger
@@ -335,15 +335,15 @@ En agentflåte av kart-eksperter (orienterings-kartograf, fjellvandrer, kajakkpa
 
 **Bevisst UTSATT (gjør disse senere, egne PR-er):**
 
-1. **Dybde på hovedkartet + kilde/konfidens-badge** (kajakkpadlerens #1). Soundings + dybdekurver (306) ligger i dag som skjulte detalj-lag (`data-detail="1"`), kun synlige i long-press-inset — de ble bevisst skjult fordi de var «for voldsomt» på hovedkartet. Ønsket: løft dem til et default-på (toggle-bart) hovedlag MED en permanent badge som sier om dybden er ekte Sjøkart-data eller bare et DEM-avstand-fra-land-estimat (fragil WFS faller stille tilbake til estimatet i dag — en sikkerhets-svakhet). Krever: provenens-flagg gjennom bygge-pipelinen (`buildSvg`-meta → attribusjons-boksen i `MapView.vue`, ~linje 6099) + LOD-gating så hovedlaget ikke blir rot. Merk konflikten med «for voldsomt»-valget — design tetthet/LOD bevisst.
+1. ✅ **Dybde på hovedkartet + kilde/konfidens-badge** (v11.0.54). «Dybde (Sjøkart)»-toggle (default AV, vises kun når `meta.depthSource === 'sjokart'`) kloner de detachede detalj-lagene (`detachedDetailLayers`) inn som `#depth-main-layer`. Provenens føres via `buildSvg`-meta `depthSource` ('sjokart'|'dem-estimat'|'ingen') → badge i attribusjons-boksen (`MapView.vue`). `applyDepthLayer()` + `toggleDepth()`.
 
-2. **Tørrfalls-/fjære-sone (0–0,5 m) som eget mønster** (kajakkpadler). DEM-sjøen (`seaFromDem.js`) har allerede en ≤0,5 m-terskel; marker den sonen som distinkt «tørrfall/usikkert»-skravur i stedet for blå vannflate — det er der avstand-proxyen er mest feil og der landinger/snarveier avgjøres.
+2. ✅ **Tørrfalls-/fjære-sone** (v11.0.54). Grunneste DEM-sjø-bånd (≤50 m fra land) får `iso-pat-torrfall`-hatch oppå det blå (`mapBuilder.js` demSeaBandsSvg).
 
-3. **Redundant tekstur for vegetasjons-tetthet** (tilgjengelighet/fargeblind). I dag skilles løpbar/tett skog kun på grønn-nyanse (406–409) → deuteranoper mister den viktigste areal-distinksjonen. ISOM tillater mønster (vertikal-strek «sakte løp» / kratt-prikk) i tillegg til farge. Katalogen har allerede noen mønstre (`iso-pat-kratt`, `iso-pat-halv-aapen`) — utvid til tetthets-koding.
+3. **Redundant tekstur for vegetasjons-tetthet** (tilgjengelighet/fargeblind) — UTSATT med forbehold (v11.0.54): grøntonene 406/407/408 skilles allerede på LYSHET (#cae8a3 → #94d473 → #5cb348), som fargeblinde BEHOLDER (de mister hue, ikke lyshet), så premisset er svakt. En tekstur-endring treffer ALLE skog-kart og krever verifisering av pattern-flatten (gest) + dark-tema-oppførsel — bør være egen «eyes-on» PR. 409 (kratt) har allerede mønster.
 
    **Minste-linjevekt-gulv (lesbarhet i sol/print):** forsøkt i v11.0.48 som `max(0,08 mm, …)` i `symbolizer.js#sw()`, men **revertert i v11.0.51** fordi 0,08 mm klampet de tynneste basisstrekene (høydekurve 101 = 0,07 mm) allerede ved nøytral «Strek»-knott → de røde kurvene sluttet å følge knotten (en svært karakteristisk, brukerstyrt egenskap). Et nytt forsøk MÅ enten ligge under alle basis-bredder (≤ ~0,04 mm, så det bare fanger ekstrem nedskalering) eller være per-kategori (kun gjerde/kraft/bekk), så `--stroke-scale` forblir fri for kurvene.
 
-4. **Marine bøye-varianter (540–543) → ett «sjømerke»-symbol** (kajakkpadler). Babord/styrbord/cardinal/generisk som fire symboler er chart-pedanteri på denne skala; slå sammen, behold fyr (533) og skjær (211) tydelige.
+4. ✅ **Marine bøye-varianter (540–543) → ett «sjømerke»** (v11.0.54). `classifyToIsom` ruter lateral/cardinal/beacon/buoy → 543; fyr (533) og skjær (211) beholdt tydelige.
 
 5. **Auto-ekvidistanse finnes allerede** (`equidistanceForWidthKm`: 20/25/50 m etter bredde) — IKKE et todo, men husk at orienterings-kartografen ville hatt finere (5/10/20). Vurder kun hvis brukeren ber om det; tettere kurver = mer kontur-rot + større fil.
 

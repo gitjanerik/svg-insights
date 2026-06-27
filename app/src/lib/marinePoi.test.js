@@ -15,9 +15,10 @@ describe('classifyToIsom — marine/padle-POI', () => {
   const cases = [
     [{ man_made: 'lighthouse' }, '533'],
     [{ 'seamark:type': 'light_minor' }, '533'],
-    [{ 'seamark:type': 'buoy_lateral', 'seamark:buoy_lateral:category': 'port' }, '540'],
-    [{ 'seamark:type': 'buoy_lateral', 'seamark:buoy_lateral:category': 'starboard' }, '541'],
-    [{ 'seamark:type': 'beacon_cardinal' }, '542'],
+    // v11.0.54: babord/styrbord/cardinal/generisk → ett «sjømerke» (543).
+    [{ 'seamark:type': 'buoy_lateral', 'seamark:buoy_lateral:category': 'port' }, '543'],
+    [{ 'seamark:type': 'buoy_lateral', 'seamark:buoy_lateral:category': 'starboard' }, '543'],
+    [{ 'seamark:type': 'beacon_cardinal' }, '543'],
     [{ 'seamark:type': 'rock' }, '211'],
     [{ 'seamark:type': 'beacon_isolated_danger' }, '543'],
     [{ leisure: 'marina' }, '553'],

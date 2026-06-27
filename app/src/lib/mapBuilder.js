@@ -2277,6 +2277,13 @@ export function buildSvg(elements, bbox, options = {}) {
       ? { min: Math.round(demFeatures.contours.minElevM), max: Math.round(demFeatures.contours.maxElevM) }
       : null,
     demSource: dem?.source ?? null,
+    // Dybde-provenens (v11.0.54) — MapView viser badge: ekte Sjøkart-dybde
+    // (soundings/dybdekurver levert) vs. DEM-avstand-fra-land-ESTIMAT (kun
+    // demSea-bånd) vs. ingen dybde. Sikkerhets-info for padlere: den fragile
+    // Sjøkart-WFS faller stille tilbake til estimatet.
+    depthSource: (soundings.length > 0 || dybdekonturer.length > 0)
+      ? 'sjokart'
+      : (demSeaPolygons.length > 0 ? 'dem-estimat' : 'ingen'),
     coastal,                       // kyst vs innland (se options). MapView leser denne.
     demResolutionM: dem?.transform
       ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
@@ -2340,14 +2347,21 @@ export function buildSvg(elements, bbox, options = {}) {
   const demSeaBandsSvg = sortedBands
     .map((band, idx) => {
       const fill = BAND_FILL_BY_DESC_DISTANCE[idx] ?? 'var(--iso-depth-2, #cfe6f0)'
+      // v11.0.54: grunneste bånd (minst avstand fra land) får en diskret
+      // «tørrfall/usikkert»-hatch oppå det blå — det er her avstand-fra-land-
+      // dybdeproxyen er mest feil og der landinger/snarveier avgjøres (kajakk).
+      const isShallowest = idx === sortedBands.length - 1
       const paths = band.polygons.map(poly => {
         const d = polygonsToPathRing(poly)
+        if (!d) return ''
         // stroke="none" overstyrer den arvede ISOM 303-streken (#1f7aa3).
         // Båndets sjøside er en kunstig avstand-fra-land-kontur, ikke en ekte
         // strandlinje — uten dette ble den strøket med en fragmentert mørkeblå
         // linje som fløt i vannet nærmest land. Den ekte kysten strøkes av
         // dem-sea-basislaget; båndene bidrar kun med gradient-fyll.
-        return d ? `    <path d="${d}" style="fill: ${fill}" stroke="none" fill-rule="evenodd"/>` : ''
+        let s = `    <path d="${d}" style="fill: ${fill}" stroke="none" fill-rule="evenodd"/>`
+        if (isShallowest) s += `\n    <path d="${d}" fill="url(#iso-pat-torrfall)" stroke="none" fill-rule="evenodd"/>`
+        return s
       }).filter(Boolean).join('\n')
       return paths
         ? `  <g data-layer="vann" data-iso="303" data-src="dem-sea-band" data-band-m="${band.maxDistanceM}">\n${paths}\n  </g>\n`

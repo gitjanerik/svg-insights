@@ -749,6 +749,38 @@ function toggleLayer(key) {
   applyLayerVisibility()
 }
 
+// Dybde-lag (v11.0.54) — soundings + dybdekurver (Sjøkart) ligger detachet for
+// long-press-inset-en (perf). «Dybde»-toggle (default AV) kloner dem inn som et
+// synlig hovedlag. Kun relevant når kartet faktisk har Sjøkart-dybde
+// (meta.depthSource === 'sjokart'); DEM-estimatet vises uansett som sjø-fyll.
+function applyDepthLayer() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  svg.querySelector('#depth-main-layer')?.remove()
+  if (!visibleLayers.value.has('dybde') || !detachedDetailLayers.length) return
+  const ns = 'http://www.w3.org/2000/svg'
+  const wrap = document.createElementNS(ns, 'g')
+  wrap.setAttribute('id', 'depth-main-layer')
+  wrap.setAttribute('data-layer', 'dybde')
+  wrap.setAttribute('pointer-events', 'none')
+  for (const g of detachedDetailLayers) {
+    const c = g.cloneNode(true)
+    c.style.display = ''            // detalj-lagene er display:none — vis dem
+    c.removeAttribute('data-detail')
+    wrap.appendChild(c)
+  }
+  // Under navne-labels, over vann/marine — sett inn foran første label-gruppe.
+  const before = svg.querySelector('[data-label]')
+  if (before) svg.insertBefore(wrap, before)
+  else svg.appendChild(wrap)
+}
+function toggleDepth() {
+  const next = new Set(visibleLayers.value)
+  if (next.has('dybde')) next.delete('dybde'); else next.add('dybde')
+  visibleLayers.value = next
+  applyDepthLayer()
+}
+
 function applyLayerVisibility() {
   const root = svgHostRef.value?.querySelector('svg')
   if (!root) return
@@ -777,6 +809,9 @@ function applyLayerVisibility() {
   // Et lag (f.eks. et stedsnavn-nivå) kan nettopp ha blitt slått på/av — la
   // navn-LOD-en revurdere hvilke navn som er overflødige i utsnittet.
   scheduleNameLOD()
+  // Hold dybde-hovedlaget i synk med lag-tilstanden (presets/nullstill kan ha
+  // endret 'dybde'); re-injiserer/fjerner #depth-main-layer etter behov.
+  applyDepthLayer()
 }
 
 // Pinch/pan/rotate fryses kun i CurveBall-modus (kartet skal stå i ro under
@@ -4507,6 +4542,7 @@ async function loadMap({ silent = false } = {}) {
       scaleDenom: m.scaleDenom ?? 10000,
       source: m.source,
       demSource: m.demSource ?? null,
+      depthSource: m.depthSource ?? null, // 'sjokart' | 'dem-estimat' | 'ingen' | null (eldre kart)
       contoursSkipped: m.contoursSkipped ?? null,
       coastal: m.coastal ?? null,        // true=kyst, false=innland, null=ukjent (eldre kart)
     }
@@ -4557,6 +4593,7 @@ async function loadMap({ silent = false } = {}) {
     loading.value = false
     await nextTick()
     applyLayerVisibility()
+    applyDepthLayer()              // dybde-toggle (default av) — kun synlig om Sjøkart-dybde finnes
     applyTheme()
     applyStrokeScale()
     applyLabelScale()
@@ -6190,6 +6227,12 @@ onUnmounted(() => {
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
       <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
+      <!-- Dybde-provenens-badge (v11.0.54): ekte Sjøkart vs DEM-estimat. Det
+           fragile Sjøkart-WFS faller stille tilbake til estimatet — padleren
+           må vite hva dybden faktisk er. -->
+      <template v-if="meta?.depthSource && meta.depthSource !== 'ingen'">
+        <br><span :class="meta.depthSource === 'sjokart' ? 'text-sky-300/90' : 'text-amber-300/95 font-medium'">{{ meta.depthSource === 'sjokart' ? 'Dybde: Sjøkart' : 'Dybde: estimat — ikke for navigasjon' }}</span>
+      </template>
     </div>
 
     <!-- Kontrollpanel (drawer). Desktop (≥768px): høyrestilt fullhøyde side-
@@ -6390,6 +6433,17 @@ onUnmounted(() => {
                               ? 'bg-sky-400/25 border-sky-300/50 text-white'
                               : 'bg-white/5 border-white/10 text-white/45'">
                 <span class="text-[12px]">{{ lay.label }}</span>
+              </button>
+              <!-- Dybde-lag (v11.0.54): kun når kartet har ekte Sjøkart-dybde.
+                   Default av — løfter soundings + dybdekurver fra long-press-
+                   inset til hovedkartet. -->
+              <button v-if="meta?.depthSource === 'sjokart'"
+                      @click="toggleDepth()"
+                      class="px-3 py-2 rounded-lg border text-left active:scale-[0.98] transition"
+                      :class="visibleLayers.has('dybde')
+                              ? 'bg-sky-400/25 border-sky-300/50 text-white'
+                              : 'bg-white/5 border-white/10 text-white/45'">
+                <span class="text-[12px]">Dybde (Sjøkart)</span>
               </button>
             </div>
             <div class="text-[10px] text-white/40 leading-snug mb-2">
