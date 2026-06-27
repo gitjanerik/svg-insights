@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.62: Smartere kartsøk — «parkering» og nytt «topp»-søk
+
+To forbedringer i kartsøket. (1) **Hjelpeteksten nevner nå «parkering»:** den tomme søke-skjermen forklarer at man kan skrive «parkering» for å liste utfartsparkeringene (i tillegg til «vann»/«innsjø»/«tjern» for ferskvann). (2) **Nytt spesial-søkeord «topp»:** lister kartets fem høyeste punkter sortert på høyde, hver med høyde (moh) og navn. Toppen bruker sitt eget navn hvis den har ett; ellers lånes navnet til nærmeste navngitte sted innenfor 50 m (det aller nærmeste). Navnløse topper uten et sted i nærheten vises bare som «Topp» med høyde. «topper» fungerer som synonym. Søkeindeksen plukker nå høyden fra toppenes `peak-ele`-etiketter og tar med navnløse topper i rangeringen.
+
+---
+
 ## 2026-06-27 — v11.0.61: Minimerbare skuffer, kompass = nord opp, kartstørrelse-slider, inset-finpuss
 
 UX-pakke fra mobiltesting. (1) **Minimert hovedmeny viser hurtigvalgene:** «Innstillinger»-skuffen sin minimerte tilstand var bare et håndtak (forsvant bak nav-baren) — den viser nå håndtak + tittel + hurtigvalg-raden (Tegnforklaring/GPS/Kompass), mens fanene/innholdet skjules under skjermkanten. (2) **Info-skuffen (long-press) har nå SAMME UX som hovedmenyen:** maksimer / standard / minimer (før: bare maksimer/standard). Minimert viser koordinat-headeren. (3) **Detalj-inset finpusset:** litt mer marg til sidene + litt lavere (16:9, smalere maks-bredde), start-zoom satt lavere (~600 m synlig i 1 km-vinduet) så man kan zoome både inn OG ut, og det røde trådkorset er 50 % større. (4) **Kompass-rosen (oppe til høyre) tappes nå for «nord opp»** (nullstiller rotasjonen) — supplerer «Sentrer»-FAB-en som nullstiller både zoom og rotasjon. Kompass-FØLGE slås av når man låser nord; følge-toggelen ligger fortsatt i Innstillinger. (5) **«Kartstørrelse (nye kart)» er nå en slider 1–20 km** (default 10) i stedet for faste knapper. Ekvidistansen settes automatisk til den fineste tillatte for bredden (samme gulv som «Flere valg»: < 4 km → 5 m, 4–6 km → 10 m, ≥ 6 km → 20 m).
