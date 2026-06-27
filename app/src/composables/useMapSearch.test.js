@@ -208,6 +208,55 @@ describe('useMapSearch', () => {
         expect(results.map(r => r.name)).toEqual(['Utfartsparkering Knivåsen'])
       })
     })
+
+    describe('topp-modus (kartets høyeste punkter)', () => {
+      const peak = (id, name, ele) => ({
+        id, name, folded: foldName(name), kind: 'peak', label: 'Topp',
+        x: ele, y: ele, categories: ['topp'], areaM2: null, ele,
+      })
+      const idx = [
+        peak('p1', 'Tretoppen', 412),
+        peak('p2', 'Storetoppen', 980),
+        peak('p3', 'Topp', 655),       // navnløs, ingen sted innenfor 50 m
+        peak('p4', 'Midttoppen', 720),
+        peak('p5', 'Lavtoppen', 210),
+        peak('p6', 'Småtoppen', 305),
+        { id: 'v1', name: 'Hestesund', folded: 'hestesund', kind: 'omrade',
+          label: 'Vann', x: 0, y: 0, categories: ['vann'], areaM2: 9000, ele: null },
+      ]
+
+      it('«topp» lister de fem høyeste, sortert på høyde desc', () => {
+        const results = filterIndex(idx, 'topp')
+        expect(results.map(r => r.name)).toEqual([
+          'Storetoppen', 'Midttoppen', 'Topp', 'Tretoppen', 'Småtoppen',
+        ])
+        expect(results.map(r => r.ele)).toEqual([980, 720, 655, 412, 305])
+      })
+
+      it('«topper» er synonym for «topp»', () => {
+        expect(filterIndex(idx, 'topper').map(r => r.name))
+          .toEqual(filterIndex(idx, 'topp').map(r => r.name))
+      })
+
+      it('topp-modus tar aldri med ikke-topper (vann)', () => {
+        const names = filterIndex(idx, 'topp').map(r => r.name)
+        expect(names).not.toContain('Hestesund')
+      })
+
+      it('kapper til fem treff selv med flere topper', () => {
+        expect(filterIndex(idx, 'topp').length).toBe(5)
+      })
+
+      it('partial «top» trigger ikke topp-modus (vanlig substring-søk)', () => {
+        // «top» er ikke et eksakt nøkkelord → substring-søk. Treffer navn som
+        // inneholder «top» (alle -toppen), men IKKE den navnløse «Topp» som
+        // sorteres på høyde i topp-modus — her er det rein alfabetisk liste.
+        const results = filterIndex(idx, 'top')
+        expect(results.map(r => r.name)).toContain('Storetoppen')
+        // Ikke kappet til fem og ikke høyde-sortert:
+        expect(results[0].name).toBe('Lavtoppen')   // alfabetisk først
+      })
+    })
   })
 
   describe('elementPosition', () => {

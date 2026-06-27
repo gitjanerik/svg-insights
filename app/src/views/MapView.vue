@@ -5700,6 +5700,9 @@ onUnmounted(() => {
                class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
             Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
             Skriv «vann», «innsjø» eller «tjern» for å se alle ferskvann i utsnittet.
+            Skriv «parkering» for å liste utfartsparkeringene.
+            Skriv «topp» for kartets fem høyeste punkter — med høyde (moh) og navn
+            (toppens eget, ellers nærmeste sted innenfor 50 m).
           </div>
           <button v-for="r in searchResults" :key="r.id"
                   @click="selectSearchResult(r)"
@@ -5709,7 +5712,9 @@ onUnmounted(() => {
               <div class="text-[13px] font-medium text-white truncate">
                 {{ r.name }}<span v-if="r.kind === 'parkering'" aria-hidden="true"> *</span>
               </div>
-              <div class="text-[10px] text-white/45 uppercase tracking-wide">{{ r.label }}</div>
+              <div class="text-[10px] text-white/45 uppercase tracking-wide">
+                {{ r.label }}<span v-if="r.kind === 'peak' && r.ele != null"> · {{ r.ele }} moh</span>
+              </div>
               <div v-if="r.kind === 'parkering'" class="text-[10px] text-white/45 leading-tight mt-0.5">
                 * Navnet er utledet fra nærmeste sted, ikke et offisielt navn
               </div>

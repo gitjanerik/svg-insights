@@ -56,6 +56,16 @@ const CATEGORY_ALIASES = {
   'utfart':  'parkering',
 }
 
+// Spesial-søkeord for «kartets høyeste punkter». Eksakt-match (etter folding)
+// på disse lister de N høyeste toppene sortert på høyde desc, hver med moh +
+// navn. Et eget modus (ikke en vanlig kategori) fordi resultatet er en
+// rangert topp-liste, ikke «alle entries med en tag».
+const PEAK_KEYWORDS = new Set(['topp', 'topper'])
+const TOP_PEAKS_COUNT = 5
+
+// Hvor nær et navngitt sted må ligge en navnløs topp for at vi låner navnet.
+const PEAK_NAME_RADIUS_M = 50
+
 /**
  * Foldec ASCII-substitusjon for fuzzy match: ALT enkel diakritikk
  * normaliseres til ASCII, æ/ø/å → ae/oe/aa. Brukerinput og index normaliseres
@@ -173,6 +183,7 @@ function pushRaw(out, name, kind, pos, el, extra = {}) {
     el,
     categories: extra.categories ?? null,
     areaM2: extra.areaM2 ?? null,
+    ele: extra.ele ?? null,
   })
 }
 
@@ -277,6 +288,10 @@ export function buildSearchIndex(svgEl) {
   for (const t of svgEl.querySelectorAll('text[data-label]')) {
     const kind = t.getAttribute('data-label') ?? ''
     if (!kind || SKIP_LABELS.has(kind)) continue
+    // Topper håndteres i et dedikert pass under — de trenger høyden (moh)
+    // fra sin søsken-label `peak-ele`, og navnløse topper (label = bare
+    // tallet) skal også med i topp-rangeringen.
+    if (kind === 'peak') continue
     const name = (t.textContent || '').trim()
     if (!name) continue
     if (NUMERIC_RE.test(name)) continue
@@ -360,6 +375,61 @@ export function buildSearchIndex(svgEl) {
     })
   }
 
+  // 4) Topper (data-label="peak" + søsken "peak-ele"). mapBuilder emitterer
+  //    hver topp som <g transform="translate(x,y)"> med et symbol og enten
+  //    navn+høyde (to <text>: peak + peak-ele) eller bare høyde (én numerisk
+  //    peak-label). Vi samler dem per gruppe så vi får BÅDE høyde og posisjon,
+  //    og indekserer hver topp med `ele` slik at «topp»-søket kan rangere
+  //    kartets høyeste punkter. Navnløse topper låner navnet til nærmeste
+  //    navngitte sted innenfor 50 m (jf. spesial-søk-spesifikasjonen).
+  const peakRecs = new Map()   // <g> → { g, name, ele, nameEl }
+  for (const t of svgEl.querySelectorAll('text[data-label="peak"], text[data-label="peak-ele"]')) {
+    const g = t.parentElement
+    if (!g) continue
+    let rec = peakRecs.get(g)
+    if (!rec) { rec = { g, name: null, ele: NaN, nameEl: null }; peakRecs.set(g, rec) }
+    const lbl = t.getAttribute('data-label')
+    const txt = (t.textContent || '').trim()
+    if (lbl === 'peak-ele') {
+      const n = parseFloat(txt)
+      if (Number.isFinite(n)) rec.ele = n
+    } else if (NUMERIC_RE.test(txt)) {
+      // Navnløs topp: peak-labelen ER høyde-tallet.
+      const n = parseFloat(txt)
+      if (Number.isFinite(n)) rec.ele = n
+    } else if (txt) {
+      rec.name = txt
+      rec.nameEl = t
+    }
+  }
+  // Snapshot av navngitte steder samlet så langt — brukes til 50 m-oppslaget
+  // for navnløse topper (toppen selv er ikke lagt til ennå).
+  const namedForPeaks = out.filter(
+    r => r.kind === 'stedsnavn' || r.kind === 'vann-navn' || r.kind === 'omrade'
+  )
+  const nearestNamedName = (x, y) => {
+    let best = null
+    let bestD2 = PEAK_NAME_RADIUS_M * PEAK_NAME_RADIUS_M
+    for (const r of namedForPeaks) {
+      const d2 = (r.x - x) ** 2 + (r.y - y) ** 2
+      if (d2 <= bestD2) { bestD2 = d2; best = r }
+    }
+    return best ? best.name : null
+  }
+  for (const rec of peakRecs.values()) {
+    if (!Number.isFinite(rec.ele)) continue
+    const own = parseTranslate(rec.g.getAttribute('transform')) ?? [0, 0]
+    const [dx, dy] = ancestorTranslate(rec.g, svgEl)
+    const x = own[0] + dx, y = own[1] + dy
+    const name = rec.name ?? nearestNamedName(x, y) ?? 'Topp'
+    // El for navngitte topper = navn-teksten (så name-LOD/forced-visible
+    // kan vise den ved treff). Navnløse: ingen tekst å toggle → el = null.
+    pushRaw(out, name, 'peak', { x, y }, rec.nameEl, {
+      categories: ['topp'],
+      ele: rec.ele,
+    })
+  }
+
   // Dedupe på navn: samme folded navn = samme «sted» for søke-formål. Beholder
   // FØRSTE forekomst i indekseringsrekkefølgen — viktig for elver/bekker
   // som har samme navn-label gjentatt langs path-en (typisk hver ~2 km i
@@ -372,7 +442,11 @@ export function buildSearchIndex(svgEl) {
   // ekte ulike features.
   const seen = new Map()
   for (const r of out) {
-    const key = r.kind === 'vann-omrade' ? r.id : r.folded
+    // Topper og unavngitte vann er distinkte punkter (flere kan dele navn,
+    // f.eks. en topp og et tettsted som heter det samme, eller flere
+    // navnløse «Topp») → dedupe på unik id så ingen forsvinner. Andre
+    // entries deduperes på navn (samme folded navn = samme sted).
+    const key = (r.kind === 'vann-omrade' || r.kind === 'peak') ? r.id : r.folded
     const existing = seen.get(key)
     if (existing) {
       // Bevar kategori-tags fra senere entries hvis vi første gang så
@@ -399,6 +473,15 @@ export function buildSearchIndex(svgEl) {
 export function filterIndex(index, query, limit = 60) {
   const q = foldName(query)
   if (!q) return []
+  // «topp»-søk: kartets N høyeste punkter, sortert på høyde desc. Egen gren
+  // (returnerer før den vanlige navne-/kategori-filtreringen) fordi resultatet
+  // er en rangert topp-liste, ikke et substring-/kategori-treff.
+  if (PEAK_KEYWORDS.has(q)) {
+    return index
+      .filter(r => r.kind === 'peak' && Number.isFinite(r.ele))
+      .sort((a, b) => b.ele - a.ele || a.name.localeCompare(b.name, 'no'))
+      .slice(0, TOP_PEAKS_COUNT)
+  }
   const categoryTag = CATEGORY_ALIASES[q] ?? null
   // Kategori-søk ("vann"/"innsjø"/"tjern"/"parkering") er en OVERSIKT — UI-en
   // lover «alle ferskvann i utsnittet». Et tett norsk skogskart har lett >60
