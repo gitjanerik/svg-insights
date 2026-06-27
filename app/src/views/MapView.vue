@@ -11,9 +11,8 @@ import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
-import { useMapSizePreference, equidistanceForWidthKm } from '../composables/useMapSizePreference.js'
+import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims } from '../composables/useMapSizePreference.js'
 import { useLodTuning } from '../composables/useLodTuning.js'
-import { autoMapSquare } from '../lib/mapBuilder.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
@@ -1055,13 +1054,13 @@ const { mapSizeKm, MAP_SIZE_OPTIONS } = useMapSizePreference()
 // «Bygg om dette området i valgt størrelse» (Innstillinger-fanen): rebygger
 // samme senter på nytt i den valgte kartstørrelsen, så man kan teste LOD-en på
 // samme sted ved ulik bredde uten å gå tilbake til forsiden. Lager et NYTT kart
-// (ny id) og navigerer dit. «Standard» = skjerm-utledet kvadrat (autoMapSquare).
+// (ny id) og navigerer dit. «Standard» = fast 4 km kvadrat (defaultMapDims).
 async function rebuildAtChosenSize() {
   const m = meta.value
   if (!m?.bbox || buildingOnTheFly.value) return
   const lat = (m.bbox.south + m.bbox.north) / 2
   const lon = (m.bbox.west + m.bbox.east) / 2
-  const dims = mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : autoMapSquare(2)
+  const dims = mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : defaultMapDims()
   closeDrawer()
   buildingOnTheFly.value = true
   buildingProgress.value = 'Bygger om i valgt størrelse …'
@@ -6899,13 +6898,13 @@ onUnmounted(() => {
           <!-- ── Tab: Om ──────────────────────────────────────────── -->
           <div v-show="activeTab === 'om'">
             <!-- Kartstørrelse for NYE kart (søk/GPS på forsiden). «Standard» =
-                 skjerm-utledet kvadrat (~4 km). De faste valgene lager et større
-                 kvadrat — nyttig for å teste detalj-LOD på store, tette kart.
-                 Påvirker ikke kartet som vises nå, kun neste nye kart. -->
+                 fast 4 km kvadrat (raskt å bygge). De faste valgene lager et større
+                 kvadrat — nyttig for å teste detalj-LOD på store, tette kart, men
+                 tregere. Påvirker ikke kartet som vises nå, kun neste nye kart. -->
             <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
               <div class="text-[13px] text-white font-medium mb-0.5">Kartstørrelse (nye kart)</div>
               <div class="text-[11px] text-white/55 leading-snug mb-2">
-                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» tilpasser seg skjermen (~4 km).
+                Bredde på nye kvadratiske kart fra søk/GPS. «Standard» er et raskt 4 km kvadrat.
                 Ekvidistanse settes automatisk: store kart får grovere kurver
                 ({{ mapSizeKm ? equidistanceForWidthKm(mapSizeKm) : 20 }} m for valgt størrelse).
               </div>

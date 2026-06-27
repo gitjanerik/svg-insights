@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.59: «Standard» kartstørrelse er nå et ekte 4 km kvadrat
+
+«Standard» (default når man ikke har valgt en fast størrelse) ble bygd med `autoMapSquare(2)` = et skjerm-skalert kvadrat på 4 km × `viewportAspect`. På en høy mobilskjerm (h/w ≈ 2,2) ga det et **~8,7 km** kvadrat — nær 5× arealet av et 4 km-kart, og dermed en mye tyngre OSM-/DEM-bygging (treg på akkurat de tette kyst-/byområdene der v11.0.58-timeout-fiksen nettopp ble nødvendig). Kommentarene sa «~4 km», men koden leverte nær 9 km. Standard er nå et **fast 4 km kvadrat** (`defaultMapDims`/`DEFAULT_MAP_WIDTH_KM`): raskt å bygge og rikelig for en tur-/padle-økt, og fortsatt 20 m ekvidistanse. De faste 10–20 km-valgene i størrelse-velgeren er uendret for den som vil ha store oversiktskart.
+
+---
+
 ## 2026-06-27 — v11.0.58: Kystkart laster stier/detaljer igjen + ærlig høyde-fyll-melding
 
 To feil på store kystkart (rapportert på Nesøya, Asker). (1) **«Fikk ikke lastet stier og detaljer» på store kyst-/by-kart:** Overpass-klientens ventetid var fast på 30 s — romslig for et lite kart (~4 km / ~16 km²), men et stort utsnitt (14–20 km, satt via kartstørrelse → ~200–400 km²) i et tett område som Oslofjorden gir en spørring som lovlig bruker 40–80 s på serveren. Det faste taket avbrøt det gyldige svaret klient-side før det kom, tre forsøk på rad → detalj-fyllingen feilet selv om terrenget allerede var tegnet (store kart venter ikke på Overpass før terrenget vises). Klient-taket skalerer nå med bbox-arealet, opp mot serverens egen 90 s-grense (`overpassTimeoutForBbox`), så store kart får tid til å fullføre. Små kart er uendret (30 s). (2) **«Fyller terreng utenfor norsk dekning»-meldingen** leste som «du er i utlandet» midt i fjorden. På kystkart er cellene den globale høydemodellen fyller inn **sjø** (ingen LiDAR-retur over vann), ikke utland — meldingen er nå nøytral: «Fyller inn manglende høydedata fra global modell …».
