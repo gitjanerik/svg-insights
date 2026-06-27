@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.69: Fiks: små innsjøer uten navn fikk blått omriss men ikke blått fyll
+
+På innlandskart (f.eks. Bugøynes, Finnmark) ble navngitte innsjøer fylt blått mens små, navnløse tjern bare fikk et tynt blått omriss uten flate. Årsak: NVEs `identify` (Innsjødatabase2) kalles med `layers: 'all'` og returnerer SAMME innsjø fra flere polygon-lag (høyde og dyp ligger på ulike lag — derfor merger `pickLakeFromIdentify` allerede på tvers av lag). `nveIdentifyToWater` emitterte ett polygon pr resultat uten dedup, så hver innsjø kom 2+ ganger med sammenfallende geometri. I `buildSvg` slås navnløse vann-polygoner med samme stil sammen til ÉN `fill-rule="evenodd"`-path pr rute — to overlappende ringer kansellerer da fyllet (vikletall 2 = partall = ikke fylt), så det bare sto igjen et omriss. Navngitte innsjøer rendres som egne standalone-paths og slapp unna sammenslåingen, derfor fylte de korrekt. Fiks: `nveIdentifyToWater` dedup-er nå pr innsjø (på `vatnLnr` når den finnes, ellers på en kvantisert bbox-signatur som tåler ulik generalisering mellom lagene) og løfter inn et navn fra et duplikat-lag. Eksisterende lagrede kart må bygges på nytt for å få blått fyll på de små tjernene.
+
+---
+
 ## 2026-06-27 — v11.0.68: Fiks: sort skjerm ved kartvisning (TDZ-krasj fra v11.0.67)
 
 v11.0.67 krasjet hele MapView til **sort skjerm** når et kart ble åpnet (mest synlig ved nye kart — etter søk og valgt sted). Årsak: `watch(showFullNames, …)` ble lagt rett etter `applyLayerVisibility()`, men `const showFullNames` deklareres ~300 linjer lenger ned. `watch()` kjøres ved komponentens `setup()`, så den traff variabelen i dens «temporal dead zone» → `ReferenceError: Cannot access … before initialization`. Det er en synkron setup-feil (ikke fanget av `loadMap`s try/catch), så hele komponenten falt og etterlot en sort skjerm. Fix: watch-en flyttet til rett etter `showFullNames`-deklarasjonen. Verifisert i hodeløs nettleser — kartet rendrer igjen uten setup-feil. «Vis fulle navn»-funksjonen fra v11.0.67 er uendret.

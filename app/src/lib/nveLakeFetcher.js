@@ -230,26 +230,73 @@ export function esriPolygonToRelation(geom, attrs, idBase) {
   return { type: 'relation', id: `nve-${idBase}`, members, tags, _source: 'nve' }
 }
 
+// Kvantisert bounding-box-signatur for et sett Esri-ringer (~11 m ved 60° N).
+// Brukes til å dedup-e samme innsjø som identify returnerer fra FLERE lag:
+// generaliseringen kan variere mellom lagene (ulikt punkttall), men omrisset
+// (og dermed bbox-en) er nær identisk, så bbox-en er en stabil nøkkel der
+// punkt-for-punkt-sammenligning ville bommet.
+function geomSignature(rings) {
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity
+  for (const ring of rings) {
+    if (!Array.isArray(ring)) continue
+    for (const pt of ring) {
+      const lon = pt[0], lat = pt[1]
+      if (lon < minLon) minLon = lon
+      if (lat < minLat) minLat = lat
+      if (lon > maxLon) maxLon = lon
+      if (lat > maxLat) maxLat = lat
+    }
+  }
+  if (!Number.isFinite(minLon)) return null
+  const q = (v) => Math.round(v * 1e4) / 1e4
+  return `${q(minLon)},${q(minLat)},${q(maxLon)},${q(maxLat)}`
+}
+
 /**
  * Parse en ArcGIS `identify`-respons til OSM-aktige vann-`relation`-elementer.
  * Kun resultater med polygon-geometri (`geometry.rings`) beholdes — dybde-
  * konturer (linjer) og dybdepunkt (punkt) faller bort. Alle lag i
  * Innsjodatabase2 er innsjø-relaterte (Innsjø-flate + Magasin), så polygon-
  * filteret alene gir vann-flater.
+ *
+ * DEDUP (kritisk): identify med `layers: 'all'` returnerer SAMME innsjø fra
+ * flere polygon-lag (høyde og dyp ligger på ulike lag — se pickLakeFromIdentify).
+ * Uten dedup ble hver innsjø emittert 2+ ganger med overlappende geometri. I
+ * buildSvg slås NAVNLØSE vann-polygoner med samme stil sammen til ÉN
+ * `fill-rule="evenodd"`-path per rute — to sammenfallende ringer kansellerer
+ * da fyllet (evenodd: vikletall 2 = partall = ikke fylt), så små unavngitte
+ * tjern endte som blå OMRISS uten blått fyll, mens navngitte innsjøer (rendret
+ * som egne standalone-paths) fylte korrekt. Vi dedup-er på vatnLnr når den
+ * finnes, ellers på bbox-signatur, og løfter inn et navn fra et duplikat-lag.
  * @param {{ results?: Array<{ geometry?: object, attributes?: object }> }} json
  * @returns {Array} OSM-aktige relation-elementer
  */
 export function nveIdentifyToWater(json) {
   const results = json?.results
   if (!Array.isArray(results)) return []
-  const els = []
+  const out = []
+  const byKey = new Map()       // dedup-nøkkel → element
+  const lnrToKey = new Map()    // vatnLnr → nøkkel (samme innsjø, ulik generalisering pr lag)
   let i = 0
   for (const r of results) {
     if (!r?.geometry?.rings) continue
+    const f = scanAttributes(r.attributes ?? {})
+    const lnr = Number.isFinite(f.vatnLnr) ? f.vatnLnr : null
+    let key = lnr != null && lnrToKey.has(lnr) ? lnrToKey.get(lnr) : geomSignature(r.geometry.rings)
+    if (key == null) continue
+    const existing = byKey.get(key)
+    if (existing) {
+      // Behold den første, men ta vare på et navn fra et senere duplikat-lag.
+      if (!existing.tags.name && f.navn) existing.tags.name = f.navn
+      continue
+    }
     const el = esriPolygonToRelation(r.geometry, r.attributes, String(i++))
-    if (el) els.push(el)
+    if (!el) continue
+    byKey.set(key, el)
+    if (lnr != null) lnrToKey.set(lnr, key)
+    out.push(el)
   }
-  return els
+  return out
 }
 
 function buildIdentifyBboxUrl(base, bbox) {
