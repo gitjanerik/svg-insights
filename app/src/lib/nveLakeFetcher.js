@@ -230,26 +230,47 @@ export function esriPolygonToRelation(geom, attrs, idBase) {
   return { type: 'relation', id: `nve-${idBase}`, members, tags, _source: 'nve' }
 }
 
-// Kvantisert bounding-box-signatur for et sett Esri-ringer (~11 m ved 60° N).
-// Brukes til å dedup-e samme innsjø som identify returnerer fra FLERE lag:
-// generaliseringen kan variere mellom lagene (ulikt punkttall), men omrisset
-// (og dermed bbox-en) er nær identisk, så bbox-en er en stabil nøkkel der
-// punkt-for-punkt-sammenligning ville bommet.
-function geomSignature(rings) {
-  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity
+// Form-deskriptor for et sett Esri-ringer: areal-vektet sentroid + samlet
+// (absolutt) areal i lon/lat-rom. Brukes til å dedup-e samme innsjø som
+// identify returnerer fra FLERE lag. Sentroid og areal er INTEGRALER over
+// flaten — de er nær uendret når generaliseringen varierer mellom lagene
+// (ulikt punkttall, flyttede ekstrempunkter). En tidligere bbox-signatur
+// (min/maks-hjørner kvantisert til ~11 m) bommet når et lag flyttet et
+// ekstrempunkt over en kvantiserings-grense → samme innsjø fikk to ulike
+// nøkler, dedup-en bommet, og buildSvgs evenodd-merge kansellerte fyllet.
+function shapeDescriptor(rings) {
+  let totNumX = 0, totNumY = 0, totA = 0, absArea = 0
   for (const ring of rings) {
-    if (!Array.isArray(ring)) continue
-    for (const pt of ring) {
-      const lon = pt[0], lat = pt[1]
-      if (lon < minLon) minLon = lon
-      if (lat < minLat) minLat = lat
-      if (lon > maxLon) maxLon = lon
-      if (lat > maxLat) maxLat = lat
+    if (!Array.isArray(ring) || ring.length < 4) continue
+    let a = 0, nx = 0, ny = 0
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const [x1, y1] = ring[i]
+      const [x2, y2] = ring[(i + 1) % n]
+      const cross = x1 * y2 - x2 * y1
+      a += cross
+      nx += (x1 + x2) * cross
+      ny += (y1 + y2) * cross
     }
+    a /= 2
+    totA += a
+    totNumX += nx
+    totNumY += ny
+    absArea += Math.abs(a)
   }
-  if (!Number.isFinite(minLon)) return null
-  const q = (v) => Math.round(v * 1e4) / 1e4
-  return `${q(minLon)},${q(minLat)},${q(maxLon)},${q(maxLat)}`
+  if (totA === 0 || absArea === 0 || !Number.isFinite(totNumX)) return null
+  return { cx: totNumX / (6 * totA), cy: totNumY / (6 * totA), area: absArea }
+}
+
+// To form-deskriptorer beskriver samme innsjø hvis sentroidene ligger nær
+// hverandre (i meter) OG arealene er nær like. Tåler per-lag-generalisering.
+function sameShape(a, b, tolM = 30) {
+  if (!a || !b) return false
+  const big = Math.max(a.area, b.area)
+  if (big <= 0 || Math.min(a.area, b.area) / big < 0.8) return false
+  const midLat = (a.cy + b.cy) / 2
+  const dLatM = (a.cy - b.cy) * 111320
+  const dLonM = (a.cx - b.cx) * 111320 * Math.cos(midLat * Math.PI / 180)
+  return Math.hypot(dLatM, dLonM) <= tolM
 }
 
 /**
@@ -267,7 +288,9 @@ function geomSignature(rings) {
  * da fyllet (evenodd: vikletall 2 = partall = ikke fylt), så små unavngitte
  * tjern endte som blå OMRISS uten blått fyll, mens navngitte innsjøer (rendret
  * som egne standalone-paths) fylte korrekt. Vi dedup-er på vatnLnr når den
- * finnes, ellers på bbox-signatur, og løfter inn et navn fra et duplikat-lag.
+ * finnes, ellers på areal-vektet sentroid + areal (stabilt under per-lag-
+ * generalisering, i motsetning til bbox-hjørner), og løfter inn et navn fra
+ * et duplikat-lag.
  * @param {{ results?: Array<{ geometry?: object, attributes?: object }> }} json
  * @returns {Array} OSM-aktige relation-elementer
  */
@@ -275,25 +298,29 @@ export function nveIdentifyToWater(json) {
   const results = json?.results
   if (!Array.isArray(results)) return []
   const out = []
-  const byKey = new Map()       // dedup-nøkkel → element
-  const lnrToKey = new Map()    // vatnLnr → nøkkel (samme innsjø, ulik generalisering pr lag)
+  const kept = []   // { desc, lnr, el }
   let i = 0
   for (const r of results) {
     if (!r?.geometry?.rings) continue
     const f = scanAttributes(r.attributes ?? {})
     const lnr = Number.isFinite(f.vatnLnr) ? f.vatnLnr : null
-    let key = lnr != null && lnrToKey.has(lnr) ? lnrToKey.get(lnr) : geomSignature(r.geometry.rings)
-    if (key == null) continue
-    const existing = byKey.get(key)
-    if (existing) {
-      // Behold den første, men ta vare på et navn fra et senere duplikat-lag.
-      if (!existing.tags.name && f.navn) existing.tags.name = f.navn
+    const desc = shapeDescriptor(r.geometry.rings)
+    if (!desc) continue
+    // Finn et allerede beholdt duplikat: samme vatnLnr, ellers samme form.
+    let dup = null
+    for (const k of kept) {
+      if ((lnr != null && k.lnr === lnr) || sameShape(desc, k.desc)) { dup = k; break }
+    }
+    if (dup) {
+      // Behold den første, men ta vare på et navn fra et senere duplikat-lag,
+      // og lås vatnLnr på den beholdte hvis vi nettopp lærte den.
+      if (!dup.el.tags.name && f.navn) dup.el.tags.name = f.navn
+      if (lnr != null && dup.lnr == null) dup.lnr = lnr
       continue
     }
     const el = esriPolygonToRelation(r.geometry, r.attributes, String(i++))
     if (!el) continue
-    byKey.set(key, el)
-    if (lnr != null) lnrToKey.set(lnr, key)
+    kept.push({ desc, lnr, el })
     out.push(el)
   }
   return out
