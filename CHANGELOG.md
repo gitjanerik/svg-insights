@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.55: Maksimerbar drawer + tekststørrelse i kart
+
+To UX-forbedringer i kartvisningen. (1) Både hovedmenyen (hamburger) og info-arket ved long-press kan nå dras opp i topp-håndtaket fra standard ~45dvh til ~85dvh — info-arket fikk et nytt dra-håndtak (var fast høyde uten håndtak før). Når hovedmenyen maksimeres skjules FAB-knappene så drawer legger seg oppå dem. Komposablen `useDraggableDrawer` har fått et valgfritt tredje snap-punkt (`maxHeight`) og snapper nå til nærmeste punkt; uten `maxHeight` er oppførselen uendret (ViewerView-bruken er urørt). (2) Ny tekststørrelse-kontroll («Aa», 100/125/150 %) i begge headerne skalerer infoteksten inne i appen via CSS `zoom` og huskes i `localStorage`. Dette erstatter behovet for browser-pinch-zoom, som ikke kan nullstilles fra kode i en standalone-PWA (`visualViewport.scale` er read-only) og som tidligere etterlot appen zoomet og panorert med tapt oversikt.
+
+---
+
 ## 2026-06-25 — v11.0.54: Vann-søk — kategori-lista kappet ikke lenger ved bokstaven H
 
 Søk på «vann» (og synonymene «innsjø»/«tjern») skal vise alle ferskvann i kartutsnittet, men resultatlista stoppet halvveis i alfabetet — typisk rundt bokstaven H. Årsaken: `filterIndex` kappet alltid til 60 treff, og siden treffene sorteres alfabetisk forsvant alt etter det 60. navnet. I et tett norsk skogskart finnes lett over 60 navngitte tjern, så f.eks. «Landfalltjern» (L) dukket aldri opp selv om det lå i utsnittet. Fiks: kategori-søk («vann»/«innsjø»/«tjern»/«parkering») kappes ikke lenger — de er en oversikt og resultatlista ligger uansett i en scroll-container. Fritekst-navnesøk beholder grensen på 60 (man vil ha topp-N, ikke alt). Endring i `composables/useMapSearch.js` + nye regresjonstester.
