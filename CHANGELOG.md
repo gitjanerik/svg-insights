@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.70: Kart-UI-justeringer: 12 km maks, rødt sikte, færre advarsler, snarvei til innebygd kart
+
+Fire små UI-justeringer i kart-sporet. (1) **Maks kartbredde redusert fra 20 til 12 km** i «Flere valg»-velgeren (`MapPickerView`): bredde-slideren topper nå på 12 km, pinch-zoom-clampen og del-/utfordrings-lenke-parsingen følger samme grense. (2) **Long-press-markøren er nå et rødt sikte** istedenfor en blå sirkel. Den blå sirkelen var visuelt forvekslelig med den blå GPS-prikken når begge var synlige samtidig (typisk når info-arket åpnes). Markøren bruker nå samme røde fadenkreuz-ikon som detalj-inset-en i info-arket, så hovedkart og infodrawer viser identisk markør. (3) **Gul «mange kart»-advarsel** på forsiden (`MapHomeView`) vises nå først ved minst 10 egne kart (var 5). (4) **Diskret snarvei til innebygd kart** lagt nederst i «Flere valg» ved siden av OSM-attribusjonen, så man kan åpne det innebygde Vardåsen-kartet (og dermed nå Innstillinger) uten å lage et nytt kart først.
+
+---
+
 ## 2026-06-27 — v11.0.69: Fiks: små innsjøer uten navn fikk blått omriss men ikke blått fyll
 
 På innlandskart (f.eks. Bugøynes, Finnmark) ble navngitte innsjøer fylt blått mens små, navnløse tjern bare fikk et tynt blått omriss uten flate. Årsak: NVEs `identify` (Innsjødatabase2) kalles med `layers: 'all'` og returnerer SAMME innsjø fra flere polygon-lag (høyde og dyp ligger på ulike lag — derfor merger `pickLakeFromIdentify` allerede på tvers av lag). `nveIdentifyToWater` emitterte ett polygon pr resultat uten dedup, så hver innsjø kom 2+ ganger med sammenfallende geometri. I `buildSvg` slås navnløse vann-polygoner med samme stil sammen til ÉN `fill-rule="evenodd"`-path pr rute — to overlappende ringer kansellerer da fyllet (vikletall 2 = partall = ikke fylt), så det bare sto igjen et omriss. Navngitte innsjøer rendres som egne standalone-paths og slapp unna sammenslåingen, derfor fylte de korrekt. Fiks: `nveIdentifyToWater` dedup-er nå pr innsjø (på `vatnLnr` når den finnes, ellers på en kvantisert bbox-signatur som tåler ulik generalisering mellom lagene) og løfter inn et navn fra et duplikat-lag. Eksisterende lagrede kart må bygges på nytt for å få blått fyll på de små tjernene.

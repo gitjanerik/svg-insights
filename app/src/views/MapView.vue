@@ -2978,35 +2978,45 @@ function renderContextPin() {
     svg.appendChild(layer)
   }
   layer.replaceChildren()
-  const r1 = pxToUserUnits(8)
-  const r2 = pxToUserUnits(18)
-  const sw = pxToUserUnits(2)
-  // Solid kjerne
-  const core = document.createElementNS(ns, 'circle')
-  core.setAttribute('cx', p.svgX); core.setAttribute('cy', p.svgY)
-  core.setAttribute('r', r1)
-  core.setAttribute('fill', '#0ea5e9')
-  core.setAttribute('stroke', '#fff')
-  core.setAttribute('stroke-width', String(sw))
-  layer.appendChild(core)
-  // Pulserende ring
-  const pulse = document.createElementNS(ns, 'circle')
-  pulse.setAttribute('cx', p.svgX); pulse.setAttribute('cy', p.svgY)
-  pulse.setAttribute('r', String(r1))
-  pulse.setAttribute('fill', 'none')
-  pulse.setAttribute('stroke', '#0ea5e9')
-  pulse.setAttribute('stroke-width', String(sw))
-  const anR = document.createElementNS(ns, 'animate')
-  anR.setAttribute('attributeName', 'r')
-  anR.setAttribute('values', `${r1};${r2}`)
-  anR.setAttribute('dur', '1.4s'); anR.setAttribute('repeatCount', 'indefinite')
-  pulse.appendChild(anR)
-  const anO = document.createElementNS(ns, 'animate')
-  anO.setAttribute('attributeName', 'opacity')
-  anO.setAttribute('values', '0.85;0')
-  anO.setAttribute('dur', '1.4s'); anO.setAttribute('repeatCount', 'indefinite')
-  pulse.appendChild(anO)
-  layer.appendChild(pulse)
+  // Rødt fadenkreuz — IKKE en blå sirkel. Tidligere var long-press-markøren en
+  // blå sirkel som var visuelt forvekslelig med den blå GPS-prikken når begge
+  // var synlige samtidig. Nå er den et rødt sikte (samme ikon som detalj-inset-
+  // en i info-arket), så hovedkart og infodrawer viser samme markør.
+  const arm = pxToUserUnits(11)         // krysslengde fra senter
+  const ringR = pxToUserUnits(6)        // senterring-radius
+  const sw = pxToUserUnits(2.1)         // rød strek
+  const halo = pxToUserUnits(3.6)       // hvit halo under for synlighet
+  const RED = '#e11d48'
+  const mkLine = (d, stroke, width) => {
+    const ln = document.createElementNS(ns, 'path')
+    ln.setAttribute('d', d)
+    ln.setAttribute('stroke', stroke)
+    ln.setAttribute('stroke-width', String(width))
+    ln.setAttribute('fill', 'none')
+    ln.setAttribute('stroke-linecap', 'round')
+    return ln
+  }
+  const hLine = `M${p.svgX - arm},${p.svgY} L${p.svgX + arm},${p.svgY}`
+  const vLine = `M${p.svgX},${p.svgY - arm} L${p.svgX},${p.svgY + arm}`
+  // Hvit halo først (bredere), så rød strek oppå.
+  layer.appendChild(mkLine(hLine, '#fff', sw + halo))
+  layer.appendChild(mkLine(vLine, '#fff', sw + halo))
+  const haloRing = document.createElementNS(ns, 'circle')
+  haloRing.setAttribute('cx', p.svgX); haloRing.setAttribute('cy', p.svgY)
+  haloRing.setAttribute('r', String(ringR))
+  haloRing.setAttribute('fill', 'none')
+  haloRing.setAttribute('stroke', '#fff')
+  haloRing.setAttribute('stroke-width', String(sw + halo))
+  layer.appendChild(haloRing)
+  layer.appendChild(mkLine(hLine, RED, sw))
+  layer.appendChild(mkLine(vLine, RED, sw))
+  const ring = document.createElementNS(ns, 'circle')
+  ring.setAttribute('cx', p.svgX); ring.setAttribute('cy', p.svgY)
+  ring.setAttribute('r', String(ringR))
+  ring.setAttribute('fill', 'none')
+  ring.setAttribute('stroke', RED)
+  ring.setAttribute('stroke-width', String(sw))
+  layer.appendChild(ring)
 }
 watch([contextMenuOpen, contextMenuPoint, scale], renderContextPin)
 watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })

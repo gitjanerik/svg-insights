@@ -328,7 +328,7 @@ async function onSelectSearchResult(r) {
 
       <!-- Vises kun når brukeren har samlet opp mange kart. Filene er små,
            så dette handler om ryddighet/utdaterte kart, ikke lagringsplass. -->
-      <div v-if="!loading && maps.length > 5"
+      <div v-if="!loading && maps.length > 9"
            class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
                   text-amber-200/80 text-[11px] leading-snug">
         Du har mange og potensielt utdaterte kart. Slett kart du ikke trenger lenger for å
