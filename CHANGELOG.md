@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.60: 10 km standardkart, dybde i Padling-preset, mindre dybde-tall, lesbar laster
+
+Fire UX-justeringer fra mobiltesting. (1) **Standardstørrelse 10 km + stuck-preferanse løst:** «Lag nytt kart» (uten «Flere valg») bygde fortsatt 20×20 km fordi en gammel 20 km-verdi lå lagret i localStorage og overstyrte 4 km-defaulten fra v11.0.59. «Standard» er nå et fast **10 km** kvadrat, og de store testvalgene (12–20 km) er fjernet fra velgeren — størrelse-velgeren tilbyr i stedet **mindre** valg (4/6/8 km) for raskere bygging. En lagret 20 km-verdi gjenkjennes ikke lenger og faller tilbake til Standard (10 km), så snarveien slutter å bygge 20 km-kart. (2) **Dybde i «Padling»-preset:** preset-en tar nå med dybde-laget, så dybde-tall/-kurver (Sjøkart) vises på **hovedkartet**, ikke bare i long-press-lupen. (3) **Mindre dybde-tall:** dybde-tallene manglet en egen CSS-regel og falt gjennom til stedsnavn-størrelse (4 mm) — de er nå 2,6 mm (på linje med innsjø-høyde-tall), diskret kartstoff i stedet for dominerende. (4) **Lesbar laste-skjerm:** «Laster kart …» + spinneren var hvite på det kremgule lyse skjelettet (nær usynlig) — de er nå tema-bevisste (mørke på lyst tema).
+
+---
+
 ## 2026-06-27 — v11.0.59: «Standard» kartstørrelse er nå et ekte 4 km kvadrat
 
 «Standard» (default når man ikke har valgt en fast størrelse) ble bygd med `autoMapSquare(2)` = et skjerm-skalert kvadrat på 4 km × `viewportAspect`. På en høy mobilskjerm (h/w ≈ 2,2) ga det et **~8,7 km** kvadrat — nær 5× arealet av et 4 km-kart, og dermed en mye tyngre OSM-/DEM-bygging (treg på akkurat de tette kyst-/byområdene der v11.0.58-timeout-fiksen nettopp ble nødvendig). Kommentarene sa «~4 km», men koden leverte nær 9 km. Standard er nå et **fast 4 km kvadrat** (`defaultMapDims`/`DEFAULT_MAP_WIDTH_KM`): raskt å bygge og rikelig for en tur-/padle-økt, og fortsatt 20 m ekvidistanse. De faste 10–20 km-valgene i størrelse-velgeren er uendret for den som vil ha store oversiktskart.

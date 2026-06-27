@@ -715,6 +715,13 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${fs(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
+  // Dybde-tall (Sjøkart-soundings). Uten denne regelen falt de gjennom til den
+  // generiske [data-label]-regelen = place-størrelse (4 mm), så dybde-tallene
+  // ble store og dominerende i inset/Padling-laget. Egen, mindre størrelse
+  // (2,6 mm, på linje med vann-tall) — soundings skal være diskret kartstoff.
+  if (lab['dybde-tall']) {
+    rules.push(`${root} [data-label="dybde-tall"] { font-size: ${fs(lab['dybde-tall'].fontSizeMm)}; fill: var(--label-dybde-tall-fill, ${lab['dybde-tall'].color}); stroke: var(--label-dybde-tall-halo, ${lab['dybde-tall'].haloColor}); stroke-width: ${haloMm(lab['dybde-tall'].haloWidthMm)}; paint-order: stroke; stroke-linejoin: round; }`)
+  }
   // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
   // v8.10.15: naturreservat-navn — grønn skrift + hvit halo, samme visuelle
   // hierarki som blå vann-navn over innsjø-flater.

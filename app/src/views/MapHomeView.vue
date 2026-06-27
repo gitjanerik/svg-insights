@@ -10,14 +10,14 @@ const router = useRouter()
 const maps = ref([])
 const loading = ref(true)
 
-// Standard kartstørrelse (settes i MapView «Innstillinger»). null = fast 4 km
+// Standard kartstørrelse (settes i MapView «Innstillinger»). null = fast 10 km
 // kvadrat (defaultMapDims). Tall = fast kvadrat-bredde i km. Brukes av søk-/GPS-flyten.
 const { mapSizeKm } = useMapSizePreference()
 function squareDims() {
   return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : defaultMapDims()
 }
 // Ekvidistanse trappes opp med størrelsen (se equidistanceForWidthKm) så store
-// kart ikke drukner i kurver. Standard (4 km) holder 20 m.
+// kart ikke drukner i kurver. Standard (10 km) holder 20 m.
 function squareEquidistance() {
   return equidistanceForWidthKm(mapSizeKm.value)
 }
@@ -100,7 +100,7 @@ function infoLine(sizeStr, eq, demRes, demSource) {
 }
 
 // ── On-the-fly snarvei: «Lag kart der jeg er» ───────────────────────────
-// Krever GPS. Ett trykk → hent posisjon → bygg 4×4 km, 20 m ekvidistanse,
+// Krever GPS. Ett trykk → hent posisjon → bygg standard 10×10 km, 20 m ekvidistanse,
 // åpne nytt kart sentrert på brukeren. Full-screen loader vises mens
 // pipelinen kjører (Overpass, N50, Sjøkart, WMS, DEM, buildSvg, saveMap).
 const supportsGeolocation = typeof navigator !== 'undefined' && !!navigator.geolocation
@@ -171,7 +171,7 @@ async function onCreateHere() {
 
 // ── Søk → bygg direkte ──────────────────────────────────────────────────
 // Søkefeltet på forsiden er en KISS-snarvei (parallelt med «Lag kart der jeg
-// er»): velg et sted fra trefflista → bygg straks et standard 4 × 4 km,
+// er»): velg et sted fra trefflista → bygg straks et standard 10 × 10 km,
 // 20 m ekvidistanse-kart sentrert der, og åpne det. Ingen mellomside med
 // størrelse/ekvidistanse-valg — det ligger fortsatt under «Flere valg»
 // (MapPickerView) for de som vil finjustere.
@@ -191,7 +191,7 @@ async function onSelectSearchResult(r) {
     const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
     const { id } = await buildMapFromCenter({
       center: { lat: r.lat, lon: r.lon, name: r.shortName },
-      ...squareDims(),   // kvadratisk utsnitt — standard ~4 km, eller valgt fast bredde
+      ...squareDims(),   // kvadratisk utsnitt — standard 10 km, eller valgt fast bredde
       equidistanceM: squareEquidistance(), // auto: 20/25/50 m etter bredde
       navn: `${r.shortName} ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
