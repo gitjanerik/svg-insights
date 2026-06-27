@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.68: Fiks: sort skjerm ved kartvisning (TDZ-krasj fra v11.0.67)
+
+v11.0.67 krasjet hele MapView til **sort skjerm** når et kart ble åpnet (mest synlig ved nye kart — etter søk og valgt sted). Årsak: `watch(showFullNames, …)` ble lagt rett etter `applyLayerVisibility()`, men `const showFullNames` deklareres ~300 linjer lenger ned. `watch()` kjøres ved komponentens `setup()`, så den traff variabelen i dens «temporal dead zone» → `ReferenceError: Cannot access … before initialization`. Det er en synkron setup-feil (ikke fanget av `loadMap`s try/catch), så hele komponenten falt og etterlot en sort skjerm. Fix: watch-en flyttet til rett etter `showFullNames`-deklarasjonen. Verifisert i hodeløs nettleser — kartet rendrer igjen uten setup-feil. «Vis fulle navn»-funksjonen fra v11.0.67 er uendret.
+
+---
+
 ## 2026-06-27 — v11.0.67: Vis kun norske navn (flerspråklige navn i Nord-Norge)
 
 I Nord-Norge har mange steder navn på norsk, samisk og kvensk samtidig, lagret i ett OSM-felt adskilt med mellomrom-omkranset bindestrek/skråstrek («Bugøynes - Buođggák - Pykeijä», «Svinøya - Spiidnesuolu»). Det gjorde kartet rotete. Nytt: kartet viser nå **kun det norske (første) leddet** som default, og en bryter **«Vis fulle navn»** under Innstillinger slår på hele det flerspråklige navnet igjen. Gjelder steder, innsjøer/sjønavn, topper, hytter og naturreservat. Splittingen krever mellomrom rundt skilletegnet, så ekte bindestreksnavn («Sør-Trøndelag», «Nord-Norge») røres aldri. **Søk treffer alle språk uansett innstilling** — det fulle navnet bevares i `data-name-full` og indekseres av søket, så et samisk/kvensk søkeord fortsatt finner stedet. Logikken er ren i `lib/placeName.js` (enhetstestet), brukes på live-DOM i MapView, så også eksisterende lagrede kart blir renere uten ombygging.

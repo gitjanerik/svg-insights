@@ -851,13 +851,6 @@ function applyNameLanguage() {
   }
 }
 
-watch(showFullNames, () => {
-  try { localStorage.setItem(SHOW_FULL_NAMES_LS_KEY, showFullNames.value ? '1' : '0') } catch { /* noop */ }
-  applyNameLanguage()
-  // Navnene endret bredde → la navn-LOD revurdere hvilke som får plass.
-  scheduleNameLOD()
-})
-
 // Pinch/pan/rotate fryses kun i CurveBall-modus (kartet skal stå i ro under
 // spill) og mens aller første last pågår (ingen kart-DOM ennå). Mens et ferskt
 // kart fyller inn stier og detaljer (terreng-først) ELLER mens et nytt kart
@@ -1171,6 +1164,15 @@ const SHOW_FULL_NAMES_LS_KEY = 'svg-insights-show-full-names'
 const showFullNames = ref((() => {
   try { return localStorage.getItem(SHOW_FULL_NAMES_LS_KEY) === '1' } catch { return false }
 })())
+// MERK: watch-en MÅ stå etter showFullNames-deklarasjonen — watch() kjøres ved
+// setup, og en watch plassert før ref-en traff TDZ («Cannot access … before
+// initialization») som krasjet hele MapView til sort skjerm.
+watch(showFullNames, () => {
+  try { localStorage.setItem(SHOW_FULL_NAMES_LS_KEY, showFullNames.value ? '1' : '0') } catch { /* noop */ }
+  applyNameLanguage()
+  // Navnene endret bredde → la navn-LOD revurdere hvilke som får plass.
+  scheduleNameLOD()
+})
 
 // Tekststørrelse-slider (desktop) — søsken til rotasjons-sliden. Verdien er
 // −100…100 med 0 = «normal» (midtstilt); skala = 2^(v/100) → 0.5×…2.0×, så
