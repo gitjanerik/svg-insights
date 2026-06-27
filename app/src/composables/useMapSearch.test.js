@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterIndex, foldName, elementPosition } from './useMapSearch.js'
+import { filterIndex, foldName, elementPosition, dedupeHeightPoints } from './useMapSearch.js'
 
 // Pure-funksjons-tester. buildSearchIndex tester vi ikke her — den krever
 // reell DOM (jsdom er ikke installert), og vi har hverken @napi-rs eller
@@ -225,12 +225,12 @@ describe('useMapSearch', () => {
           label: 'Vann', x: 0, y: 0, categories: ['vann'], areaM2: 9000, ele: null },
       ]
 
-      it('«topp» lister de fem høyeste, sortert på høyde desc', () => {
+      it('«topp» lister de høyeste, sortert på høyde desc', () => {
         const results = filterIndex(idx, 'topp')
         expect(results.map(r => r.name)).toEqual([
-          'Storetoppen', 'Midttoppen', 'Topp', 'Tretoppen', 'Småtoppen',
+          'Storetoppen', 'Midttoppen', 'Topp', 'Tretoppen', 'Småtoppen', 'Lavtoppen',
         ])
-        expect(results.map(r => r.ele)).toEqual([980, 720, 655, 412, 305])
+        expect(results.map(r => r.ele)).toEqual([980, 720, 655, 412, 305, 210])
       })
 
       it('«topper» er synonym for «topp»', () => {
@@ -243,8 +243,11 @@ describe('useMapSearch', () => {
         expect(names).not.toContain('Hestesund')
       })
 
-      it('kapper til fem treff selv med flere topper', () => {
-        expect(filterIndex(idx, 'topp').length).toBe(5)
+      it('kapper til ti treff selv med flere topper', () => {
+        const many = Array.from({ length: 25 }, (_, i) => peak(`m${i}`, `Topp ${i}`, 100 + i))
+        expect(filterIndex(many, 'topp').length).toBe(10)
+        // Høyeste først (ele 124 ned til 115)
+        expect(filterIndex(many, 'topp')[0].ele).toBe(124)
       })
 
       it('partial «top» trigger ikke topp-modus (vanlig substring-søk)', () => {
@@ -253,8 +256,74 @@ describe('useMapSearch', () => {
         // sorteres på høyde i topp-modus — her er det rein alfabetisk liste.
         const results = filterIndex(idx, 'top')
         expect(results.map(r => r.name)).toContain('Storetoppen')
-        // Ikke kappet til fem og ikke høyde-sortert:
+        // Ikke høyde-sortert:
         expect(results[0].name).toBe('Lavtoppen')   // alfabetisk først
+      })
+
+      it('faller tilbake til kontur-høydepunkter når kartet mangler ekte topper', () => {
+        const hp = (id, ele) => ({
+          id, name: 'Høyde', folded: 'hoeyde', kind: 'hoydepunkt', label: 'Høyde',
+          x: ele, y: ele, categories: null, areaM2: null, ele,
+        })
+        const noPeaks = [
+          hp('h1', 200), hp('h2', 240), hp('h3', 180),
+          { id: 'v1', name: 'Hestesund', folded: 'hestesund', kind: 'omrade',
+            label: 'Vann', x: 0, y: 0, categories: ['vann'], areaM2: 9000, ele: null },
+        ]
+        const results = filterIndex(noPeaks, 'topp')
+        expect(results.map(r => r.ele)).toEqual([240, 200, 180])
+      })
+
+      it('ekte topper vinner over kontur-høydepunkter når begge finnes', () => {
+        const mixed = [
+          ...idx,
+          { id: 'h1', name: 'Høyde', folded: 'hoeyde', kind: 'hoydepunkt',
+            label: 'Høyde', x: 1, y: 1, categories: null, areaM2: null, ele: 9999 },
+        ]
+        const results = filterIndex(mixed, 'topp')
+        // Kontur-høydepunktet (9999) skal IKKE være med — vi har ekte topper.
+        expect(results.every(r => r.kind === 'peak')).toBe(true)
+        expect(results.map(r => r.ele)).not.toContain(9999)
+      })
+
+      it('hoydepunkt dukker ALDRI opp i vanlig navnesøk', () => {
+        const withHp = [
+          { id: 'h1', name: 'Høyde', folded: 'hoeyde', kind: 'hoydepunkt',
+            label: 'Høyde', x: 1, y: 1, categories: null, areaM2: null, ele: 300 },
+        ]
+        expect(filterIndex(withHp, 'høyde')).toEqual([])
+      })
+    })
+
+    describe('dedupeHeightPoints', () => {
+      it('kollapser like høyder innen radius til det midterste', () => {
+        // Tre punkter med samme høyde langs en linje innen 200 m → ett igjen,
+        // det midterste (nærmest sentroiden).
+        const pts = [
+          { x: 0, y: 0, ele: 200 },
+          { x: 100, y: 0, ele: 200 },
+          { x: 180, y: 0, ele: 200 },
+        ]
+        const out = dedupeHeightPoints(pts, 200)
+        expect(out.length).toBe(1)
+        // Sentroide ≈ x=93 → nærmest er x=100
+        expect(out[0].x).toBe(100)
+      })
+
+      it('beholder like høyder som ligger lenger fra hverandre enn radius', () => {
+        const pts = [
+          { x: 0, y: 0, ele: 200 },
+          { x: 500, y: 0, ele: 200 },   // > 200 m unna → egen klynge
+        ]
+        expect(dedupeHeightPoints(pts, 200).length).toBe(2)
+      })
+
+      it('ulike høyder er aldri samme klynge selv om de er nære', () => {
+        const pts = [
+          { x: 0, y: 0, ele: 200 },
+          { x: 10, y: 0, ele: 220 },
+        ]
+        expect(dedupeHeightPoints(pts, 200).length).toBe(2)
       })
     })
   })

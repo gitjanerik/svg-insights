@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-27 — v11.0.65: «Topp»-søk → ti høyeste + kontur-fallback
+
+Tre forbedringer i «topp»-søket. (1) **Topp 10:** søket lister nå kartets ti høyeste punkter (var fem) — «Topp 10» er et innarbeidet begrep i lokale turarrangementer. (2) **Kontur-fallback:** har kartet ingen ekte topp-markører (de brune høyde-/navne-tallene fra OSM-peaks), finner søket de høyeste punktene via de røde kontur-tallene (høydekurve-etiketter) i stedet, så et navnløst innlandskart uten registrerte topper likevel får en topp-liste. (3) **Dedup av like høyder:** like kontur-tall innen 200 m (samme tall gjentas langs en høydekurve / rundt en kolle) kollapses til ett — det midterste (nærmest klynge-sentroiden) — så lista ikke fylles av samme høyde flere ganger. Hvert treff viser fortsatt høyde (moh) + navn (toppens eget, ellers nærmeste sted innenfor 50 m, ellers «Topp»/«Høyde»).
+
+---
+
 ## 2026-06-27 — v11.0.64: Levende hovedkart bak info-arket (standard/minimert)
 
 Long-press-info-arket dimmet og sperret hele kartet bak seg uansett tilstand. Nå dimmer/sperrer kun den **maksimerte** tilstanden (der kartet uansett er nesten helt skjult — modal med tapp-utenfor-for-å-lukke). I **standard** (halvt) og **minimert** tilstand står hovedkartet synlig og fullt interaktivt bak arket (`pointer-events-none` på bakgrunns-laget, arket selv beholder sine egne trykk). Da kan man panorere/zoome hovedkartet for kontekst mens detalj-insettet i arket holder sitt eget zoom-nivå — to uavhengige zoom-nivåer samtidig. Punkt-markøren (pulsende pin) blir stående på det valgte punktet når man zoomer hovedkartet.
