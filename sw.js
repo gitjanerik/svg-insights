@@ -16,7 +16,7 @@
  *       Everything else → network only (Google Fonts, opentype from CDN, etc.)
  */
 
-const CACHE_VERSION = 'svg-insights-v11.0.80'
+const CACHE_VERSION = 'svg-insights-v12.0.0'
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`
 const BASE = '/svg-insights/'
@@ -141,4 +141,22 @@ self.addEventListener('fetch', (e) => {
 // Optional: allow the page to ask the SW to activate immediately after update
 self.addEventListener('message', (e) => {
   if (e.data === 'SKIP_WAITING') self.skipWaiting()
+})
+
+// Nærhetsvarsel: brukeren trykker på notification-en (eller dens «Avbryt»-
+// knapp) → lukk den, fokuser kart-vinduet og be siden avbryte alarmen. Både
+// body-klikk og action behandles som avbryt (tap-for-å-stoppe).
+self.addEventListener('notificationclick', (e) => {
+  const n = e.notification
+  if (!n || n.tag !== 'proximity-alert') return
+  n.close()
+  e.waitUntil((async () => {
+    const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const c of cs) c.postMessage({ type: 'PROXIMITY_CANCEL' })
+    if (cs.length && 'focus' in cs[0]) {
+      try { await cs[0].focus() } catch { /* ignore */ }
+    } else if (self.clients.openWindow) {
+      try { await self.clients.openWindow(BASE) } catch { /* ignore */ }
+    }
+  })())
 })
