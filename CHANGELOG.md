@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.4: Informer om at nærhetsvarsel overstyrer 2-min-grensen
+
+Den generelle «Hold skjerm våken» slipper låsen etter 2 minutter uten berøring (for å spare batteri). Et aktivt nærhetsvarsel må overstyre dette — ellers ville skjermen sovnet og GPS-loopen som oppdager ankomst stoppet før du var framme. Overstyringen har vært på plass siden v12.0.1 (egen wake-lock med `idleTimeoutMs: 0`), men det var ikke kommunisert. Info-teksten begge steder (Innstillinger + aktiverings-infoen i infodraweren) presiserer nå at et aktivt varsel holder skjermen våken *sammenhengende* og overstyrer 2-min-grensen.
+
+---
+
 ## 2026-06-28 — v12.0.3: Informer om auto-skjerm-våken ved nærhetsvarsel
 
 Et aktivt nærhetsvarsel holder skjermen våken automatisk (lagt til i v12.0.1), men det var ikke synlig for brukeren. Nå informeres det to steder: i Innstillinger (under «Hold skjerm våken» står det at et aktivt varsel uansett holder skjermen våken, uavhengig av bryteren) og i aktiverings-infoen i infodraweren (panel-teksten sier nå eksplisitt at skjermen holdes våken mens varselet er aktivt).
