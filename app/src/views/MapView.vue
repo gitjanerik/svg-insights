@@ -663,7 +663,9 @@ const mapCenterStyle = computed(() => ({
   left: panelOffsetPx.value > 0 ? `calc(50% - ${panelOffsetPx.value / 2}px)` : '50%',
 }))
 
-function openDrawer() { showControls.value = true; drawer.reset() }
+// Lukk en åpen info-drawer (kontekstmeny) først — ellers ville begge skuffene
+// vært åpne samtidig, med Innstillinger usynlig bak info-draweren.
+function openDrawer() { closeContextMenu(); showControls.value = true; drawer.reset() }
 function closeDrawer() { showControls.value = false }
 
 function onThemeTap(key) {

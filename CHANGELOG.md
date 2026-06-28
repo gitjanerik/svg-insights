@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.6: Lukk info-drawer når hovedmenyen åpnes
+
+Bugfiks: var info-draweren (long-press-kontekstmenyen) åpen og du trykket på hamburger-ikonet, la Innstillinger-skuffen seg usynlig bak info-draweren — to skuffer åpne samtidig. Nå lukker `openDrawer()` en åpen info-drawer først. Motsatt retning (info-drawer lukker hovedmenyen) var allerede på plass.
+
+---
+
 ## 2026-06-28 — v12.0.5: Mer sensitiv drawer-drag + større dra-flate
 
 Den dragbare bottom-sheeten (infodrawer + Innstillinger) landet før på nærmeste snap-punkt, så man måtte dra forbi 50 %-midtpunktet for å bytte størrelse — det opplevdes tungt. Nå committer den retnings-basert: så snart du har dratt ~25 % av gapet mot neste størrelse i dra-retningen, bytter panelet dit. Et langt drag kan fortsatt hoppe forbi flere snap-punkter. I tillegg er dra-håndtaket («tappen») gjort lettere å treffe — større hit-flate og litt større synlig strek. Snap-logikken er trukket ut i en ren `pickSnapTarget`-funksjon med enhetstester.
