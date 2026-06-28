@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.1: Nærhetsvarsel — siste-etappe-herding
+
+Tre forbedringer som gjør nærhetsvarselet mer robust og tydeligere som en siste-etappe-funksjon. (1) Et aktivt varsel persisteres nå (i lat/lon) og gjenopprettes etter en reload — hører det til kartet som lastes, re-projiseres punktet mot ny kart-meta og GPS startes automatisk (krever allerede gitt posisjons-tillatelse), så alarmen lever videre. (2) Skjermen holdes automatisk våken så lenge et varsel er aktivt, via en egen wake-lock som ikke rører den generelle «hold skjerm våken»-innstillingen. (3) En 5 km-grense: er du lenger unna målet enn 5 km kan du ikke aktivere varselet — panelet forklarer at funksjonen er for siste etappe og kun varsler mens appen er åpen. Config-teksten er også tydeligere på at varselet ikke kan utløses i bakgrunnen (web kan ikke spore GPS når appen ikke er i forgrunnen).
+
+---
+
 ## 2026-06-28 — v12.0.0: Nærhetsvarsel ringer til avbrutt + systemvarsel
 
 Nærhetsvarselet er nå en ekte alarm. «Når jeg er framme»-valget (én gang / gjenta) er fjernet — har du bevisst aktivert et varsel, ringer det kontinuerlig (lyd og/eller vibrering hver ~2. sekund) til du avbryter det. Når alarmen utløses ber appen om varslingstillatelse og viser en vedvarende system-notification med en «Avbryt»-knapp, slik at du kan stoppe alarmen rett fra varslingen eller låseskjermen. Avbryt-handlingen rutes gjennom service workeren (`notificationclick` → melding til siden → `cancel()`), som også lukker varslingen igjen. Notification-integrasjonen fungerer best på Android / installert PWA; iOS Safari mangler vibrasjons-API og støtter varslinger kun som installert PWA. Uten tillatelse ringer alarmen fortsatt in-app til du trykker X.

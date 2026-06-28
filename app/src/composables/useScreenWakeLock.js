@@ -38,10 +38,19 @@ function writeSetting(value) {
   try { localStorage.setItem(STORAGE_KEY, String(value)) } catch { /* noop */ }
 }
 
-export function useScreenWakeLock({ idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
-  const enabled = ref(readSetting())
+// `persist:false` gir en efemer instans (f.eks. alarm-wake-lock): den leser/
+// skriver ikke localStorage og deler dermed ikke state med den generelle «hold
+// skjerm våken»-settingen. `idleTimeoutMs:0` skrur av idle-slipp (skjermen skal
+// være våken hele tiden, slik tracker-opptaket gjør).
+export function useScreenWakeLock({
+  idleTimeoutMs = IDLE_TIMEOUT_MS,
+  persist = true,
+  defaultOn = false,
+} = {}) {
+  const enabled = ref(persist ? readSetting() : defaultOn)
   const active = ref(false)
   const supported = typeof navigator !== 'undefined' && !!navigator.wakeLock
+  const save = (v) => { if (persist) writeSetting(v) }
 
   let sentinel = null
   let visibilityAttached = false
@@ -134,7 +143,7 @@ export function useScreenWakeLock({ idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
 
   function setEnabled(v) {
     enabled.value = !!v
-    writeSetting(enabled.value)
+    save(enabled.value)
     if (enabled.value) {
       attachVisibilityListener()
       attachActivityListeners()
@@ -159,7 +168,7 @@ export function useScreenWakeLock({ idleTimeoutMs = IDLE_TIMEOUT_MS } = {}) {
     detachActivityListeners()
   }
 
-  watch(enabled, (v) => writeSetting(v))
+  watch(enabled, (v) => save(v))
 
   return { enabled, active, supported, idleTimeoutMs, setEnabled, start, stop, poke }
 }
