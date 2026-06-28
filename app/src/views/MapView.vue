@@ -2860,7 +2860,7 @@ function flashContextAction(state) {
 // Inline config-panel i kontekst-draweren. Lokal redigerings-state speiler
 // proximity.prefs (sist brukte valg) til brukeren bekrefter med «Aktiver».
 const proximityPanelOpen = ref(false)
-const proximityCfg = ref({ distanceM: 10, sound: true, vibration: true, repeat: false })
+const proximityCfg = ref({ distanceM: 10, sound: true, vibration: true })
 
 function toggleProximityPanel() {
   if (!proximityPanelOpen.value) {
@@ -2868,7 +2868,6 @@ function toggleProximityPanel() {
       distanceM: proximity.prefs.distanceM,
       sound: proximity.prefs.sound,
       vibration: proximity.prefs.vibration,
-      repeat: proximity.prefs.repeat,
     }
   }
   proximityPanelOpen.value = !proximityPanelOpen.value
@@ -2887,7 +2886,6 @@ function armProximityAlert() {
     distanceM: cfg.distanceM,
     useSound: cfg.sound,
     useVibration: cfg.vibration,
-    repeat: cfg.repeat,
   })
   proximityPanelOpen.value = false
   closeContextMenu()
@@ -7878,24 +7876,8 @@ onUnmounted(() => {
                   </button>
                 </div>
 
-                <div class="text-[11px] uppercase tracking-wide text-sky-100/80 mb-1.5">Når jeg er framme</div>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                  <button @click="proximityCfg.repeat = false"
-                          :aria-pressed="!proximityCfg.repeat"
-                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition"
-                          :class="!proximityCfg.repeat
-                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
-                                  : 'bg-white/5 border-white/10 text-white/55'">
-                    Én gang
-                  </button>
-                  <button @click="proximityCfg.repeat = true"
-                          :aria-pressed="proximityCfg.repeat"
-                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition"
-                          :class="proximityCfg.repeat
-                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
-                                  : 'bg-white/5 border-white/10 text-white/55'">
-                    Gjenta (maks 3)
-                  </button>
+                <div class="text-[10px] text-sky-100/70 leading-snug mb-3">
+                  Alarmen ringer helt til du avbryter den.
                 </div>
 
                 <button @click="armProximityAlert"
