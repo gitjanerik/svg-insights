@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v11.0.80: Nærhetsvarsling
+
+Ny funksjon i kart-sporet: nærhetsvarsel. Long-press et punkt på kartet og åpne info-draweren — en «Nærhetsvarsel»-knapp folder ut et panel der du velger utløsnings-avstand (50/25/10 m, default 10), varseltype (lyd og/eller vibrering, begge på som standard) og om det skal varsle én gang ved ankomst eller gjenta (maks 3 ganger). Når GPS-posisjonen din kommer innenfor radius spilles en kort tone og/eller telefonen vibrerer. Et aktivt varsel vises som en blå banner øverst med live avstand og en X for å avbryte, og målpunktet markeres med en stiplet radius-ring på kartet. Ett varsel om gangen — å sette et nytt erstatter det forrige. Krever aktiv GPS; uten den tilbyr panelet å starte posisjonering. Ny composable `useProximityAlert.js` med egen, lav-volum AudioContext (frikoblet fra spillets mute-flagg), persisterte preferanser i localStorage og enhetstestet terskel-logikk.
+
+---
+
 ## 2026-06-27 — v11.0.79: Navn på store vann som bare delvis er i kartutsnittet
 
 Et stort vann (f.eks. Setten, 11,6 km²) der mesteparten ligger utenfor bboksen fikk navnet plassert ved sitt ekte tyngdepunkt — som da lå utenfor lerretet. Resultat: navnet ble rendret off-canvas (usynlig på kartet) og forsvant fra søket, som leser den rendrede SVG-en. Infopanelet viste likevel navn + areal fordi det henter fra et NVE punkt-oppslag, uavhengig av utsnittet. Fiks: i `mapBuilder.js` klippes vann-ringen mot kart-rektangelet (Sutherland–Hodgman) og navnet plasseres på den synlige biten (sentroide hvis den ligger inni, ellers grov «pole of inaccessibility»). Vann-fyllet er urørt — det klippes allerede av viewBox. Fullt synlige vann beholder navn ved tyngdepunktet (byte-identisk).

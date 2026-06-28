@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
+import { useProximityAlert } from '../composables/useProximityAlert.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useResizablePanel } from '../composables/useResizablePanel.js'
@@ -1363,6 +1364,7 @@ const mapTransformStyle = computed(() => {
 })
 
 const userPos = useUserPosition(() => meta.value)
+const proximity = useProximityAlert(() => userPos)
 const compass = useCompass()
 
 // Kompass-rosen (oppe til høyre): tap setter kart-NORD som «opp» (rotateTo 0).
@@ -1795,6 +1797,53 @@ function renderHighlight() {
 // spillmodus-bytte.
 watch(scale, () => { if (highlightedFeature.value) renderHighlight() })
 watch(() => curveball.active.value, () => renderHighlight())
+
+// Mål-markør for et aktivt nærhetsvarsel: en fast-skjerm-størrelse pin pluss
+// en sirkel som viser den ekte utløsnings-radiusen (i meter = user-units).
+function renderProximityTarget() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let layer = svg.querySelector('#proximity-layer')
+  const a = proximity.active.value
+  if (!a || curveball.active.value) {
+    if (layer) layer.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElementNS(ns, 'g')
+    layer.setAttribute('id', 'proximity-layer')
+    layer.setAttribute('data-layer', 'proximity')
+    layer.setAttribute('pointer-events', 'none')
+    svg.appendChild(layer)
+  }
+  layer.replaceChildren()
+  const sw = pxToUserUnits(2)
+  const dot = pxToUserUnits(5)
+
+  // Utløsnings-radius i ekte meter
+  const radius = document.createElementNS(ns, 'circle')
+  radius.setAttribute('cx', a.svgX); radius.setAttribute('cy', a.svgY)
+  radius.setAttribute('r', String(a.distanceM))
+  radius.setAttribute('fill', 'rgba(56, 189, 248, 0.12)')
+  radius.setAttribute('stroke', '#38bdf8')
+  radius.setAttribute('stroke-width', String(sw))
+  radius.setAttribute('stroke-dasharray', `${pxToUserUnits(4)} ${pxToUserUnits(4)}`)
+  layer.appendChild(radius)
+
+  // Senter-prikk (fast skjermstørrelse)
+  const center = document.createElementNS(ns, 'circle')
+  center.setAttribute('cx', a.svgX); center.setAttribute('cy', a.svgY)
+  center.setAttribute('r', String(dot))
+  center.setAttribute('fill', '#0284c7')
+  center.setAttribute('stroke', '#ffffff')
+  center.setAttribute('stroke-width', String(pxToUserUnits(1.5)))
+  layer.appendChild(center)
+}
+
+watch(() => proximity.active.value, renderProximityTarget, { deep: true })
+watch(scale, () => { if (proximity.active.value) renderProximityTarget() })
+watch(() => curveball.active.value, () => renderProximityTarget())
 
 // ── Share-flow ────────────────────────────────────────────────────────────
 // Bygger URL som tar mottaker til samme kart-utsnitt. Built-in kart pekes
@@ -2286,6 +2335,7 @@ function closeContextMenu() {
   contextMenuOpen.value = false
   contextMenuPoint.value = null
   contextActionState.value = 'idle'
+  proximityPanelOpen.value = false
 }
 
 function onPointerDownLongPress(e) {
@@ -2804,6 +2854,43 @@ function flashContextAction(state) {
   contextActionState.value = state
   if (contextActionTimer) clearTimeout(contextActionTimer)
   contextActionTimer = setTimeout(() => { contextActionState.value = 'idle' }, 1400)
+}
+
+// ── Nærhetsvarsel (proximity alert) ──────────────────────────────────────
+// Inline config-panel i kontekst-draweren. Lokal redigerings-state speiler
+// proximity.prefs (sist brukte valg) til brukeren bekrefter med «Aktiver».
+const proximityPanelOpen = ref(false)
+const proximityCfg = ref({ distanceM: 10, sound: true, vibration: true, repeat: false })
+
+function toggleProximityPanel() {
+  if (!proximityPanelOpen.value) {
+    proximityCfg.value = {
+      distanceM: proximity.prefs.distanceM,
+      sound: proximity.prefs.sound,
+      vibration: proximity.prefs.vibration,
+      repeat: proximity.prefs.repeat,
+    }
+  }
+  proximityPanelOpen.value = !proximityPanelOpen.value
+}
+
+function armProximityAlert() {
+  const p = contextMenuPoint.value
+  if (!p) return
+  const cfg = proximityCfg.value
+  // Minst én varseltype må være på.
+  if (!cfg.sound && !cfg.vibration) cfg.vibration = true
+  proximity.arm({
+    svgX: p.svgX,
+    svgY: p.svgY,
+    label: contextMenuInfo.value?.place?.name ?? 'punktet',
+    distanceM: cfg.distanceM,
+    useSound: cfg.sound,
+    useVibration: cfg.vibration,
+    repeat: cfg.repeat,
+  })
+  proximityPanelOpen.value = false
+  closeContextMenu()
 }
 
 function gmapsUrl(lat, lon) { return `https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}` }
@@ -4676,6 +4763,7 @@ async function loadMap({ silent = false } = {}) {
     if (pendingResumeRecording && userPos.isWatching) tracker.startRecording()
     applyUprightLabels()
     renderMeasure()
+    renderProximityTarget()
     // Hill-shading (med innbakt knaus-relieff) er default ON — fire-and-forget.
     // Lazy DEM-load skjer internt hvis nødvendig (Vardåsen).
     applyHillshade()
@@ -6161,6 +6249,36 @@ onUnmounted(() => {
         </template>
       </div>
       <button @click="onCancelStifinner" aria-label="Avslutt stifinner"
+              class="-mt-0.5 -mr-0.5 w-6 h-6 flex items-center justify-center rounded-md
+                     text-white/90 active:scale-90 active:bg-white/10 shrink-0">
+        <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+             stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Nærhetsvarsel-alert (blå, X-knapp avbryter). Stables under måle-/sti-
+         banneret hvis et av dem er aktivt (begge ligger på top-16 left-3). -->
+    <div v-if="proximity.active.value && !curveball.active.value"
+         class="absolute left-3 z-20 rounded-md bg-sky-600
+                text-white text-[11px] font-medium shadow-lg
+                tabular-nums max-w-[60%] flex items-start gap-1.5 pl-3 pr-1 py-2"
+         :class="(measureMode || sti.active.value) ? 'top-[7.5rem]' : 'top-16'">
+      <div class="flex-1 min-w-0">
+        <div class="text-[9px] uppercase tracking-wide text-sky-100/90">Nærhetsvarsel</div>
+        <div class="text-[12px] font-semibold truncate">{{ proximity.active.value.label }}</div>
+        <div v-if="proximity.status.value === 'triggered'" class="text-[12px] text-amber-200 font-semibold">
+          Framme!
+        </div>
+        <div v-else-if="proximity.currentDistanceM.value != null" class="text-[11px] text-sky-100/95">
+          {{ formatDistance(proximity.currentDistanceM.value) }} unna · varsler innen {{ proximity.active.value.distanceM }} m
+        </div>
+        <div v-else class="text-[11px] text-sky-100/80">
+          Venter på GPS-posisjon …
+        </div>
+      </div>
+      <button @click="proximity.cancel()" aria-label="Avbryt nærhetsvarsel"
               class="-mt-0.5 -mr-0.5 w-6 h-6 flex items-center justify-center rounded-md
                      text-white/90 active:scale-90 active:bg-white/10 shrink-0">
         <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
@@ -7695,6 +7813,113 @@ onUnmounted(() => {
               </svg>
               <span>Street View</span>
             </button>
+            <button @click="toggleProximityPanel"
+                    :aria-expanded="proximityPanelOpen"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 transition"
+                    :class="proximityPanelOpen
+                            ? 'bg-sky-500/25 border-sky-400/60 text-sky-100'
+                            : 'bg-white/5 border-white/10 text-white/80'">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="2.5"/>
+                <path d="M12 5.5 a6.5 6.5 0 0 1 6.5 6.5 M12 2.5 a9.5 9.5 0 0 1 9.5 9.5"/>
+                <path d="M12 18.5 a6.5 6.5 0 0 1 -6.5 -6.5 M12 21.5 a9.5 9.5 0 0 1 -9.5 -9.5"/>
+              </svg>
+              <span>Nærhetsvarsel</span>
+            </button>
+          </div>
+
+          <!-- Nærhetsvarsel-config: avstand, varseltype og trigger-adferd.
+               Krever aktiv GPS — uten den vises en Start GPS-prompt. -->
+          <div v-if="proximityPanelOpen" class="px-4 pt-3">
+            <div class="rounded-xl border border-sky-400/30 bg-sky-500/10 p-3">
+              <template v-if="userPos.isWatching">
+                <div class="text-[11px] uppercase tracking-wide text-sky-100/80 mb-1.5">Varsle når jeg er innen</div>
+                <div class="grid grid-cols-3 gap-2 mb-3">
+                  <button v-for="d in proximity.DISTANCE_OPTIONS" :key="d"
+                          @click="proximityCfg.distanceM = d"
+                          :aria-pressed="proximityCfg.distanceM === d"
+                          class="px-2 py-2 rounded-lg border text-center text-[13px] active:scale-[0.98] transition"
+                          :class="proximityCfg.distanceM === d
+                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-semibold'
+                                  : 'bg-white/5 border-white/10 text-white/65'">
+                    {{ d }} m
+                  </button>
+                </div>
+
+                <div class="text-[11px] uppercase tracking-wide text-sky-100/80 mb-1.5">Varseltype</div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                  <button @click="proximityCfg.sound = !proximityCfg.sound"
+                          :aria-pressed="proximityCfg.sound"
+                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition flex items-center justify-center gap-1.5"
+                          :class="proximityCfg.sound
+                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
+                                  : 'bg-white/5 border-white/10 text-white/55'">
+                    <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M11 5 L6 9 H2 v6 h4 l5 4 Z"/>
+                      <path d="M15.5 8.5 a5 5 0 0 1 0 7 M18.5 6 a9 9 0 0 1 0 12"/>
+                    </svg>
+                    Lyd
+                  </button>
+                  <button @click="proximityCfg.vibration = !proximityCfg.vibration"
+                          :aria-pressed="proximityCfg.vibration"
+                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition flex items-center justify-center gap-1.5"
+                          :class="proximityCfg.vibration
+                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
+                                  : 'bg-white/5 border-white/10 text-white/55'">
+                    <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="8" y="4" width="8" height="16" rx="1.5"/>
+                      <path d="M3 9 v6 M21 9 v6"/>
+                    </svg>
+                    Vibrering
+                  </button>
+                </div>
+
+                <div class="text-[11px] uppercase tracking-wide text-sky-100/80 mb-1.5">Når jeg er framme</div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                  <button @click="proximityCfg.repeat = false"
+                          :aria-pressed="!proximityCfg.repeat"
+                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition"
+                          :class="!proximityCfg.repeat
+                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
+                                  : 'bg-white/5 border-white/10 text-white/55'">
+                    Én gang
+                  </button>
+                  <button @click="proximityCfg.repeat = true"
+                          :aria-pressed="proximityCfg.repeat"
+                          class="px-2 py-2 rounded-lg border text-center text-[12px] active:scale-[0.98] transition"
+                          :class="proximityCfg.repeat
+                                  ? 'bg-sky-500/30 border-sky-300/70 text-white font-medium'
+                                  : 'bg-white/5 border-white/10 text-white/55'">
+                    Gjenta (maks 3)
+                  </button>
+                </div>
+
+                <button @click="armProximityAlert"
+                        class="w-full px-3 py-2.5 rounded-lg bg-sky-500 text-white text-[13px] font-semibold
+                               active:scale-[0.98] transition flex items-center justify-center gap-2">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                       stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8 a6 6 0 0 0 -12 0 c0 7 -3 9 -3 9 h18 s-3 -2 -3 -9"/>
+                    <path d="M13.7 21 a2 2 0 0 1 -3.4 0"/>
+                  </svg>
+                  Aktiver varsel
+                </button>
+              </template>
+              <template v-else>
+                <div class="text-[12px] text-white/80 mb-2 leading-snug">
+                  Nærhetsvarsel krever aktiv GPS — start posisjonering for å varsle når du nærmer deg stedet.
+                </div>
+                <button @click="startPositioning"
+                        class="w-full px-3 py-2.5 rounded-lg bg-sky-500 text-white text-[13px] font-semibold
+                               active:scale-[0.98] transition">
+                  Start GPS
+                </button>
+              </template>
+            </div>
           </div>
 
           <!-- Nærmeste POI relativt til DETTE punktet. Highlighter med rosa
