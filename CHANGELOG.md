@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.0: Nærhetsvarsel ringer til avbrutt + systemvarsel
+
+Nærhetsvarselet er nå en ekte alarm. «Når jeg er framme»-valget (én gang / gjenta) er fjernet — har du bevisst aktivert et varsel, ringer det kontinuerlig (lyd og/eller vibrering hver ~2. sekund) til du avbryter det. Når alarmen utløses ber appen om varslingstillatelse og viser en vedvarende system-notification med en «Avbryt»-knapp, slik at du kan stoppe alarmen rett fra varslingen eller låseskjermen. Avbryt-handlingen rutes gjennom service workeren (`notificationclick` → melding til siden → `cancel()`), som også lukker varslingen igjen. Notification-integrasjonen fungerer best på Android / installert PWA; iOS Safari mangler vibrasjons-API og støtter varslinger kun som installert PWA. Uten tillatelse ringer alarmen fortsatt in-app til du trykker X.
+
+---
+
 ## 2026-06-28 — v11.0.80: Nærhetsvarsling
 
 Ny funksjon i kart-sporet: nærhetsvarsel. Long-press et punkt på kartet og åpne info-draweren — en «Nærhetsvarsel»-knapp folder ut et panel der du velger utløsnings-avstand (50/25/10 m, default 10), varseltype (lyd og/eller vibrering, begge på som standard) og om det skal varsle én gang ved ankomst eller gjenta (maks 3 ganger). Når GPS-posisjonen din kommer innenfor radius spilles en kort tone og/eller telefonen vibrerer. Et aktivt varsel vises som en blå banner øverst med live avstand og en X for å avbryte, og målpunktet markeres med en stiplet radius-ring på kartet. Ett varsel om gangen — å sette et nytt erstatter det forrige. Krever aktiv GPS; uten den tilbyr panelet å starte posisjonering. Ny composable `useProximityAlert.js` med egen, lav-volum AudioContext (frikoblet fra spillets mute-flagg), persisterte preferanser i localStorage og enhetstestet terskel-logikk.
