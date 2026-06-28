@@ -2894,8 +2894,10 @@ function armProximityAlert() {
   closeContextMenu()
 }
 
-// Avstand fra brukeren til long-press-punktet (for 5 km-gaten i config-panelet).
-const MAX_ARM_DISTANCE_M = 5000
+// Avstand fra brukeren til long-press-punktet (for 2 km-gaten i config-panelet).
+// 2 km ≈ 20–25 min gange; lengre unna er sjansen stor for at nettleseren/GPS
+// rekker å lukke seg før ankomst (en time på 5 km), så alarmen ville ikke fyrt.
+const MAX_ARM_DISTANCE_M = 2000
 const ctxDistFromUser = computed(() => contextMenuInfo.value?.fromUser?.distM ?? null)
 const ctxTooFarToArm = computed(() =>
   ctxDistFromUser.value != null && ctxDistFromUser.value > MAX_ARM_DISTANCE_M)
@@ -7881,7 +7883,7 @@ onUnmounted(() => {
                   <div class="text-[12px] text-white/85 leading-snug">
                     Du er {{ formatDistance(ctxDistFromUser) }} unna. Nærhetsvarsel er for
                     <span class="text-white font-medium">siste etappe</span> og varsler kun mens
-                    appen er åpen — aktiver det når du er innen 5 km av målet.
+                    appen er åpen — aktiver det når du er innen 2 km av målet.
                   </div>
                 </div>
               </template>
