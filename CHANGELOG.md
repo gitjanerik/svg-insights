@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.2: Nærhetsvarsel — grense senket til 2 km
+
+Aktiverings-grensen for nærhetsvarsel er senket fra 5 km til 2 km. 5 km tar omtrent en time å gå, og da er sjansen stor for at nettleseren og GPS-en har rukket å lukke seg før ankomst — alarmen ville altså ikke utløst likevel. 2 km (~20–25 min gange) er et mer realistisk siste-etappe-vindu der appen typisk fortsatt er åpen. Panel-teksten er oppdatert tilsvarende.
+
+---
+
 ## 2026-06-28 — v12.0.1: Nærhetsvarsel — siste-etappe-herding
 
 Tre forbedringer som gjør nærhetsvarselet mer robust og tydeligere som en siste-etappe-funksjon. (1) Et aktivt varsel persisteres nå (i lat/lon) og gjenopprettes etter en reload — hører det til kartet som lastes, re-projiseres punktet mot ny kart-meta og GPS startes automatisk (krever allerede gitt posisjons-tillatelse), så alarmen lever videre. (2) Skjermen holdes automatisk våken så lenge et varsel er aktivt, via en egen wake-lock som ikke rører den generelle «hold skjerm våken»-innstillingen. (3) En 5 km-grense: er du lenger unna målet enn 5 km kan du ikke aktivere varselet — panelet forklarer at funksjonen er for siste etappe og kun varsler mens appen er åpen. Config-teksten er også tydeligere på at varselet ikke kan utløses i bakgrunnen (web kan ikke spore GPS når appen ikke er i forgrunnen).
