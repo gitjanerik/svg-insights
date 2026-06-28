@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.5: Mer sensitiv drawer-drag + større dra-flate
+
+Den dragbare bottom-sheeten (infodrawer + Innstillinger) landet før på nærmeste snap-punkt, så man måtte dra forbi 50 %-midtpunktet for å bytte størrelse — det opplevdes tungt. Nå committer den retnings-basert: så snart du har dratt ~25 % av gapet mot neste størrelse i dra-retningen, bytter panelet dit. Et langt drag kan fortsatt hoppe forbi flere snap-punkter. I tillegg er dra-håndtaket («tappen») gjort lettere å treffe — større hit-flate og litt større synlig strek. Snap-logikken er trukket ut i en ren `pickSnapTarget`-funksjon med enhetstester.
+
+---
+
 ## 2026-06-28 — v12.0.4: Informer om at nærhetsvarsel overstyrer 2-min-grensen
 
 Den generelle «Hold skjerm våken» slipper låsen etter 2 minutter uten berøring (for å spare batteri). Et aktivt nærhetsvarsel må overstyre dette — ellers ville skjermen sovnet og GPS-loopen som oppdager ankomst stoppet før du var framme. Overstyringen har vært på plass siden v12.0.1 (egen wake-lock med `idleTimeoutMs: 0`), men det var ikke kommunisert. Info-teksten begge steder (Innstillinger + aktiverings-infoen i infodraweren) presiserer nå at et aktivt varsel holder skjermen våken *sammenhengende* og overstyrer 2-min-grensen.

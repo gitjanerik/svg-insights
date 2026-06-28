@@ -6513,8 +6513,8 @@ onUnmounted(() => {
              @pointermove="isDesktop || drawer.onPointerMove($event)"
              @pointerup="isDesktop || drawer.onPointerUp($event)"
              @pointercancel="isDesktop || drawer.onPointerUp($event)">
-          <div v-if="!isDesktop" class="pt-2 pb-1 flex justify-center">
-            <div class="w-10 h-1 rounded-full bg-white/40"
+          <div v-if="!isDesktop" class="pt-3.5 pb-2 flex justify-center">
+            <div class="w-12 h-1.5 rounded-full bg-white/40"
                  :style="{ opacity: drawer.handleOpacity.value }"></div>
           </div>
           <div class="px-4 pb-2 flex items-center justify-between"
@@ -7425,13 +7425,14 @@ onUnmounted(() => {
         <div ref="contextSheetRef"
              class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col pointer-events-auto"
              :style="contextDrawer.drawerHeightStyle.value">
-          <!-- Dra-håndtak: dra opp for å maksimere (~85dvh), ned for standard. -->
-          <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-2 pb-1 flex justify-center"
+          <!-- Dra-håndtak: dra opp for å maksimere (~85dvh), ned for standard.
+               Romslig hit-flate (pt-3.5 pb-3) så tappen er lett å treffe. -->
+          <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-3.5 pb-3 flex justify-center"
                @pointerdown="contextDrawer.onPointerDown($event)"
                @pointermove="contextDrawer.onPointerMove($event)"
                @pointerup="contextDrawer.onPointerUp($event)"
                @pointercancel="contextDrawer.onPointerUp($event)">
-            <div class="w-10 h-1 rounded-full bg-white/40"
+            <div class="w-12 h-1.5 rounded-full bg-white/40"
                  :style="{ opacity: contextDrawer.handleOpacity.value }"></div>
           </div>
           <!-- Header: koordinater + lukk -->

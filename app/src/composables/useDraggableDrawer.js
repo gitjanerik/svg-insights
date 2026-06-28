@@ -23,13 +23,46 @@
 
 import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 
+// Retnings-basert snap-valg. I stedet for å lande på nærmeste snap (krever drag
+// forbi 50 %-midtpunktet) committer vi til neste snap i dra-retningen så snart
+// `commitFraction` av gapet dit er passert — lettere å bytte størrelse. Posisjons-
+// basert (ikke akkumulert travel): et fullt drag forbi et snap lander alltid på
+// (minst) det snap-et. Ren funksjon → enhetstestbar.
+export function pickSnapTarget(translateY, startTranslate, snapPoints, commitFraction = 0.25) {
+  if (!snapPoints || snapPoints.length === 0) return startTranslate
+  // fromSnap = snap-et vi startet draget fra (nærmeste til startTranslate).
+  let fromSnap = snapPoints[0]
+  let bestD = Infinity
+  for (const p of snapPoints) {
+    const d = Math.abs(startTranslate - p)
+    if (d < bestD) { bestD = d; fromSnap = p }
+  }
+  const delta = translateY - fromSnap
+  if (delta === 0) return fromSnap
+  const dir = delta < 0 ? -1 : 1
+  // Snaps strengt forbi fromSnap i dra-retningen, nærmest først.
+  const ordered = snapPoints
+    .filter((p) => (dir < 0 ? p < fromSnap : p > fromSnap))
+    .sort((a, b) => (dir < 0 ? b - a : a - b))
+  let target = fromSnap
+  let prev = fromSnap
+  for (const s of ordered) {
+    const boundary = prev + dir * commitFraction * Math.abs(s - prev)
+    const passed = dir < 0 ? translateY <= boundary : translateY >= boundary
+    if (!passed) break
+    target = s
+    prev = s
+  }
+  return target
+}
+
 export function useDraggableDrawer({
   expandedHeight = 0.45,  // fraction of viewport height when expanded (default)
   minimizedPeek = 28,     // px of the handle strip still visible when minimized
   maxHeight = null,       // fraction of viewport height when maximized (null = no maximize snap)
   maxTopGapPx = null,     // px of map left visible at the top when maximized (overrides maxHeight)
   allowMinimize = true,   // whether the drawer can be dragged down to the peek
-  snapThreshold = 1 / 3,  // legacy magnet ratio (kept for two-state callers)
+  commitFraction = 0.25,  // fraction of the gap toward the next snap before it commits
   springMs = 220,         // snap animation duration
 } = {}) {
   // translateY in pixels. 0 = expanded position; positive = pushed down
@@ -145,14 +178,9 @@ export function useDraggableDrawer({
       snapTo(drag.startTranslate)
       return
     }
-    // Land on the nearest snap point.
-    let nearest = snapPoints.value[0]
-    let best = Infinity
-    for (const p of snapPoints.value) {
-      const d = Math.abs(translateY.value - p)
-      if (d < best) { best = d; nearest = p }
-    }
-    snapTo(nearest)
+    // Directional commit: switch to the next snap once `commitFraction` of the
+    // gap toward it has been crossed (lighter than nearest-neighbour).
+    snapTo(pickSnapTarget(translateY.value, drag.startTranslate, snapPoints.value, commitFraction))
   }
 
   function snapTo(t) {
