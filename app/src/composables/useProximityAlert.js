@@ -1,6 +1,7 @@
 import { ref, reactive, watch, onUnmounted } from 'vue'
 
 const KEY = 'svg-insights-proximity'
+const ACTIVE_KEY = 'svg-insights-proximity-active'
 const TICK_MS = 2000
 const NOTIF_TAG = 'proximity-alert'
 
@@ -12,6 +13,26 @@ function loadPrefs() {
     if (raw && typeof raw === 'object') return raw
   } catch { /* private mode / korrupt */ }
   return {}
+}
+
+// Det aktive varselet persisteres i GEOGRAFISKE koordinater (lat/lon), ikke
+// SVG-meter — så det overlever en reload uavhengig av at kart-metaen re-deriveres.
+// MapView re-projiserer lat/lon → svgX/svgY mot gjeldende meta ved gjenoppretting.
+export function getPersistedAlert() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ACTIVE_KEY))
+    if (raw && typeof raw === 'object' && Number.isFinite(raw.lat) && Number.isFinite(raw.lon)) {
+      return raw
+    }
+  } catch { /* private mode / korrupt */ }
+  return null
+}
+
+function savePersistedAlert(d) {
+  try { localStorage.setItem(ACTIVE_KEY, JSON.stringify(d)) } catch { /* ignore */ }
+}
+function clearPersistedAlert() {
+  try { localStorage.removeItem(ACTIVE_KEY) } catch { /* ignore */ }
 }
 
 // Ren terskel-avgjørelse — eksportert for enhetstest. Sann når posisjonen er
@@ -41,7 +62,7 @@ export function useProximityAlert(getUserPos) {
     try { localStorage.setItem(KEY, JSON.stringify({ ...prefs })) } catch { /* ignore */ }
   })
 
-  const active = ref(null)            // { svgX, svgY, label, distanceM, useSound, useVibration }
+  const active = ref(null)            // { svgX, svgY, lat, lon, label, distanceM, useSound, useVibration, mapId }
   const status = ref('idle')          // 'idle' | 'armed' | 'triggered'
   const currentDistanceM = ref(null)
 
@@ -162,19 +183,24 @@ export function useProximityAlert(getUserPos) {
     if (timer) { clearInterval(timer); timer = null }
   }
 
-  function arm({ svgX, svgY, label, distanceM, useSound, useVibration }) {
+  function arm({ svgX, svgY, lat, lon, label, distanceM, useSound, useVibration, mapId }) {
     prefs.distanceM = distanceM
     prefs.sound = useSound
     prefs.vibration = useVibration
+    const safeLabel = label || 'punktet'
     active.value = {
-      svgX, svgY,
-      label: label || 'punktet',
+      svgX, svgY, lat, lon,
+      label: safeLabel,
       distanceM,
       useSound,
       useVibration,
+      mapId,
     }
     status.value = 'armed'
     currentDistanceM.value = null
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      savePersistedAlert({ lat, lon, label: safeLabel, distanceM, useSound, useVibration, mapId })
+    }
     requestNotificationPermission()
     startTimer()
     tick()
@@ -185,6 +211,7 @@ export function useProximityAlert(getUserPos) {
     active.value = null
     status.value = 'idle'
     currentDistanceM.value = null
+    clearPersistedAlert()
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       try { navigator.vibrate(0) } catch { /* ignore */ }
     }

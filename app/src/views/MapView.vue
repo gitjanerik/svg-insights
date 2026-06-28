@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { usePinchZoom } from '../composables/usePinchZoom.js'
 import { useUserPosition } from '../composables/useUserPosition.js'
-import { useProximityAlert } from '../composables/useProximityAlert.js'
+import { useProximityAlert, getPersistedAlert } from '../composables/useProximityAlert.js'
 import { useCompass } from '../composables/useCompass.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { useResizablePanel } from '../composables/useResizablePanel.js'
@@ -2882,13 +2882,44 @@ function armProximityAlert() {
   proximity.arm({
     svgX: p.svgX,
     svgY: p.svgY,
+    lat: contextMenuInfo.value?.lat,
+    lon: contextMenuInfo.value?.lon,
     label: contextMenuInfo.value?.place?.name ?? 'punktet',
     distanceM: cfg.distanceM,
     useSound: cfg.sound,
     useVibration: cfg.vibration,
+    mapId: mapId.value,
   })
   proximityPanelOpen.value = false
   closeContextMenu()
+}
+
+// Avstand fra brukeren til long-press-punktet (for 5 km-gaten i config-panelet).
+const MAX_ARM_DISTANCE_M = 5000
+const ctxDistFromUser = computed(() => contextMenuInfo.value?.fromUser?.distM ?? null)
+const ctxTooFarToArm = computed(() =>
+  ctxDistFromUser.value != null && ctxDistFromUser.value > MAX_ARM_DISTANCE_M)
+
+// Gjenopprett et persistert varsel etter reload: re-projiser lat/lon mot
+// gjeldende kart-meta og re-arm, men kun hvis varselet hører til DETTE kartet.
+// Starter GPS automatisk så alarmen fungerer videre (krever allerede gitt
+// tillatelse — ingen ny prompt hvis avvist).
+function restoreProximityAlert() {
+  if (proximity.active.value) return            // allerede aktivt i denne økten
+  const d = getPersistedAlert()
+  if (!d || !meta.value) return
+  if (d.mapId !== mapId.value) return           // hører til et annet kart
+  const { x, y } = wgs84ToSvg(d.lat, d.lon, meta.value)
+  proximity.arm({
+    svgX: x, svgY: y,
+    lat: d.lat, lon: d.lon,
+    label: d.label,
+    distanceM: d.distanceM,
+    useSound: d.useSound,
+    useVibration: d.useVibration,
+    mapId: d.mapId,
+  })
+  if (!userPos.isWatching) startPositioning()
 }
 
 function gmapsUrl(lat, lon) { return `https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}` }
@@ -4761,6 +4792,7 @@ async function loadMap({ silent = false } = {}) {
     if (pendingResumeRecording && userPos.isWatching) tracker.startRecording()
     applyUprightLabels()
     renderMeasure()
+    restoreProximityAlert()
     renderProximityTarget()
     // Hill-shading (med innbakt knaus-relieff) er default ON — fire-and-forget.
     // Lazy DEM-load skjer internt hvis nødvendig (Vardåsen).
@@ -5644,6 +5676,13 @@ watch(() => userPos.isOutsideMap, (out) => { if (!out) outsideMapDismissed.value
 // automatisk når fanen blir synlig igjen siden browseren alltid slipper
 // wake-locks ved fane-bytte.
 const screenWake = useScreenWakeLock()
+
+// Egen efemer wake-lock som holder skjermen våken mens et nærhetsvarsel er
+// aktivt (uten idle-slipp), uavhengig av brukerens generelle «hold skjerm
+// våken»-setting. GPS-loopen som oppdager ankomst kjører i siden, så skjermen
+// må være våken for at varselet skal kunne fyre.
+const alarmWake = useScreenWakeLock({ persist: false, idleTimeoutMs: 0 })
+watch(() => !!proximity.active.value, (on) => alarmWake.setEnabled(on))
 
 // Lås dokument-scroll mens kartet er åpent. Roten er h-[100dvh]
 // overflow-hidden, men på mobil kan body likevel få en scroll-offset:
@@ -7832,7 +7871,21 @@ onUnmounted(() => {
                Krever aktiv GPS — uten den vises en Start GPS-prompt. -->
           <div v-if="proximityPanelOpen" class="px-4 pt-3">
             <div class="rounded-xl border border-sky-400/30 bg-sky-500/10 p-3">
-              <template v-if="userPos.isWatching">
+              <template v-if="userPos.isWatching && ctxTooFarToArm">
+                <div class="flex items-start gap-2">
+                  <svg viewBox="0 0 24 24" class="w-5 h-5 shrink-0 text-amber-300 mt-0.5" fill="none"
+                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                    <path d="M12 9 v4 M12 17 h.01"/>
+                  </svg>
+                  <div class="text-[12px] text-white/85 leading-snug">
+                    Du er {{ formatDistance(ctxDistFromUser) }} unna. Nærhetsvarsel er for
+                    <span class="text-white font-medium">siste etappe</span> og varsler kun mens
+                    appen er åpen — aktiver det når du er innen 5 km av målet.
+                  </div>
+                </div>
+              </template>
+              <template v-else-if="userPos.isWatching">
                 <div class="text-[11px] uppercase tracking-wide text-sky-100/80 mb-1.5">Varsle når jeg er innen</div>
                 <div class="grid grid-cols-3 gap-2 mb-3">
                   <button v-for="d in proximity.DISTANCE_OPTIONS" :key="d"
@@ -7877,7 +7930,8 @@ onUnmounted(() => {
                 </div>
 
                 <div class="text-[10px] text-sky-100/70 leading-snug mb-3">
-                  Alarmen ringer helt til du avbryter den.
+                  Virker mens appen er åpen, GPS er på og skjermen er våken — kan ikke varsle i
+                  bakgrunnen. Alarmen ringer til du avbryter den.
                 </div>
 
                 <button @click="armProximityAlert"
