@@ -7225,7 +7225,7 @@ onUnmounted(() => {
               <div class="flex-1 min-w-0">
                 <div class="text-[13px] text-white font-medium">Hold skjerm våken</div>
                 <div class="text-[11px] text-white/55 leading-snug">
-                  Hindrer at telefonen låser skjermen mens du bruker kartet. Slipper automatisk etter 2 min uten berøring så batteriet spares — tar seg igjen straks du tar på kartet. Slå av helt om du vil.
+                  Hindrer at telefonen låser skjermen mens du bruker kartet. Slipper automatisk etter 2 min uten berøring så batteriet spares — tar seg igjen straks du tar på kartet. Slå av helt om du vil. <span class="text-white/70">Et aktivt nærhetsvarsel holder uansett skjermen våken så lenge det kjører, uavhengig av denne bryteren.</span>
                 </div>
               </div>
               <button @click="screenWake.setEnabled(!screenWake.enabled.value)"
@@ -7932,8 +7932,8 @@ onUnmounted(() => {
                 </div>
 
                 <div class="text-[10px] text-sky-100/70 leading-snug mb-3">
-                  Virker mens appen er åpen, GPS er på og skjermen er våken — kan ikke varsle i
-                  bakgrunnen. Alarmen ringer til du avbryter den.
+                  Virker mens appen er åpen og GPS er på — kan ikke varsle i bakgrunnen. Skjermen
+                  holdes automatisk våken mens varselet er aktivt. Alarmen ringer til du avbryter den.
                 </div>
 
                 <button @click="armProximityAlert"

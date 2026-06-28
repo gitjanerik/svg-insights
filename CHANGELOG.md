@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-28 — v12.0.3: Informer om auto-skjerm-våken ved nærhetsvarsel
+
+Et aktivt nærhetsvarsel holder skjermen våken automatisk (lagt til i v12.0.1), men det var ikke synlig for brukeren. Nå informeres det to steder: i Innstillinger (under «Hold skjerm våken» står det at et aktivt varsel uansett holder skjermen våken, uavhengig av bryteren) og i aktiverings-infoen i infodraweren (panel-teksten sier nå eksplisitt at skjermen holdes våken mens varselet er aktivt).
+
+---
+
 ## 2026-06-28 — v12.0.2: Nærhetsvarsel — grense senket til 2 km
 
 Aktiverings-grensen for nærhetsvarsel er senket fra 5 km til 2 km. 5 km tar omtrent en time å gå, og da er sjansen stor for at nettleseren og GPS-en har rukket å lukke seg før ankomst — alarmen ville altså ikke utløst likevel. 2 km (~20–25 min gange) er et mer realistisk siste-etappe-vindu der appen typisk fortsatt er åpen. Panel-teksten er oppdatert tilsvarende.
