@@ -7,6 +7,17 @@
 @import "@fontsource-variable/inter/wght.css";
 @import "@fontsource-variable/inter/wght-italic.css";
 
+/* Kart-label-fonter (brukervalgbart par under Innstillinger, se useLabelFonts.js).
+   Sans (land-navn) lastes roman; serif (vann-navn, alltid kursiv) lastes italic.
+   Self-hostet via @fontsource — Vite bundler woff2 til dist, ingen CDN. Unicode-
+   range-subsett gjør at kun det VALGTE parets woff2 faktisk lastes ned i runtime. */
+@import "@fontsource-variable/hanken-grotesk/wght.css";
+@import "@fontsource-variable/figtree/wght.css";
+@import "@fontsource-variable/instrument-sans/wght.css";
+@import "@fontsource-variable/newsreader/wght-italic.css";
+@import "@fontsource-variable/source-serif-4/wght-italic.css";
+@import "@fontsource-variable/literata/wght-italic.css";
+
 /* Inter-scope for turkart-sporet. font-weight: 400 er base; spesifikke labels
    og UI-elementer overstyrer via Tailwind eller egne CSS-regler. tabular-nums
    gir monospasede sifre i hele kart-UI-et (høyder, dybder, lengder, kontur-tall). */

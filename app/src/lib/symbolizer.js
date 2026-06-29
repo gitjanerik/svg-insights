@@ -570,11 +570,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // uten re-render. Default 1 = «normal» (slider midtstilt). Halo-bredder
   // skaleres IKKE — de følger kartstørrelse som før, så teksten ikke drukner.
   const fs = (v) => `calc(${mm(v)} * var(--label-scale, 1))`
-  // Inter variable webfont (selv-hostet via @fontsource-variable/inter, lastet
-  // i appens style.css). font-weight: 400 er base for labels; spesifikke labels
-  // (peak, stedsnavn) overstyrer under. tabular-nums sørger for at høyde-,
-  // dybde- og kontur-tall står monospaced.
-  rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: 'Inter Variable', ui-sans-serif, system-ui, sans-serif; font-weight: 400; font-variant-numeric: tabular-nums; }`)
+  // Land-font (bebyggelse/topp/område/hytte) er rotens font-family og settes via
+  // --land-font (brukervalgt par under Innstillinger, se useLabelFonts.js i MapView).
+  // Fallback = Inter Variable (selv-hostet i style.css) for eldre kart uten var-en.
+  // Vann-navn overstyrer til --water-font (kursiv serif) lenger ned. font-weight: 400
+  // er base; peak/stedsnavn overstyrer. tabular-nums = monospaced høyde-/dybde-/kontur-tall.
+  rules.push(`${root} { background: var(--bg, ${catalog.background.color}); font-family: var(--land-font, 'Inter Variable'), ui-sans-serif, system-ui, sans-serif; font-weight: 400; font-variant-numeric: tabular-nums; }`)
   // Bakgrunn-rect bruker også --bg så mørk modus erstatter den kremgule
   // landoverflaten med dark brown (presentation-attr fill blir overstyrt).
   rules.push(`${root} #bakgrunn rect { fill: var(--bg, ${catalog.background.color}); }`)
@@ -703,6 +704,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     const styleProps = [
       `font-size: ${fs(vn.fontSizeMm)}`,
       `fill: var(--label-vann-navn-fill, ${vn.color})`,
+      // Vann-navn bruker --water-font (kursiv serif) — brukervalgt par under
+      // Innstillinger. Fallback Inter for eldre kart uten var-en.
+      `font-family: var(--water-font, 'Inter Variable'), Georgia, serif`,
       vn.italic ? 'font-style: italic' : null,
       vn.weight ? `font-weight: ${vn.weight}` : null,
       `stroke: var(--label-vann-navn-halo, ${vn.haloColor})`,
@@ -713,7 +717,7 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
     rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
   }
   if (lab['vann-tall']) {
-    rules.push(`${root} [data-label="vann-tall"] { font-size: ${fs(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
+    rules.push(`${root} [data-label="vann-tall"] { font-size: ${fs(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-family: var(--water-font, 'Inter Variable'), Georgia, serif; font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)
   }
   // Dybde-tall (Sjøkart-soundings). Uten denne regelen falt de gjennom til den
   // generiske [data-label]-regelen = place-størrelse (4 mm), så dybde-tallene
@@ -733,6 +737,8 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
       `fill: var(--label-${kind}-fill, ${cfg.color})`,
       cfg.italic ? 'font-style: italic' : null,
       cfg.weight ? `font-weight: ${cfg.weight}` : null,
+      cfg.textTransform ? `text-transform: ${cfg.textTransform}` : null,
+      Number.isFinite(cfg.letterSpacingMm) ? `letter-spacing: ${mm(cfg.letterSpacingMm)}` : null,
       `stroke: var(--label-${kind}-halo, ${cfg.haloColor})`,
       `stroke-width: ${haloMm(cfg.haloWidthMm)}`,
       'paint-order: stroke',
@@ -746,8 +752,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // Base: farge/halo/vekt. Skrift-STØRRELSE settes per rank (v9.1.12) — by/
   // tettsted større enn grend/gård, etter OSM place-type (placeRank i
   // mapBuilder). Default-størrelse (mangler data-rank, f.eks. eldre kart) = mid.
-  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${fs(5.8)}; font-weight: 800; fill: var(--label-stedsnavn-fill, #1a1a1a); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
-  rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${fs(7.2)}; }`)
+  // v12.0.7 (Stedsnavn-typografi): vekt senket fra 800 til medium (500 base /
+  // 600 major) og farge #1a1a1a → #161616 — designets «bebyggelse · medium».
+  // Arver --land-font (sans) fra roten. Tung 800-vekt drukna terrenget; medium
+  // gir tydelig men ikke skrikende bebyggelse-hierarki.
+  rules.push(`${root} [data-label="stedsnavn"] { font-size: ${fs(5.8)}; font-weight: 500; fill: var(--label-stedsnavn-fill, #161616); paint-order: stroke; stroke: var(--label-stedsnavn-halo, #fff); stroke-width: ${haloMm(1.2)}; stroke-linejoin: round; pointer-events: none; }`)
+  rules.push(`${root} [data-label="stedsnavn"][data-rank="major"] { font-size: ${fs(7.2)}; font-weight: 600; }`)
   rules.push(`${root} [data-label="stedsnavn"][data-rank="minor"] { font-size: ${fs(4.8)}; }`)
   // LOD (v9.1.12 / v11.0.34): det tette grend-/gård-/locality-teppet (rank=minor)
   // er detalj — det dukker først opp på nærmeste trinn (.zoom-near, scale >= 2.5),

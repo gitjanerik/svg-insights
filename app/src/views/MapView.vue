@@ -14,6 +14,7 @@ import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from '../composables/useMapSizePreference.js'
 import { useLodTuning } from '../composables/useLodTuning.js'
+import { useLabelFonts } from '../composables/useLabelFonts.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import { norwegianName } from '../lib/placeName.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
@@ -1013,6 +1014,9 @@ const ZOOMED_IN_THRESHOLD = 1.3
 const {
   zoomNearThreshold, nameBudgetFar, nameBudgetMid, nameBudgetNear, resetLodTuning, LOD_DEFAULTS,
 } = useLodTuning()
+// Brukervalgbart font-par for kart-navn (Innstillinger-fanen). Settes som
+// --land-font / --water-font på SVG-host-en → live bytte uten re-render.
+const { fontPairId, landFont, waterFont, FONT_PAIRS } = useLabelFonts()
 function applyZoomTierClasses(svg, s) {
   if (!svg) return
   svg.classList.toggle('zoomed-in', s >= ZOOMED_IN_THRESHOLD)
@@ -1244,6 +1248,20 @@ watch(labelScaleSlider, () => {
   applyLabelScale()
   try { localStorage.setItem(LABEL_SCALE_LS_KEY, String(labelScaleSlider.value)) } catch { /* noop */ }
   flashKnobHint(`Tekst ${Math.round(userLabelScale.value * 100)}%`)
+})
+
+// Font-par — settes som CSS-vars på kart-SVG-en; symbolizer-CSS-en bruker
+// var(--land-font) på roten og var(--water-font) på vann-navn. Sanntid bytte.
+// (Persistens skjer i useLabelFonts; her bare appliseringen.)
+function applyLabelFonts() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  svg.style.setProperty('--land-font', landFont.value)
+  svg.style.setProperty('--water-font', waterFont.value)
+}
+watch(fontPairId, () => {
+  applyLabelFonts()
+  flashKnobHint(`Font: ${fontPairId.value}`)
 })
 
 watch(strokeStepIndex, () => {
@@ -4781,6 +4799,7 @@ async function loadMap({ silent = false } = {}) {
     applyTheme()
     applyStrokeScale()
     applyLabelScale()
+    applyLabelFonts()
     userPos.recompute()
     // Auto-start GPS når init-prefs ber om det (kommer fra on-the-fly-
     // snarveien i MapHomeView, der bruker ikke har annen vei til å slå
@@ -7295,6 +7314,24 @@ onUnmounted(() => {
               <div class="text-[11px] text-white/55 leading-snug mt-1.5">
                 Skarp = tone-bånd som vektor: liten fil, knivskarpt ved zoom og print.
                 Mjuk = myk gradient (foto-relieff), men gir et tungt bilde i kart-fila.
+              </div>
+            </div>
+            <!-- Font-par for kart-navn (Stedsnavn-typografi). Land = sans
+                 (bebyggelse/topp/område), vann = kursiv serif. Byttes live. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="text-[13px] text-white font-medium mb-2">Skrift på kart-navn</div>
+              <select v-model="fontPairId" aria-label="Font-par for kart-navn"
+                      class="w-full rounded-md bg-white/10 text-white text-[12px] px-2 py-1.5
+                             border border-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-400">
+                <option v-for="p in FONT_PAIRS" :key="p.id" :value="p.id">{{ p.id }}</option>
+              </select>
+              <div class="mt-2 flex items-baseline gap-2" aria-hidden="true">
+                <span class="text-white/85 text-[14px]" :style="{ fontFamily: landFont }">Stubdalskampen</span>
+                <span class="text-sky-300 text-[14px] italic" :style="{ fontFamily: waterFont }">Damtjern</span>
+              </div>
+              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                Bebyggelse, topp og område settes i sans; vann-navn i kursiv serif.
+                Gjelder kart bygd etter denne oppdateringen — eldre kart må regenereres.
               </div>
             </div>
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>

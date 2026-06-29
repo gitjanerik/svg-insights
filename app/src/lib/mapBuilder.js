@@ -1636,13 +1636,17 @@ export function buildSvg(elements, bbox, options = {}) {
       // claimLabelName: navn rendres kun én gang på hele kartet (global
       // dedup). Er navnet allerede brukt, faller vi tilbake til høyde-only
       // for toppen (symbol + tall beholdes — det er bare navnet vi dropper).
+      // v12.0.7 (Stedsnavn-typografi): høyden settes INLINE som <tspan> etter
+      // navnet («Stubdalskampen 604» som én lesbar enhet) istedenfor stablet
+      // linje under. tspan-en beholder data-label="peak-ele" så den brune,
+      // mindre høyde-stilen gjelder. Høyde-only-fallback uendret.
       if (name && claimLabelName(rawName)) {
-        lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}</text>`)
-        if (Number.isFinite(eleNum)) {
-          lines.push(`<text x="2mm" y="3.6mm" data-label="peak-ele">${Math.round(eleNum)}</text>`)
-        }
+        const ele = Number.isFinite(eleNum)
+          ? `<tspan dx="1mm" data-label="peak-ele">${Math.round(eleNum)}</tspan>`
+          : ''
+        lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}${ele}</text>`)
       } else if (Number.isFinite(eleNum)) {
-        lines.push(`<text x="2mm" y="1.4mm" data-label="peak">${Math.round(eleNum)}</text>`)
+        lines.push(`<text x="2mm" y="1.4mm" data-label="peak-ele">${Math.round(eleNum)}</text>`)
       }
       parts.push(`    <g transform="translate(${fmt(p.x)},${fmt(p.y)})">${symbol}${lines.join('')}</g>`)
     }
