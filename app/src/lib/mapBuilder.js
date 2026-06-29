@@ -1644,7 +1644,7 @@ export function buildSvg(elements, bbox, options = {}) {
         const ele = Number.isFinite(eleNum)
           ? `<tspan dx="1mm" data-label="peak-ele">${Math.round(eleNum)}</tspan>`
           : ''
-        lines.push(`<text x="2mm" y="-0.4mm" data-label="peak">${name}${ele}</text>`)
+        lines.push(`<text x="2mm" y="-0.4mm" data-label="peak" data-score="${labelScore('peak', { ele: eleNum })}">${name}${ele}</text>`)
       } else if (Number.isFinite(eleNum)) {
         lines.push(`<text x="2mm" y="1.4mm" data-label="peak-ele">${Math.round(eleNum)}</text>`)
       }
@@ -1669,7 +1669,7 @@ export function buildSvg(elements, bbox, options = {}) {
       if (!claimLabelName(el.tags.name)) continue   // global navn-dedup
       const p = project(el.lat, el.lon)
       const rank = placeRank(el.tags.place)
-      byRank[rank].push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}">${xmlEscape(el.tags.name)}</text>`)
+      byRank[rank].push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}" data-score="${labelScore('stedsnavn', { rank })}">${xmlEscape(el.tags.name)}</text>`)
     }
     const group = (rank) => byRank[rank].length
       ? `  <g data-layer="stedsnavn-${rank}" style="display:none">\n${byRank[rank].join('\n')}\n  </g>\n`
@@ -1939,7 +1939,7 @@ export function buildSvg(elements, bbox, options = {}) {
       }
 
       if (name || elev != null) {
-        lakeLabels.push({ x: centroid.x, y: centroid.y, name, elev })
+        lakeLabels.push({ x: centroid.x, y: centroid.y, name, elev, areaM2 })
       }
     }
   }
@@ -2068,7 +2068,7 @@ export function buildSvg(elements, bbox, options = {}) {
     omradeSeen.add(key)
 
     omradenavnLabels.push({
-      x: cent.x, y: cent.y, name, isBuilding, isNatRes,
+      x: cent.x, y: cent.y, name, isBuilding, isNatRes, areaM2,
     })
   }
 
@@ -2614,7 +2614,7 @@ export function buildSvg(elements, bbox, options = {}) {
         // viewBox-meter). dy × labelScale så gapet vokser i takt med fonten.
         if (l.name && claimLabelName(l.name)) {
           const dyMm = (l.elev != null ? -0.4 : 0.4) * labelScale
-          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`)
+          lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-navn" data-score="${labelScore('vann-navn', { areaM2: l.areaM2 })}">${xmlEscape(l.name)}</text>`)
         }
         if (l.elev != null) {
           const dyMm = (l.name ? 1.5 : 0.4) * labelScale
@@ -2731,7 +2731,7 @@ export function buildSvg(elements, bbox, options = {}) {
   const waterwayLabelRows = waterwayLabels
     .filter(l => claimLabelName(l.name))
     .map(l =>
-      `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn">${xmlEscape(l.name)}</text>`
+      `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn" data-score="${labelScore('vann-navn', { isStream: l.isStream })}">${xmlEscape(l.name)}</text>`
     )
   const waterwayLabelLayer = waterwayLabelRows.length
     ? `  <g data-layer="bekk">\n${waterwayLabelRows.join('\n')}\n  </g>\n`
@@ -2790,14 +2790,14 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="navn">\n${omradenavnRows.map(l => {
         if (l.isBuilding) {
           // Hytte-navn: 1.2 mm til høyre for symbolet, vertikalt midt-ish
-          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dx="1.2mm" dy="0.4mm" text-anchor="start" data-label="hytte-navn">${xmlEscape(l.name)}</text>`
+          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dx="1.2mm" dy="0.4mm" text-anchor="start" data-label="hytte-navn" data-score="${labelScore('hytte-navn')}">${xmlEscape(l.name)}</text>`
         }
         // Naturreservat-navn: grønn skrift + hvit halo, samme visuelle vekt
         // som blå vann-navn — markerer vernet område tydelig på kartet.
         if (l.isNatRes) {
-          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="naturreservat-navn">${xmlEscape(l.name)}</text>`
+          return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="naturreservat-navn" data-score="${labelScore('naturreservat-navn', { isNatRes: true })}">${xmlEscape(l.name)}</text>`
         }
-        return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="omrade-navn">${xmlEscape(l.name)}</text>`
+        return `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="omrade-navn" data-score="${labelScore('omrade-navn', { areaM2: l.areaM2 })}">${xmlEscape(l.name)}</text>`
       }).join('\n')}\n  </g>\n`
     : ''
 
@@ -2878,6 +2878,49 @@ function placeRank(place) {
     case 'village': case 'suburb':                             return 'mid'
     default:                                                    return 'minor'
   }
+}
+
+// Viktighets-score 0–100 for tetthets-budsjettet (data-score på hver label).
+// = klassevekt + egenverdi. Klasse-rekkefølge (CD-handoff): topp > stor innsjø >
+// grend > seter/gård/punkt > hytte; vann/område/verneområde er prioritetsklasser.
+// Egenverdi: topp-høyde, innsjø-areal, område-areal/verne-status. Deterministisk;
+// runtime utleder minZoom fra denne. Klasse-ordering er stabilt designvalg → trygt
+// å bake i SVG. Returnerer heltall (mindre data-score-streng).
+export function labelScore(kind, { rank, ele, areaM2, isStream, isNatRes } = {}) {
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+  let base = 30, extra = 0
+  switch (kind) {
+    case 'peak':
+      base = 60
+      if (Number.isFinite(ele)) extra = clamp(ele / 30, 0, 35)   // 1050 m → +35
+      break
+    case 'vann-navn':
+      if (isStream === true) { base = 35 }            // bekk (305)
+      else if (isStream === false) { base = 48 }      // elv (304)
+      else {                                          // innsjø
+        base = 55
+        if (Number.isFinite(areaM2) && areaM2 > 0) {
+          extra = clamp((Math.log10(areaM2) - 3) * 13, 0, 40)    // 1e3→0, 1e6→40
+        }
+      }
+      break
+    case 'omrade-navn':
+      base = 50
+      if (Number.isFinite(areaM2) && areaM2 > 0) extra = clamp((Math.log10(areaM2) - 4) * 8, 0, 20)
+      break
+    case 'naturreservat-navn':
+      base = isNatRes ? 58 : 50
+      break
+    case 'stedsnavn':
+      base = rank === 'major' ? 70 : rank === 'mid' ? 55 : 35
+      break
+    case 'hytte-navn':
+      base = 20
+      break
+    default:
+      base = 30
+  }
+  return Math.round(clamp(base + extra, 0, 100))
 }
 
 function categoryFor(code) {
