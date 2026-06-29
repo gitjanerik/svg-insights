@@ -715,6 +715,9 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
       'stroke-linejoin: round',
     ].filter(Boolean).join('; ')
     rules.push(`${root} [data-label="vann-navn"] { ${styleProps} }`)
+    // Bekk/elv (rotert langs vannløpet, data-layer="bekk") får lettere vekt enn
+    // innsjø-navn — bekreftet skille i CD-handoffen (bekk 400, innsjø 500).
+    rules.push(`${root} [data-layer="bekk"] [data-label="vann-navn"] { font-weight: 400; }`)
   }
   if (lab['vann-tall']) {
     rules.push(`${root} [data-label="vann-tall"] { font-size: ${fs(lab['vann-tall'].fontSizeMm)}; fill: var(--label-vann-tall-fill, ${lab['vann-tall'].color}); font-family: var(--water-font, 'Inter Variable'), Georgia, serif; font-style: italic; stroke: var(--label-vann-tall-halo, ${lab['vann-tall'].haloColor}); stroke-width: ${haloMm(lab['vann-tall'].haloWidthMm)}; }`)

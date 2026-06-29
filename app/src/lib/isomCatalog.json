@@ -1441,9 +1441,9 @@
     },
     "vann-navn": {
       "fontSizeMm": 3.4,
-      "color": "#1670a8",
+      "color": "#0e5a8a",
       "italic": true,
-      "weight": 600,
+      "weight": 500,
       "haloColor": "#fff",
       "haloWidthMm": 0.6
     },
@@ -1465,7 +1465,7 @@
       "fontSizeMm": 3.0,
       "color": "#7a6a55",
       "italic": false,
-      "weight": 500,
+      "weight": 600,
       "textTransform": "uppercase",
       "letterSpacingMm": 0.4,
       "haloColor": "#fff",

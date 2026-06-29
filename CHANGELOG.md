@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-29 — v12.0.8: Tetthets-budsjett for navn + typografi-finpuss
+
+Navnerenderingen har fått et **tetthets-budsjett** (basert på CD-handoffen): en deterministisk, live navne-vraking som kjører på zoom/pan/rotasjon. Hvert navn får en score ved bygging (`data-score`, klassevekt + egenverdi: topp-høyde, innsjø-areal, sted-rank osv.), og en ny ren modul `lib/labelDeclutter.js` velger hvilke navn som vises: score → LOD-filter (m/hysterese så navn ikke blinker rundt zoom-grenser) → grådig kollisjon i skjermrom (rbush) → rutenett-kvote (maks K navn per celle per klasse). Topp/vann/område prioriteres (utenom kvoten); et søkt navn vises alltid, tegnet over, uavhengig av budsjettet. Dette erstatter det gamle flate antall-budsjettet i `applyNameLOD` (beholdt som globalt tak). 16 nye enhetstester.
+
+**Navnetetthet er et brukervalg under Innstillinger** (Lav / Middels / Høy, standard Høy) — byttes live uten å bygge kartet på nytt.
+
+Typografi-finpuss fra samme handoff: vann-navn dypere blå (#0e5a8a), bekk/elv lettere vekt (400) enn innsjø (500), og områdenavn til vekt 600. Topp-høyden beholdes brun. Gjelder kart bygd etter denne oppdateringen.
+
+---
+
 ## 2026-06-29 — v12.0.7: Stedsnavn-typografi + brukervalgbar skrift
 
 Navnerenderingen på turkartet har fått et tydeligere typografisk hierarki (basert på et Claude Design-forslag) som skiller de fire kategoriene bedre, alle løftet fra terrenget med hvit halo: **bebyggelse** i medium sans (vekt senket fra tung 800 til 500/600, farge #161616), **topp** i mørk sans med høyden inline som brun `<tspan>` («Stubdalskampen 604» som én enhet i stedet for stablet linje), **vann** i kursiv serif (#1670a8), og **område** i versal-sperret brun-grå (#7a6a55). Vann-tall følger vann-fonten.

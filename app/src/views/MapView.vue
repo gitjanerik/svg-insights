@@ -15,6 +15,8 @@ import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from '../composables/useMapSizePreference.js'
 import { useLodTuning } from '../composables/useLodTuning.js'
 import { useLabelFonts } from '../composables/useLabelFonts.js'
+import { useLabelDensity } from '../composables/useLabelDensity.js'
+import { declutter, makeMinZoomOf } from '../lib/labelDeclutter.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import { norwegianName } from '../lib/placeName.js'
 import AnnotationIcon from '../components/AnnotationIcon.vue'
@@ -1017,6 +1019,8 @@ const {
 // Brukervalgbart font-par for kart-navn (Innstillinger-fanen). Settes som
 // --land-font / --water-font på SVG-host-en → live bytte uten re-render.
 const { fontPairId, landFont, waterFont, FONT_PAIRS } = useLabelFonts()
+// Navnetetthet (rutenett-kvote for tetthets-budsjettet) — brukervalg i Innstillinger.
+const { densityId, cellPx: nameCellPx, K: nameK, DENSITY_PRESETS } = useLabelDensity()
 function applyZoomTierClasses(svg, s) {
   if (!svg) return
   svg.classList.toggle('zoomed-in', s >= ZOOMED_IN_THRESHOLD)
@@ -1248,6 +1252,7 @@ watch(labelScaleSlider, () => {
   applyLabelScale()
   try { localStorage.setItem(LABEL_SCALE_LS_KEY, String(labelScaleSlider.value)) } catch { /* noop */ }
   flashKnobHint(`Tekst ${Math.round(userLabelScale.value * 100)}%`)
+  labelBoxCache.clear(); scheduleNameLOD()   // tekst-skala endrer boks-bredden
 })
 
 // Font-par — settes som CSS-vars på kart-SVG-en; symbolizer-CSS-en bruker
@@ -1262,7 +1267,10 @@ function applyLabelFonts() {
 watch(fontPairId, () => {
   applyLabelFonts()
   flashKnobHint(`Font: ${fontPairId.value}`)
+  labelBoxCache.clear(); scheduleNameLOD()   // ny font endrer boks-bredden
 })
+// Navnetetthet-bytte → re-vrak straks (rutenett-kvoten endres; boks uendret).
+watch(densityId, () => scheduleNameLOD())
 
 watch(strokeStepIndex, () => {
   applyStrokeScale()
@@ -1539,20 +1547,61 @@ function nameBudgetForZoom() {
 const forcedVisibleNameEls = new Set()
 let nameLodTimer = null
 
-// Prioritet: 0 = vises alltid (vann + store stedsnavn), høyere = skjules først.
-function namePriority(entry) {
-  if (entry.kind === 'vann-navn') return 0
-  if (entry.categories && entry.categories.includes('vann')) return 0
-  if (entry.kind === 'stedsnavn') {
-    const rank = entry.el?.getAttribute('data-rank')
-    if (rank === 'major') return 0
-    if (rank === 'mid') return 1
-    return 4              // grend/gård — minst viktig
-  }
-  if (entry.kind === 'peak') return 2
-  return 3                // omrade-navn, hytte-navn, naturreservat-navn
+// Klassegruppe for tetthets-budsjettet: topp/vann/område er PRIORITET (utenom
+// rutenett-kvoten, men kollisjonssjekkes); bebyggelse/hytte er kvote-styrt.
+const PRIORITY_NAME_KINDS = new Set(['vann-navn', 'peak', 'omrade-navn', 'naturreservat-navn'])
+function nameGroup(e) {
+  if (PRIORITY_NAME_KINDS.has(e.kind)) return 'priority'
+  if (e.categories && e.categories.includes('vann')) return 'priority'
+  return 'quota'   // stedsnavn, hytte-navn
 }
 
+// Score 0–100: les data-score (bakt ved bygging i mapBuilder.labelScore). Fallback
+// for eldre kart uten attributtet, utledet fra kind/rank så de fortsatt vrakes ok.
+function nameScore(e) {
+  if (e._score != null) return e._score
+  const raw = e.el?.getAttribute?.('data-score')
+  let s = raw != null ? parseInt(raw, 10) : NaN
+  if (!Number.isFinite(s)) {
+    if (e.kind === 'peak') s = 60
+    else if (e.kind === 'vann-navn') s = 55
+    else if (e.kind === 'stedsnavn') {
+      const r = e.el?.getAttribute('data-rank')
+      s = r === 'major' ? 70 : r === 'mid' ? 55 : 35
+    } else if (e.kind === 'hytte-navn') s = 20
+    else s = 45
+  }
+  e._score = s
+  return s
+}
+
+// Label-boks (user-units) måles én gang når labels er synlige, cachet pr element.
+// Re-måles ved kart-load, tekst-skala- og font-bytte (alle endrer boks-bredden).
+const labelBoxCache = new Map()
+function measureLabelBoxes() {
+  const idx = mapSearch.index.value
+  if (!idx) return
+  labelBoxCache.clear()
+  for (const e of idx) {
+    if (!e.el || typeof e.el.getBBox !== 'function') continue
+    let bw = 0, bh = 0
+    try { const bb = e.el.getBBox(); bw = bb.width; bh = bb.height } catch { /* display:none → 0 */ }
+    if (!(bw > 0) && !(bh > 0)) {
+      // Skjult ved måletid → grovt estimat fra navnlengde (kun eldre/skjulte).
+      bw = Math.max(8, (e.name?.length || 4) * 4); bh = 6
+    }
+    labelBoxCache.set(e.el, { bw, bh })
+  }
+}
+
+// Forrige passs synlige navn — hysterese (hindrer blinking ved pan/zoom rundt
+// en LOD-grense). minZoom-tabellen gjenbruker .zoom-near-terskelen.
+let prevShownNames = new Set()
+const nameMinZoomOf = (score) => makeMinZoomOf(zoomNearThreshold.value)(score)
+
+// Tetthets-budsjett: score → LOD (m/hysterese) → grådig kollisjon (rbush) +
+// rutenett-kvote → synlig-sett. Ren algoritme i lib/labelDeclutter.js; her står
+// kun skjermrom-transformen og DOM-toggling.
 function applyNameLOD() {
   const svg = svgHostRef.value?.querySelector('svg')
   const m = meta.value
@@ -1560,6 +1609,7 @@ function applyNameLOD() {
   if (!svg || !m || !idx || !idx.length) return
   const wrap = wrapperRef.value?.getBoundingClientRect()
   if (!wrap || !wrap.width || !wrap.height) return
+  if (!labelBoxCache.size) measureLabelBoxes()
 
   // Forward-transform viewBox-koordinat → wrapper-lokal skjermpiksel, samme
   // matte som usePinchZoom.panTo: SVG-en fyller wrapperen med
@@ -1573,9 +1623,9 @@ function applyNameLOD() {
   const cos = Math.cos(rot), sin = Math.sin(rot)
   const tx = translateX.value, ty = translateY.value
   const MARGIN = 80   // px slingringsmonn så navn rett utenfor kanten teller med
+  const px2 = fit * s // user-units → skjerm-px
 
-  const priority = []
-  const reducible = []
+  const candidates = []
   for (const e of idx) {
     if (!e.el) continue   // unavngitte vann-polygoner har ingen tekst å toggle
     const px = offX + e.x * fit
@@ -1585,19 +1635,35 @@ function applyNameLOD() {
     if (sx < -MARGIN || sx > w + MARGIN || sy < -MARGIN || sy > h + MARGIN) {
       continue   // utenfor synlig utsnitt — teller ikke, rør ikke klassen
     }
-    if (namePriority(e) === 0) priority.push(e)
-    else reducible.push(e)
+    const box = labelBoxCache.get(e.el) || { bw: 8, bh: 6 }
+    // Skjerm-AABB av (kart-rotert) label-boks.
+    const hw = (box.bw * px2) / 2
+    const hh = (box.bh * px2) / 2
+    candidates.push({
+      id: e.name || `${e.kind}@${Math.round(e.x)},${Math.round(e.y)}`,
+      el: e.el,
+      score: nameScore(e),
+      sx, sy,
+      halfW: Math.abs(hw * cos) + Math.abs(hh * sin),
+      halfH: Math.abs(hw * sin) + Math.abs(hh * cos),
+      group: nameGroup(e),
+      forced: forcedVisibleNameEls.has(e.el),
+    })
   }
 
-  // Prioriterte vises alltid. Resten fyller opp til budsjettet, sortert etter
-  // viktighet (så samme navn holder seg synlig mellom re-beregninger).
-  reducible.sort((a, b) => namePriority(a) - namePriority(b) || a.name.localeCompare(b.name, 'no'))
-  const budget = Math.max(0, nameBudgetForZoom() - priority.length)
-  for (const e of priority) e.el.classList.remove('name-lod-off')
-  reducible.forEach((e, i) => {
-    const show = i < budget || forcedVisibleNameEls.has(e.el)
-    e.el.classList.toggle('name-lod-off', !show)
+  const visible = declutter(candidates, {
+    cellPx: nameCellPx.value,
+    K: nameK.value,
+    scale: s,
+    minZoomOf: nameMinZoomOf,
+    prevShown: prevShownNames,
+    maxVisible: nameBudgetForZoom(),   // globalt tak (Utvikler-budsjett)
   })
+
+  for (const c of candidates) {
+    c.el.classList.toggle('name-lod-off', !visible.has(c.id))
+  }
+  prevShownNames = visible
 }
 
 function scheduleNameLOD() {
@@ -4830,8 +4896,10 @@ async function loadMap({ silent = false } = {}) {
     // Tell POI pr type så «nærmeste»-snarveiene i PUNKT-arket kan gråes ut
     // når kartet mangler typen (f.eks. ingen holdeplass).
     computePoiAvailability()
-    // Indeksen er ny → gamle el-referanser i forced-settet er foreldede.
+    // Indeksen er ny → gamle el-referanser i forced-settet + boks-cache foreldede.
     forcedVisibleNameEls.clear()
+    labelBoxCache.clear()
+    prevShownNames = new Set()
     // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
     // utsnitt). Kjøres synkront her; videre på zoom/pan via watch.
     applyNameLOD()
@@ -7332,6 +7400,23 @@ onUnmounted(() => {
               <div class="text-[11px] text-white/55 leading-snug mt-1.5">
                 Bebyggelse, topp og område settes i sans; vann-navn i kursiv serif.
                 Gjelder kart bygd etter denne oppdateringen — eldre kart må regenereres.
+              </div>
+            </div>
+            <!-- Navnetetthet: rutenett-kvoten i tetthets-budsjettet. Lavere =
+                 roligere kart, høyere = flere navn. Byttes live (vrakes på nytt). -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="text-[13px] text-white font-medium mb-2">Navnetetthet</div>
+              <div class="flex gap-2" role="group" aria-label="Navnetetthet">
+                <button v-for="p in DENSITY_PRESETS" :key="p.id" @click="densityId = p.id"
+                        :aria-pressed="densityId === p.id"
+                        class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
+                        :class="densityId === p.id ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                  {{ p.label }}
+                </button>
+              </div>
+              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                Hvor mange navn som vises samtidig. Kartet avdekker flere når du zoomer inn;
+                topp, vann og område prioriteres, og et søketreff vises alltid.
               </div>
             </div>
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
