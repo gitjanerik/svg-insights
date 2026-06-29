@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-06-29 — v12.0.7: Stedsnavn-typografi + brukervalgbar skrift
+
+Navnerenderingen på turkartet har fått et tydeligere typografisk hierarki (basert på et Claude Design-forslag) som skiller de fire kategoriene bedre, alle løftet fra terrenget med hvit halo: **bebyggelse** i medium sans (vekt senket fra tung 800 til 500/600, farge #161616), **topp** i mørk sans med høyden inline som brun `<tspan>` («Stubdalskampen 604» som én enhet i stedet for stablet linje), **vann** i kursiv serif (#1670a8), og **område** i versal-sperret brun-grå (#7a6a55). Vann-tall følger vann-fonten.
+
+Skriften er nå **brukervalgbar under Innstillinger** — fire font-par (Hanken Grotesk + Newsreader som standard, Figtree + Source Serif, Instrument Sans + Literata, Inter + Source Serif). Valget settes som `--land-font`/`--water-font` på kart-SVG-en, så det byttes live uten å bygge kartet på nytt, og persisteres i localStorage. Fontene er self-hostet via @fontsource (ingen CDN). Symbolizer-CSS-generatoren støtter nå `letter-spacing`, `text-transform` og per-kategori font-family. Gjelder kart bygd etter denne oppdateringen; eldre lagrede kart må regenereres for ny typografi.
+
+---
+
 ## 2026-06-28 — v12.0.6: Lukk info-drawer når hovedmenyen åpnes
 
 Bugfiks: var info-draweren (long-press-kontekstmenyen) åpen og du trykket på hamburger-ikonet, la Innstillinger-skuffen seg usynlig bak info-draweren — to skuffer åpne samtidig. Nå lukker `openDrawer()` en åpen info-drawer først. Motsatt retning (info-drawer lukker hovedmenyen) var allerede på plass.
