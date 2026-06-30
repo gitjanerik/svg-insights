@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-06-30 — v12.0.9: Stabilt tetthets-budsjett (ingen «kommer og går»)
+
+Første versjon av tetthets-budsjettet (v12.0.8) vraket for hardt og lot navn blinke inn/ut ved panorering og marginal zoom. To rotårsaker fikset i `lib/labelDeclutter.js`:
+
+1. **Klisterhet (sticky):** vrakingen re-bestemte hele settet hver pass, og den skjerm-festede rutenett-kvoten re-fordelte navn ved hver panorering → flimmer. Nå er allerede-viste navn klistret — de plasseres først (utenom kvoten) og beholder plassen. Et synlig navn forsvinner bare når det går ut av skjermen, faller under sin (hysterese-relakserte) LOD-terskel, eller ved utzoom kolliderer med et viktigere vist navn. Under panorering er innbyrdes skjerm-avstand konstant ⇒ ingen nye kollisjoner ⇒ ro.
+
+2. **For aggressiv LOD:** per-navn minZoom-bånd skjulte grend-/gård- og hyttenavn til 2,5–4× zoom. Båndene er nå løse — tetthet styres primært av kollisjon + rutenett-kvote i skjermrom (som er naturlig stabilt: flere navn får plass når man zoomer inn), og minZoom gater bare så vidt det minst viktige på full oversikt. Hysterese-faktoren senket (0,85 → 0,7) for ekstra ro rundt LOD-grenser.
+
+Resultat: vesentlig flere navn synlige ved normal zoom, og settet ligger i ro når du flytter kartet eller endrer zoom marginalt.
+
+---
+
 ## 2026-06-29 — v12.0.8: Tetthets-budsjett for navn + typografi-finpuss
 
 Navnerenderingen har fått et **tetthets-budsjett** (basert på CD-handoffen): en deterministisk, live navne-vraking som kjører på zoom/pan/rotasjon. Hvert navn får en score ved bygging (`data-score`, klassevekt + egenverdi: topp-høyde, innsjø-areal, sted-rank osv.), og en ny ren modul `lib/labelDeclutter.js` velger hvilke navn som vises: score → LOD-filter (m/hysterese så navn ikke blinker rundt zoom-grenser) → grådig kollisjon i skjermrom (rbush) → rutenett-kvote (maks K navn per celle per klasse). Topp/vann/område prioriteres (utenom kvoten); et søkt navn vises alltid, tegnet over, uavhengig av budsjettet. Dette erstatter det gamle flate antall-budsjettet i `applyNameLOD` (beholdt som globalt tak). 16 nye enhetstester.
