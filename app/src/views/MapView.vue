@@ -3276,6 +3276,26 @@ function buildDetailInset() {
     el.style.display = ''
   }
 
+  // Inset-en er ALLTID nord-opp (viewBox-basert, ingen rotasjon). NÅR hovedkartet
+  // er rotert, har applyUprightLabels bakt en billboard-counter-rotation
+  // (transform="rotate(-rotation x y)") inn i navn/symboler så de står vannrett
+  // mens kartet roteres. I nord-opp-inset-en (ingen +rotation å kansellere) tipper
+  // den samme transformen navnene skjevt/loddrett (rapportert). Nullstill da til
+  // nord-opp: fjern rotate fra tekst, behold translate på upright-symboler/pins.
+  // Når hovedkartet IKKE er rotert er klonen allerede korrekt (bekke-navn beholder
+  // sin vannløp-bæring, ingen counter-rotation), så da rører vi ingenting.
+  if (rotation.value) {
+    for (const t of svg.querySelectorAll('text')) {
+      if (t.closest('defs')) continue
+      t.removeAttribute('transform')
+    }
+    for (const el of svg.querySelectorAll('[data-upright="1"], [data-annot-type="stedsmerke"]')) {
+      const m = (el.getAttribute('transform') ?? '').match(/translate\([^)]+\)/)
+      if (m) el.setAttribute('transform', m[0])
+      else el.removeAttribute('transform')
+    }
+  }
+
   // Fadenkreuz på senterpunktet (samme posisjon som long-press-pin-en).
   const cross = document.createElementNS(ns, 'g')
   cross.setAttribute('pointer-events', 'none')
