@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-30 — v12.0.10: Navnetetthet — standard Middels + global/per-kart-bryter
+
+Standard navnetetthet senket fra Høy til **Middels**. I tillegg en ny bryter under Innstillinger: **«Bruk på alle kart»** (default PÅ). PÅ = tetthetsvalget gjelder konsekvent for alle kart (det åpne, alle nye, og eksisterende uten egen overstyring). AV = valget gjelder kun kartet du ser på akkurat nå (per-kart-overstyring lagret pr kart-id), uten å røre den globale standarden for andre kart. Per-kart-overstyringer ligger i localStorage og bindes til kartets id.
+
+---
+
 ## 2026-06-30 — v12.0.9: Stabilt tetthets-budsjett (ingen «kommer og går»)
 
 Første versjon av tetthets-budsjettet (v12.0.8) vraket for hardt og lot navn blinke inn/ut ved panorering og marginal zoom. To rotårsaker fikset i `lib/labelDeclutter.js`:

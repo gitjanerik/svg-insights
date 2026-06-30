@@ -1020,7 +1020,8 @@ const {
 // --land-font / --water-font på SVG-host-en → live bytte uten re-render.
 const { fontPairId, landFont, waterFont, FONT_PAIRS } = useLabelFonts()
 // Navnetetthet (rutenett-kvote for tetthets-budsjettet) — brukervalg i Innstillinger.
-const { densityId, cellPx: nameCellPx, K: nameK, DENSITY_PRESETS } = useLabelDensity()
+// applyToAll PÅ = global tetthet; AV = per-kart-overstyring for kartet du ser på.
+const { densityId, applyToAll: densityApplyToAll, cellPx: nameCellPx, K: nameK, DENSITY_PRESETS, setCurrentMap: setDensityMap } = useLabelDensity()
 function applyZoomTierClasses(svg, s) {
   if (!svg) return
   svg.classList.toggle('zoomed-in', s >= ZOOMED_IN_THRESHOLD)
@@ -1269,8 +1270,9 @@ watch(fontPairId, () => {
   flashKnobHint(`Font: ${fontPairId.value}`)
   labelBoxCache.clear(); scheduleNameLOD()   // ny font endrer boks-bredden
 })
-// Navnetetthet-bytte → re-vrak straks (rutenett-kvoten endres; boks uendret).
-watch(densityId, () => scheduleNameLOD())
+// Navnetetthet-bytte (eller bytte mellom global/per-kart) → re-vrak straks
+// (rutenett-kvoten kan endres; boks uendret).
+watch([densityId, densityApplyToAll], () => scheduleNameLOD())
 
 watch(strokeStepIndex, () => {
   applyStrokeScale()
@@ -1408,6 +1410,8 @@ function pointNorth() {
 
 // Annoteringsmodus — point-symboler over auto-generert kart
 const mapId = computed(() => route.params.id ?? 'vardasen')
+// Bind navnetetthetens per-kart-overstyring til kartet som vises.
+watch(mapId, (id) => setDensityMap(id), { immediate: true })
 const annot = useMapAnnotations(mapId.value)
 // Stifinner — rutenavigasjon A→B på sti-laget. Egen modus-maskin (idle →
 // pickingStart → showing); gjensidig utelukkende med måling/annotering.
@@ -7418,6 +7422,23 @@ onUnmounted(() => {
                 Hvor mange navn som vises samtidig. Kartet avdekker flere når du zoomer inn;
                 topp, vann og område prioriteres, og et søketreff vises alltid.
               </div>
+              <!-- PÅ: tettheten gjelder konsekvent for alle kart. AV: valget over
+                   gjelder kun kartet du ser på nå (per-kart-overstyring). -->
+              <label class="flex items-center justify-between gap-3 mt-3 cursor-pointer">
+                <span class="text-[12px] text-white/80 leading-snug">
+                  Bruk på alle kart
+                  <span class="block text-[11px] text-white/45">
+                    {{ densityApplyToAll ? 'Samme tetthet overalt' : 'Gjelder kun dette kartet' }}
+                  </span>
+                </span>
+                <button type="button" role="switch" :aria-checked="densityApplyToAll"
+                        @click="densityApplyToAll = !densityApplyToAll"
+                        class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+                        :class="densityApplyToAll ? 'bg-emerald-500' : 'bg-white/15'">
+                  <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                        :class="densityApplyToAll ? 'left-5' : 'left-0.5'" />
+                </button>
+              </label>
             </div>
             <p class="text-white/35 text-[10px] mt-1">v{{ APP_VERSION }}</p>
           </div>
