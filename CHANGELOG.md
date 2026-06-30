@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-30 — v12.0.12: Nord-opp-navn i detalj-inset + større WC-symbol
+
+To finpussinger:
+
+1. **Detalj-inset (long-press-lupen) viser navn nord-opp.** Mini-kartet er alltid nord-opp, men når hovedkartet var rotert, arvet de klonede navnene hovedkartets billboard-counter-rotation og stod skjevt/loddrett. Nå nullstilles rotasjonen på inset-navn (og upright-symboler) når hovedkartet er rotert, så de står vannrett. Er hovedkartet ikke rotert, røres ingenting (bekke-navn beholder vannløp-bæringen, kursiv beholdes).
+
+2. **WC-/toalett-symbolet (ISOM 554) +50 %** (scaleMm 2,0 → 3,0) — det var for lite å lese på mobil. Gjelder kart bygd etter denne oppdateringen.
+
+---
+
 ## 2026-06-30 — v12.0.11: Navn på utvidelses-/nabofliser umiddelbart
 
 Når du utvider kartet via kant-sonene (eller ser nabofliser som mosaikk), beholder de nye flisene nå **stedsnavnene sine med en gang**. Før ble all tekst strippet fra spøkelses-/nabofliser (`buildGhostSvg`), så utvidede utsnitt sto blanke til en 5–10 s auto-bygging eventuelt gjorde flisa aktiv — forvirrende, og navnene «kom» først etter loaderen. Nå viser naboflisene navn straks de tegnes (stylet av aktiv flis' delte CSS, arver font + zoom-LOD). Rene tall-/detalj-labels (høydekurve-tall, vann-tall, dybdetall) strippes fortsatt for å holde naboene rene. Navnene på naboflisene holdes utenfor søkeindeksen og tetthets-budsjettet (de er nested `<svg>` med eget koordinat-offset) — søk og JS-vraking gjelder fortsatt den aktive flisa.

@@ -626,10 +626,10 @@
       },
       "554": {
         "label": "Toalett",
-        "$comment": "Padle-/turkart-POI (Fase 3): OSM amenity=toilets. Blå firkant med hvit WC.",
+        "$comment": "Padle-/turkart-POI (Fase 3): OSM amenity=toilets. Blå firkant med hvit WC. scaleMm 3.0 (v12.0.12: +50 % — var 2.0, for liten å lese på mobil).",
         "point": {
           "symbol": "wc",
-          "scaleMm": 2.0
+          "scaleMm": 3.0
         }
       },
       "555": {
