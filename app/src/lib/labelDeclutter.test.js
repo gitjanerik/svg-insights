@@ -132,12 +132,48 @@ describe('declutter — determinisme', () => {
 })
 
 describe('makeMinZoomOf', () => {
-  it('høyere score ⇒ synlig ved lavere zoom', () => {
+  it('høyere score ⇒ synlig ved lavere zoom (løs LOD)', () => {
     const f = makeMinZoomOf(2.5)
     expect(f(95)).toBe(0)
-    expect(f(70)).toBe(1.0)
-    expect(f(50)).toBe(1.3)
-    expect(f(25)).toBe(2.5)
-    expect(f(5)).toBe(4)
+    expect(f(70)).toBe(0)
+    expect(f(50)).toBe(0.9)
+    expect(f(25)).toBe(1.3)
+    expect(f(5)).toBe(1.8)
+    // monotont ikke-økende med score
+    expect(f(60)).toBeLessThanOrEqual(f(40))
+    expect(f(40)).toBeLessThanOrEqual(f(10))
+  })
+})
+
+describe('declutter — stickiness (ingen «kommer og går»)', () => {
+  it('et allerede-vist navn beholder plassen foran et nytt høyere-score navn som overlapper', () => {
+    const sticky = cand({ id: 'gammel', score: 20, sx: 100, sy: 100 })
+    const fresh = cand({ id: 'ny', score: 95, sx: 108, sy: 100 }) // overlapper
+    const vis = declutter([sticky, fresh], {
+      ...allVisibleZoom, cellPx: 9999, K: 99, prevShown: new Set(['gammel']),
+    })
+    expect(vis.has('gammel')).toBe(true)   // blir værende — ingen blinking
+    expect(vis.has('ny')).toBe(false)
+  })
+
+  it('sticky bypasser rutenett-kvoten (vokser ikke vekk det som alt vises)', () => {
+    const cs = [
+      cand({ id: 'a', score: 60, sx: 10, sy: 10 }),
+      cand({ id: 'b', score: 50, sx: 10, sy: 60 }),
+      cand({ id: 'c', score: 40, sx: 10, sy: 110 }),
+    ]
+    const prevShown = new Set(['a', 'b', 'c'])
+    const vis = declutter(cs, { ...allVisibleZoom, cellPx: 240, K: 1, prevShown })
+    expect(vis.size).toBe(3)   // alle tre beholdes tross K=1, fordi de var vist
+  })
+
+  it('et nytt navn dukker IKKE opp i en celle som alt er full av sticky', () => {
+    const cs = [
+      cand({ id: 's1', score: 60, sx: 10, sy: 10 }),
+      cand({ id: 'ny', score: 90, sx: 10, sy: 90 }),  // samme 240px-celle, ikke overlapp
+    ]
+    const vis = declutter(cs, { ...allVisibleZoom, cellPx: 240, K: 1, prevShown: new Set(['s1']) })
+    expect(vis.has('s1')).toBe(true)
+    expect(vis.has('ny')).toBe(false)   // cellen er allerede «brukt opp» av sticky
   })
 })
