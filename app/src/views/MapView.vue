@@ -5141,8 +5141,18 @@ function buildGhostSvg(stored, activeMeta) {
   const gsvg = root.cloneNode(true)
   gsvg.removeAttribute('data-meta')
   gsvg.querySelector('style')?.remove()          // bruk aktiv flis' <style>
-  for (const navn of gsvg.querySelectorAll('[data-layer="navn"]')) navn.remove()
-  for (const txt of gsvg.querySelectorAll('text')) txt.remove()
+  // v12.0.11: behold NAVN på spøkelses-/utvidelses-fliser (stedsnavn, vann-navn,
+  // topp, område, hytte) så nybygde nabofliser viser navn UMIDDELBART — før var
+  // all tekst strippet, så utvidede utsnitt sto blanke til en 5–10 s auto-bygging
+  // gjorde dem aktive. Navnene styles av aktiv flis' delte <style> + arver
+  // --land/water-font og zoom-LOD-klasser (CSS) fra aktiv SVG. De holdes UTENFOR
+  // søkeindeksen og JS-tetthets-budsjettet (useMapSearch hopper over #ghost-tiles)
+  // — spøkelser er nested <svg> med x/y-offset som declutter-mattematematikken ikke
+  // håndterer, og de skal ikke gi doble søketreff. Rene tall-/detalj-labels fjernes
+  // (kontur-/vann-/dybde-tall, skjult dem-topp) for å holde naboflisene rene.
+  for (const det of gsvg.querySelectorAll(
+    '[data-label="kontur-tall"], [data-label="vann-tall"], [data-label="dybde-tall"], [data-label="dem-topp"]'
+  )) det.remove()
   gsvg.setAttribute('x', String(off.dx))
   gsvg.setAttribute('y', String(off.dy))
   gsvg.setAttribute('width', String(Wg))

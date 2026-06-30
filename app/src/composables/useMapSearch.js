@@ -342,6 +342,9 @@ export function buildSearchIndex(svgEl) {
 
   // 1) Tekst-labels — alle som har data-label og ikke er rene tall.
   for (const t of svgEl.querySelectorAll('text[data-label]')) {
+    // Spøkelses-/utvidelses-fliser (#ghost-tiles) beholder navn for VISNING, men
+    // skal ikke i søkeindeksen (doble treff) eller JS-tetthets-budsjettet.
+    if (t.closest('#ghost-tiles')) continue
     const kind = t.getAttribute('data-label') ?? ''
     if (!kind || SKIP_LABELS.has(kind)) continue
     // Topper håndteres i et dedikert pass under — de trenger høyden (moh)
@@ -443,6 +446,7 @@ export function buildSearchIndex(svgEl) {
   //    navngitte sted innenfor 50 m (jf. spesial-søk-spesifikasjonen).
   const peakRecs = new Map()   // <g> → { g, name, ele, nameEl }
   for (const t of svgEl.querySelectorAll('text[data-label="peak"], text[data-label="peak-ele"]')) {
+    if (t.closest('#ghost-tiles')) continue   // spøkelses-topper ikke i søk
     const g = t.parentElement
     if (!g) continue
     let rec = peakRecs.get(g)

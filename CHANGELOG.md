@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-06-30 — v12.0.11: Navn på utvidelses-/nabofliser umiddelbart
+
+Når du utvider kartet via kant-sonene (eller ser nabofliser som mosaikk), beholder de nye flisene nå **stedsnavnene sine med en gang**. Før ble all tekst strippet fra spøkelses-/nabofliser (`buildGhostSvg`), så utvidede utsnitt sto blanke til en 5–10 s auto-bygging eventuelt gjorde flisa aktiv — forvirrende, og navnene «kom» først etter loaderen. Nå viser naboflisene navn straks de tegnes (stylet av aktiv flis' delte CSS, arver font + zoom-LOD). Rene tall-/detalj-labels (høydekurve-tall, vann-tall, dybdetall) strippes fortsatt for å holde naboene rene. Navnene på naboflisene holdes utenfor søkeindeksen og tetthets-budsjettet (de er nested `<svg>` med eget koordinat-offset) — søk og JS-vraking gjelder fortsatt den aktive flisa.
+
+---
+
 ## 2026-06-30 — v12.0.10: Navnetetthet — standard Middels + global/per-kart-bryter
 
 Standard navnetetthet senket fra Høy til **Middels**. I tillegg en ny bryter under Innstillinger: **«Bruk på alle kart»** (default PÅ). PÅ = tetthetsvalget gjelder konsekvent for alle kart (det åpne, alle nye, og eksisterende uten egen overstyring). AV = valget gjelder kun kartet du ser på akkurat nå (per-kart-overstyring lagret pr kart-id), uten å røre den globale standarden for andre kart. Per-kart-overstyringer ligger i localStorage og bindes til kartets id.
