@@ -69,6 +69,57 @@ const TYPENAME_CANDIDATES = {
   fareomraade: ['app:Fareområde'],
 }
 
+// Areal-skalert klient-tak for hele WFS-hentingen (alle typenames, med
+// endepunkt-fallback). Det gamle faste 8 s-taket var kalibrert for 4 km-kart
+// (~16 km²); standardkartet er nå 10–12 km (100–190 km²) med ~6–12× større
+// GML-responser som lovlig bruker titalls sekunder på mobil. Uten skalering
+// timet hentingen stille ut på store kystkart og både dybdetall og kai/
+// brygge/molo (551) forsvant — samme feilklasse som Overpass i v11.0.58
+// (overpassTimeoutForBbox). 250 ms/km² over 16 km² → ~40 s ved 12×12 km.
+const SJOKART_TIMEOUT_MS = 8000
+const SJOKART_TIMEOUT_MAX_MS = 45000
+
+export function sjokartTimeoutForBbox(bbox) {
+  if (!bbox) return SJOKART_TIMEOUT_MS
+  const midLat = (bbox.north + bbox.south) / 2
+  const heightKm = Math.abs(bbox.north - bbox.south) * 111
+  const widthKm = Math.abs(bbox.east - bbox.west) * 111 * Math.cos(midLat * Math.PI / 180)
+  const areaKm2 = heightKm * widthKm
+  const scaled = SJOKART_TIMEOUT_MS + Math.max(0, areaKm2 - 16) * 250
+  return Math.round(Math.min(SJOKART_TIMEOUT_MAX_MS, Math.max(SJOKART_TIMEOUT_MS, scaled)))
+}
+
+/**
+ * Kompakt status for kart-meta (data-meta i SVG-en) og Utvikler-fanen.
+ * Den fragile WFS-hentingen falt tidligere stille tilbake til tomt resultat —
+ * nå føres utfallet (ok/tom/timeout/feil/innlands) med til kartet så det er
+ * mulig å se HVORFOR dybdetall/kai mangler uten konsoll-tilgang.
+ *
+ * @param {object} sjokart  resultatet fra fetchSjokart / EMPTY_SJOKART med
+ *   evt. flagg { skipped, timedOut, timeoutMs, failed } satt av createMapFlow
+ * @param {number} featureCount  antall elementer etter sjokartToElements
+ */
+export function summarizeSjokartStatus(sjokart, featureCount) {
+  const s = sjokart ?? {}
+  const state = s.skipped ? 'innlands'
+    : s.timedOut ? 'timeout'
+    : s.failed ? 'feil'
+    : featureCount > 0 ? 'ok' : 'tom'
+  return {
+    state,
+    features: featureCount,
+    source: s.source ?? null,
+    timeoutMs: s.timeoutMs ?? null,
+    // Trimmes hardt: meta serialiseres inn i SVG-ens data-meta-attributt.
+    errors: (s.fetchErrors ?? []).slice(0, 4).map(e => ({
+      endpoint: String(e.endpoint ?? '').replace('https://wfs.geonorge.no/skwms1/', ''),
+      typeName: e.typeName ?? null,
+      kind: e.kind ?? null,
+      message: String(e.message ?? '').slice(0, 120),
+    })),
+  }
+}
+
 /**
  * Hent sjøkart-data for et bbox. Returnerer feature-grupper klare for
  * mapBuilder. Alle feiler graceful — manglende kategori gir tom array,

@@ -754,6 +754,7 @@ export function buildSvg(elements, bbox, options = {}) {
                                    // Settes av createMapFlow (DEM-havflate + OSM-kystlinje/
                                    // saltvann). Brukes av MapView til å være ærlig om at
                                    // ~0 m over en innlands-vannflate er en DEM-artefakt.
+    sjokartStatus = null,          // utfall av Sjøkart-WFS-hentingen (summarizeSjokartStatus)
   } = options
 
   // «Fjern routes generelt» (v10.2.43): rute-relasjoner og rute-taggede
@@ -2441,6 +2442,7 @@ export function buildSvg(elements, bbox, options = {}) {
       ? 'sjokart'
       : (demSeaPolygons.length > 0 ? 'dem-estimat' : 'ingen'),
     coastal,                       // kyst vs innland (se options). MapView leser denne.
+    sjokartStatus,                 // ok/tom/timeout/feil/innlands + evt. WFS-feil (Utvikler-fanen)
     demResolutionM: dem?.transform
       ? Math.round((Math.abs(dem.transform.pixelWidth) + Math.abs(dem.transform.pixelHeight)) / 2) || null
       : null,

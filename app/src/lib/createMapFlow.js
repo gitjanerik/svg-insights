@@ -19,7 +19,7 @@ import { fetchOverpass, bboxFromCenter, viewportAspect } from './mapBuilder.js'
 import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchNveLakePolygons } from './nveLakeFetcher.js'
-import { fetchSjokart, sjokartToElements } from './sjokartFetcher.js'
+import { fetchSjokart, sjokartToElements, sjokartTimeoutForBbox, summarizeSjokartStatus } from './sjokartFetcher.js'
 import { isOsmWaterSalty, isFlowingWaterArea } from './symbolizer.js'
 import { pointInRing } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
@@ -141,8 +141,6 @@ export function consumeMapFinalize(id) {
 const EMPTY_SJOKART = {
   dybdeareal: [], dybdekontur: [], grunne: [], lanterne: [], dybdepunkt: [],
 }
-
-const SJOKART_TIMEOUT_MS = 8000
 
 // Kyst-kart oppgraderes til denne DEM-oppløsningen (m) i et andre fetch-trinn,
 // så smale sund (Nesøybrua etc.) oppløses i sjø-masken. Se buildMapFromCenter.
@@ -441,10 +439,25 @@ export async function buildMapFromCenter({
   const sjokartPromise = timeAsync('sjøkart', coastalPromise.then(coastal => {
     if (!coastal) {
       console.log('[Sjøkart] hopper over — bbox er innlands (ingen havflate + saltvann)')
-      return EMPTY_SJOKART
+      return { ...EMPTY_SJOKART, skipped: true }
     }
-    return withHardTimeout(fetchSjokart(bbox), SJOKART_TIMEOUT_MS, EMPTY_SJOKART, 'Sjøkart')
-  }).catch(() => EMPTY_SJOKART))
+    // Areal-skalert tak (før: fast 8 s — for stramt for 10–12 km-kart, som
+    // stille mistet dybdetall og kai/brygge/molo). Utfallet meldes til
+    // brukeren via onProgress og føres inn i kart-meta (sjokartStatus).
+    onProgress('Henter sjøkart-dybder og havnedata …')
+    const timeoutMs = sjokartTimeoutForBbox(bbox)
+    return withHardTimeout(
+      fetchSjokart(bbox), timeoutMs,
+      { ...EMPTY_SJOKART, timedOut: true, timeoutMs }, 'Sjøkart',
+    ).then(res => {
+      const { fetchErrors, debugSamples, ...cats } = res
+      const n = Object.values(cats).reduce((a, v) => a + (Array.isArray(v) ? v.length : 0), 0)
+      if (res.timedOut) onProgress(`Sjøkart svarte ikke innen ${Math.round(timeoutMs / 1000)} s — bygger uten dybdetall og kaier …`)
+      else if (n === 0) onProgress('Sjøkart hadde ingen data her — bygger uten dybdetall og kaier …')
+      else onProgress(`Sjøkart: ${n} dybde- og havne-features hentet …`)
+      return res
+    })
+  }).catch(() => ({ ...EMPTY_SJOKART, failed: true })))
 
   const id = generateMapId()
   // Marker som ferskt kart så MapView gir det en garantert «litt kontur + litt
@@ -541,6 +554,9 @@ export async function buildMapFromCenter({
       // gate styrer allerede Sjøkart-WFS og 5 m-DEM-oppgraderingen.
       skipDemSea: !coastal,
       coastal,                       // kyst vs innland → meta.coastal (MapView høyde-ærlighet)
+      // Sjøkart-utfall → meta.sjokartStatus (Utvikler-fanen): gjør den stille
+      // WFS-fallbacken synlig — hvorfor dybdetall/kai mangler.
+      sjokartStatus: summarizeSjokartStatus(sjokart, sjokartElements.length),
     }, { signal }))
 
     const ti = timings ?? {}
