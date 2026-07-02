@@ -7,6 +7,7 @@
 // kategori-keyed strings med <g data-layer="kategori">…
 
 import isomCatalogDefault from './isomCatalog.json' with { type: 'json' }
+import { depthBandFills } from './sjokartFetcher.js'
 
 const ISOM_CATEGORY_BY_CODE = (() => {
   const map = {}
@@ -602,6 +603,14 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // bare `.zoomed-in` (1.3) som før. Gjelder kontur-tall (moh på høydekurver),
   // vann-tall (moh i innsjø-sentroid) og bekke-navn (mange OSM-bekker repeterer
   // samme navn hver 2 km → visuell støy ved utzoom).
+  // v12.0.17 — Dybdeareal (307): fyll per dybdebånd via klasse (class="dyp-N")
+  // i stedet for per-polygon inline-style. Samme tema-bevisste var()-verdier
+  // som depthToFillVar; mørke temaer setter --iso-depth-N via applyTheme.
+  if (codeUsed('307')) {
+    for (const { cls, fill } of depthBandFills()) {
+      rules.push(`${root} [data-iso="307"] path.${cls} { fill: ${fill}; }`)
+    }
+  }
   rules.push(`${root}:not(.zoom-near) [data-label="kontur-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-label="vann-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-layer="bekk"] text { display: none; }`)

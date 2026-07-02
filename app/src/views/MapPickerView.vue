@@ -152,7 +152,8 @@ function parseShareQuery() {
   // Pre-populer kart-oppsett. customName settes så challenger-navn synes
   // i lagrede-kart-listen senere.
   center.value = { lat, lon, name: '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = km / 2
+  // Eldre delte lenker kan ha km opptil 12 — clamp til dagens 8 km-tak.
+  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = Math.min(km, 8) / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   // Delte/utfordrings-kart ble bygd før Format-velgeren med skjerm-format —
   // behold portrett så mottaker ser nøyaktig samme utsnitt («se det jeg ser»).
@@ -181,7 +182,8 @@ function parseShareInvite() {
   const eq = parseInt(q.eq, 10)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
   center.value = { lat, lon, name: q.hl ? String(q.hl).slice(0, 60) : '' }
-  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = km / 2
+  // Eldre delte lenker kan ha km opptil 12 — clamp til dagens 8 km-tak.
+  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = Math.min(km, 8) / 2
   if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
   format.value = 'portrait'
   if (q.hl) customName.value = String(q.hl).slice(0, 60)
@@ -396,7 +398,7 @@ function onPreviewTouchMove(e) {
     const d = touchDist(e)
     const ratio = d / lastDist
     const next = halfKm.value / ratio
-    halfKm.value = Math.max(0.5, Math.min(6, next))
+    halfKm.value = Math.max(0.5, Math.min(4, next))
     lastDist = d
   } else if (panning && e.touches.length === 1 && panStart) {
     e.preventDefault()
@@ -446,7 +448,7 @@ function onPreviewWheel(e) {
   e.preventDefault()
   const delta = e.deltaY > 0 ? 1.1 : 0.9
   const next = halfKm.value * delta
-  halfKm.value = Math.max(0.5, Math.min(6, next))
+  halfKm.value = Math.max(0.5, Math.min(4, next))
 }
 
 onMounted(() => {
@@ -687,11 +689,11 @@ onMounted(() => {
           <div class="text-[11px] text-white/50 uppercase tracking-wide">Bredde</div>
           <div class="text-[13px] font-medium tabular-nums">{{ sizeKm }} km</div>
         </div>
-        <input type="range" min="0.5" max="6" step="0.25" v-model.number="halfKm"
+        <input type="range" min="0.5" max="4" step="0.25" v-model.number="halfKm"
                :disabled="controlsLocked"
                class="w-full accent-slate-400 disabled:opacity-50 disabled:cursor-not-allowed" />
         <div class="flex justify-between text-[10px] text-white/40 mt-1">
-          <span>1 km</span><span>6 km</span><span>12 km</span>
+          <span>1 km</span><span>4,5 km</span><span>8 km</span>
         </div>
       </div>
 

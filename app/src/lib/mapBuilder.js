@@ -19,7 +19,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectCliffs, detectKnauser, detectSummits } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
-import { depthToFillVar } from './sjokartFetcher.js'
+import { depthBandClass } from './sjokartFetcher.js'
 import {
   unionRingsToSea,
   unionPolygonsToSea,
@@ -63,12 +63,17 @@ const OVERPASS_TIMEOUT_MAX_MS = 90000   // matcher [timeout:90] i spørringen
 // Skaler klient-taket med kart-arealet. ~16 km² (4×4) → 30 s; ~200 km² (≈14 km)
 // → 90 s; klampet til [30, 90] s. Et større utsnitt = flere OSM-elementer =
 // lengre lovlig server-tid, så taket må følge med ellers avbryter vi gyldige svar.
-export function overpassTimeoutForBbox(bbox) {
-  if (!bbox) return OVERPASS_TIMEOUT_MS
+export function bboxAreaKm2(bbox) {
+  if (!bbox) return 0
   const midLat = (bbox.north + bbox.south) / 2
   const heightKm = Math.abs(bbox.north - bbox.south) * 111
   const widthKm = Math.abs(bbox.east - bbox.west) * 111 * Math.cos(midLat * Math.PI / 180)
-  const areaKm2 = heightKm * widthKm
+  return heightKm * widthKm
+}
+
+export function overpassTimeoutForBbox(bbox) {
+  if (!bbox) return OVERPASS_TIMEOUT_MS
+  const areaKm2 = bboxAreaKm2(bbox)
   // 30 s baseline + 0.34 s per km² over 16 km² → ~90 s ved ~190 km².
   const scaled = OVERPASS_TIMEOUT_MS + Math.max(0, areaKm2 - 16) * 340
   return Math.round(Math.min(OVERPASS_TIMEOUT_MAX_MS, Math.max(OVERPASS_TIMEOUT_MS, scaled)))
@@ -80,9 +85,15 @@ export function overpassTimeoutForBbox(bbox) {
 const OVERPASS_ATTEMPTS = 3
 const OVERPASS_BACKOFF_MS = [1500, 4000]   // ventetid før forsøk 2 og 3
 
-export function buildOverpassQuery(bbox) {
+// timeoutS: server-timeouten skal matche klient-taket (overpassTimeoutForBbox)
+// — en fast [timeout:90] lot en zombie-kjøring fortsette å okkupere server-slots
+// i opptil 90 s etter at klienten ga opp ved 30 s, og blokkere våre egne retries.
+// includeBuildings=false: way["building"] (den suverent tyngste selektoren i
+// tette byområder) flyttes til en egen parallell spørring for store kart —
+// se fetchOverpass.
+export function buildOverpassQuery(bbox, { timeoutS = 90, includeBuildings = true } = {}) {
   return `
-[out:json][timeout:90][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+[out:json][timeout:${timeoutS}][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
 (
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|bridleway|steps)$"];
@@ -93,7 +104,7 @@ export function buildOverpassQuery(bbox) {
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
-  way["building"];
+${includeBuildings ? '  way["building"];' : ''}
   way["leisure"~"^(park|pitch|playground|stadium|sports_centre|track|horse_racing)$"];
   way["landuse"="recreation_ground"];
   way["building"="stadium"];
@@ -206,22 +217,17 @@ const delay = (ms, signal) => new Promise((resolve, reject) => {
   }, { once: true })
 })
 
-export async function fetchOverpass(bbox, { signal, query } = {}) {
-  // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
-  // periferi-spørringen for 3×3-fliser); default er den fulle.
-  const body = 'data=' + encodeURIComponent(query ?? buildOverpassQuery(bbox))
-  // Areal-skalert klient-tak: store kyst-/by-kart trenger mer tid på serveren
-  // enn et lite kart, ellers avbryter vi et gyldig (men tregt) svar for tidlig.
-  const timeoutMs = overpassTimeoutForBbox(bbox)
-  // Prøv på nytt med backoff: speilene feiler ofte forbigående under last, og
-  // detalj-fyllingen feilet for ofte med kun ett forsøk. Avbrudd (AbortError fra
-  // prefetch/signal) prøves IKKE på nytt — det er en bevisst kansellering.
+// Retry-loop med backoff rundt speil-kappløpet. onProgress varsler brukeren
+// før hvert nye forsøk — tidligere var retries usynlige og spinneren så «død»
+// ut i opptil flere minutter.
+async function fetchOverpassWithRetry(body, { signal, timeoutMs, onProgress } = {}) {
   let lastErr
   for (let attempt = 0; attempt < OVERPASS_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
     if (attempt > 0) {
       const backoff = OVERPASS_BACKOFF_MS[attempt - 1] ?? OVERPASS_BACKOFF_MS.at(-1)
       console.warn(`[Overpass] forsøk ${attempt} feilet (${lastErr?.message ?? lastErr}) — prøver igjen om ${backoff} ms`)
+      onProgress?.(`Henter kartdata … (forsøk ${attempt + 1} av ${OVERPASS_ATTEMPTS})`)
       await delay(backoff, signal)
     }
     try {
@@ -232,6 +238,85 @@ export async function fetchOverpass(bbox, { signal, query } = {}) {
     }
   }
   throw new Error(`Overpass feilet etter ${OVERPASS_ATTEMPTS} forsøk: ${lastErr?.message ?? lastErr}`)
+}
+
+// Bygninger i egen spørring for store kart: way["building"] er den suverent
+// tyngste selektoren i tette byområder (alle bygningsfotavtrykk) og dominerte
+// både server-tid og respons-størrelse. Terskelen 100 km² tilsvarer ~8×12 km.
+const BUILDINGS_SPLIT_KM2 = 100
+
+export function buildBuildingsQuery(bbox, { timeoutS = 90 } = {}) {
+  return `
+[out:json][timeout:${timeoutS}][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way["building"];
+);
+out geom;
+`.trim()
+}
+
+export async function fetchOverpass(bbox, { signal, query, onProgress } = {}) {
+  // Areal-skalert klient-tak: store kyst-/by-kart trenger mer tid på serveren
+  // enn et lite kart, ellers avbryter vi et gyldig (men tregt) svar for tidlig.
+  // Server-timeouten i spørringen settes til samme verdi — en fast 90 s lot
+  // zombie-kjøringer blokkere serverens slots lenge etter at klienten ga opp.
+  const timeoutMs = overpassTimeoutForBbox(bbox)
+  const timeoutS = Math.ceil(timeoutMs / 1000)
+  // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
+  // periferi-spørringen for 3×3-fliser); default er den fulle — da splittes
+  // bygninger ut i en parallell spørring nr. 2 for store kart, med
+  // catch → tomt (feilet bygg-spørring gir kart uten bygninger, ikke feilet kart).
+  const splitBuildings = !query && bboxAreaKm2(bbox) > BUILDINGS_SPLIT_KM2
+  const mainBody = 'data=' + encodeURIComponent(
+    query ?? buildOverpassQuery(bbox, { timeoutS, includeBuildings: !splitBuildings }),
+  )
+  const mainP = fetchOverpassWithRetry(mainBody, { signal, timeoutMs, onProgress })
+  if (!splitBuildings) return mainP
+  const bldBody = 'data=' + encodeURIComponent(buildBuildingsQuery(bbox, { timeoutS }))
+  const bldP = fetchOverpassWithRetry(bldBody, { signal, timeoutMs }).catch(e => {
+    console.warn(`[Overpass] bygnings-spørringen feilet (${e?.message ?? e}) — kartet bygges uten bygninger`)
+    return null
+  })
+  const [main, bld] = await Promise.all([mainP, bldP])
+  if (bld?.elements?.length) {
+    const seen = new Set((main.elements ?? []).map(el => `${el.type}/${el.id}`))
+    const extra = bld.elements.filter(el => !seen.has(`${el.type}/${el.id}`))
+    main.elements = [...(main.elements ?? []), ...extra]
+  }
+  return main
+}
+
+// Mini-kystlinje-probe: en bitteliten Overpass-spørring (out ids, maks 1
+// element, ~200 B svar) som avgjør «finnes OSM-saltvann i bbox?» på 1–3 s i
+// stedet for å vente på hele hoved-spørringen. Selektorene MÅ speile
+// bboxHasOsmSaltwater-predikatet (natural=coastline + isOsmWaterSalty i
+// symbolizer.js): salt/tidal=yes, place=sea/ocean, natural=bay/strait
+// (navngitt for node/way — hovedspørringen henter kun navngitte),
+// water=sea/bay/strait/lagoon/cove. Paritet håndheves av enhetstest.
+export function buildCoastProbeQuery(bbox) {
+  return `
+[out:json][timeout:10][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way["natural"="coastline"];
+  nwr["salt"="yes"];
+  nwr["tidal"="yes"];
+  nwr["place"~"^(sea|ocean)$"];
+  node["natural"~"^(bay|strait)$"]["name"];
+  way["natural"~"^(bay|strait)$"]["name"];
+  relation["natural"~"^(bay|strait)$"];
+  nwr["water"~"^(sea|bay|strait|lagoon|cove)$"];
+);
+out ids qt 1;
+`.trim()
+}
+
+// Kjør kystlinje-proben: returnerer true/false, kaster ved nettverksfeil
+// (kalleren faller da tilbake til det autoritative Overpass-svaret).
+// Ett kappløp, ingen retries — dette er en optimalisering, ikke en kilde.
+export async function probeCoastline(bbox, { signal } = {}) {
+  const body = 'data=' + encodeURIComponent(buildCoastProbeQuery(bbox))
+  const data = await raceOverpassMirrors(body, { signal, timeoutMs: 12000 })
+  return (data?.elements?.length ?? 0) > 0
 }
 
 // v10.1.10: kartet skal FYLLE portrett-skjermen med ekte terreng i stedet for å
@@ -1436,6 +1521,7 @@ export function buildSvg(elements, bbox, options = {}) {
           // trenger det, lav-kontrast så den ikke konkurrerer med terrenget.
           let inlineStyle = ''
           let dybdeAttr = ''
+          let depthClassAttr = ''
           // Lineær havne-struktur (551): strek, ikke fyll — overstyrer
           // gruppe-CSS-fyllet via inline style.
           if (strokeOnlyStyle) inlineStyle = ` style="${strokeOnlyStyle}"`
@@ -1447,19 +1533,22 @@ export function buildSvg(elements, bbox, options = {}) {
                        : Number.isFinite(maxD) ? maxD
                        : null
             if (avgD != null) {
-              inlineStyle = ` style="fill: ${depthToFillVar(avgD)}"`
+              // v12.0.17: fyll via CSS-klasse (regler i buildIsomCss) i stedet
+              // for per-polygon inline-style — samme tema-bevisste var()-verdi,
+              // ~30 B spart per dybdepolygon.
+              depthClassAttr = ` class="${depthBandClass(avgD)}"`
               // v8.9.24: data-dybde lar MapView lage depth-shade PNG ved å
               // raster-fylle disse polygonene i gråtoner (Path2D på d-attr).
               dybdeAttr = ` data-dybde="${fmt(avgD)}"`
             }
           }
           const smallAttr = isSmall ? ' data-small="yes"' : ''
-          // Standalone hvis features har inline-style (per-polygon-fyll),
-          // dybde-attr eller et navn (søkbart). Ellers slå sammen til delt
-          // path-bucket per (data-src, isSmall).
-          if (inlineStyle || dybdeAttr || name) {
+          // Standalone hvis features har inline-style/dybdeklasse (per-polygon-
+          // fyll), dybde-attr eller et navn (søkbart). Ellers slå sammen til
+          // delt path-bucket per (data-src, isSmall).
+          if (inlineStyle || depthClassAttr || dybdeAttr || name) {
             standalonePaths.push(
-              `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+              `    <path d="${d}" fill-rule="evenodd"${depthClassAttr}${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
             )
           } else if (cat === 'vann') {
             // Vann-flater males OPAKT som egne paths — ALDRI slått sammen i en
@@ -1725,7 +1814,12 @@ export function buildSvg(elements, bbox, options = {}) {
     b.bbox = unionBbox(b.bbox, bbox)
   }
   for (const f of demFeatures.contours.features) {
-    const projected = f.coordinates.map(demProject)
+    // v12.0.17: heltalls-meter også for konturer (samme resonnement som
+    // v11.0.50 for polygoner/linjer: 1 m = 0,1 mm @ 1:10 000, godt under
+    // DP-toleransen 1,5 m). Konturene er det mest vertex-tunge laget —
+    // målt ~28 % færre kontur-d-bytes. Rundes FØR både d og bbox så
+    // koordinat-i-bbox-invarianten holder.
+    const projected = f.coordinates.map(demProject).map(p => [Math.round(p[0]), Math.round(p[1])])
     // v9.3.37: åpne kontur-løp (splittet mot periferi-void-masken i dem.js)
     // skal IKKE lukkes med Z — ellers trekkes en korde tvers over voidet.
     const d = polylineToPath(projected, f.closed !== false)
@@ -2389,7 +2483,8 @@ export function buildSvg(elements, bbox, options = {}) {
   const cliffSampleDem = sampleDem
 
   const cliffsSvg = demFeatures.cliffs.map(c => {
-    const projected = c.coordinates.map(demProject)
+    // Heltalls-meter for stupkant-spinen (samme som konturene, v12.0.17).
+    const projected = c.coordinates.map(demProject).map(p => [Math.round(p[0]), Math.round(p[1])])
     const linePath = polylineToPath(projected, false)
     const teethPaths = []
     const SPACING_M = 20
@@ -2950,13 +3045,22 @@ export function buildSvg(elements, bbox, options = {}) {
   // rektangelet bruker fill="${bgFill}" som presentasjons-attributt (lys default
   // for frittstående/print/Tegnforklaring), mens CSS-regelen
   // `#bakgrunn rect { fill: var(--bg, default) }` lar en arvet --bg overstyre.
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
 ${body}</svg>
 `
+
+  // v12.0.17: strip innrykk (behold én newline per element for diffbarhet) —
+  // pretty-print-whitespacet shipppet verbatim i hver lagrede/eksporterte SVG.
+  // Trygt: rewriter kun whitespace rett før '<'; tekst-innhold emitteres på én
+  // linje og alle streng-konsumenter (regexer, DOMParser, defs-pruning) er
+  // whitespace-agnostiske. options.pretty === true beholder innrykk for debug.
+  if (options.pretty !== true) {
+    svg = svg.replace(/\n[ ]+</g, '\n<')
+  }
 
   return { svg, counts, meta, timings }
 }

@@ -16,15 +16,19 @@ import { ref, watch } from 'vue'
 // MapPickerView.minEquidistance). En lagret verdi utenfor [1, maks] klampes/
 // ignoreres i load() → faller til DEFAULT.
 // v11.0.70: maks redusert fra 20 til 12 km (samme grense som «Flere valg»).
+// v12.0.17: maks redusert fra 12 til 8 km, default fra 10 til 8 km (ytelse:
+// store kart drev både Overpass-responsstørrelse og DEM-cellemengde; 8 km er
+// grensen der kyst-DEM-oppgraderingen fortsatt er håndterbar på mobil).
+// Lagrede preferanser > 8 km ugyldiggjøres i load() → faller til DEFAULT.
 //
 // Modul-nivå ref ⇒ delt singleton mellom MapHomeView (leser) og MapView (skriver).
 const KEY = 'svg-insights-map-size-km'
 
 export const MAP_SIZE_MIN_KM = 1
-export const MAP_SIZE_MAX_KM = 12
+export const MAP_SIZE_MAX_KM = 8
 // «Standard»-bredden (km) for nye kart når brukeren ikke har valgt noe.
 // Fast kvadrat — IKKE skjerm-skalert (se v11.0.59-merknaden over).
-export const DEFAULT_MAP_WIDTH_KM = 10
+export const DEFAULT_MAP_WIDTH_KM = 8
 
 // Dimensjoner for «Standard»-kartet: et DEFAULT_MAP_WIDTH_KM-bredt kvadrat.
 // Samme form som en valgt størrelse (aspect = 1) så velgeren er konsistent.

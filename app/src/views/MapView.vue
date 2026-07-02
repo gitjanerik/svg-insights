@@ -84,12 +84,23 @@ const meta = ref(null)
 // (>450 ms). Førstegangs-last (uten meta) bruker fullskjerm-skjelettet umiddelbart.
 const loadPillVisible = ref(false)
 let loadPillTimer = null
+// Fullskjerm-skjelettet er også forsinket (300 ms): et allerede-bygget kart
+// åpner typisk på under det (IDB-les + parse), og da skal ingen skjelett-
+// skjerm blinke. Kun genuint trege førstegangs-laster får skjelettet.
+const skeletonVisible = ref(false)
+let skeletonTimer = null
 watch(loading, (v) => {
   if (loadPillTimer) { clearTimeout(loadPillTimer); loadPillTimer = null }
+  if (skeletonTimer) { clearTimeout(skeletonTimer); skeletonTimer = null }
   if (v && meta.value) {
     loadPillTimer = setTimeout(() => { loadPillVisible.value = true }, 450)
   } else {
     loadPillVisible.value = false
+  }
+  if (v && !meta.value) {
+    skeletonTimer = setTimeout(() => { skeletonVisible.value = true }, 300)
+  } else {
+    skeletonVisible.value = false
   }
 })
 const mapTitle = ref('Turkart')
@@ -4859,10 +4870,16 @@ function hasPromotePref(id) {
   } catch { return false }
 }
 
+// Generasjonsteller for utsatte etter-paint-pass: en silent re-load (terreng-
+// finalize) kan lande mens et utsatt pass venter — da skal det gamle passet
+// droppes i stedet for å kjøre mot en utbyttet SVG-DOM.
+let loadGeneration = 0
+
 async function loadMap({ silent = false } = {}) {
   // silent = re-render av samme kart (terreng → full) uten full-skjerm-loader;
   // beholder zoom/pan og hopper over init-prefs (alt konsumert ved første last).
   // Promotering (gjør-aktiv): hopp også over loaderen, men prefs leses fortsatt.
+  const gen = ++loadGeneration
   const isPromote = !silent && hasPromotePref(route.params.id ?? 'vardasen')
   if (!silent && !isPromote) loading.value = true
   loadError.value = null
@@ -4870,11 +4887,12 @@ async function loadMap({ silent = false } = {}) {
     const id = route.params.id ?? 'vardasen'
     let text
     let demBytes = 0
+    let stored = null
     if (BUILTIN[id]) {
       mapTitle.value = BUILTIN[id].navn
       text = await fetchBuiltinSvg(BUILTIN[id].file)
     } else {
-      const stored = await loadStoredMap(id)
+      stored = await loadStoredMap(id)
       if (!stored) throw new Error('Kart ikke funnet i lagring')
       mapTitle.value = stored.navn
       text = stored.svg
@@ -4887,7 +4905,9 @@ async function loadMap({ silent = false } = {}) {
     }
     // Datamengde for dette kartet (vises i drawer-ens Debug + long-press-arket).
     // SVG-en er hoved-payloaden; DEM-en lagres separat (pakket Float32-buffer).
-    mapDataSize.value = { svgBytes: new Blob([text]).size, demBytes }
+    // text.length ≈ bytes (ASCII-dominert SVG, samme konvensjon som mapStorage) —
+    // slipper å allokere en Blob-kopi av hele strengen på åpne-stien.
+    mapDataSize.value = { svgBytes: text.length, demBytes }
     void refreshAutoTileCount()
     const parser = new DOMParser()
     const doc = parser.parseFromString(text, 'image/svg+xml')
@@ -4947,11 +4967,13 @@ async function loadMap({ silent = false } = {}) {
     } catch { /* noop */ }
     // Fersk-kart-baseline: garanter «litt kontur + litt relieff» på nye kart så
     // de ikke blir blast hvis relieff er globalt skrudd av. Consume-on-read.
+    let isFreshBuild = false
     if (!silent) {
       try {
         const fk = `mapview-freshlook:${mapId.value}`
         if (sessionStorage.getItem(fk)) {
           sessionStorage.removeItem(fk)
+          isFreshBuild = true
           if (reliefStepIndex.value === 0) reliefStepIndex.value = FRESH_RELIEF_MIN_IDX
           if (!visibleLayers.value.has('kontur')) {
             visibleLayers.value = new Set(visibleLayers.value).add('kontur')
@@ -4959,7 +4981,10 @@ async function loadMap({ silent = false } = {}) {
         }
       } catch { /* noop */ }
     }
-    setupHostSvg(root)
+    // Full trinnvis avsløring kun der den har en jobb: ferske bygg (masker den
+    // første tunge painten) og silent finalize-swaps (masker DOM-byttet). En
+    // vanlig åpning av et allerede-bygget kart får en kort enkelt-fade.
+    setupHostSvg(root, { staged: isFreshBuild || silent })
     loading.value = false
     await nextTick()
     applyLayerVisibility()
@@ -4974,9 +4999,9 @@ async function loadMap({ silent = false } = {}) {
     // snarveien i MapHomeView, der bruker ikke har annen vei til å slå
     // GPS på). Trygt å kalle flere ganger — start() er idempotent.
     if (pendingAutoStartGps) userPos.start()
-    await annot.load()
+    await annot.load(stored)
     renderAnnotations()
-    await tracker.load()
+    await tracker.load(stored)
     renderTracks()
     // Gjenoppta GPS-opptak etter et auto-kart-bytte. userPos.start() er allerede
     // kalt over (pendingAutoStartGps) og setter isWatching synkront, så
@@ -4993,25 +5018,11 @@ async function loadMap({ silent = false } = {}) {
     // Må kjøre FØR søkeindeksen bygges: applyNameLanguage stempler det fulle
     // navnet i data-name-full, som useMapSearch indekserer (alle språk søkbare).
     applyNameLanguage()
-    // Bygg søkeindeks fra ferdig-loaded SVG-DOM. Må skje etter at SVG-en er
-    // i host-en (getBBox()+getCTM() krever attached element).
-    mapSearch.rebuild(svgHostRef.value?.querySelector('svg'))
-    // Tell POI pr type så «nærmeste»-snarveiene i PUNKT-arket kan gråes ut
-    // når kartet mangler typen (f.eks. ingen holdeplass).
-    computePoiAvailability()
-    // Indeksen er ny → gamle el-referanser i forced-settet + boks-cache foreldede.
-    forcedVisibleNameEls.clear()
-    labelBoxCache.clear()
-    prevShownNames = new Set()
-    // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
-    // utsnitt). Kjøres synkront her; videre på zoom/pan via watch.
-    applyNameLOD()
-    // Viewport-culling: bygg rbush-indeks fra fersk SVG-DOM og kjør første
-    // pass (force — ingen prevState å hysterese mot).
-    buildCullDomIndex()
-    applyViewportCull(true)
-    // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
-    maybeHighlightFromQuery()
+    // De getBBox-tunge indeks-passene (søk, navn-LOD, culling) utsettes til
+    // etter første paint — de bestemmer ikke hva første frame viser, men
+    // tvang tidligere synkron layout av hele multi-MB-SVG-en før kartet kom
+    // på skjerm. Labels holdes skjult av .lod-pending til passet er kjørt.
+    scheduleDeferredMapPasses(gen)
     if (pendingPromoteView) {
       // «Gjør aktiv»-promotering: pan slik at det samme geografiske punktet (uttrykt
       // i den nye flisas meter-rom) blir liggende under skjermsenter — sømløst,
@@ -5109,14 +5120,53 @@ async function retryMapDetails() {
   }
 }
 
+// Utsatte etter-paint-pass (søkeindeks, POI-telling, navn-LOD, cull-indeks,
+// ?hl=-highlight). Dobbel-rAF garanterer at første frame av kartet er malt før
+// getBBox-stormene tvinger layout. Generasjonstelleren dropper passet hvis en
+// nyere loadMap (silent finalize-swap, flis-bytte) har byttet ut SVG-en.
+function scheduleDeferredMapPasses(gen) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (gen !== loadGeneration || !componentAlive) return
+    const svg = svgHostRef.value?.querySelector('svg')
+    if (!svg) return
+    // Bygg søkeindeks fra ferdig-loaded SVG-DOM (getBBox()+getCTM() krever
+    // attached element).
+    mapSearch.rebuild(svg)
+    // Tell POI pr type så «nærmeste»-snarveiene i PUNKT-arket kan gråes ut
+    // når kartet mangler typen (f.eks. ingen holdeplass).
+    computePoiAvailability()
+    // Kjør navn-LOD nå som indeksen finnes (skjuler overflødige navn i tette
+    // utsnitt). Videre på zoom/pan via watch.
+    applyNameLOD()
+    // Viewport-culling: bygg rbush-indeks fra fersk SVG-DOM og kjør første
+    // pass (force — ingen prevState å hysterese mot).
+    buildCullDomIndex()
+    applyViewportCull(true)
+    // Auto-highlight hvis ?hl=<navn> i URL (delings-flow).
+    maybeHighlightFromQuery()
+    svg.classList.remove('lod-pending')
+  }))
+}
+
 // Trinnvis kart-avsløring (v11.0.45). Struktur fades inn først, så tekstur +
 // labels et hakk etter — gir en «levende» ankomst i stedet for én tung paint.
 // Hopper helt over (vis straks) ved prefers-reduced-motion.
 const prefersReducedMotion = (() => {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
 })()
-function startMapReveal(svg) {
+function startMapReveal(svg, staged) {
   if (prefersReducedMotion) return
+  if (!staged) {
+    // Allerede-bygget kart: kort enkelt-fade i stedet for full to-trinns
+    // avsløring — labels maskeres uansett av .lod-pending til LOD-passet.
+    svg.classList.add('cb-reveal')
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      svg.classList.add('cb-reveal-quick', 'cb-revealing')
+      svg.classList.remove('cb-reveal')
+      setTimeout(() => svg.classList.remove('cb-revealing', 'cb-reveal-quick'), 200)
+    }))
+    return
+  }
   svg.classList.add('cb-reveal', 'cb-reveal-late')
   requestAnimationFrame(() => requestAnimationFrame(() => {
     svg.classList.add('cb-revealing')      // skru på opacity-transition
@@ -5126,13 +5176,18 @@ function startMapReveal(svg) {
   }))
 }
 
-function setupHostSvg(sourceRoot) {
+function setupHostSvg(sourceRoot, { staged = true } = {}) {
   const ns = 'http://www.w3.org/2000/svg'
   const host = svgHostRef.value
   host.replaceChildren()
   // Ny SVG-DOM → element-referansene i culling-indeksen er foreldede.
   // Indeksen bygges på nytt etter at lasting er ferdig (buildCullDomIndex).
   resetViewportCull()
+  // Samme for navn-LOD-statens el-referanser og boks-cache: tømmes HER (ikke
+  // i det utsatte passet) så stale refs aldri overlever et SVG-bytte.
+  forcedVisibleNameEls.clear()
+  labelBoxCache.clear()
+  prevShownNames = new Set()
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', sourceRoot.getAttribute('viewBox'))
   svg.setAttribute('xmlns', ns)
@@ -5149,12 +5204,15 @@ function setupHostSvg(sourceRoot) {
   // stedet for å klippes ved SVG-viewporten. Skjermkanten (kart-flate-wrapperen)
   // klipper fortsatt, og UI-chrome ligger over (høyere z-index).
   svg.style.overflow = 'visible'
-  // Kart-innholdet (bakgrunn + vegetasjon + kurver + relieff osv.) klones
-  // direkte inn i SVG-roten. Overlays (GPS/annotering/spor/måling/søk) appendes
-  // ETTERPÅ så de ligger øverst. Relieffet (#hillshade-layer) settes inn foran
-  // [data-layer="vann"] (eller første overlay-lag).
-  for (const child of Array.from(sourceRoot.childNodes)) {
-    svg.appendChild(child.cloneNode(true))
+  // Kart-innholdet (bakgrunn + vegetasjon + kurver + relieff osv.) adopteres
+  // direkte inn i SVG-roten — adoptNode re-homer nodene fra DOMParser-
+  // dokumentet uten å kopiere (den gamle cloneNode(true)-loopen traverserte
+  // hele multi-MB-treet en gang til). Parse-dokumentet brukes aldri etterpå
+  // (ghost tiles re-leser lagret SVG-tekst selv). Overlays (GPS/annotering/
+  // spor/måling/søk) appendes ETTERPÅ så de ligger øverst. Relieffet
+  // (#hillshade-layer) settes inn foran [data-layer="vann"].
+  while (sourceRoot.firstChild) {
+    svg.appendChild(document.adoptNode(sourceRoot.firstChild))
   }
   // v10.2.9 (perf): detalj-lagene (data-detail="1": dybdepunkt/dybdekurve)
   // er usynlige på hovedkartet (display:none) men kostet likevel parse,
@@ -5172,12 +5230,16 @@ function setupHostSvg(sourceRoot) {
   // finger lander på prikken/ringen.
   userLayer.setAttribute('pointer-events', 'none')
   svg.appendChild(userLayer)
+  // Navn-lagene holdes usynlige til det utsatte navn-LOD-passet har kjørt —
+  // ellers ville ALLE navn blinke frem i 1–2 frames før decluttering. Dekker
+  // også prefers-reduced-motion (der reveal-fade hoppes helt over).
+  svg.classList.add('lod-pending')
   host.appendChild(svg)
   // v11.0.45: trinnvis avsløring — strukturen (bakgrunn/vann/kurver/veier) males
   // først, så toner tekstur (vegetasjon/relieff) og labels inn et lite øyeblikk
   // etter. Selv om total tid er lik, leses en trinnvis ankomst som «snappy»
   // mens én blokkerende paint leses som treg. Ren CSS-klasse-sekvens.
-  startMapReveal(svg)
+  startMapReveal(svg, staged)
   // v8.10.4: SVG-en er ny-bygget her — applikér evt. allerede-aktive
   // perf-klasser (.zoomed-in / .zoom-near / .is-zooming) basert på nåværende
   // state, siden watcheren bare reagerer på endringer.
@@ -5952,6 +6014,8 @@ onUnmounted(() => {
   desktopMq?.removeEventListener('change', updateIsDesktop)
   if (nameLodTimer) clearTimeout(nameLodTimer)
   if (activatableTimer) clearTimeout(activatableTimer)
+  if (skeletonTimer) clearTimeout(skeletonTimer)
+  if (loadPillTimer) clearTimeout(loadPillTimer)
   clearAutoPromote()
   if (autoMapToastTimer) clearTimeout(autoMapToastTimer)
 })
@@ -6535,7 +6599,7 @@ onUnmounted(() => {
          dekker vi IKKE kartet med et opakt skjelett — da ville den hvite «Laster
          kart»-teksten bli nesten usynlig oppå kremgult kart. Vis i stedet en liten
          lesbar mørk pille i hjørnet. -->
-    <div v-if="loading && !meta" class="absolute inset-0 z-10 overflow-hidden">
+    <div v-if="loading && !meta && skeletonVisible" class="absolute inset-0 z-10 overflow-hidden">
       <div class="cb-skeleton absolute inset-0" :class="isDark ? 'cb-skeleton-dark' : 'cb-skeleton-light'">
         <div class="cb-skeleton-shimmer absolute inset-0"/>
       </div>
@@ -7719,8 +7783,32 @@ onUnmounted(() => {
                       border-b border-white/8 flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="text-[10px] uppercase tracking-wide text-white/45">Punkt</div>
-              <div class="text-white text-[13px] font-mono tabular-nums">
-                {{ contextMenuInfo.lat.toFixed(5) }}, {{ contextMenuInfo.lon.toFixed(5) }}
+              <div class="flex items-center gap-2">
+                <div class="text-white text-[13px] font-mono tabular-nums">
+                  {{ contextMenuInfo.lat.toFixed(5) }}, {{ contextMenuInfo.lon.toFixed(5) }}
+                </div>
+                <!-- Snarvei: kopier koordinater uten å scrolle ned til
+                     handlings-knappene under detalj-inset-en. Samme handler +
+                     tilstands-feedback som knappen der nede. -->
+                <button @click="onCopyCoords"
+                        aria-label="Kopier koordinater"
+                        class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center
+                               border active:scale-90 transition"
+                        :class="contextActionState === 'copied'
+                                ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                                : contextActionState === 'failed'
+                                  ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                                  : 'bg-white/5 border-white/10 text-white/60'">
+                  <svg v-if="contextActionState !== 'copied'" viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="11" height="11" rx="2"/>
+                    <path d="M5 15 V5 a2 2 0 0 1 2 -2 h10"/>
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </button>
               </div>
               <div v-if="!contextMenuInfo.inside" class="text-[10px] text-amber-300 mt-0.5">
                 Utenfor kart-utsnittet
@@ -8527,11 +8615,22 @@ onUnmounted(() => {
 .isom-map .name-lod-off { display: none !important; }
 .isom-map .vp-cull { display: none !important; }
 
+/* Navn-lagene holdes usynlige til det utsatte navn-LOD-passet har kjørt
+   (scheduleDeferredMapPasses fjerner klassen) — hindrer at ALLE navn blinker
+   frem i 1–2 frames før decluttering. visibility (ikke opacity) så den ikke
+   kolliderer med reveal-sekvensens opacity-transitions. Samme eksport-kontrakt
+   som .name-lod-off: lever her, følger ikke med i SVG-eksport. */
+.isom-map.lod-pending [data-layer="navn"],
+.isom-map.lod-pending [data-layer^="stedsnavn"] { visibility: hidden; }
+
 /* v11.0.45 — trinnvis kart-avsløring. Klassene settes/fjernes i startMapReveal;
    etter sekvensen er alle borte og kartet er upåvirket (ingen permanent
    transition som kan koste under pan/zoom). */
 .isom-map.cb-reveal { opacity: 0; }
 .isom-map.cb-revealing { transition: opacity .26s ease; }
+/* Kort enkelt-fade ved åpning av allerede-bygget kart (startMapReveal uten
+   staged) — erstatter to-trinns-sekvensen med 130/540 ms-timerne. */
+.isom-map.cb-reveal-quick.cb-revealing { transition: opacity .12s ease; }
 .isom-map.cb-reveal-late [data-layer="navn"],
 .isom-map.cb-reveal-late [data-layer^="stedsnavn"],
 .isom-map.cb-reveal-late #hillshade-layer { opacity: 0; }

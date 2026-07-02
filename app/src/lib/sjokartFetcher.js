@@ -245,22 +245,25 @@ async function fetchFirstWorkingTypename(endpoint, candidates, bbox, opts, fetch
 }
 
 // v7.1.9: GetCapabilities (9. mai 2026) bekreftet at wfs.dybdedata KUN
-// støtter GML — ingen JSON. Setter GML først; JSON-varianter beholdes
-// som fallback for andre endepunkter (wfs.dybdedata2 osv.) som kanskje
-// har andre format-policies.
+// støtter GML — ingen JSON. Setter GML først; én JSON-variant beholdes
+// som fallback for andre endepunkter (wfs.dybdedata2 osv.).
+// v12.0.17: trimmet 9 → 3. De seks droppede var redundante stavemåter av
+// JSON ('application/geo+json', 'json', 'JSON', 'text/json', 'geojson') +
+// 'application/gml+xml; version=3.2' — hver kostet en feilet round-trip
+// per typename per endpoint (opptil 6×13×3 unødvendige requests innenfor
+// den ytre hard-timeouten).
 const OUTPUT_FORMATS = [
   // GML 3.2.1 — verifisert støtte for wfs.dybdedata
   'text/xml; subtype=gml/3.2.1',
-  'application/gml+xml; version=3.2',
   // JSON-fallback for andre endepunkter
   'application/json',
-  'application/geo+json',
-  'json',
-  'JSON',
-  'text/json',
-  'geojson',
+  // Legacy GML som siste utvei
   'GML2',
 ]
+
+// Per-request-tak inne i format-loopen: uten dette kunne én hengende request
+// spise hele den ytre hard-timeouten alene før neste format/typename fikk prøve.
+const SJOKART_REQUEST_TIMEOUT_MS = 10000
 
 async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
   // v7.1.10: WFS 2.0.0 krever at prefix→URI-binding deklareres via
@@ -317,11 +320,23 @@ async function fetchTypeName(endpoint, typeName, bbox, opts = {}) {
 async function tryFormat(endpoint, baseParams, typeName, outputFormat, opts) {
   const params = new URLSearchParams({ ...baseParams, OUTPUTFORMAT: outputFormat })
   const url = `${endpoint}?${params}`
-  const res = await fetch(url, { signal: opts.signal })
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} for ${typeName} med format ${outputFormat}`)
+  // Per-request abort lenket til kallerens signal (10 s) — en hengende
+  // request skal koste én format-variant, ikke hele den ytre hard-timeouten.
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(new DOMException('Sjøkart-request-timeout', 'TimeoutError')), SJOKART_REQUEST_TIMEOUT_MS)
+  const onAbort = () => ctrl.abort(opts.signal?.reason)
+  opts.signal?.addEventListener('abort', onAbort, { once: true })
+  let text
+  try {
+    const res = await fetch(url, { signal: ctrl.signal })
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} for ${typeName} med format ${outputFormat}`)
+    }
+    text = await res.text()
+  } finally {
+    clearTimeout(timer)
+    opts.signal?.removeEventListener('abort', onAbort)
   }
-  const text = await res.text()
   // v7.1.10: lagre første sample for diagnose. v7.1.11: strip XML-tegn
   // (<>) som ellers ville brutt SVG-parsing når sample lagres i
   // data-meta-attributt. Erstatter med ‹ › så strukturen er synlig
@@ -774,4 +789,16 @@ export function depthToColor(dybde) {
 export function depthToFillVar(dybde) {
   const [, idx, hex] = depthBand(dybde)
   return `var(--iso-depth-${idx}, ${hex})`
+}
+
+// v12.0.17: 307-dybdefyllet flyttet fra per-polygon inline-style (~45 B) til
+// CSS-klasser (~14 B): depthBandClass gir klassen for en polygon, og
+// depthBandFills gir (klasse, fill)-parene symbolizer-CSS-en emitterer regler
+// for. Fill-verdiene er identiske med depthToFillVar (tema-bevisste).
+export function depthBandClass(dybde) {
+  return `dyp-${depthBand(dybde)[1]}`
+}
+
+export function depthBandFills() {
+  return DEPTH_BANDS.map(([, idx, hex]) => ({ cls: `dyp-${idx}`, fill: `var(--iso-depth-${idx}, ${hex})` }))
 }

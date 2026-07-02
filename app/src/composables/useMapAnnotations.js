@@ -33,12 +33,14 @@ export function useMapAnnotations(mapId) {
   // «Knaus»-symboler uten å slette dem. Default: alt synlig.
   const visibleTypes = ref(new Set(ANNOTATION_SYMBOLS.map(s => s.symbolKey)))
 
-  async function load() {
+  // preloaded: allerede-lest IndexedDB-entry fra kallerens loadMap — sparer en
+  // full deserialisering av multi-MB SVG-strengen når kartet nettopp er lest.
+  async function load(preloaded) {
     if (!mapId || mapId.startsWith('vardasen')) {
       annotations.value = []
       return
     }
-    const entry = await loadMap(mapId)
+    const entry = preloaded ?? await loadMap(mapId)
     annotations.value = entry?.annotations ?? []
     isDirty.value = false
   }
