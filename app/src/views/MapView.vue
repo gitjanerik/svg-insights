@@ -7783,8 +7783,32 @@ onUnmounted(() => {
                       border-b border-white/8 flex items-start justify-between gap-3">
             <div class="min-w-0">
               <div class="text-[10px] uppercase tracking-wide text-white/45">Punkt</div>
-              <div class="text-white text-[13px] font-mono tabular-nums">
-                {{ contextMenuInfo.lat.toFixed(5) }}, {{ contextMenuInfo.lon.toFixed(5) }}
+              <div class="flex items-center gap-2">
+                <div class="text-white text-[13px] font-mono tabular-nums">
+                  {{ contextMenuInfo.lat.toFixed(5) }}, {{ contextMenuInfo.lon.toFixed(5) }}
+                </div>
+                <!-- Snarvei: kopier koordinater uten å scrolle ned til
+                     handlings-knappene under detalj-inset-en. Samme handler +
+                     tilstands-feedback som knappen der nede. -->
+                <button @click="onCopyCoords"
+                        aria-label="Kopier koordinater"
+                        class="w-7 h-7 shrink-0 rounded-full flex items-center justify-center
+                               border active:scale-90 transition"
+                        :class="contextActionState === 'copied'
+                                ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                                : contextActionState === 'failed'
+                                  ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                                  : 'bg-white/5 border-white/10 text-white/60'">
+                  <svg v-if="contextActionState !== 'copied'" viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="11" height="11" rx="2"/>
+                    <path d="M5 15 V5 a2 2 0 0 1 2 -2 h10"/>
+                  </svg>
+                  <svg v-else viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </button>
               </div>
               <div v-if="!contextMenuInfo.inside" class="text-[10px] text-amber-300 mt-0.5">
                 Utenfor kart-utsnittet
