@@ -94,6 +94,21 @@ watch(loading, (v) => {
 })
 const mapTitle = ref('Turkart')
 
+// Sjøkart-WFS-utfall for Utvikler-fanen: hentingen feiler stille (timeout/
+// CORS/tom respons), og uten dette var det umulig å se på mobil hvorfor
+// dybdetall og kai/brygge/molo manglet på et kystkart.
+const sjokartStatusText = computed(() => {
+  const s = meta.value?.sjokartStatus
+  if (!s) return null
+  switch (s.state) {
+    case 'ok': return `OK — ${s.features} features (${s.source?.replace('https://wfs.geonorge.no/skwms1/', '') ?? 'ukjent kilde'})`
+    case 'innlands': return 'hoppet over (innlandskart)'
+    case 'timeout': return `timeout etter ${Math.round((s.timeoutMs ?? 0) / 1000)} s — regenerer kartet for å prøve igjen`
+    case 'feil': return 'nettverks-/CORS-feil — dybdetall og kaier mangler'
+    default: return '0 features (utenfor dekning eller endret tjeneste)'
+  }
+})
+
 const curveball = useCurveBall()
 const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
 const storedHighestPoint = ref(null)
@@ -4837,6 +4852,7 @@ async function loadMap({ silent = false } = {}) {
       depthSource: m.depthSource ?? null, // 'sjokart' | 'dem-estimat' | 'ingen' | null (eldre kart)
       contoursSkipped: m.contoursSkipped ?? null,
       coastal: m.coastal ?? null,        // true=kyst, false=innland, null=ukjent (eldre kart)
+      sjokartStatus: m.sjokartStatus ?? null, // utfall av Sjøkart-WFS ved bygging (Utvikler-fanen)
     }
     // Forbruk init-prefs fra auto-kart / on-the-fly (tema + synlige lag, GPS,
     // auto-modus, bevart zoom/rotasjon). Én gang per ny mapId.
@@ -7539,6 +7555,21 @@ onUnmounted(() => {
               <span class="text-white/55 text-[11px] tabular-nums">
                 {{ cullStats.culled }} / {{ cullStats.indexed }} skjult · {{ cullStats.ms }} ms
               </span>
+            </div>
+            <!-- Sjøkart-status: WFS-hentingen feiler stille (timeout/CORS/tom) —
+                 her vises HVORFOR dybdetall/kai mangler på kystkart. -->
+            <div v-if="sjokartStatusText" class="mb-2 px-1">
+              <div class="flex items-baseline justify-between gap-2">
+                <span class="text-white/45 text-[11px]">Sjøkart-WFS</span>
+                <span class="text-[11px]"
+                      :class="meta?.sjokartStatus?.state === 'ok' ? 'text-white/55' : 'text-amber-300/80'">
+                  {{ sjokartStatusText }}
+                </span>
+              </div>
+              <div v-for="(err, i) in (meta?.sjokartStatus?.errors ?? [])" :key="i"
+                   class="text-white/35 text-[10px] leading-tight break-all">
+                {{ err.endpoint }}{{ err.typeName ? ` ${err.typeName}` : '' }} · {{ err.kind }}: {{ err.message }}
+              </div>
             </div>
             <button @click="diagnose = !diagnose"
                     class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
