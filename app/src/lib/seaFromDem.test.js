@@ -77,3 +77,86 @@ describe('buildSeaFromDem', () => {
     expect(hasHole).toBe(true)
   })
 })
+
+describe('void-celler forbundet med havflaten (Grønnsund-fiksen)', () => {
+  // 30×30 @ 10 m: sjø (0 m) øverst og nederst, land (100 m) i midten, og en
+  // smal nord–sør-korridor som forbinder de to sjø-flatene. Korridoren
+  // simulerer et sund der Kartverket-WCS ga noData og Terrarium fylte inn
+  // grov global LANDhøyde (voidMask = 1, data = fylt verdi).
+  function soundDem({ corridorValue = 5, withMask = true } = {}) {
+    const cols = 30, rows = 30
+    const data = new Float32Array(cols * rows)
+    const voidMask = new Uint8Array(cols * rows)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const i = y * cols + x
+        if (y <= 4 || y >= 25) data[i] = 0
+        else if (x >= 13 && x <= 16) { data[i] = corridorValue; voidMask[i] = 1 }
+        else data[i] = 100
+      }
+    }
+    const dem = {
+      data, cols, rows, noData: -9999,
+      transform: { originX: 0, originY: 0, pixelWidth: 10, pixelHeight: 10 },
+    }
+    if (withMask) dem.voidMask = voidMask
+    return dem
+  }
+  // Én sammenhengende sjø-polygon som dekker både nord- og sør-flaten?
+  const spansBothSides = (polygons) => polygons.some(p => {
+    const ys = p[0].map(pt => pt[1])
+    return Math.min(...ys) < 60 && Math.max(...ys) > 240
+  })
+
+  it('åpner sundet: Terrarium-fylt void-korridor forbundet med havflaten blir sjø', () => {
+    const { polygons } = buildSeaFromDem(soundDem())
+    expect(spansBothSides(polygons)).toBe(true)
+  })
+
+  it('uten voidMask er fylte korridor-verdier land (sundet lukket)', () => {
+    const { polygons } = buildSeaFromDem(soundDem({ withMask: false }))
+    expect(polygons.length).toBeGreaterThan(0)
+    expect(spansBothSides(polygons)).toBe(false)
+  })
+
+  it('flommer ikke gjennom fylte voids med høy landhøyde (grensekart-scenario)', () => {
+    // Terrarium fylte korridoren med 80 m (ekte utenlandsk terreng) —
+    // over voidSeaMaxM (30) → flommen stopper, sundet forblir lukket.
+    const { polygons } = buildSeaFromDem(soundDem({ corridorValue: 80 }))
+    expect(polygons.length).toBeGreaterThan(0)
+    expect(spansBothSides(polygons)).toBe(false)
+  })
+
+  it('rå noData-korridor (u-fylt DEM, ingen maske) åpnes også', () => {
+    const { polygons } = buildSeaFromDem(soundDem({ corridorValue: -9999, withMask: false }))
+    expect(spansBothSides(polygons)).toBe(true)
+  })
+
+  it('void-felt uten havflate-forbindelse forblir land', () => {
+    // Sjø kun nederst; et Terrarium-fylt void-felt oppe ved bbox-kanten er
+    // IKKE grid-forbundet med havflaten → skal ikke bli sjø selv om det
+    // berører kanten.
+    const cols = 30, rows = 30
+    const data = new Float32Array(cols * rows)
+    const voidMask = new Uint8Array(cols * rows)
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const i = y * cols + x
+        if (y >= 25) data[i] = 0
+        else if (y <= 3 && x >= 8 && x <= 16) { data[i] = 5; voidMask[i] = 1 }
+        else data[i] = 100
+      }
+    }
+    const dem = {
+      data, cols, rows, noData: -9999, voidMask,
+      transform: { originX: 0, originY: 0, pixelWidth: 10, pixelHeight: 10 },
+    }
+    const { polygons } = buildSeaFromDem(dem)
+    expect(polygons.length).toBeGreaterThan(0)
+    // Bare sør-sjøen — ingen polygon oppe ved void-feltet
+    for (const p of polygons) {
+      const ys = p[0].map(pt => pt[1])
+      expect(Math.min(...ys)).toBeGreaterThan(200)
+    }
+  })
+})

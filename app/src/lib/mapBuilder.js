@@ -1122,13 +1122,17 @@ export function buildSvg(elements, bbox, options = {}) {
     // lavtliggende øyer DEM-resolusjonen ikke fanger, så WMTS foretrekkes
     // når det er tilgjengelig (skipDemSea=true).
     if (!skipDemSea) {
+      // voidMask (fra Terrarium-fyllet) lar sjø-deteksjonen skille «void fylt
+      // med grov global landhøyde» fra ekte målt land — kritisk i smale sund.
       const seaResult = buildSeaFromDem(usableDem, {
         thresholdM: 0.5, minAreaM2: 2000, simplifyM: 2, requireBoundaryTouch: true,
+        voidMask: usableDem.voidMask ?? null,
       })
       demSeaPolygons = seaResult.polygons
       if (demSeaPolygons.length) {
         const shallow = buildSeaShallowBands(usableDem, {
           thresholdM: 0.5, bandDistancesM: [50, 200], simplifyM: 2,
+          voidMask: usableDem.voidMask ?? null,
         })
         demSeaBands = shallow.bands
       }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-02 — v12.0.13: Grønnsund-fiksen — smale sund blir sjø igjen på kystkart
+
+Rapportert fra Nesøya, Asker: Grønnsund rendres som land der bilveien krysser sundet. To regresjoner hadde nøytralisert den gamle kyst-fiksen (v9.3.16, 5 m-DEM for smale sund): (1) **Terrarium-fyllet** (v10.2.22) overskrev sundets noData-sjøceller (ingen LiDAR-retur over vann) med grov global LANDhøyde > 0,5 m — sjø-masken leste land. (2) **Standardkartet ble 10 km** (v11.0.60), over 8 km-gaten, så standardkart aldri fikk finere kyst-DEM enn 20 m. Fiks: (1) `fillDemCells` bevarer nå en **void-maske** over celler som manglet Kartverket-data før fylling, og sjø-deteksjonen (`buildSeaFromDem`/`buildSeaShallowBands`) flood-filler fra havflaten gjennom void-celler — en void forbundet med havflate-celler (≤ 0,5 m) er vann, uansett hva Terrarium fylte inn (opp til 30 m fylt høyde; ekte utenlandsk terreng på grensekart stiger over det og stopper flommen). (2) Kyst-oppgraderingen er nå en trapp: ≤ 8 km → 5 m (som før), **8–12 km → 10 m** (dekker 10 km-standardkartet), > 12 km → uendret. Verifisert mot ekte Terrarium-data over Nesøya-sundene (verdier 0,5–30 m midt i sundene — nøyaktig området flommen nå passerer). Kartet må regenereres for å få fiksen.
+
+---
+
 ## 2026-06-30 — v12.0.12: Nord-opp-navn i detalj-inset + større WC-symbol
 
 To finpussinger:

@@ -231,6 +231,12 @@ export function detectTerrariumTrigger(dem) {
 export function fillDemCells(dem, utmBbox, sample) {
   const { data, cols, rows, transform, noData } = dem
   const out = Float32Array.from(data)
+  // Void-masken bevarer HVILKE celler som manglet Kartverket-data FØR fylling.
+  // På kystkart er slike celler sjø (ingen LiDAR-retur over vann), og
+  // Terrarium kan fylle dem med grov global LANDhøyde i smale sund — sjø-
+  // deteksjonen (seaFromDem.js) trenger den opprinnelige void-statusen for å
+  // kunne åpne sundet igjen. Konturer/relieff bruker de fylte verdiene som før.
+  const voidMask = new Uint8Array(data.length)
   let replaced = 0
   for (let row = 0; row < rows; row++) {
     const northing = utmBbox.maxN - (row + 0.5) * transform.pixelHeight
@@ -238,6 +244,7 @@ export function fillDemCells(dem, utmBbox, sample) {
       const i = row * cols + col
       const v = data[i]
       const isVoid = v === noData || !Number.isFinite(v) || v < -1000
+      if (isVoid) voidMask[i] = 1
       const isCliffLow = !isVoid && v <= SUSPECT_LOW_M
       if (!isVoid && !isCliffLow) continue
       const easting = utmBbox.minE + (col + 0.5) * transform.pixelWidth
@@ -250,7 +257,7 @@ export function fillDemCells(dem, utmBbox, sample) {
   }
   if (replaced === 0) return { dem, filled: false, replaced: 0 }
   const source = dem.source ? `${dem.source} + Terrarium-fyll` : 'Terrarium-fyll'
-  return { dem: { ...dem, data: out, source }, filled: true, replaced }
+  return { dem: { ...dem, data: out, source, voidMask }, filled: true, replaced }
 }
 
 // ── Nett-henting (ren JS-dekoding — se modul-kommentaren om canvas-fella) ──

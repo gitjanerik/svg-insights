@@ -232,4 +232,18 @@ describe('fillDemCells', () => {
     expect(filled).toBe(false)
     expect(replaced).toBe(0)
   })
+  it('bevarer void-masken (hvilke celler som var noData FØR fylling)', () => {
+    const dem = makeDem([600, -9999, 620, -9999], 2, 2)
+    const { dem: out } = fillDemCells(dem, UTM, () => 500)
+    expect(out.voidMask).toBeInstanceOf(Uint8Array)
+    expect([...out.voidMask]).toEqual([0, 1, 0, 1])
+    // De fylte verdiene er der fortsatt — masken endrer ikke data
+    expect(out.data[1]).toBe(500)
+    expect(out.data[3]).toBe(500)
+  })
+  it('uendret DEM (ingenting byttet) har ingen void-maske', () => {
+    const dem = makeDem([600, 610, 620, 605], 2, 2)
+    const { dem: out } = fillDemCells(dem, UTM, () => 100)
+    expect(out.voidMask).toBeUndefined()
+  })
 })

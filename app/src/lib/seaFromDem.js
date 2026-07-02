@@ -38,6 +38,60 @@ function smoothRing(ring, simplifyM) {
   return r
 }
 
+// Void-celler (noData i Kartverket-WCS) er tvetydige: over vann mangler
+// LiDAR-retur (→ sjø), på grensekart mangler norsk dekning (→ utenlandsk
+// land). Terrarium-fyllet (terrariumDem.js) kan dessuten ha overskrevet
+// void-celler med grov global LANDhøyde — i smale sund (Grønnsund, Nesøya)
+// klemmer det sjø-masken igjen selv om cellene aldri var målt land.
+//
+// Diskriminator: en void-celle som er grid-forbundet (4-naboskap) med ekte
+// havflate-celler (≤ thresholdM) er vann. Flood-fill fra havflaten vokser
+// gjennom void-celler; nådde voids behandles som 0 m (sjø-kandidat), unådde
+// forblir land. Gjennom Terrarium-FYLTE voids vokser flommen bare når den
+// fylte verdien er ≤ voidSeaMaxM — Terrarium interpolerer bankhøyde (noen få
+// til ~20 m) over et sund, mens ekte utenlandsk terreng stiger raskt forbi
+// grensen. Det hindrer at lavlandet på svensk side av Iddefjorden flommes.
+//
+// Returnerer Uint8Array (1 = void nådd fra havflaten), eller null når
+// gridet ikke har void-celler (vanlige innlandskart → null, null overhead).
+function findSeaConnectedVoids(data, cols, rows, noData, thresholdM, voidMask, voidSeaMaxM) {
+  const n = data.length
+  const rawVoid = (i) => {
+    const v = data[i]
+    return v === noData || !Number.isFinite(v) || v < -1000
+  }
+  // Passerbar = void-celle flommen kan vokse gjennom. Celler som allerede
+  // leser ≤ thresholdM er sjø-frø uansett maske (Terrarium fylte med 0 m).
+  const passable = new Uint8Array(n)
+  let hasPassable = false
+  for (let i = 0; i < n; i++) {
+    const raw = rawVoid(i)
+    if (!raw && !(voidMask && voidMask[i] === 1)) continue
+    if (!raw && data[i] <= thresholdM) continue
+    if (!raw && data[i] > voidSeaMaxM) continue
+    passable[i] = 1
+    hasPassable = true
+  }
+  if (!hasPassable) return null
+
+  const reached = new Uint8Array(n)
+  const queue = new Int32Array(n)
+  let head = 0, tail = 0
+  for (let i = 0; i < n; i++) {
+    if (passable[i] || rawVoid(i)) continue
+    if (data[i] <= thresholdM) queue[tail++] = i
+  }
+  while (head < tail) {
+    const i = queue[head++]
+    const x = i % cols
+    if (x > 0 && passable[i - 1] && !reached[i - 1]) { reached[i - 1] = 1; queue[tail++] = i - 1 }
+    if (x < cols - 1 && passable[i + 1] && !reached[i + 1]) { reached[i + 1] = 1; queue[tail++] = i + 1 }
+    if (i >= cols && passable[i - cols] && !reached[i - cols]) { reached[i - cols] = 1; queue[tail++] = i - cols }
+    if (i < n - cols && passable[i + cols] && !reached[i + cols]) { reached[i + cols] = 1; queue[tail++] = i + cols }
+  }
+  return reached
+}
+
 /**
  * @param {{ data: Float32Array|Array<number>, cols: number, rows: number,
  *           transform: { pixelWidth: number, pixelHeight: number,
@@ -52,6 +106,12 @@ function smoothRing(ring, simplifyM) {
  *   definisjon åpent vann og rører alltid bbox-kanten i en kyst-bbox.
  *   Innsjøer/tjern som ligger lavt over havet (slik at DTM-verdien er nær
  *   0) ville ellers feilaktig bli klassifisert som sjø.
+ * @param {Uint8Array|null} [opts.voidMask]
+ *   1 = cellen var noData FØR Terrarium-fyll (se fillDemCells). Faller
+ *   tilbake til dem.voidMask. Void-celler forbundet med havflaten regnes
+ *   som sjø — se findSeaConnectedVoids.
+ * @param {number} [opts.voidSeaMaxM=30]
+ *   Maks fylt høyde flood-fillen vokser gjennom i Terrarium-fylte voids.
  * @returns {{ polygons: Array<Array<Array<[number, number]>>> }}
  *          Hver polygon = array av ringer i DEM-relative meters.
  *          Første ring = outer, øvrige = øy-hull.
@@ -62,12 +122,20 @@ export function buildSeaFromDem(dem, opts = {}) {
     minAreaM2 = 2000,
     simplifyM = 2,
     requireBoundaryTouch = true,
+    voidMask = dem.voidMask ?? null,
+    voidSeaMaxM = 30,
   } = opts
   const { data, cols, rows, transform, noData } = dem
+
+  const seaVoids = findSeaConnectedVoids(data, cols, rows, noData, thresholdM, voidMask, voidSeaMaxM)
 
   let hasSea = false
   const inverted = new Array(data.length)
   for (let i = 0; i < data.length; i++) {
+    if (seaVoids && seaVoids[i]) {
+      inverted[i] = 0 // void nådd fra havflaten → sjø-kandidat (0 m)
+      continue
+    }
     const v = data[i]
     if (v === noData || !Number.isFinite(v)) {
       inverted[i] = -1e6
@@ -158,15 +226,26 @@ export function buildSeaShallowBands(dem, opts = {}) {
     thresholdM = 0.5,
     bandDistancesM = [50, 200],
     simplifyM = 2,
+    voidMask = dem.voidMask ?? null,
+    voidSeaMaxM = 30,
   } = opts
   const { data, cols, rows, transform, noData } = dem
   const px = transform.pixelWidth
   const py = transform.pixelHeight
 
-  // 1. Bygg sjø-mask: 1 = sjø, 0 = land/nodata
+  const seaVoids = findSeaConnectedVoids(data, cols, rows, noData, thresholdM, voidMask, voidSeaMaxM)
+
+  // 1. Bygg sjø-mask: 1 = sjø, 0 = land/nodata. Voids forbundet med
+  // havflaten regnes som sjø (samme regel som buildSeaFromDem, så grunn-
+  // båndene følger den samme kystlinjen).
   const sea = new Uint8Array(data.length)
   let hasSea = false
   for (let i = 0; i < data.length; i++) {
+    if (seaVoids && seaVoids[i]) {
+      sea[i] = 1
+      hasSea = true
+      continue
+    }
     const v = data[i]
     if (v === noData || !Number.isFinite(v) || v > thresholdM) continue
     sea[i] = 1
