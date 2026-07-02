@@ -3323,12 +3323,24 @@ function buildDetailInset() {
   if (rotation.value) {
     for (const t of svg.querySelectorAll('text')) {
       if (t.closest('defs')) continue
+      // Veinummer-teksten har ingen egen rotasjon (hele skilt-gruppen
+      // roteres) — gruppen normaliseres under.
+      if (t.dataset.label === 'veinummer') continue
       t.removeAttribute('transform')
     }
     for (const el of svg.querySelectorAll('[data-upright="1"], [data-annot-type="stedsmerke"]')) {
       const m = (el.getAttribute('transform') ?? '').match(/translate\([^)]+\)/)
       if (m) el.setAttribute('transform', m[0])
       else el.removeAttribute('transform')
+    }
+    // Veinummer-skilt i klonen kan stå med en 180°-flipp fra det roterte
+    // hovedkartet — inset-en er nord-opp, så re-flipp til lesbar vinkel
+    // (roadRefUprightDeg med rotasjon 0).
+    for (const g of svg.querySelectorAll('[data-layer="veinummer"] > g')) {
+      const t = g.getAttribute('transform') ?? ''
+      const trans = t.match(/translate\([^)]+\)/)?.[0] ?? ''
+      const deg = Number(t.match(/rotate\((-?[\d.]+)/)?.[1] ?? 0)
+      g.setAttribute('transform', `${trans} rotate(${roadRefUprightDeg(deg, 0)})`)
     }
   }
 
@@ -4000,6 +4012,10 @@ function applyUprightLabels() {
       el.__indefs = inDefs
     }
     if (inDefs) continue
+    // v12.0.16 — Veinummer-skilt håndteres som HEL gruppe (rect + tekst)
+    // lenger ned: å counter-rotere teksten alene skjevstiller den mot
+    // skilt-boksen (rapportert etter v12.0.15).
+    if (el.dataset.label === 'veinummer') continue
     // v9.1.11 — Perf: cache BÅDE lag-referansen og x/y per element. closest()
     // og baseVal er dyrt; å kjøre dem for hver av 1000+ labels HVER rotasjons-
     // /kompass-frame ga jank (v9.1.10-regresjon: closest per frame). Statisk
@@ -4042,6 +4058,31 @@ function applyUprightLabels() {
     const trans = m ? m[0] : ''
     el.setAttribute('transform', `${trans} rotate(${rot})`)
   }
+  // v12.0.16 — Veinummer-skilt: beholder vei-bæringen sin (ikke billboard),
+  // men flippes 180° når kart-rotasjonen ville lagt teksten på hodet.
+  // Skiltet ligger dermed alltid LANGS veien og er alltid lesbart. Bygge-
+  // vinkelen caches fra transform-strengen første gang (virker dermed også
+  // på kart generert før denne fiksen).
+  const badges = svg.querySelectorAll('[data-layer="veinummer"] > g')
+  for (const el of badges) {
+    if (el.__deg === undefined) {
+      const t = el.getAttribute('transform') ?? ''
+      el.__trans = t.match(/translate\([^)]+\)/)?.[0] ?? ''
+      el.__deg = Number(t.match(/rotate\((-?[\d.]+)/)?.[1] ?? 0)
+      // Kart lagret mens v12.0.15-buggen var aktiv kan ha en gammel
+      // counter-rotation baket inn på selve teksten — fjern den.
+      el.querySelector('text')?.removeAttribute('transform')
+    }
+    el.setAttribute('transform', `${el.__trans} rotate(${roadRefUprightDeg(el.__deg, rotation.value)})`)
+  }
+}
+
+// Skilt-vinkel som holder veinummer-teksten lesbar: behold bygge-vinkelen
+// hvis effektiv skjermvinkel (bygge + kart-rotasjon) er innenfor ±90°,
+// ellers flipp 180°. Returnerer vinkel i kart-rom.
+function roadRefUprightDeg(bakedDeg, mapRotDeg) {
+  const eff = ((bakedDeg + mapRotDeg) % 360 + 540) % 360 - 180
+  return (eff > 90 || eff <= -90) ? bakedDeg + 180 : bakedDeg
 }
 
 // Watch rotasjon — billig attributt-oppdatering, ingen full re-render.
