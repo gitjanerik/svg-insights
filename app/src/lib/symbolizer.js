@@ -605,6 +605,13 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   rules.push(`${root}:not(.zoom-near) [data-label="kontur-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-label="vann-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-layer="bekk"] text { display: none; }`)
+  // v12.0.15 — Bymasse (522) er nå flat dempet flate og PÅ som default:
+  // dempes ekstra ved utzoom så den ligger som kontekst, og trer tydeligere
+  // frem når man zoomer inn (.zoomed-in = scale >= 1.3).
+  rules.push(`${root}:not(.zoomed-in) [data-layer="bymasse"] { opacity: 0.55; }`)
+  // v12.0.15 — Veinummer-skilt: fylkesvei-bokser holdes igjen til .zoomed-in;
+  // E-vei-skilt (data-rank="e") vises alltid.
+  rules.push(`${root}:not(.zoomed-in) [data-label="veinummer"][data-rank="fylke"] { display: none; }`)
   // Art-mode opacity for fyll-områder (skog/vann/aker/bygning osv).
   // Stroke-only features beholder full skarphet (fill-opacity påvirker ikke strokes).
   // CSS-var settes av MapView ved tema-bytte; default = 1 (vanlig modus).
@@ -643,6 +650,19 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
       }
       if (!def.fill) props.push('fill: none')
       if (props.length) rules.push(`${sel} { ${props.join('; ')} }`)
+      // Casing-stroke (v12.0.15, stier 505/506): kontinuerlig lys underlinje
+      // UNDER den stiplede streken (motsatt av overlayStroke som ligger over).
+      // Fargen faller tilbake på var(--bg) slik at mørke temaer automatisk
+      // visker til sin egen bakgrunn — ingen tema-blokker trenger casing-farge.
+      if (def.casingStroke) {
+        const ca = def.casingStroke
+        const caProps = ['fill: none', `stroke: var(--iso-${code}-casing-stroke, var(--bg, ${ca.color ?? '#fbf7ec'}))`]
+        if (ca.widthMm) caProps.push(`stroke-width: ${sw(ca.widthMm)}`)
+        if (ca.linecap) caProps.push(`stroke-linecap: ${ca.linecap}`)
+        if (ca.linejoin) caProps.push(`stroke-linejoin: ${ca.linejoin}`)
+        caProps.push('stroke-dasharray: none')
+        rules.push(`${sel} path.casing { ${caProps.join('; ')} }`)
+      }
       // Overlay-stroke (f.eks. jernbane-sviller). Kun strokes som har
       // overlayStroke får dette ekstra path-laget — selektor matcher
       // path med klasse "overlay" inni samme data-iso.
@@ -729,6 +749,12 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   if (lab['dybde-tall']) {
     rules.push(`${root} [data-label="dybde-tall"] { font-size: ${fs(lab['dybde-tall'].fontSizeMm)}; fill: var(--label-dybde-tall-fill, ${lab['dybde-tall'].color}); stroke: var(--label-dybde-tall-halo, ${lab['dybde-tall'].haloColor}); stroke-width: ${haloMm(lab['dybde-tall'].haloWidthMm)}; paint-order: stroke; stroke-linejoin: round; }`)
   }
+  // v12.0.15 — Veinummer-skilt (E-vei grønt skilt / fylkesvei hvit boks).
+  // Skilt-rect-en ER haloen, så tekst-halo slås av. Trafikkskiltfarger er
+  // konstante på tvers av temaer (som ekte skilt) — ingen CSS-var-hooks.
+  rules.push(`${root} [data-label="veinummer"] { font-size: ${fs(2.8)}; font-weight: 700; stroke: none; text-anchor: middle; }`)
+  rules.push(`${root} [data-label="veinummer"][data-rank="e"] { fill: #fff; }`)
+  rules.push(`${root} [data-label="veinummer"][data-rank="fylke"] { fill: #161616; }`)
   // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
   // v8.10.15: naturreservat-navn — grønn skrift + hvit halo, samme visuelle
   // hierarki som blå vann-navn over innsjø-flater.
