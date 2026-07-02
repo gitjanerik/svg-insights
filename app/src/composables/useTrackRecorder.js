@@ -124,12 +124,14 @@ export function useTrackRecorder(mapId, userPos) {
     visibilityListenerAttached = false
   }
 
-  async function load() {
+  // preloaded: allerede-lest IndexedDB-entry fra kallerens loadMap — sparer en
+  // full deserialisering av multi-MB SVG-strengen når kartet nettopp er lest.
+  async function load(preloaded) {
     if (!mapId || mapId.startsWith('vardasen')) {
       tracks.value = []
       return
     }
-    const entry = await loadMap(mapId)
+    const entry = preloaded ?? await loadMap(mapId)
     tracks.value = entry?.tracks ?? []
     // Default: alle synlige
     visibleTrackIds.value = new Set(tracks.value.map(t => t.id))
