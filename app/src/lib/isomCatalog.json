@@ -318,7 +318,7 @@
           "linejoin": "round"
         },
         "overlayStroke": {
-          "color": "#f0a456",
+          "color": "#e8802b",
           "widthMm": 0.15,
           "linecap": "round",
           "linejoin": "round"
@@ -335,32 +335,46 @@
       },
       "505": {
         "label": "Sti — godt løp",
+        "$comment": "v12.0.15 sti-restyling: tynnere strek, tettere ~6:5-stipling og butt-caps (runde caps på tusenvis av korte stipler er dyrt å tessellere) så stien slutter å lese som stup-hakk. casingStroke = kontinuerlig lys underlinje UNDER stiplingen (motsatt av overlayStroke) som løfter stien over terreng/høydekurver; fargen faller tilbake på var(--bg) i CSS så mørke temaer visker til sin egen bakgrunn.",
+        "casingStroke": {
+          "color": "#fbf7ec",
+          "widthMm": 0.22,
+          "linecap": "round",
+          "linejoin": "round"
+        },
         "stroke": {
           "color": "#000",
-          "widthMm": 0.13,
+          "widthMm": 0.1,
           "dasharray": [
-            0.45,
-            0.32
+            0.36,
+            0.3
           ],
-          "linecap": "round",
+          "linecap": "butt",
           "linejoin": "round"
         }
       },
       "506": {
         "label": "Sti — uklar",
+        "casingStroke": {
+          "color": "#fbf7ec",
+          "widthMm": 0.18,
+          "linecap": "round",
+          "linejoin": "round"
+        },
         "stroke": {
           "color": "#000",
-          "widthMm": 0.1,
+          "widthMm": 0.08,
           "dasharray": [
             0.3,
-            0.22
+            0.25
           ],
-          "linecap": "round",
+          "linecap": "butt",
           "linejoin": "round"
         }
       },
       "507": {
         "label": "Stitråkk — vanskelig",
+        "$comment": "Beholder round linecap — dasharray [0.02, 0.2] ER punktene (butt-cap gjør et 0.02mm-segment usynlig). Ingen casing; en svak/utydelig sti skal ikke løftes.",
         "stroke": {
           "color": "#000",
           "widthMm": 0.08,
@@ -473,9 +487,9 @@
       },
       "522": {
         "label": "Tett bebyggelse",
+        "$comment": "v12.0.15: flat, dempet grå-beige istedenfor det tette brun-rosa mønsteret — flaten leser som «bebygd» uten å konkurrere med veier/stier, og kan derfor stå PÅ som default. Zoom-avhengig demping (opacity utzoomet) ligger i buildIsomCss.",
         "fill": {
-          "type": "pattern",
-          "pattern": "bebyggelse"
+          "color": "#ddd3c6"
         }
       },
       "520": {
@@ -1698,6 +1712,11 @@
           "color": "#1a1208"
         }
       },
+      "522": {
+        "fill": {
+          "color": "#3a2f22"
+        }
+      },
       "520": {
         "fill": {
           "color": "rgba(120, 180, 90, 0.28)"
@@ -1958,6 +1977,11 @@
             "color": "#1a1208"
           }
         },
+        "522": {
+          "fill": {
+            "color": "#3a2f22"
+          }
+        },
         "520": {
           "fill": {
             "color": "rgba(120, 180, 90, 0.28)"
@@ -2210,6 +2234,11 @@
             "color": "#3d2812"
           }
         },
+        "522": {
+          "fill": {
+            "color": "#e8dcc2"
+          }
+        },
         "525": {
           "stroke": {
             "color": "#3d2812"
@@ -2454,6 +2483,11 @@
             "color": "#0e1422"
           }
         },
+        "522": {
+          "fill": {
+            "color": "#252e48"
+          }
+        },
         "525": {
           "stroke": {
             "color": "#c0c8d0"
@@ -2696,6 +2730,11 @@
           },
           "stroke": {
             "color": "#1a1c22"
+          }
+        },
+        "522": {
+          "fill": {
+            "color": "#383b44"
           }
         },
         "525": {
@@ -2944,6 +2983,11 @@
             "color": "#1a0e08"
           }
         },
+        "522": {
+          "fill": {
+            "color": "#4a3826"
+          }
+        },
         "525": {
           "stroke": {
             "color": "#c8b8a0"
@@ -3188,6 +3232,11 @@
             "color": "#0a1408"
           }
         },
+        "522": {
+          "fill": {
+            "color": "#263624"
+          }
+        },
         "525": {
           "stroke": {
             "color": "#c8d8b8"
@@ -3430,6 +3479,11 @@
           },
           "stroke": {
             "color": "#1a1c22"
+          }
+        },
+        "522": {
+          "fill": {
+            "color": "#383b44"
           }
         },
         "525": {

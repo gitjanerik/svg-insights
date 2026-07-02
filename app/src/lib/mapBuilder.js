@@ -1610,8 +1610,16 @@ export function buildSvg(elements, bbox, options = {}) {
         }
         return `  <g data-layer="${cat}" data-iso="${code}">\n${lines.join('\n')}\n  </g>\n`
       }
+      // v12.0.15: koder med casingStroke (stier 505/506) får en kontinuerlig
+      // lys underlinje-tvilling FØRST i gruppen (samme d/bbox, class="casing")
+      // så den stiplede streken tegnes oppå. CSS-regelen for `.casing` settes
+      // i symbolizer.js (farge faller tilbake på var(--bg)).
+      const hasCasing = !!getIsomDef(code, isomCatalog, false)?.casingStroke
+      const casingLines = hasCasing
+        ? lineBuckets.map(b => `    <path d="${b.ds.join(' ')}" class="casing"${bboxAttr(b.bbox, fmt)}/>`)
+        : []
       const pathLines = lineBuckets.map(b => `    <path d="${b.ds.join(' ')}"${bboxAttr(b.bbox, fmt)}/>`)
-      const allLinePaths = [...pathLines, ...namedLinePaths]
+      const allLinePaths = [...casingLines, ...pathLines, ...namedLinePaths]
       return `  <g data-layer="${cat}" data-iso="${code}">\n${allLinePaths.join('\n')}\n  </g>\n`
     }
     return ''
@@ -2743,6 +2751,83 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bekk">\n${waterwayLabelRows.join('\n')}\n  </g>\n`
     : ''
 
+  // ── Veinummer-skilt (v12.0.15) ──────────────────────────────────────
+  // Kartverket-stil: E-vei/riksvei (kode 501 motorway/trunk, eller ref på
+  // E-form) → grønt skilt med hvit tekst; fylkesvei (numerisk ref på 502/503)
+  // → hvit boks med sort kant og sort tekst. `ref`-taggen ligger allerede i
+  // Overpass-svaret (out geom beholder alle tags) — den har bare aldri vært
+  // lest for veier. Skiltet roteres langs veien (samme flip-til-lesbar som
+  // bekke-navnene over) og gjentas maks hver ~1,5 km per unikt nummer,
+  // lengste way-kandidater først. Trafikkskiltfargene er inline og temas
+  // ikke; tekst-CSS ([data-label="veinummer"]) ligger i symbolizer.js.
+  const ROADREF_MIN_SPACING_M = 1500
+  const MM_TO_M = 3.7795  // SVG: 1 mm = 3.7795 user units; viewBox-enheten er meter
+  const roadRefCandidates = new Map()  // "rank|tekst" → [{x, y, deg, lenM}]
+  for (const code of ['501', '502', '503']) {
+    for (const el of buckets[code] ?? []) {
+      const raw = (el.tags?.ref ?? '').split(';')[0].replace(/\s+/g, '')
+      if (!raw || !el.geometry || el.geometry.length < 2) continue
+      const eMatch = raw.match(/^[Ee](\d+)$/)
+      const numMatch = raw.match(/^(?:[RrFf][Vv])?(\d+)$/)
+      let text, rank
+      if (eMatch) { text = `E${eMatch[1]}`; rank = 'e' }
+      else if (numMatch) { text = numMatch[1]; rank = code === '501' ? 'e' : 'fylke' }
+      else continue
+      const pts = el.geometry.map(g => project(g.lat, g.lon))
+      const segLens = []
+      let totalLen = 0
+      for (let i = 1; i < pts.length; i++) {
+        const segLen = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)
+        segLens.push(segLen)
+        totalLen += segLen
+      }
+      if (totalLen < 60) continue
+      const target = totalLen / 2
+      let acc = 0
+      for (let i = 1; i < pts.length; i++) {
+        const segLen = segLens[i - 1]
+        if (acc + segLen >= target && segLen > 0.01) {
+          const t = (target - acc) / segLen
+          const dx = pts[i].x - pts[i - 1].x
+          const dy = pts[i].y - pts[i - 1].y
+          const x = pts[i - 1].x + dx * t
+          const y = pts[i - 1].y + dy * t
+          let deg = Math.atan2(dy, dx) * 180 / Math.PI
+          if (deg > 90 || deg < -90) deg += 180
+          const key = `${rank}|${text}`
+          if (!roadRefCandidates.has(key)) roadRefCandidates.set(key, [])
+          roadRefCandidates.get(key).push({ x, y, deg, lenM: totalLen })
+          break
+        }
+        acc += segLen
+      }
+    }
+  }
+  const roadRefRows = []
+  const roadRefFontM = 2.8 * labelScale * MM_TO_M
+  for (const [key, cands] of roadRefCandidates) {
+    const sep = key.indexOf('|')
+    const rank = key.slice(0, sep)
+    const text = key.slice(sep + 1)
+    cands.sort((a, b) => b.lenM - a.lenM)
+    const placed = []
+    const isE = rank === 'e'
+    const h = roadRefFontM * 1.5
+    const w = text.length * roadRefFontM * 0.62 + roadRefFontM * 0.9
+    const rx = isE ? roadRefFontM * 0.25 : roadRefFontM * 0.1
+    const rect = `<rect x="${fmt(-w / 2)}" y="${fmt(-h / 2)}" width="${fmt(w)}" height="${fmt(h)}" rx="${fmt(rx)}" fill="${isE ? '#157a3d' : '#ffffff'}" stroke="${isE ? '#ffffff' : '#161616'}" stroke-width="${fmt(roadRefFontM * (isE ? 0.08 : 0.06))}"/>`
+    const txt = `<text data-label="veinummer" data-rank="${rank}" y="${fmt(roadRefFontM * 0.35)}">${xmlEscape(text)}</text>`
+    for (const c of cands) {
+      if (c.x < 0 || c.x > widthM || c.y < 0 || c.y > heightM) continue
+      if (placed.some(p => Math.hypot(p.x - c.x, p.y - c.y) < ROADREF_MIN_SPACING_M)) continue
+      placed.push(c)
+      roadRefRows.push(`    <g transform="translate(${fmt(c.x)} ${fmt(c.y)}) rotate(${fmt(c.deg)})">${rect}${txt}</g>`)
+    }
+  }
+  const roadRefLayer = roadRefRows.length
+    ? `  <g data-layer="veinummer">\n${roadRefRows.join('\n')}\n  </g>\n`
+    : ''
+
   // ── Sjønavn — geografiske navn i/ved sjøen (eget marint lag) ──────────
   // «Vi har ingen navn i sjøen»: bukt/vik/kile (natural=bay), nes/odde
   // (natural=cape), sund (natural=strait), grunne (natural=shoal), rev
@@ -2812,15 +2897,15 @@ export function buildSvg(elements, bbox, options = {}) {
   // allerede vises på kartet.
   const stedsnavnLayer = stedsnavnSvg()
 
-  // ISOM 522 — tett bebyggelse pattern fyll. Y-flippet siden urbanMass-
-  // ringene er i SVG-koordinatsystem (project() returnerer y-flippet).
-  // Plasseres mellom vegetasjon og vann i z-order så vann/konturer
-  // forblir lesbare over bymassen i tett bebygde områder.
+  // ISOM 522 — tett bebyggelse. Y-flippet siden urbanMass-ringene er i
+  // SVG-koordinatsystem (project() returnerer y-flippet). Plasseres mellom
+  // vegetasjon og vann i z-order så vann/konturer forblir lesbare over
+  // bymassen i tett bebygde områder.
   //
   // v9.1.31: ISOM 522 har eget lag data-layer="bymasse" («Tett bebyggelse»)
-  // adskilt fra 521 data-layer="bygning" («Hus og hytter»). Bymasse-laget er
-  // AV som default i MapView (DEFAULT_OFF_LAYERS) — pattern-fyllet dekker mye
-  // og er sjelden ønsket i en oversikt, mens frittstående bygg/hytter er det.
+  // adskilt fra 521 data-layer="bygning" («Hus og hytter»).
+  // v12.0.15: flaten er nå flat dempet grå-beige (ikke mønster) og PÅ som
+  // default; buildIsomCss demper den ekstra ved utzoom (opacity 0.55).
   const urbanMassPath = urbanMassMultiPoly.length
     ? multiPolyToPath(urbanMassMultiPoly, fmt)
     : ''
@@ -2844,7 +2929,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
   // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
   // tekst) males etter vannet, som før.
-  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${summitLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${summitLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${roadRefLayer}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])

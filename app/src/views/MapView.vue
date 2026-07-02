@@ -368,6 +368,7 @@ const LAYERS = [
   { key: 'bom',        label: 'Bom / barriere' },
   { key: 'vei-stor',   label: 'Storveg' },
   { key: 'vei-liten',  label: 'Småveg' },
+  { key: 'veinummer',  label: 'Veinummer' },
   { key: 'tog',        label: 'Jernbane' },
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'trig',       label: 'Trigpunkter' },
@@ -410,11 +411,11 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // turkart-bbox), og stedsnavn vises som default (større områdenavn er
 // nyttig kontekst).
 // v9.1.31: ISOM 521 (frittstående bygg) er «Hus og hytter» (data-layer
-// 'bygning'), ISOM 522 (tett bebyggelse pattern-fyll) er «Tett bebyggelse»
-// (data-layer 'bymasse'). Bymasse er AV som default i alle kartstørrelser —
-// pattern-fyllet dekker mye og er sjelden ønsket i en oversikt, mens
-// frittstående hus/hytter er nyttig kontekst.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'bymasse'])
+// 'bygning'), ISOM 522 (tett bebyggelse) er «Tett bebyggelse» (data-layer
+// 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
+// grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
+// leser som kontekst uten å konkurrere med veier/stier.
+const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
 // Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
@@ -431,7 +432,7 @@ const ALL_LAYER_KEYS = LAYERS.map((l) => l.key)
 const _turExclude = new Set([
   'kai', 'sjo-poi', 'sjo-navn',           // marine — egen Padling-preset
   'lysloype', 'heistrase', 'slalombakke', // vinter-ting
-  'bymasse', 'idrettsanlegg',             // dekkende flater, sjelden ønsket i oversikt
+  'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
   'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
 ])
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
@@ -473,6 +474,26 @@ const currentTheme = ref('light')
 const isDark = computed(() => currentTheme.value !== 'light')
 const THEMES = computed(() => Object.entries(isomCatalog.themes ?? {}).map(([k, v]) => ({ key: k, label: v.label ?? k })))
 const diagnose = ref(false)
+
+// Utvikler-fanen: live A/B-test av lilla stier (#7a4fa3, turkonvensjon-forslag
+// fra CD 2. juli 2026 — brukeren var lunken, så svart er default og lilla er
+// en knott). Setter --iso-505/506/507-stroke på .isom-map-roten; casingen
+// (var(--bg)-fallback) berøres ikke. Persistert så valget overlever reload.
+const PURPLE_TRAILS_KEY = 'map-purple-trails'
+const purpleTrails = ref(localStorage.getItem(PURPLE_TRAILS_KEY) === '1')
+function applyPurpleTrails() {
+  const root = mapInnerRef.value
+  if (!root || !purpleTrails.value) return
+  for (const code of ['505', '506', '507']) root.style.setProperty(`--iso-${code}-stroke`, '#7a4fa3')
+}
+function togglePurpleTrails() {
+  purpleTrails.value = !purpleTrails.value
+  localStorage.setItem(PURPLE_TRAILS_KEY, purpleTrails.value ? '1' : '0')
+  // applyTheme rydder/re-etablerer temaets sti-farger (AV-veien); lilla
+  // legges deretter oppå hvis PÅ.
+  applyTheme()
+  applyPurpleTrails()
+}
 
 // Terreng-først: kartet ble vist med konturer+relieff straks, og OSM/detaljer
 // fylles inn i bakgrunnen. Chip vises mens vi venter på full-byggingen.
@@ -4903,6 +4924,7 @@ async function loadMap({ silent = false } = {}) {
     applyLayerVisibility()
     applyDepthLayer()              // dybde-toggle (default av) — kun synlig om Sjøkart-dybde finnes
     applyTheme()
+    applyPurpleTrails()            // Utvikler-test: lilla stier oppå tema-fargen
     applyStrokeScale()
     applyLabelScale()
     applyLabelFonts()
@@ -5629,6 +5651,7 @@ function applyTheme() {
 // art-mode.
 function onThemeChange(newTheme, oldTheme) {
   applyTheme()
+  applyPurpleTrails()
   const newT = isomCatalog.themes?.[newTheme]
   const oldT = isomCatalog.themes?.[oldTheme]
   if (newT?.autoHideLayers) {
@@ -7586,6 +7609,15 @@ onUnmounted(() => {
               <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(300, 80%, 60%);"></span> OSM relation,
               <span class="inline-block w-3 h-3 rounded-sm align-middle" style="background: hsl(45, 90%, 55%);"></span> merged.
             </div>
+            <!-- Lilla stier: live A/B-test av CD-forslaget (#7a4fa3) uten rebuild.
+                 Svart er default; knotten overstyrer via --iso-505/506/507-stroke. -->
+            <button @click="togglePurpleTrails"
+                    class="w-full px-3 py-2 rounded-lg border text-[12px] active:scale-[0.98] mb-2"
+                    :class="purpleTrails
+                            ? 'bg-purple-400/20 border-purple-300/50 text-white'
+                            : 'bg-white/5 border-white/10 text-white/75'">
+              {{ purpleTrails ? 'Lilla stier: PÅ' : 'Lilla stier (test)' }}
+            </button>
             <!-- Byggetider (perf): viser localStorage-loggen så den kan kopieres
                  og deles — mobil-konsollen er upraktisk. -->
             <button @click="openPerfLog"
