@@ -19,7 +19,7 @@ import {
 } from './symbolizer.js'
 import { buildContours, detectCliffs, detectKnauser, detectSummits } from './dem.js'
 import { buildSeaFromDem, buildSeaShallowBands } from './seaFromDem.js'
-import { depthToFillVar } from './sjokartFetcher.js'
+import { depthBandClass } from './sjokartFetcher.js'
 import {
   unionRingsToSea,
   unionPolygonsToSea,
@@ -1521,6 +1521,7 @@ export function buildSvg(elements, bbox, options = {}) {
           // trenger det, lav-kontrast så den ikke konkurrerer med terrenget.
           let inlineStyle = ''
           let dybdeAttr = ''
+          let depthClassAttr = ''
           // Lineær havne-struktur (551): strek, ikke fyll — overstyrer
           // gruppe-CSS-fyllet via inline style.
           if (strokeOnlyStyle) inlineStyle = ` style="${strokeOnlyStyle}"`
@@ -1532,19 +1533,22 @@ export function buildSvg(elements, bbox, options = {}) {
                        : Number.isFinite(maxD) ? maxD
                        : null
             if (avgD != null) {
-              inlineStyle = ` style="fill: ${depthToFillVar(avgD)}"`
+              // v12.0.17: fyll via CSS-klasse (regler i buildIsomCss) i stedet
+              // for per-polygon inline-style — samme tema-bevisste var()-verdi,
+              // ~30 B spart per dybdepolygon.
+              depthClassAttr = ` class="${depthBandClass(avgD)}"`
               // v8.9.24: data-dybde lar MapView lage depth-shade PNG ved å
               // raster-fylle disse polygonene i gråtoner (Path2D på d-attr).
               dybdeAttr = ` data-dybde="${fmt(avgD)}"`
             }
           }
           const smallAttr = isSmall ? ' data-small="yes"' : ''
-          // Standalone hvis features har inline-style (per-polygon-fyll),
-          // dybde-attr eller et navn (søkbart). Ellers slå sammen til delt
-          // path-bucket per (data-src, isSmall).
-          if (inlineStyle || dybdeAttr || name) {
+          // Standalone hvis features har inline-style/dybdeklasse (per-polygon-
+          // fyll), dybde-attr eller et navn (søkbart). Ellers slå sammen til
+          // delt path-bucket per (data-src, isSmall).
+          if (inlineStyle || depthClassAttr || dybdeAttr || name) {
             standalonePaths.push(
-              `    <path d="${d}" fill-rule="evenodd"${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
+              `    <path d="${d}" fill-rule="evenodd"${depthClassAttr}${inlineStyle}${dybdeAttr}${smallAttr}${bboxAttr(bbox, fmt)} data-src="${xmlEscape(String(src))}" data-name="${xmlEscape(name)}"/>`
             )
           } else if (cat === 'vann') {
             // Vann-flater males OPAKT som egne paths — ALDRI slått sammen i en
@@ -1810,7 +1814,12 @@ export function buildSvg(elements, bbox, options = {}) {
     b.bbox = unionBbox(b.bbox, bbox)
   }
   for (const f of demFeatures.contours.features) {
-    const projected = f.coordinates.map(demProject)
+    // v12.0.17: heltalls-meter også for konturer (samme resonnement som
+    // v11.0.50 for polygoner/linjer: 1 m = 0,1 mm @ 1:10 000, godt under
+    // DP-toleransen 1,5 m). Konturene er det mest vertex-tunge laget —
+    // målt ~28 % færre kontur-d-bytes. Rundes FØR både d og bbox så
+    // koordinat-i-bbox-invarianten holder.
+    const projected = f.coordinates.map(demProject).map(p => [Math.round(p[0]), Math.round(p[1])])
     // v9.3.37: åpne kontur-løp (splittet mot periferi-void-masken i dem.js)
     // skal IKKE lukkes med Z — ellers trekkes en korde tvers over voidet.
     const d = polylineToPath(projected, f.closed !== false)
@@ -2474,7 +2483,8 @@ export function buildSvg(elements, bbox, options = {}) {
   const cliffSampleDem = sampleDem
 
   const cliffsSvg = demFeatures.cliffs.map(c => {
-    const projected = c.coordinates.map(demProject)
+    // Heltalls-meter for stupkant-spinen (samme som konturene, v12.0.17).
+    const projected = c.coordinates.map(demProject).map(p => [Math.round(p[0]), Math.round(p[1])])
     const linePath = polylineToPath(projected, false)
     const teethPaths = []
     const SPACING_M = 20
@@ -3035,13 +3045,22 @@ export function buildSvg(elements, bbox, options = {}) {
   // rektangelet bruker fill="${bgFill}" som presentasjons-attributt (lys default
   // for frittstående/print/Tegnforklaring), mens CSS-regelen
   // `#bakgrunn rect { fill: var(--bg, default) }` lar en arvet --bg overstyre.
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+  let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="isom-map" viewBox="${viewBox}" ${printAttrs} data-meta='${JSON.stringify(meta).replace(/'/g, '&apos;').replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}'>
   <defs>${isomDefs}</defs>
   <style>${isomCss}</style>
   <g id="bakgrunn"><rect width="${fmt(widthM)}" height="${fmt(heightM)}" fill="${bgFill}"/></g>
 ${body}</svg>
 `
+
+  // v12.0.17: strip innrykk (behold én newline per element for diffbarhet) —
+  // pretty-print-whitespacet shipppet verbatim i hver lagrede/eksporterte SVG.
+  // Trygt: rewriter kun whitespace rett før '<'; tekst-innhold emitteres på én
+  // linje og alle streng-konsumenter (regexer, DOMParser, defs-pruning) er
+  // whitespace-agnostiske. options.pretty === true beholder innrykk for debug.
+  if (options.pretty !== true) {
+    svg = svg.replace(/\n[ ]+</g, '\n<')
+  }
 
   return { svg, counts, meta, timings }
 }

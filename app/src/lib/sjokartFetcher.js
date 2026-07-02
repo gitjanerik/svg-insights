@@ -790,3 +790,15 @@ export function depthToFillVar(dybde) {
   const [, idx, hex] = depthBand(dybde)
   return `var(--iso-depth-${idx}, ${hex})`
 }
+
+// v12.0.17: 307-dybdefyllet flyttet fra per-polygon inline-style (~45 B) til
+// CSS-klasser (~14 B): depthBandClass gir klassen for en polygon, og
+// depthBandFills gir (klasse, fill)-parene symbolizer-CSS-en emitterer regler
+// for. Fill-verdiene er identiske med depthToFillVar (tema-bevisste).
+export function depthBandClass(dybde) {
+  return `dyp-${depthBand(dybde)[1]}`
+}
+
+export function depthBandFills() {
+  return DEPTH_BANDS.map(([, idx, hex]) => ({ cls: `dyp-${idx}`, fill: `var(--iso-depth-${idx}, ${hex})` }))
+}
