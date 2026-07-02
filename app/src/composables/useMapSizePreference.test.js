@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { defaultMapDims, equidistanceForWidthKm, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from './useMapSizePreference.js'
 
-describe('defaultMapDims — Standard-kartet er et fast 10 km kvadrat', () => {
-  it('er 10 km bredt (ikke skjerm-skalert)', () => {
-    expect(DEFAULT_MAP_WIDTH_KM).toBe(10)
+describe('defaultMapDims — Standard-kartet er et fast 8 km kvadrat (v12.0.17)', () => {
+  it('er 8 km bredt (ikke skjerm-skalert)', () => {
+    expect(DEFAULT_MAP_WIDTH_KM).toBe(8)
     const d = defaultMapDims()
-    expect(d.halfKm).toBe(5)        // 10 km bredde
-    expect(2 * d.halfKm).toBe(10)
+    expect(d.halfKm).toBe(4)        // 8 km bredde
+    expect(2 * d.halfKm).toBe(8)
   })
   it('er et kvadrat (aspect = 1), uavhengig av skjermformat', () => {
     expect(defaultMapDims().aspect).toBe(1)
@@ -14,9 +14,9 @@ describe('defaultMapDims — Standard-kartet er et fast 10 km kvadrat', () => {
 })
 
 describe('slider-grenser', () => {
-  it('1–12 km', () => {
+  it('1–8 km (v12.0.17: maks senket fra 12 for ytelse)', () => {
     expect(MAP_SIZE_MIN_KM).toBe(1)
-    expect(MAP_SIZE_MAX_KM).toBe(12)
+    expect(MAP_SIZE_MAX_KM).toBe(8)
   })
 })
 

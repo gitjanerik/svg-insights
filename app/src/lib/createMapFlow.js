@@ -15,7 +15,7 @@
 //   })
 //   router.push({ name: 'kart-vis', params: { id } })
 
-import { fetchOverpass, bboxFromCenter, viewportAspect } from './mapBuilder.js'
+import { fetchOverpass, probeCoastline, bboxFromCenter, viewportAspect } from './mapBuilder.js'
 import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchNveLakePolygons } from './nveLakeFetcher.js'
@@ -146,18 +146,31 @@ const EMPTY_SJOKART = {
 // så smale sund (Nesøybrua etc.) oppløses i sjø-masken. Se buildMapFromCenter.
 const COASTAL_DEM_RES_M = 5
 
-// 5 m-oppgraderingen gjøres kun for kart opp til denne total-størrelsen (km).
-// Større kyst-kart ville koste (km/5)² celler (14 km = 7,8M) — tregt på mobil.
-// Se gaten i buildMapFromCenter.
-const COASTAL_UPGRADE_MAX_KM = 8
-
-// Mellomtrinn: kystkart på 8–12 km oppgraderes til 10 m i stedet for å bli
-// stående på 20 m-proben. STANDARDKARTET er 10 km (v11.0.60) — uten dette
-// trinnet fikk standard kystkart aldri finere DEM enn 20 m, og kystlinjen
-// rundt sund/øyer ble grov (Grønnsund-regresjonen). 10 km @ 10 m = 1M celler,
-// samme størrelsesorden som 4 km @ 5 m — håndterbart på mobil.
+// Mellomtrinn: kystkart som er for store for 5 m oppgraderes til 10 m i stedet
+// for å bli stående på 20 m-proben — kystlinjen rundt sund/øyer blir ellers
+// grov (Grønnsund-regresjonen).
 const COASTAL_DEM_MID_RES_M = 10
-const COASTAL_UPGRADE_MID_KM = 12
+
+// Celletak for kyst-DEM-oppgraderingen. Tidligere gates det på BREDDE alene
+// (≤8 km → 5 m, ≤12 km → 10 m), men høyden strekkes med skjerm-aspektet
+// (opptil 2,2) — et 8 km-portrettkart kunne dermed koste 5,6M celler @ 5 m.
+// Taket regner på faktisk widthM×heightM: 8×8 km @ 5 m ≈ 2,56M (innenfor).
+const COASTAL_MAX_CELLS = 2.6e6
+
+/**
+ * Velg mål-oppløsning for kyst-DEM-oppgraderingen ut fra kartets faktiske
+ * UTM-areal: fineste trinn (5 m, så 10 m) som holder seg under celletaket,
+ * ellers null (behold probe-oppløsningen).
+ */
+export function coastalTargetResFor(utmBbox, maxCells = COASTAL_MAX_CELLS) {
+  if (!utmBbox) return null
+  const areaM2 = (utmBbox.maxE - utmBbox.minE) * (utmBbox.maxN - utmBbox.minN)
+  if (!(areaM2 > 0)) return null
+  for (const res of [COASTAL_DEM_RES_M, COASTAL_DEM_MID_RES_M]) {
+    if (areaM2 / (res * res) <= maxCells) return res
+  }
+  return null
+}
 
 function hasNearSeaLevelPixels(dem) {
   if (!dem?.data) return false
@@ -340,24 +353,19 @@ export async function buildMapFromCenter({
   // Konturer rendres fortsatt fint takket være Chaikin-glatting, og antall
   // høydekurver styres av ekvidistansen (uendret) — 5 m gir bare mer presise
   // vektorer, ikke flere kurver.
-  // Oppgraderingen gates på kart-STØRRELSE i tillegg til kyst — en trapp:
-  //   ≤ 8 km  → 5 m  (sund-finhet der man planlegger å padle)
-  //   ≤ 12 km → 10 m (standardkartet er 10 km — 20 m-proben er for grov
-  //                   for kystlinje/sund; 10 m er kompromisset mobil tåler)
-  //   > 12 km → probe-oppløsningen beholdes (store oversiktskart, uendret)
+  // Oppgraderingen gates på faktisk celleantall (bredde × høyde / res²) i
+  // tillegg til kyst — se coastalTargetResFor. Fineste trinn under taket vinner.
   const sizeKmTotal = halfKm * 2
-  const coastalTargetResM =
-    sizeKmTotal <= COASTAL_UPGRADE_MAX_KM ? COASTAL_DEM_RES_M
-    : sizeKmTotal <= COASTAL_UPGRADE_MID_KM ? COASTAL_DEM_MID_RES_M
-    : null
+  const coastalTargetResM = coastalTargetResFor(utmBbox)
   const canUpgradeToFineDem = coastalTargetResM != null &&
                               resolutionM > coastalTargetResM
+  onProgress(`Henter høydedata (${resolutionM} m) og kartdata …`)
   const probeDemPromise = fetchDemFor(resolutionM)
 
   // Overpass + N50 fyres parallelt med DEM (delt mellom terreng- og full-bygg)
   // så OSM-hentingen (flaskehalsen) starter samtidig med DEM. Deklarert FØR
   // kyst-deteksjonen siden den trenger OSM-saltvanns-signalet.
-  const overpassP = timeAsync('overpass', fetchOverpass(bbox, { signal }))
+  const overpassP = timeAsync('overpass', fetchOverpass(bbox, { signal, onProgress }))
   const n50P = timeAsync('n50', fetchN50Water(bbox).catch(e => {
     console.warn('N50-vann ikke tilgjengelig:', e.message)
     return []
@@ -379,9 +387,19 @@ export async function buildMapFromCenter({
   // Resultatet caches så både DEM-oppgraderingen, Sjøkart-gaten og meta.coastal
   // bruker samme svar. Bare ventet på når DEM faktisk viser havflate-piksler
   // (ellers er svaret trivielt false og vi blokkerer ikke på Overpass).
+  //
+  // v12.0.17: OSM-saltvanns-signalet kappløpes mellom en bitteliten kystlinje-
+  // probe (buildCoastProbeQuery, ~200 B svar på 1–3 s, samme predikat som
+  // osmHasSaltwater) og den fulle Overpass-spørringen. Tidligere ventet både
+  // kyst-DEM-oppgraderingen og Sjøkart transitivt på hele Overpass (det
+  // tregeste kallet) bare for å få ja/nei på saltvann — proben løser det
+  // 4–12 s tidligere på kystkart. Feiler proben, faller vi tilbake til det
+  // autoritative svaret fra hovedspørringen (dagens oppførsel).
   const coastalPromise = probeDemPromise.then(async (probeDem) => {
     if (!hasNearSeaLevelPixels(probeDem)) return false
-    return overpassP.then(osm => osmHasSaltwater(osm?.elements)).catch(() => false)
+    const fullP = overpassP.then(osm => osmHasSaltwater(osm?.elements))
+    const probeP = probeCoastline(bbox, { signal }).catch(() => fullP)
+    return Promise.race([probeP, fullP]).catch(() => false)
   })
 
   // Grense-kart: fyll celler utenfor norsk WCS-dekning (noData, eller en
@@ -410,12 +428,16 @@ export async function buildMapFromCenter({
     return dem
   }
 
-  const demPromise = timeAsync('dem', probeDemPromise.then(async (probeDem) => {
+  // Kjerne-DEM (probe + evt. kyst-oppgradering) skilt fra Terrarium-fyllet:
+  // terreng-først-previewen venter kun på kjernen, mens full bygging venter på
+  // det fylte DEM-et. Terrarium-fyllet (opptil 64 ekstra flis-fetches på
+  // grensekart) lå tidligere på kritisk sti for previewen.
+  const demCorePromise = timeAsync('dem', probeDemPromise.then(async (probeDem) => {
     // Ingen oppgradering mulig (for stort/allerede fint) → returnér probe-DEM-et
     // med en gang; vent IKKE på kyst-signalet (som blokkerer på Overpass).
     if (!canUpgradeToFineDem) {
-      if (hasNearSeaLevelPixels(probeDem) && sizeKmTotal > COASTAL_UPGRADE_MID_KM) {
-        console.log(`[DEM] mulig kyst-kart ${sizeKmTotal.toFixed(1)} km > ${COASTAL_UPGRADE_MID_KM} km — beholder ${resolutionM} m (finere DEM for kostbart på store kart)`)
+      if (hasNearSeaLevelPixels(probeDem) && coastalTargetResM == null) {
+        console.log(`[DEM] mulig kyst-kart ${sizeKmTotal.toFixed(1)} km — beholder ${resolutionM} m (finere DEM over celletaket)`)
       }
       return probeDem
     }
@@ -433,7 +455,8 @@ export async function buildMapFromCenter({
       console.warn(`[DEM] ${coastalTargetResM} m-oppgradering feilet (${e?.message ?? e}) — beholder ${resolutionM} m`)
       return probeDem
     }
-  }).then(maybeFillFromTerrarium))
+  }))
+  const demPromise = demCorePromise.then(maybeFillFromTerrarium)
   // Sjøkart gates på samme kyst-signal (DEM-havflate + OSM-saltvann). For
   // innlands-bbox (inkl. store innsjøer) hoppes WFS-hentingen helt over.
   const sjokartPromise = timeAsync('sjøkart', coastalPromise.then(coastal => {
@@ -577,7 +600,10 @@ export async function buildMapFromCenter({
   // Trygg fallback: syntetisk DEM eller feil → bygg full som vanlig.
   if (terrainFirst) {
     try {
-      const dem = await demPromise
+      // Kjerne-DEM uten Terrarium-fyll: previewen skal ikke vente på opptil 64
+      // ekstra flis-fetches for grensekart — fullbygget (assembleAndBuildFull)
+      // bruker det fylte DEM-et og overskriver previewen når det er klart.
+      const dem = await demCorePromise
       if (isRealDem(dem)) {
         const terrain = await timeAsync('terreng', buildSvgClient([], bbox, {
           dem,

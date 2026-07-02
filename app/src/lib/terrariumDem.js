@@ -262,13 +262,26 @@ export function fillDemCells(dem, utmBbox, sample) {
 
 // ── Nett-henting (ren JS-dekoding — se modul-kommentaren om canvas-fella) ──
 
+// Per-flis-timeout: fyllet er en ren forbedring (trygg degradering), så én
+// hengende flis skal ikke holde full-byggingen tilbake.
+const TILE_TIMEOUT_MS = 8000
+
 async function loadTerrariumTile(z, x, y, signal) {
   const url = `${TERRARIUM_URL}/${z}/${x}/${y}.png`
-  const res = await fetch(url, { signal })
-  if (!res.ok) return null
-  const png = await decodePng(new Uint8Array(await res.arrayBuffer()))
-  if (png.width !== TILE_PX || png.height !== TILE_PX) return null
-  return decodeTerrariumPixels(png.pixels, png.channels, TILE_PX * TILE_PX)
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(new DOMException('Terrarium-flis-timeout', 'TimeoutError')), TILE_TIMEOUT_MS)
+  const onAbort = () => ctrl.abort(signal?.reason)
+  signal?.addEventListener('abort', onAbort, { once: true })
+  try {
+    const res = await fetch(url, { signal: ctrl.signal })
+    if (!res.ok) return null
+    const png = await decodePng(new Uint8Array(await res.arrayBuffer()))
+    if (png.width !== TILE_PX || png.height !== TILE_PX) return null
+    return decodeTerrariumPixels(png.pixels, png.channels, TILE_PX * TILE_PX)
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onAbort)
+  }
 }
 
 /**

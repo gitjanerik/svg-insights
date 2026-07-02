@@ -63,12 +63,17 @@ const OVERPASS_TIMEOUT_MAX_MS = 90000   // matcher [timeout:90] i spørringen
 // Skaler klient-taket med kart-arealet. ~16 km² (4×4) → 30 s; ~200 km² (≈14 km)
 // → 90 s; klampet til [30, 90] s. Et større utsnitt = flere OSM-elementer =
 // lengre lovlig server-tid, så taket må følge med ellers avbryter vi gyldige svar.
-export function overpassTimeoutForBbox(bbox) {
-  if (!bbox) return OVERPASS_TIMEOUT_MS
+export function bboxAreaKm2(bbox) {
+  if (!bbox) return 0
   const midLat = (bbox.north + bbox.south) / 2
   const heightKm = Math.abs(bbox.north - bbox.south) * 111
   const widthKm = Math.abs(bbox.east - bbox.west) * 111 * Math.cos(midLat * Math.PI / 180)
-  const areaKm2 = heightKm * widthKm
+  return heightKm * widthKm
+}
+
+export function overpassTimeoutForBbox(bbox) {
+  if (!bbox) return OVERPASS_TIMEOUT_MS
+  const areaKm2 = bboxAreaKm2(bbox)
   // 30 s baseline + 0.34 s per km² over 16 km² → ~90 s ved ~190 km².
   const scaled = OVERPASS_TIMEOUT_MS + Math.max(0, areaKm2 - 16) * 340
   return Math.round(Math.min(OVERPASS_TIMEOUT_MAX_MS, Math.max(OVERPASS_TIMEOUT_MS, scaled)))
@@ -80,9 +85,15 @@ export function overpassTimeoutForBbox(bbox) {
 const OVERPASS_ATTEMPTS = 3
 const OVERPASS_BACKOFF_MS = [1500, 4000]   // ventetid før forsøk 2 og 3
 
-export function buildOverpassQuery(bbox) {
+// timeoutS: server-timeouten skal matche klient-taket (overpassTimeoutForBbox)
+// — en fast [timeout:90] lot en zombie-kjøring fortsette å okkupere server-slots
+// i opptil 90 s etter at klienten ga opp ved 30 s, og blokkere våre egne retries.
+// includeBuildings=false: way["building"] (den suverent tyngste selektoren i
+// tette byområder) flyttes til en egen parallell spørring for store kart —
+// se fetchOverpass.
+export function buildOverpassQuery(bbox, { timeoutS = 90, includeBuildings = true } = {}) {
   return `
-[out:json][timeout:90][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+[out:json][timeout:${timeoutS}][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
 (
   way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|service|living_street)$"];
   way["highway"~"^(path|track|bridleway|steps)$"];
@@ -93,7 +104,7 @@ export function buildOverpassQuery(bbox) {
   way["natural"="wetland"];
   way["natural"~"^(wood|scree|bare_rock)$"];
   way["landuse"~"^(forest|meadow|grass|farmland)$"];
-  way["building"];
+${includeBuildings ? '  way["building"];' : ''}
   way["leisure"~"^(park|pitch|playground|stadium|sports_centre|track|horse_racing)$"];
   way["landuse"="recreation_ground"];
   way["building"="stadium"];
@@ -206,22 +217,17 @@ const delay = (ms, signal) => new Promise((resolve, reject) => {
   }, { once: true })
 })
 
-export async function fetchOverpass(bbox, { signal, query } = {}) {
-  // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
-  // periferi-spørringen for 3×3-fliser); default er den fulle.
-  const body = 'data=' + encodeURIComponent(query ?? buildOverpassQuery(bbox))
-  // Areal-skalert klient-tak: store kyst-/by-kart trenger mer tid på serveren
-  // enn et lite kart, ellers avbryter vi et gyldig (men tregt) svar for tidlig.
-  const timeoutMs = overpassTimeoutForBbox(bbox)
-  // Prøv på nytt med backoff: speilene feiler ofte forbigående under last, og
-  // detalj-fyllingen feilet for ofte med kun ett forsøk. Avbrudd (AbortError fra
-  // prefetch/signal) prøves IKKE på nytt — det er en bevisst kansellering.
+// Retry-loop med backoff rundt speil-kappløpet. onProgress varsler brukeren
+// før hvert nye forsøk — tidligere var retries usynlige og spinneren så «død»
+// ut i opptil flere minutter.
+async function fetchOverpassWithRetry(body, { signal, timeoutMs, onProgress } = {}) {
   let lastErr
   for (let attempt = 0; attempt < OVERPASS_ATTEMPTS; attempt++) {
     if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
     if (attempt > 0) {
       const backoff = OVERPASS_BACKOFF_MS[attempt - 1] ?? OVERPASS_BACKOFF_MS.at(-1)
       console.warn(`[Overpass] forsøk ${attempt} feilet (${lastErr?.message ?? lastErr}) — prøver igjen om ${backoff} ms`)
+      onProgress?.(`Henter kartdata … (forsøk ${attempt + 1} av ${OVERPASS_ATTEMPTS})`)
       await delay(backoff, signal)
     }
     try {
@@ -232,6 +238,85 @@ export async function fetchOverpass(bbox, { signal, query } = {}) {
     }
   }
   throw new Error(`Overpass feilet etter ${OVERPASS_ATTEMPTS} forsøk: ${lastErr?.message ?? lastErr}`)
+}
+
+// Bygninger i egen spørring for store kart: way["building"] er den suverent
+// tyngste selektoren i tette byområder (alle bygningsfotavtrykk) og dominerte
+// både server-tid og respons-størrelse. Terskelen 100 km² tilsvarer ~8×12 km.
+const BUILDINGS_SPLIT_KM2 = 100
+
+export function buildBuildingsQuery(bbox, { timeoutS = 90 } = {}) {
+  return `
+[out:json][timeout:${timeoutS}][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way["building"];
+);
+out geom;
+`.trim()
+}
+
+export async function fetchOverpass(bbox, { signal, query, onProgress } = {}) {
+  // Areal-skalert klient-tak: store kyst-/by-kart trenger mer tid på serveren
+  // enn et lite kart, ellers avbryter vi et gyldig (men tregt) svar for tidlig.
+  // Server-timeouten i spørringen settes til samme verdi — en fast 90 s lot
+  // zombie-kjøringer blokkere serverens slots lenge etter at klienten ga opp.
+  const timeoutMs = overpassTimeoutForBbox(bbox)
+  const timeoutS = Math.ceil(timeoutMs / 1000)
+  // `query` lar kalleren be om en alternativ spørring (f.eks. den lette
+  // periferi-spørringen for 3×3-fliser); default er den fulle — da splittes
+  // bygninger ut i en parallell spørring nr. 2 for store kart, med
+  // catch → tomt (feilet bygg-spørring gir kart uten bygninger, ikke feilet kart).
+  const splitBuildings = !query && bboxAreaKm2(bbox) > BUILDINGS_SPLIT_KM2
+  const mainBody = 'data=' + encodeURIComponent(
+    query ?? buildOverpassQuery(bbox, { timeoutS, includeBuildings: !splitBuildings }),
+  )
+  const mainP = fetchOverpassWithRetry(mainBody, { signal, timeoutMs, onProgress })
+  if (!splitBuildings) return mainP
+  const bldBody = 'data=' + encodeURIComponent(buildBuildingsQuery(bbox, { timeoutS }))
+  const bldP = fetchOverpassWithRetry(bldBody, { signal, timeoutMs }).catch(e => {
+    console.warn(`[Overpass] bygnings-spørringen feilet (${e?.message ?? e}) — kartet bygges uten bygninger`)
+    return null
+  })
+  const [main, bld] = await Promise.all([mainP, bldP])
+  if (bld?.elements?.length) {
+    const seen = new Set((main.elements ?? []).map(el => `${el.type}/${el.id}`))
+    const extra = bld.elements.filter(el => !seen.has(`${el.type}/${el.id}`))
+    main.elements = [...(main.elements ?? []), ...extra]
+  }
+  return main
+}
+
+// Mini-kystlinje-probe: en bitteliten Overpass-spørring (out ids, maks 1
+// element, ~200 B svar) som avgjør «finnes OSM-saltvann i bbox?» på 1–3 s i
+// stedet for å vente på hele hoved-spørringen. Selektorene MÅ speile
+// bboxHasOsmSaltwater-predikatet (natural=coastline + isOsmWaterSalty i
+// symbolizer.js): salt/tidal=yes, place=sea/ocean, natural=bay/strait
+// (navngitt for node/way — hovedspørringen henter kun navngitte),
+// water=sea/bay/strait/lagoon/cove. Paritet håndheves av enhetstest.
+export function buildCoastProbeQuery(bbox) {
+  return `
+[out:json][timeout:10][bbox:${bbox.south},${bbox.west},${bbox.north},${bbox.east}];
+(
+  way["natural"="coastline"];
+  nwr["salt"="yes"];
+  nwr["tidal"="yes"];
+  nwr["place"~"^(sea|ocean)$"];
+  node["natural"~"^(bay|strait)$"]["name"];
+  way["natural"~"^(bay|strait)$"]["name"];
+  relation["natural"~"^(bay|strait)$"];
+  nwr["water"~"^(sea|bay|strait|lagoon|cove)$"];
+);
+out ids qt 1;
+`.trim()
+}
+
+// Kjør kystlinje-proben: returnerer true/false, kaster ved nettverksfeil
+// (kalleren faller da tilbake til det autoritative Overpass-svaret).
+// Ett kappløp, ingen retries — dette er en optimalisering, ikke en kilde.
+export async function probeCoastline(bbox, { signal } = {}) {
+  const body = 'data=' + encodeURIComponent(buildCoastProbeQuery(bbox))
+  const data = await raceOverpassMirrors(body, { signal, timeoutMs: 12000 })
+  return (data?.elements?.length ?? 0) > 0
 }
 
 // v10.1.10: kartet skal FYLLE portrett-skjermen med ekte terreng i stedet for å
