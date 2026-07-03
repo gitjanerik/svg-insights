@@ -14,11 +14,13 @@ Gjeldende versjon er autoritativ i [`app/src/version.js`](app/src/version.js).
 ### 1. Ruteplanlegger (grusruter for MC)
 
 Finner sammenhengende grusvei-strekninger for tur-MC over lange avstander.
-Fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) med to moduser.
+Fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) der utforsking og
+planlegging skjer i samme bilde.
 
-- **Utforsk**: grusvei-overlay i synlig utsnitt via Overpass — heltrukket for
-  bekreftet grus-dekke, stiplet for «antatt grus» (skogsbilveier uten dekke-data)
-- **Planlegg**: A→B med inntil tre forslag via BRouter (brouter.de) — «Mest grus»
+- **Grusvei-overlay** i synlig utsnitt via Overpass (vises ved innzooming) —
+  heltrukket for bekreftet grus-dekke, stiplet for «antatt grus» (skogsbilveier
+  uten dekke-data), begge med hvit halo så de skiller seg fra topo-kartets veier
+- **A→B-ruting** med inntil tre forslag via BRouter (brouter.de) — «Mest grus»
   (egen kostprofil som maksimerer grus), «Balansert» og «Kortest» (bilprofil);
   identiske forslag dedupliseres, forslag som bommer på A/B lukes bort
 - **Kun lovlige kjøreveier**: private/landbruksbegrensede veier, turveier og
@@ -149,7 +151,7 @@ svg-insights/
         useGravelPlanner.js    # Rute-spor: tilstand + BRouter-orkestrering
       views/
         HomeView.vue           # Portal (fire kort)
-        GravelPlannerView.vue  # Rute-spor: Utforsk/Planlegg-kart
+        GravelPlannerView.vue  # Rute-spor: kart med grus-overlay + A→B-planlegging
         CaptureView.vue / ViewerView.vue        # SVG-spor
         FontChooserView.vue / FontEditorView.vue / FontPreviewView.vue
         MapHomeView.vue / MapPickerView.vue / MapView.vue   # Kart-spor
