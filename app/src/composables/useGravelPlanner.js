@@ -53,9 +53,11 @@ export function useGravelPlanner() {
   const savedRoutes = ref([])
   let routeAbort = null
 
-  // Ett forslag: egen profil (m/ utløps-retry og gravel-fallback) eller innebygd.
+  // Ett forslag: egen profil (m/ utløps-retry og bilprofil-fallback) eller
+  // innebygd. Fallback-årsaken føres til UI-et (amber-varsel) for diagnose.
   async function fetchProposal(def, waypoints, signal) {
     let usedFallbackProfile = false
+    let fallbackReason = null
     let geojson
     if (def.builtin) {
       geojson = await fetchRoute(waypoints, def.builtin, { signal })
@@ -76,9 +78,10 @@ export function useGravelPlanner() {
         console.warn(`[Ruteplanlegger] profil «${def.id}» feilet, bruker innebygd ${FALLBACK_PROFILE}:`, e?.message ?? e)
         geojson = await fetchRoute(waypoints, FALLBACK_PROFILE, { signal })
         usedFallbackProfile = true
+        fallbackReason = String(e?.message ?? e).slice(0, 160)
       }
     }
-    return { ...def, ...parseRoute(geojson), usedFallbackProfile }
+    return { ...def, ...parseRoute(geojson), usedFallbackProfile, fallbackReason }
   }
 
   function applySelection() {

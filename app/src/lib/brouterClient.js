@@ -13,7 +13,7 @@
 export const BROUTER_BASE = 'https://brouter.de/brouter'
 // Bumpes når grusprofil.brf endres → invaliderer cachet profileid så neste
 // rutekall laster opp ny profil.
-export const PROFILE_VERSION = 3
+export const PROFILE_VERSION = 4
 export const BROUTER_TIMEOUT_MS = 20000
 const PROFILE_CACHE_KEY = 'grus-brouter-profile'
 

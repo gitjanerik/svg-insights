@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.9: Ruteplanlegger — profil-parse-feilen funnet: BRouter-aliaser ga stille fallback
+
+Rotårsaken til at ALLE ruter havnet på bilprofil-fallback («Grusprofilen kunne ikke lastes»): BRouters lookup-tabell tillater kun PRIMÆR-verdier i profil-uttrykk — aliaser gir parse-feil ved opplasting. `forestry` er alias for `agricultural` (access/vehicle/motor_vehicle), `delivery` alias for `destination` (motor_vehicle), og node-taggen `locked` finnes ikke i det hele tatt. v2-profilene (Drammen-fiksen) introduserte nettopp disse → hele profilen ble avvist → stille fallback (først til sykkelprofilen 'gravel', fra v12.1.6 til 'car-fast'). Profilene er skrevet om til kun primær-verdier (PROFILE_VERSION 4): `access=no|private|agricultural|military|customers|delivery|permit`, `vehicle/motor_vehicle/motorcycle` tilsvarende (aliaser dekkes AV primær-verdien i dataene — forestry-veier matcher agricultural), node-seksjonen uten `locked`/`swing_gate`/`block`. Amber-varselet viser nå også teknisk årsak (`fallbackReason`) så en eventuell ny avvisning kan diagnostiseres rett fra mobilen.
+
+---
+
 ## 2026-07-03 — v12.1.8: Om-siden med Ruteplanlegging-fane, README-oppdatering, eget rute-ikon og BETA-badge på webfont
 
 Dokumentasjons- og forside-pakke. **Om-siden** (`/about`) har fått en ny fane «Ruteplanlegging» (Utforsk/Planlegg, lovlighetsfilter, deling/GPX, datakilder inkl. BRouter-attribusjon), og fanene følger nå samme rekkefølge som kortene på forsiden: Ruteplanlegging → Turkart → Illustrasjon → Webfont. **README.md** beskriver den nye funksjonen (nå «fire hovedfunksjoner», seksjonsrekkefølge som forsiden) med oppdatert prosjektstruktur og datakilder. **Font Awesome er fjernet:** motorsykkel-ikonet på forsiden (CC BY-lisensiert FA-ikon fra v12.1.1) er erstattet med den opprinnelige egne vektortegningen — slynget rute-strek med grønn start- og rød mål-sirkel som matcher A/B-markørene i kartet; ingen FA-spor igjen i koden (lisens-stance: vi har tidligere vurdert og droppet FA). **«Lag webfont»** har fått gul BETA-badge på forsiden (samme stil som ruteplanleggerens NY-badge).
