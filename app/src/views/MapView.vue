@@ -682,6 +682,12 @@ const drawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: MAIN_DR
 // minimer (v11.0.61). Minimert viser håndtak + koordinat-header; resten (inset
 // + info) skjules under skjermkanten. Lukkes fortsatt helt med X.
 const contextDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: CONTEXT_DRAWER_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
+// FAB-panelenes peek: håndtak + tittel-header synlig når minimert.
+const KNOB_PANEL_PEEK_PX = 76
+// FAB-innstillingspanelene (strek/relieff/zoom): SAMME drawer-UX som kontekst-
+// skuffen — 45 dvh standard, dra i håndtaket for å maksimere/minimere. Minimert
+// lar brukeren lynraskt justere → minimere → se på kartet → maksimere igjen.
+const knobDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: KNOB_PANEL_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
 
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
@@ -1429,6 +1435,8 @@ function knobDown(kind) {
   if (knobTimer) clearTimeout(knobTimer)
   knobTimer = setTimeout(() => {
     knobSettled = true   // lang-trykk konsumerer trykket → ingen step/sentrer ved release
+    closeDrawer()        // hovedmeny-skuffen viker for panelet (som ved long-press på kart)
+    knobDrawer.reset()   // alltid åpne i standard-høyde (45 dvh)
     knobPanel.value = kind === 'center' ? 'zoom' : kind
   }, KNOB_HOLD_MS)
 }
@@ -2574,6 +2582,7 @@ function openContextMenuAt(clientX, clientY) {
   contextMenuOpen.value = true
   contextDrawer.reset()
   closeDrawer()
+  knobPanel.value = null   // FAB-panelet viker for kontekst-arket (unngå stablede sheets)
   // v9.3.3: INGEN auto-pan av hovedkartet. Brukeren har allerede plassert/
   // zoomet/rotert kartet slik de vil — å flytte det ved long-press var
   // forvirrende og ødela oversikten. Punktet vises i pin + detalj-inset.
@@ -7871,13 +7880,27 @@ onUnmounted(() => {
 
     <!-- FAB-innstillingspanel (v12.0.18): long-press på Strek-/Relieff-/Sentrer-
          FAB-ene åpner ett delt bottom-sheet med panelet for den knappen.
-         z-50 > FAB-stacken (z-40). Tap på backdrop = lukk. -->
+         SAMME drawer-UX som kontekst-arket (v12.0.19): 45 dvh standard, dra i
+         midtstilt håndtak for maksimer/standard/minimer. Kun maksimert dimmer
+         + sperrer kartet (tap utenfor = lukk); ellers er kartet interaktivt bak
+         så brukeren kan justere → minimere → teste → maksimere. -->
     <Transition name="overlay-fade">
-      <div v-if="knobPanel" class="absolute inset-0 z-50 flex items-end justify-center bg-black/60"
+      <div v-if="knobPanel"
+           class="absolute inset-0 z-50 flex items-end justify-center transition-colors duration-200"
+           :class="knobDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
            @click.self="closeKnobPanel">
-        <div class="w-full max-w-[560px] bg-zinc-900 border-t border-white/10 rounded-t-2xl
-                    max-h-[75dvh] flex flex-col">
-          <div class="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-white/8 flex items-center justify-between gap-3">
+        <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col pointer-events-auto"
+             :style="knobDrawer.drawerHeightStyle.value">
+          <!-- Dra-håndtak: samme hit-flate og følsomhet som kontekst-arket. -->
+          <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-3.5 pb-3 flex justify-center"
+               @pointerdown="knobDrawer.onPointerDown($event)"
+               @pointermove="knobDrawer.onPointerMove($event)"
+               @pointerup="knobDrawer.onPointerUp($event)"
+               @pointercancel="knobDrawer.onPointerUp($event)">
+            <div class="w-12 h-1.5 rounded-full bg-white/40"
+                 :style="{ opacity: knobDrawer.handleOpacity.value }"></div>
+          </div>
+          <div class="shrink-0 px-4 pb-2.5 border-b border-white/8 flex items-center justify-between gap-3">
             <div class="text-white text-[14px] font-semibold">{{ knobPanelTitle }}</div>
             <button @click="closeKnobPanel" aria-label="Lukk panel"
                     class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center
@@ -7888,7 +7911,8 @@ onUnmounted(() => {
               </svg>
             </button>
           </div>
-          <div class="flex-1 overflow-y-auto px-4 pt-3 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+          <div v-show="!knobDrawer.isMinimized.value"
+               class="flex-1 overflow-y-auto px-4 pt-3 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
 
             <!-- STREK: per-element strekbredde for dette kartet -->
             <template v-if="knobPanel === 'stroke'">
