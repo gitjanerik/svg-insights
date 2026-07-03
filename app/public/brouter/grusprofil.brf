@@ -1,4 +1,4 @@
-# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 1, matcher
+# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 2, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: MC-turplanlegging som MAKSIMERER sammenhengende grusvei A->B i Norge.
@@ -25,16 +25,28 @@ assign nosurface = not or ispaved or isgravel surface=
 assign turncost = 0
 assign initialcost = 0
 
-# Tilgang: bil/MC-lovlige veier. Forby private/stengte og rene gangarealer.
+# Tilgang: bil/MC-lovlige veier. Forby private/stengte, landbruks-/skogsdrift-
+# begrensede og rene gangarealer — ruta skal være LOVLIG for motorisert ferdsel.
 assign defaultaccess =
   switch access=no false
   switch access=private false
+  switch access=agricultural|forestry|delivery|permit|emergency|military false
+  switch vehicle=no|private|agricultural|forestry false
   switch motor_vehicle=no false
   switch motor_vehicle=private false
-  switch motorcycle=no false
+  switch motor_vehicle=agricultural|forestry|delivery|permit false
+  switch motorcycle=no|private false
   true
 
+# Turvei-heuristikk: track dedikert gående/syklende uten eksplisitt
+# motor-access er i praksis turvei (jf. grusstien langs Drammenselva) — forby.
+assign turvei =
+  and highway=track
+  and or foot=designated bicycle=designated
+  not motor_vehicle=yes
+
 assign onlyroads =
+  switch turvei false
   switch highway=motorway|motorway_link false
   switch highway=trunk|trunk_link false
   switch highway=footway|pedestrian|cycleway|path|bridleway|steps|construction|proposed false
@@ -83,12 +95,21 @@ assign costfactor =
   switch smoothness=horrible|very_horrible|impassable multiply costfactor 3
   costfactor
 
+# destination = kun lovlig ved kjøring TIL eiendom — kraftig straff for
+# gjennomkjøring, men ikke forbud siden start/mål kan ligge der.
+assign costfactor =
+  switch or access=destination motor_vehicle=destination multiply costfactor 4
+  costfactor
+
 ---context:node
 
 assign defaultaccess =
   switch access=no false
   switch access=private false
   switch motor_vehicle=no false
+  switch motor_vehicle=private false
+  switch vehicle=no|private false
+  switch motorcycle=no false
   true
 
 assign initialcost =

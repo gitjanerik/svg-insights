@@ -8,16 +8,19 @@
 // Interaksjonskoden (pan/pinch/wheel/tiles) er forket fra MapPickerView —
 // picker-en er halfKm-drevet med 8 km-tak; her trengs fri heltalls-zoom z5–z15.
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { tileMosaic, metersPerPixel } from '../lib/tileBackground.js'
-import { lonLatToWorldPx, lonLatToScreenPx, screenPxToLonLat, viewBbox, bboxAreaKm2, TILE_SIZE } from '../lib/webMercator.js'
+import { lonLatToWorldPx, worldPxToLonLat, lonLatToScreenPx, screenPxToLonLat, viewBbox, bboxAreaKm2, TILE_SIZE } from '../lib/webMercator.js'
 import { buildGravelQuery, extractGravelWays, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
 import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { useNominatim } from '../composables/useNominatim.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
+import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
+import { usePwaInstall } from '../composables/usePwaInstall.js'
 
 const router = useRouter()
+const currentRoute = useRoute()
 const planner = useGravelPlanner()
 const {
   pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
@@ -28,6 +31,18 @@ const PROPOSAL_COLORS = { 'mest-grus': '#e8802b', balansert: '#8b5cf6', kortest:
 
 // ── Modus: Utforsk (overlay) / Planlegg (A→B) ───────────────────────────────
 const mode = ref('utforsk')
+
+// ── Planlegg-skuff: samme drag-UX som turkartets skuffer (useDraggableDrawer:
+// standard 45 dvh, minimert peek med håndtak + header, maksimert med 56 px
+// kart-stripe igjen i toppen, retnings-basert snap-følsomhet). ──────────────
+const MAX_DRAWER_TOP_GAP_PX = 56
+const PLANNER_DRAWER_PEEK_PX = 76
+const drawer = useDraggableDrawer({
+  expandedHeight: 0.45,
+  minimizedPeek: PLANNER_DRAWER_PEEK_PX,
+  maxTopGapPx: MAX_DRAWER_TOP_GAP_PX,
+  allowMinimize: true,
+})
 
 // ── Kart-tilstand ───────────────────────────────────────────────────────────
 const VIEW_LS_KEY = 'svg-insights-ruteplanlegger-view'
@@ -57,6 +72,10 @@ function measureMap() {
   const r = mapRef.value?.getBoundingClientRect()
   if (r) mapSize.value = { w: r.width, h: r.height }
 }
+// Skuffen ligger i flex-flyten, så kart-flaten endrer størrelse kontinuerlig
+// mens den dras — ResizeObserver holder projeksjonene i synk (window-resize
+// alene fanger ikke dette).
+let mapResizeObs = null
 
 const view = computed(() => ({
   centerLat: center.value.lat, centerLon: center.value.lon,
@@ -373,14 +392,142 @@ function fmtGrus(share) {
   return share != null ? `${Math.round(share * 100)} %` : null
 }
 
+// ── «Vis hele ruten»-FAB: nullstill zoom/senter så hele ruta (inkl. A/B)
+// rammes inn med margin — mye utzooming på lange ruter. ────────────────────
+function fitPointsView(lonLatPts) {
+  if (!lonLatPts?.length || !mapSize.value.w) return
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const [lon, lat] of lonLatPts) {
+    const p = lonLatToWorldPx(lon, lat, 0)
+    if (p.x < minX) minX = p.x
+    if (p.x > maxX) maxX = p.x
+    if (p.y < minY) minY = p.y
+    if (p.y > maxY) maxY = p.y
+  }
+  const spanX = Math.max(maxX - minX, 1e-9)
+  const spanY = Math.max(maxY - minY, 1e-9)
+  // Største heltalls-zoom der world-px-spennet (zoom 0 × 2^z) får 15 % margin.
+  const margin = 0.85
+  const zFit = Math.floor(Math.min(
+    Math.log2((mapSize.value.w * margin) / spanX),
+    Math.log2((mapSize.value.h * margin) / spanY),
+  ))
+  zoom.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zFit))
+  const mid = worldPxToLonLat((minX + maxX) / 2, (minY + maxY) / 2, 0)
+  center.value = { lat: mid.lat, lon: mid.lon }
+}
+
+function fitRouteView() {
+  const pts = [...(route.value?.points?.map((p) => [p[0], p[1]]) ?? [])]
+  for (const m of [pointA.value, pointB.value]) if (m) pts.push([m.lon, m.lat])
+  fitPointsView(pts)
+}
+
 async function onFindRoute() {
   activeSearch.value = null
-  await planner.computeRoute()
-  if (route.value?.points?.length && mapSize.value.w) {
-    // Sentrer på rutas midtpunkt (grov innramming — brukeren justerer selv).
-    const mid = route.value.points[Math.floor(route.value.points.length / 2)]
-    center.value = { lat: mid[1], lon: mid[0] }
+  // Mottaker av delt rute kan ha huket av «Installer appen» i banneret —
+  // trigg install-prompten først (best-effort, samme mønster som kartvelgeren).
+  if (installRequested.value && canInstall.value) {
+    try { await promptInstall() } catch { /* avvist / utilgjengelig — rut likevel */ }
   }
+  await planner.computeRoute()
+  if (route.value) {
+    if (routeInvite.value?.proposalId) planner.selectProposal(routeInvite.value.proposalId)
+    drawer.reset()
+    nextTick(() => { measureMap(); fitRouteView() })
+  }
+}
+
+// ── Deling av rute: sender-side URL + mottaker-banner (speiler turkartets
+// «Del kart»-flyt — navigator.share med clipboard-fallback, og hos mottaker
+// et banner med «installer som app»-sjekkboks når appen ikke er standalone). ─
+const { canInstall, isStandalone, promptInstall } = usePwaInstall()
+const installRequested = ref(false)
+const showInstallInfo = ref(false)
+const routeInvite = ref(null)     // { navn, proposalId } | null
+const shareState = ref('idle')    // 'idle' | 'copied' | 'error'
+let shareResetTimer = null
+
+function buildRouteShareUrl({ a, b, navn, proposalId }) {
+  if (!a || !b) return null
+  const base = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
+  const params = new URLSearchParams({
+    alat: a.lat.toFixed(6), alon: a.lon.toFixed(6),
+    blat: b.lat.toFixed(6), blon: b.lon.toFixed(6),
+  })
+  if (a.name) params.set('an', String(a.name).slice(0, 60))
+  if (b.name) params.set('bn', String(b.name).slice(0, 60))
+  if (navn) params.set('rn', String(navn).slice(0, 60))
+  if (proposalId) params.set('p', proposalId)
+  return `${base}/ruteplanlegger?${params.toString()}`
+}
+
+async function performShare(url, title, text) {
+  if (!url) return
+  const shareData = { title, text, url }
+  if (typeof navigator.share === 'function') {
+    try {
+      if (typeof navigator.canShare === 'function' && !navigator.canShare(shareData)) {
+        throw new Error('share-data-rejected')
+      }
+      await navigator.share(shareData)
+      return
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      // fall gjennom til clipboard-fallback
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url)
+    shareState.value = 'copied'
+  } catch {
+    shareState.value = 'error'
+  }
+  if (shareResetTimer) clearTimeout(shareResetTimer)
+  shareResetTimer = setTimeout(() => { shareState.value = 'idle' }, 2200)
+}
+
+function onShareRoute() {
+  const r = route.value
+  if (!r) return
+  const navn = r.navn ?? `${labelFor(pointA.value)} → ${labelFor(pointB.value)}`
+  void performShare(
+    buildRouteShareUrl({ a: pointA.value, b: pointB.value, navn, proposalId: r.id }),
+    'SVG Insights — grusrute',
+    `Grusrute: ${navn}`,
+  )
+}
+
+function onShareSaved(rec) {
+  const a = rec.waypoints?.[0]
+  const b = rec.waypoints?.at(-1)
+  void performShare(
+    buildRouteShareUrl({ a, b, navn: rec.navn, proposalId: rec.proposalId }),
+    'SVG Insights — grusrute',
+    `Grusrute: ${rec.navn}`,
+  )
+}
+
+// Mottaker: ?alat/alon/blat/blon(+an/bn/rn/p) → prefill A/B, vis banner.
+// Ruta beregnes først når mottakeren trykker «Finn grusrute» (ett BRouter-kall
+// per brukerhandling — samme fair-use-holdning som ellers).
+function parseRouteInvite() {
+  const q = currentRoute.query
+  const alat = parseFloat(q.alat); const alon = parseFloat(q.alon)
+  const blat = parseFloat(q.blat); const blon = parseFloat(q.blon)
+  if (![alat, alon, blat, blon].every(Number.isFinite)) return null
+  return {
+    a: { lat: alat, lon: alon, name: q.an ? String(q.an).slice(0, 60) : 'Delt start' },
+    b: { lat: blat, lon: blon, name: q.bn ? String(q.bn).slice(0, 60) : 'Delt mål' },
+    navn: q.rn ? String(q.rn).slice(0, 60) : null,
+    proposalId: q.p ? String(q.p) : null,
+  }
+}
+
+function dismissRouteInvite() {
+  routeInvite.value = null
+  installRequested.value = false
+  router.replace({ query: {} })
 }
 
 function startSave() {
@@ -398,11 +545,10 @@ function onOpenSaved(rec) {
   planner.openSaved(rec)
   showSaved.value = false
   mode.value = 'planlegg'
-  const mid = rec.points[Math.floor(rec.points.length / 2)]
-  if (mid) center.value = { lat: mid[1], lon: mid[0] }
-  if (zoom.value < 8) zoom.value = 8
   searchA.query.value = labelFor(pointA.value)
   searchB.query.value = labelFor(pointB.value)
+  drawer.reset()
+  nextTick(() => { measureMap(); fitPointsView(rec.points) })
 }
 
 async function onDeleteSaved(id) {
@@ -427,18 +573,38 @@ const onlineHandler = () => { isOffline.value = false }
 const offlineHandler = () => { isOffline.value = true }
 
 onMounted(() => {
-  nextTick(measureMap)
+  nextTick(() => {
+    measureMap()
+    if (typeof ResizeObserver !== 'undefined' && mapRef.value) {
+      mapResizeObs = new ResizeObserver(measureMap)
+      mapResizeObs.observe(mapRef.value)
+    }
+    // Delt rute i URL-en: prefill A/B, hopp til Planlegg og ram inn punktene.
+    const invite = parseRouteInvite()
+    if (invite) {
+      routeInvite.value = invite
+      mode.value = 'planlegg'
+      setPoint('A', invite.a)
+      setPoint('B', invite.b)
+      nextTick(() => {
+        measureMap()
+        fitPointsView([[invite.a.lon, invite.a.lat], [invite.b.lon, invite.b.lat]])
+      })
+    }
+  })
   window.addEventListener('resize', measureMap)
   window.addEventListener('online', onlineHandler)
   window.addEventListener('offline', offlineHandler)
   void planner.refreshSaved()
 })
 onUnmounted(() => {
+  mapResizeObs?.disconnect()
   window.removeEventListener('resize', measureMap)
   window.removeEventListener('online', onlineHandler)
   window.removeEventListener('offline', offlineHandler)
   overlayAbort?.abort()
   if (overlayDebounce) clearTimeout(overlayDebounce)
+  if (shareResetTimer) clearTimeout(shareResetTimer)
 })
 </script>
 
@@ -486,6 +652,64 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- Mottaker av delt rute: banner med prefilte A/B og install-tilbud
+         (speiler «Del kart»-banneret i kartvelgeren). -->
+    <div v-if="routeInvite" class="shrink-0 z-20 bg-[#0e1116] px-3 pt-3">
+      <div class="relative max-w-[560px] mx-auto rounded-xl border border-sky-300/40 bg-sky-500/10 px-4 py-3">
+        <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
+                class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
+                       text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15 active:scale-95 transition">
+          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+        <div class="flex items-center gap-3 pr-8">
+          <div class="shrink-0 w-10 h-10 rounded-full bg-sky-400/20 border border-sky-300/40
+                      flex items-center justify-center text-sky-200">
+            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="text-[13px] font-semibold text-sky-100">Noen har delt en grusrute med deg!</div>
+            <div v-if="routeInvite.navn" class="text-[11px] text-sky-100/75 truncate">
+              Rute: {{ routeInvite.navn }}
+            </div>
+          </div>
+        </div>
+        <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
+          Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
+        </div>
+        <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
+          <label class="flex items-start gap-2.5 cursor-pointer">
+            <input type="checkbox" v-model="installRequested"
+                   class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
+            <span class="flex-1 text-[11px] text-sky-100/85 leading-relaxed">
+              Installer appen for en bedre opplevelse
+              <button type="button" @click.prevent="showInstallInfo = !showInstallInfo"
+                      aria-label="Hva betyr det?" :aria-expanded="showInstallInfo"
+                      class="inline-flex items-center justify-center align-middle ml-1
+                             w-4 h-4 rounded-full border border-sky-300/50 text-sky-200/90
+                             text-[9px] font-bold leading-none active:scale-90 transition">
+                i
+              </button>
+            </span>
+          </label>
+          <Transition name="overlay-fade">
+            <div v-if="showInstallInfo"
+                 class="mt-2 ml-[26px] text-[10px] text-sky-100/60 leading-relaxed">
+              Installasjon legger appen på hjemskjermen din, så den åpner i fullskjerm og fungerer
+              offline. Du kan også gjøre dette senere fra forsiden.
+            </div>
+          </Transition>
+        </div>
+      </div>
+    </div>
+
     <!-- Kart -->
     <div ref="mapRef"
          class="relative flex-1 overflow-hidden bg-zinc-800 cursor-move touch-none select-none"
@@ -502,11 +726,17 @@ onUnmounted(() => {
            :style="{ left: t.leftPx + 'px', top: t.topPx + 'px', width: TILE_SIZE + 'px', height: TILE_SIZE + 'px' }"
            draggable="false" @error="onTopoTileError" />
 
-      <!-- Grusvei-overlay + rute (skjerm-px-rom, samme som tilene) -->
+      <!-- Grusvei-overlay + rute (skjerm-px-rom, samme som tilene).
+           Bekreftet grus: kraftig heltrukket. Antatt grus: tynnere, lysere og
+           stiplet — usikkerheten skal synes på avstand, ikke bare i tegn-
+           forklaringen (dash + vekt + lyshet skiller også for fargeblinde). -->
       <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
         <path v-for="w in overlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
-              stroke="#c2703d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-              :stroke-dasharray="w.kind === 'assumed' ? '6 4' : undefined" opacity="0.85" />
+              :stroke="w.kind === 'assumed' ? '#d9a05b' : '#c2703d'"
+              :stroke-width="w.kind === 'assumed' ? 2.4 : 3.5"
+              stroke-linecap="round" stroke-linejoin="round"
+              :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
+              :opacity="w.kind === 'assumed' ? 0.6 : 0.95" />
         <template v-if="routePaths.length">
           <path v-for="s in routePaths" :key="'halo-' + s.key" :d="s.d" fill="none"
                 stroke="#0e1116" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
@@ -528,8 +758,10 @@ onUnmounted(() => {
                     justify-center text-[11px] font-bold text-white">B</div>
       </div>
 
-      <!-- Zoom-knapper + nivå-badge -->
-      <div class="absolute right-3 top-3 z-10 flex flex-col items-center gap-1.5">
+      <!-- Zoom-knapper + nivå-badge. mousedown/touchstart stoppes så knappe-
+           trykk ikke tolkes som kart-tap (tap-to-set i Planlegg-modus). -->
+      <div class="absolute right-3 top-3 z-10 flex flex-col items-center gap-1.5"
+           @mousedown.stop @touchstart.stop>
         <button @click.stop="stepZoom(1)" aria-label="Zoom inn"
                 class="w-9 h-9 rounded-lg bg-zinc-950/90 border border-white/15 text-white text-lg font-medium
                        flex items-center justify-center active:scale-95 transition">+</button>
@@ -539,6 +771,21 @@ onUnmounted(() => {
         <div class="px-1.5 py-0.5 rounded-md bg-zinc-950/85 border border-white/15 text-white/60 text-[10px]
                     tabular-nums pointer-events-none">z{{ zoom }}</div>
       </div>
+
+      <!-- FAB: nullstill zoom og vis hele ruten (Planlegg-modus med rute) -->
+      <button v-if="mode === 'planlegg' && route" @click.stop="fitRouteView"
+              @mousedown.stop @touchstart.stop
+              aria-label="Vis hele ruten"
+              class="absolute right-3 bottom-7 z-10 w-12 h-12 rounded-full bg-zinc-950/90 border
+                     border-white/15 text-white shadow-lg flex items-center justify-center
+                     active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/>
+          <path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/>
+          <path d="M8 15 C9.5 12 14.5 12 16 9" opacity="0.9"/>
+        </svg>
+      </button>
 
       <!-- Status-chips: armert tap-to-set / overlay-gate / lasting / feil -->
       <div class="absolute left-1/2 -translate-x-1/2 top-3 z-10 flex flex-col items-center gap-1.5 pointer-events-none">
@@ -569,10 +816,11 @@ onUnmounted(() => {
         <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Grusveier</div>
         <div class="text-[10px] text-white/75 space-y-1">
           <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-[3px] border-[#c2703d] rounded"></span> Bekreftet grus
+            <span class="inline-block w-5 h-0 border-t-[3.5px] border-[#c2703d] rounded"></span>
+            Bekreftet grus (dekke registrert)
           </div>
           <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-[3px] border-dashed border-[#c2703d] rounded"></span>
+            <span class="inline-block w-5 h-0 border-t-2 border-dashed border-[#d9a05b]/70 rounded"></span>
             Antatt grus (skogsbilvei)
           </div>
         </div>
@@ -585,10 +833,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Feilbanner (ruting / offline) -->
+    <!-- Feilbanner (ruting / offline) — flyter over skuffen uansett høyde -->
     <div v-if="isOffline || routeState === 'error'"
-         class="absolute left-3 right-3 bottom-24 z-30 max-w-[560px] mx-auto rounded-xl border px-4 py-3
+         class="absolute left-3 right-3 z-30 max-w-[560px] mx-auto rounded-xl border px-4 py-3
                 text-[13px] shadow-2xl"
+         :style="{ bottom: (mode === 'planlegg' ? drawer.visibleHeightPx.value + 12 : 24) + 'px' }"
          :class="isOffline ? 'bg-zinc-900/95 border-white/15 text-white/80'
                            : 'bg-rose-950/95 border-rose-500/40 text-rose-100'">
       <template v-if="isOffline">Ruteplanleggeren krever nettilkobling.</template>
@@ -598,11 +847,42 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- PLANLEGG: Fra/Til-sheet (før rute) -->
-    <div v-if="mode === 'planlegg' && !route" class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 px-4 pt-3
-                pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+    <!-- PLANLEGG: dra-bar bunn-skuff (samme UX som turkartets skuffer):
+         dra i håndtaket for å minimere (peek med håndtak + header) eller
+         maksimere (kart-stripe på 56 px igjen i toppen). -->
+    <div v-if="mode === 'planlegg'"
+         class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col
+                overflow-hidden"
+         :style="drawer.drawerHeightStyle.value">
+      <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
+           @pointerdown="drawer.onPointerDown($event)"
+           @pointermove="drawer.onPointerMove($event)"
+           @pointerup="drawer.onPointerUp($event)"
+           @pointercancel="drawer.onPointerUp($event)">
+        <div class="pt-3 pb-1.5 flex justify-center">
+          <div class="w-12 h-1.5 rounded-full bg-white/40"
+               :style="{ opacity: drawer.handleOpacity.value }"></div>
+        </div>
+        <!-- Header i drag-sonen: synlig også minimert -->
+        <div class="px-4 pb-2 w-full max-w-[560px] mx-auto">
+          <template v-if="route && routeState !== 'routing'">
+            <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
+            <div class="flex items-baseline gap-2 mt-0.5">
+              <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
+              <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
+                · Grus {{ fmtGrus(route.gravelShare) }}</span>
+              <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
+            </div>
+          </template>
+          <div v-else class="text-[14px] font-semibold text-white pt-1.5">Planlegg grusrute</div>
+        </div>
+      </div>
+
+      <!-- Fra/Til-skjema (før rute / under beregning) -->
+      <div v-if="!route || routeState === 'routing'"
+           class="flex-1 overflow-y-auto px-4 pt-1
+                  pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <div class="max-w-[560px] mx-auto">
-        <div class="text-[14px] font-semibold text-white mb-2.5">Planlegg grusrute</div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
             <button @click="swapPoints" aria-label="Bytt start og mål"
@@ -650,9 +930,10 @@ onUnmounted(() => {
               </svg>
             </button>
           </div>
-          <!-- Nominatim-treff (åpner OPPOVER så de ikke drukner under sheeten) -->
+          <!-- Nominatim-treff (åpner NEDOVER — skuffens innhold scroller, så
+               treff over feltet ville klippes mot scroll-toppen) -->
           <div v-if="activeSearch === field && (field === 'A' ? searchA : searchB).results.value.length"
-               class="absolute left-0 right-0 bottom-full mb-1 rounded-xl bg-zinc-900/98 backdrop-blur
+               class="absolute left-0 right-0 top-full mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
                       border border-white/10 shadow-2xl max-h-[36dvh] overflow-y-auto z-30">
             <button v-for="r in (field === 'A' ? searchA : searchB).results.value" :key="r.id"
                     @click="selectResult(field, r)"
@@ -669,24 +950,17 @@ onUnmounted(() => {
                        bg-emerald-500/20 border-emerald-400/50 text-emerald-100 flex items-center justify-center gap-2">
           <span v-if="routeState === 'routing'"
                 class="w-4 h-4 border-2 border-emerald-200/30 border-t-emerald-100 rounded-full animate-spin"></span>
-          {{ routeState === 'routing' ? 'Beregner tre ruteforslag …' : 'Finn grusrute' }}
+          {{ routeState === 'routing' ? 'Beregner tre ruteforslag …'
+             : (installRequested && canInstall ? 'Installer som app og finn grusrute' : 'Finn grusrute') }}
         </button>
       </div>
-    </div>
+      </div>
 
-    <!-- PLANLEGG: rute-resultat (GRUSRUTE + tre forslag + stat-fliser) -->
-    <div v-if="mode === 'planlegg' && route && routeState !== 'routing'"
-         class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 px-4 pt-3 max-h-[52dvh] overflow-y-auto
-                pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+      <!-- Rute-resultat (tre forslag + stat-fliser) -->
+      <div v-else class="flex-1 overflow-y-auto px-4
+                  pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <div class="max-w-[560px] mx-auto">
-        <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
-        <div class="flex items-baseline gap-2 mt-0.5">
-          <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
-          <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
-            · Grus {{ fmtGrus(route.gravelShare) }}</span>
-          <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
-        </div>
-        <div class="text-[12px] text-white/50 mt-1 truncate">
+        <div class="text-[12px] text-white/50 truncate">
           <template v-if="route.usedFallbackProfile">Standard grusprofil · </template>
           {{ route.navn ?? `${labelFor(pointA)} → ${labelFor(pointB)}` }}
         </div>
@@ -752,6 +1026,10 @@ onUnmounted(() => {
           <button @click="planner.exportGpx()" aria-label="Last ned GPX"
                   class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
                          text-white/80 active:scale-95 transition">GPX</button>
+          <button @click="onShareRoute" aria-label="Del rute"
+                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                         text-white/80 active:scale-95 transition">
+            {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
           <button @click="startSave" aria-label="Lagre rute"
                   class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-emerald-500/15
                          border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre</button>
@@ -771,6 +1049,7 @@ onUnmounted(() => {
                          active:scale-95 transition">Avbryt</button>
         </div>
         <div v-if="savedFlash" class="mt-1.5 text-center text-[11px] text-emerald-300">{{ savedFlash }}</div>
+      </div>
       </div>
     </div>
 
@@ -812,6 +1091,16 @@ onUnmounted(() => {
                   {{ new Date(rec.opprettet).toLocaleDateString('no-NO') }} ·
                   {{ new Date(rec.opprettet).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' }) }}
                 </div>
+              </button>
+              <button @click="onShareSaved(rec)" aria-label="Del rute"
+                      class="shrink-0 w-9 h-9 rounded-lg border bg-white/5 border-white/10 text-white/60
+                             flex items-center justify-center active:scale-95 transition">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
               </button>
               <button @click="onDeleteSaved(rec.id)"
                       :aria-label="confirmDeleteId === rec.id ? 'Bekreft sletting' : 'Slett rute'"
