@@ -1,0 +1,11 @@
+# SVG Insights er et privat hobbyprosjekt og skal ikke indekseres.
+#
+# MERK: GitHub Pages project-sites ligger under /svg-insights/ på
+# gitjanerik.github.io, og søkemotorer leser robots.txt KUN fra domene-roten
+# (gitjanerik.github.io/robots.txt) — denne fila håndhever derfor ingenting
+# alene. Den effektive sperren er <meta name="robots" content="noindex,
+# nofollow"> i index.html/404.html. Fila ligger her som dokumentasjon av
+# intensjonen, og blir virksom hvis appen en gang får eget domene.
+
+User-agent: *
+Disallow: /
