@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.7: Ruteplanlegger — relativ snap-sjekk i stedet for absolutt 200 m-grense
+
+Den absolutte 200 m-grensen fra v12.1.5 feilet på generelle stedssøk («Dombås» → «Lesja»): Nominatim-sentroiden kan ligge over 200 m fra nærmeste rutbare vei for ALLE profiler, og alle forslag ble droppet med feilmelding. Sjekken er nå RELATIV: det beste forslaget beholdes alltid, og et forslag droppes kun når det snapper mer enn 200 m dårligere enn det beste — det fanger fortsatt bilprofilen som «bommer totalt» og treffer en helt annen vei, uten å straffe søk der alle profiler er like langt unna punktet.
+
+---
+
 ## 2026-07-03 — v12.1.6: Ruteplanlegger — stabilt kartutsnitt og slutt på gang-/sykkelvei-ruting
 
 **Stabilt kart:** Planlegg-skuffen flyter nå OVER kartet (absolute) i stedet for å ligge i flex-flyten — kartflaten er konstant uansett om skuffen er åpen/minimert/maksimert, så utsnittet «hopper» ikke lenger ved bytte mellom Utforsk og Planlegg (identisk zoom/utsnitt kan sammenliknes direkte). FAB og attribusjon følger skuffens overkant dynamisk, og «vis hele ruten»-innrammingen sikter på den synlige flaten over skuffen. **Gang-/sykkelvei-fiks (rotårsak funnet):** fallback-profilen ved feilet profil-opplasting var BRouters innebygde 'gravel' — en SYKKELPROFIL som gladelig ruter på gang- og sykkelveier; skjermbildene med «Standard grusprofil» viser at nettopp fallbacken var aktiv. Fallback er nå 'car-fast' (lovlige kjøreveier, uten grus-prioritering) med tydelig amber-varsel i resultatkortet. I tillegg: (1) BRouter svarer 200 med `error`-felt ved syntaksfeil i profilen — dette fanges nå i stedet for stille degradering, og (2) gang/sykkelvei-heuristikken er generalisert (PROFILE_VERSION 3): `foot/bicycle=designated` uten eksplisitt motor-access forbys på ALLE veityper (var kun track), både i ruteprofilene og i Utforsk-overlayen. Tagg-basert lovlighet er langt mer treffsikker enn nærhet-til-tettsted-straff — det siste er bevisst IKKE innført.

@@ -113,15 +113,16 @@ export function useGravelPlanner() {
       if (!ok.length) {
         throw results.find((r) => r.status === 'rejected')?.reason ?? new Error('Ruteberegning feilet')
       }
-      // Dropp forslag som snapper A/B lenger unna enn 200 m — bilprofilen kan
-      // ellers «bomme totalt» på et punkt satt utenfor vei.
-      const snapped = ok.filter((p) => {
-        const d = snapDistances(p, waypoints)
-        return d.start <= MAX_SNAP_DIST_M && d.end <= MAX_SNAP_DIST_M
-      })
-      if (!snapped.length) {
-        throw new Error(`Fant ingen kjørbar vei innen ${MAX_SNAP_DIST_M} m fra start- eller målpunktet. Flytt A/B nærmere en vei.`)
-      }
+      // RELATIV snap-sjekk: dropp forslag som snapper A/B vesentlig dårligere
+      // enn det beste forslaget (bilprofilen kan «bomme totalt» og treffe en
+      // helt annen vei). Beste forslag beholdes alltid — generelle stedssøk
+      // der alle profiler snapper likt langt («Dombås») skal ikke feile.
+      const withSnap = ok.map((p) => ({ p, d: snapDistances(p, waypoints) }))
+      const bestStart = Math.min(...withSnap.map((x) => x.d.start))
+      const bestEnd = Math.min(...withSnap.map((x) => x.d.end))
+      const snapped = withSnap
+        .filter(({ d }) => d.start <= bestStart + MAX_SNAP_DIST_M && d.end <= bestEnd + MAX_SNAP_DIST_M)
+        .map((x) => x.p)
       // Aldri to identiske forslag: behold første i prioritert rekkefølge
       // (Mest grus → Balansert → Kortest) — «inntil 3 ruteforslag».
       ok = []
