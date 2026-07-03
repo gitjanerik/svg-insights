@@ -1,0 +1,99 @@
+# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 1, matcher
+# PROFILE_VERSION i brouterClient.js — bump begge ved endring).
+#
+# Formål: BALANSERT variant — foretrekker grus, men tar asfalt-snarveier
+# der grus-omveien blir stor (paved ~2x mot grus-maks ~4-5x).
+# Strategi: grus-familien + track ~1.0; fast dekke ~2-2.8x (mildere enn
+# grus-maks-profilen — gir kortere totalrute med lavere grusandel). Motorvei
+# forbudt. Ukjent
+# dekke på unclassified/tertiary får lett rabatt.
+#
+# Tuning-notater: costfactor-verdiene er startverdier — juster etter felttest.
+# Attribusjon: BRouter (brouter.de), data (c) OpenStreetMap-bidragsytere.
+
+---context:global
+assign processUnusedTags = false
+assign validForCars = true
+assign turnInstructionMode = 0
+
+---context:way
+
+assign ispaved = or surface=asphalt or surface=paved or surface=concrete or surface=paving_stones surface=sett
+assign isgravel = or surface=gravel or surface=compacted or surface=fine_gravel or surface=unpaved or surface=ground or surface=dirt surface=pebblestone
+assign nosurface = not or ispaved or isgravel surface=
+
+assign turncost = 0
+assign initialcost = 0
+
+# Tilgang: bil/MC-lovlige veier. Forby private/stengte og rene gangarealer.
+assign defaultaccess =
+  switch access=no false
+  switch access=private false
+  switch motor_vehicle=no false
+  switch motor_vehicle=private false
+  switch motorcycle=no false
+  true
+
+assign onlyroads =
+  switch highway=motorway|motorway_link false
+  switch highway=trunk|trunk_link false
+  switch highway=footway|pedestrian|cycleway|path|bridleway|steps|construction|proposed false
+  switch highway= false
+  defaultaccess
+
+assign costfactor =
+  switch not onlyroads 100000
+  switch route=ferry 8
+
+  # Skogsbilvei / track: kjernen i grusnettet. grade1 = fast dekke -> dyrere;
+  # grade5 kan være ukjørbart for tur-MC -> straffes.
+  switch highway=track (
+    switch tracktype=grade1 ( switch ispaved 2.2 1.6 )
+    switch tracktype=grade5 6
+    switch ispaved 2.4
+    1.0
+  )
+
+  # Eksplisitt grus på vanlig vei: like bra som track.
+  switch isgravel 1.0
+
+  # Fast dekke: dyrt — vi VIL bort fra asfalten.
+  switch ispaved (
+    switch highway=primary|primary_link 2.6
+    switch highway=secondary|secondary_link 2.3
+    2
+  )
+
+  # Ukjent dekke: sannsynlighets-heuristikk for distrikts-Norge.
+  switch nosurface (
+    switch highway=unclassified 1.4
+    switch highway=tertiary|tertiary_link 1.8
+    switch highway=service ( switch service=driveway 5 2.4 )
+    switch highway=residential|living_street 2.6
+    switch highway=secondary|secondary_link 2.4
+    switch highway=primary|primary_link 2.6
+    2
+  )
+
+  2.4
+
+# Lett straff for svært dårlig jevnhet (tur-MC, ikke enduro).
+assign costfactor =
+  switch smoothness=very_bad multiply costfactor 1.3
+  switch smoothness=horrible|very_horrible|impassable multiply costfactor 3
+  costfactor
+
+---context:node
+
+assign defaultaccess =
+  switch access=no false
+  switch access=private false
+  switch motor_vehicle=no false
+  true
+
+assign initialcost =
+  switch not defaultaccess 1000000
+  switch barrier=gate ( switch locked=yes 1000000 300 )
+  switch barrier=lift_gate|swing_gate 300
+  switch barrier=bollard|block|cycle_barrier 1000000
+  0

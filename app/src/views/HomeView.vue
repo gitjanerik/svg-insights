@@ -50,26 +50,35 @@ async function onInstallClick() {
         </h1>
 
         <p class="mt-3 text-white/55 text-sm leading-relaxed">
-          Lag interaktive strektegninger, egne fonter og turkart fra norske geodata.
+          Lag interaktive strektegninger, egne fonter, turkart — og planlegg
+          grusruter for motorsykkel fra norske geodata.
         </p>
 
-        <!-- Tre kort -->
+        <!-- Fire kort (rekkefølge fra design: Ruteplanlegger øverst m/ NY-badge
+             og fremhevet ramme, deretter Turkart, Illustrasjon, Webfont) -->
         <div class="mt-9 w-full space-y-2.5">
-          <button @click="router.push('/capture')"
+          <button @click="router.push('/ruteplanlegger')"
                   class="group w-full rounded-xl p-4 flex items-center gap-4 text-left
-                         bg-white/[0.04] border border-white/10
-                         active:bg-white/[0.07] active:scale-[0.99] transition">
+                         bg-sky-500/[0.07] border border-sky-400/25
+                         active:bg-sky-500/[0.12] active:scale-[0.99] transition">
             <div class="shrink-0 w-12 h-12 rounded-lg bg-slate-500/15 border border-slate-300/30
                         flex items-center justify-center text-slate-300">
+              <!-- Slynget vei med stiplet grus-segment -->
               <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor"
                    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
+                <path d="M4 20 C4 14 9 14 12 12"/>
+                <path d="M12 12 C15 10 20 10 20 4" stroke-dasharray="2.4 2"/>
+                <circle cx="4" cy="20" r="1.6" fill="currentColor" stroke="none"/>
+                <circle cx="20" cy="4" r="1.6" fill="currentColor" stroke="none"/>
               </svg>
             </div>
             <div class="flex-1">
-              <div class="text-white font-medium">Lag illustrasjon</div>
-              <div class="text-[12px] text-white/50 mt-0.5">Ta bilde og gjør det til interaktiv SVG</div>
+              <div class="flex items-center gap-2">
+                <span class="text-white font-medium">Ruteplanlegger</span>
+                <span class="px-1.5 py-0.5 rounded-md bg-sky-500/25 border border-sky-400/40
+                             text-sky-200 text-[10px] font-bold tracking-wide">NY</span>
+              </div>
+              <div class="text-[12px] text-white/50 mt-0.5">Finn sammenhengende strekninger med grusvei</div>
             </div>
             <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -92,6 +101,28 @@ async function onInstallClick() {
             <div class="flex-1">
               <div class="text-white font-medium">Lag turkart</div>
               <div class="text-[12px] text-white/50 mt-0.5">ISOM-symbolisert kart fra Kartverket og OSM</div>
+            </div>
+            <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
+
+          <button @click="router.push('/capture')"
+                  class="group w-full rounded-xl p-4 flex items-center gap-4 text-left
+                         bg-white/[0.04] border border-white/10
+                         active:bg-white/[0.07] active:scale-[0.99] transition">
+            <div class="shrink-0 w-12 h-12 rounded-lg bg-slate-500/15 border border-slate-300/30
+                        flex items-center justify-center text-slate-300">
+              <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </div>
+            <div class="flex-1">
+              <div class="text-white font-medium">Lag illustrasjon</div>
+              <div class="text-[12px] text-white/50 mt-0.5">Ta bilde og gjør det til interaktiv SVG</div>
             </div>
             <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/30" fill="none" stroke="currentColor"
                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

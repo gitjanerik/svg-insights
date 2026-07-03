@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.0: Ruteplanlegger — grusvei-turplanlegging for MC
+
+Ny hovedfunksjon med eget kort på forsiden (minor-bump: ny rute `/ruteplanlegger`, nytt IndexedDB-store og DB-versjon 3). Fullskjerms Norgeskart (Kartverket-topo over OSM-underlag, fri zoom z5–z15, forket pan/pinch fra kartvelgeren) med to moduser: **Grusvei-overlay** viser alle grusveier i synlig utsnitt via Overpass (zoom-gatet ≥ z11, arealtak 600 km², padded én-slots cache) — heltrukket for bekreftet grus-dekke, stiplet for «antatt grus» (skogsbilveier uten dekke-data; grade1 ekskludert). **A→B-grusrute** beregnes via BRouter (brouter.de) med en egen grus-maksimerende kostprofil (`public/brouter/grusprofil.brf`, lastes opp lazily med sessionStorage-cache og fallback til innebygd gravel-profil); ruta tegnes fargekodet per segment (grus/fast dekke) med lengde + grusandel, GPX-eksport (`<rte>`-format) og lagrede ruter i IndexedDB. Fra/Til settes med Nominatim-søk, GPS eller tap i kartet. Overpass-transporten (speil-kappløp + retry) er refaktorert ut i `lib/overpassClient.js` og deles med kart-byggingen. Datagrunnlaget er OSM (surface-dekningen på norske bygdeveier er ufullstendig — «antatt grus»-klassen og ruteprofilens heuristikk kompenserer); NVDB-dekketype-berikelse er designet som fase 2-krok. MERK: brouter.de/Overpass var utilgjengelige fra utviklingsmiljøet — liveflyt må verifiseres på enhet.
+
+---
+
 ## 2026-07-03 — v12.0.19: FAB-panelene er nå drabare drawers som kontekst-arket
 
 De tre nye FAB-innstillingspanelene (strek/relieff/zoom, v12.0.18) oppfører seg nå identisk med long-press-infodraweren: åpner i standard-høyde 45 dvh, og det midtstilte håndtaket øverst drar panelet mellom minimert / standard / maksimert med samme følsomhet som de andre skuffene. Kun maksimert tilstand dimmer og sperrer kartet — ellers er kartet interaktivt bak panelet, så man kan lynraskt justere en slider, minimere, se effekten på kartet, og maksimere igjen. Hovedmeny-skuffen viker når et FAB-panel åpnes, og FAB-panelet viker tilsvarende for kontekst-arket ved long-press på kartet.

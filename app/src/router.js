@@ -12,6 +12,7 @@ const routes = [
   { path: '/font-preview',  name: 'font-preview', component: () => import('./views/FontPreviewView.vue') },
   { path: '/kart',          name: 'kart-hjem',    component: () => import('./views/MapHomeView.vue') },
   { path: '/kart/nytt',     name: 'kart-nytt',    component: () => import('./views/MapPickerView.vue') },
+  { path: '/ruteplanlegger', name: 'ruteplanlegger', component: () => import('./views/GravelPlannerView.vue') },
   { path: '/kart/:id',      name: 'kart-vis',     component: () => import('./views/MapView.vue') },
   { path: '/tegnforklaring', name: 'tegnforklaring', component: () => import('./views/LegendView.vue') },
 ]

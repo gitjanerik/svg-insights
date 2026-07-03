@@ -51,6 +51,56 @@ ${points}
 }
 
 /**
+ * Bygg GPX 1.1 for en PLANLAGT rute (Ruteplanleggeren, v12.1.0) — lat/lon-
+ * native, `<rte><rtept>` (semantisk riktig for planlagt tur, i motsetning til
+ * `<trk>` som er logget spor; støttes av Garmin/OsmAnd/Calimoto m.fl.).
+ * @param {{ points: Array<[lon:number, lat:number, ele?:number]>, navn?: string, opprettet?: number }} route
+ */
+export function buildRouteGpx(route) {
+  if (!route?.points?.length) return ''
+  const created = new Date(route.opprettet ?? Date.now()).toISOString()
+  const name = escapeXml(route.navn || 'Grusrute')
+  const pts = route.points.map(([lon, lat, ele]) => {
+    const eleTag = Number.isFinite(ele) ? `\n      <ele>${ele.toFixed(1)}</ele>` : ''
+    return `    <rtept lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}">${eleTag}
+    </rtept>`
+  }).join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="SVG Insights Ruteplanlegger"
+     xmlns="http://www.topografix.com/GPX/1/1"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${name}</name>
+    <time>${created}</time>
+  </metadata>
+  <rte>
+    <name>${name}</name>
+${pts}
+  </rte>
+</gpx>
+`
+}
+
+/**
+ * Last ned en planlagt rute som GPX-fil i nettleseren.
+ */
+export function downloadRouteGpx(route, fileName) {
+  const text = buildRouteGpx(route)
+  if (!text) return
+  const blob = new Blob([text], { type: 'application/gpx+xml' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName ?? `${(route.navn || 'grusrute').replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()}.gpx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/**
  * Last ned GPX-fil i nettleseren.
  */
 export function downloadGpx(track, meta, mapName, fileName) {
