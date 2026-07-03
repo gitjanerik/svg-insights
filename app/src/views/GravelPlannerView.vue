@@ -43,6 +43,15 @@ const drawer = useDraggableDrawer({
   maxTopGapPx: MAX_DRAWER_TOP_GAP_PX,
   allowMinimize: true,
 })
+// «Mine ruter» er også en dra-bar skuff (v12.1.4) — samme tre snap-punkter.
+// Kun maksimert tilstand dimmer kartet (samme mønster som FAB-panelene i
+// turkartet); ellers kan man titte på kartet bak lista.
+const savedDrawer = useDraggableDrawer({
+  expandedHeight: 0.45,
+  minimizedPeek: PLANNER_DRAWER_PEEK_PX,
+  maxTopGapPx: MAX_DRAWER_TOP_GAP_PX,
+  allowMinimize: true,
+})
 
 // ── Kart-tilstand ───────────────────────────────────────────────────────────
 const VIEW_LS_KEY = 'svg-insights-ruteplanlegger-view'
@@ -100,6 +109,11 @@ let panning = false
 let panStart = null
 let pinchRatio = 1
 let tapStart = null
+// Mobil-nettlesere syntetiserer mousedown/mouseup ETTER touchend — uten denne
+// sperren ble ett fysisk tap til TO onMapTap-kall (A og B på nøyaktig samme
+// punkt, A «gjemt» under B). Mouse-handlerne ignorerer alt like etter touch.
+let lastTouchEndAt = 0
+const SYNTH_MOUSE_SUPPRESS_MS = 800
 
 function panShiftToCenter(dxPx, dyPx) {
   const mPerPx = metersPerPixel(center.value.lat, zoom.value)
@@ -171,6 +185,7 @@ function onTouchMove(e) {
 function onTouchEnd(e) {
   if (e.touches.length < 2) { pinching = false; pinchRatio = 1 }
   if (e.touches.length < 1) {
+    lastTouchEndAt = Date.now()
     if (tapStart && Date.now() - tapStart.t < 400) {
       const p = localPoint(tapStart.x, tapStart.y)
       if (p) onMapTap(p)
@@ -180,6 +195,7 @@ function onTouchEnd(e) {
 }
 function onMouseDown(e) {
   if (e.button !== 0) return
+  if (Date.now() - lastTouchEndAt < SYNTH_MOUSE_SUPPRESS_MS) return
   panning = true
   panStart = { x: e.clientX, y: e.clientY, lat: center.value.lat, lon: center.value.lon }
   tapStart = { x: e.clientX, y: e.clientY, t: Date.now() }
@@ -195,6 +211,7 @@ function onMouseMove(e) {
   center.value = { lat: panStart.lat + dLat, lon: panStart.lon + dLon }
 }
 function onMouseUp(e) {
+  if (Date.now() - lastTouchEndAt < SYNTH_MOUSE_SUPPRESS_MS) return
   if (panning && tapStart && Date.now() - tapStart.t < 400) {
     const p = localPoint(e.clientX, e.clientY)
     if (p) onMapTap(p)
@@ -241,12 +258,19 @@ function selectResult(field, r) {
   setPoint(field, { lat: r.lat, lon: r.lon, name: r.shortName ?? r.name }, { pan: true })
 }
 
+// Cooldown mellom tap-to-set: minst 1 s mellom at A og B settes fra kartet,
+// så et dobbelt-registrert tap aldri setter begge på samme punkt.
+let lastMapTapSetAt = 0
+const MAP_TAP_COOLDOWN_MS = 1000
+
 function onMapTap(px) {
   if (mode.value !== 'planlegg' || routeInvite.value) return
+  if (Date.now() - lastMapTapSetAt < MAP_TAP_COOLDOWN_MS) return
   // Tap setter armert felt, ellers første tomme (A først, så B).
   const field = armedField.value ?? (!pointA.value ? 'A' : (!pointB.value ? 'B' : null))
   if (!field) return
   const geo = screenPxToLonLat(px.x, px.y, view.value)
+  lastMapTapSetAt = Date.now()
   setPoint(field, {
     lat: geo.lat, lon: geo.lon,
     name: `Punkt ${geo.lat.toFixed(4)}, ${geo.lon.toFixed(4)}`,
@@ -369,8 +393,13 @@ const markerB = computed(() => mode.value === 'planlegg' && pointB.value && mapS
 // ── Rute-kort, forslag + lagring ────────────────────────────────────────────
 const showSaved = ref(false)
 // Refresh lista hver gang arket åpnes — ruter kan være lagret i en annen
-// fane/økt siden mount.
-watch(showSaved, (open) => { if (open) void planner.refreshSaved() })
+// fane/økt siden mount. Skuffen starter alltid i standard-høyde.
+watch(showSaved, (open) => {
+  if (open) {
+    savedDrawer.reset()
+    void planner.refreshSaved()
+  }
+})
 const saveName = ref('')
 const savingName = ref(false)
 const savedFlash = ref('')
@@ -533,10 +562,12 @@ function dismissRouteInvite() {
   router.replace({ query: {} })
 }
 
+const saveNameInput = ref(null)
 function startSave() {
   saveName.value = route.value?.navn ??
     `${pointA.value?.name ?? 'A'} – ${pointB.value?.name ?? 'B'}`
   savingName.value = true
+  nextTick(() => saveNameInput.value?.focus())
 }
 async function confirmSave() {
   const rec = await planner.saveCurrentRoute(saveName.value.trim())
@@ -886,8 +917,8 @@ onUnmounted(() => {
          dra i håndtaket for å minimere (peek med håndtak + header) eller
          maksimere (kart-stripe på 56 px igjen i toppen). -->
     <div v-if="mode === 'planlegg'"
-         class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col
-                overflow-hidden"
+         class="shrink-0 z-20 backdrop-blur-md bg-zinc-900/92 border-t border-white/10 rounded-t-2xl
+                flex flex-col overflow-hidden shadow-2xl"
          :style="drawer.drawerHeightStyle.value">
       <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
            @pointerdown="drawer.onPointerDown($event)"
@@ -1057,8 +1088,10 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Handlinger -->
-        <div class="flex gap-1.5 mt-3">
+        <!-- Handlinger. Lagre-trykket bytter hele raden til et tydelig
+             navngivnings-steg («Lagre …»-ellipsen signaliserer at et steg
+             følger) i stedet for å stable en uventet tekstboks under. -->
+        <div v-if="!savingName" class="flex gap-1.5 mt-3">
           <button @click="planner.exportGpx()" aria-label="Last ned GPX"
                   class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
                          text-white/80 active:scale-95 transition">GPX</button>
@@ -1068,44 +1101,74 @@ onUnmounted(() => {
             {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
           <button @click="startSave" aria-label="Lagre rute"
                   class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-emerald-500/15
-                         border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre</button>
+                         border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre …</button>
           <button @click="onReset" aria-label="Nullstill rute"
                   class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
                          text-white/60 active:scale-95 transition">Nullstill</button>
         </div>
-        <div v-if="savingName" class="mt-2 flex gap-2">
-          <input v-model="saveName" type="text" placeholder="Navn på ruta"
-                 class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white/[0.06] border border-white/15 text-[13px]
+        <div v-else class="mt-3 rounded-xl bg-white/[0.04] border border-emerald-400/25 px-3 py-2.5">
+          <div class="text-[11px] text-emerald-200/80 font-medium mb-1.5">Gi ruta et navn</div>
+          <input ref="saveNameInput" v-model="saveName" type="text" placeholder="Navn på ruta"
+                 @keyup.enter="confirmSave"
+                 class="w-full px-3 py-2 rounded-lg bg-white/[0.06] border border-white/15 text-[13px]
                         placeholder-white/30 focus:outline-none focus:border-emerald-300/50 transition" />
-          <button @click="confirmSave"
-                  class="px-4 py-2 rounded-lg text-[12px] font-semibold bg-emerald-500 text-white
-                         active:scale-95 transition">Lagre</button>
-          <button @click="savingName = false"
-                  class="px-3 py-2 rounded-lg text-[12px] border bg-white/5 border-white/15 text-white/60
-                         active:scale-95 transition">Avbryt</button>
+          <div class="flex gap-1.5 mt-2">
+            <button @click="confirmSave"
+                    class="flex-1 px-4 py-2 rounded-lg text-[12px] font-semibold bg-emerald-500 text-white
+                           active:scale-95 transition">Lagre rute</button>
+            <button @click="savingName = false"
+                    class="px-4 py-2 rounded-lg text-[12px] border bg-white/5 border-white/15 text-white/60
+                           active:scale-95 transition">Avbryt</button>
+          </div>
         </div>
         <div v-if="savedFlash" class="mt-1.5 text-center text-[11px] text-emerald-300">{{ savedFlash }}</div>
       </div>
       </div>
     </div>
 
-    <!-- Mine ruter (slide-over) -->
+    <!-- Mine ruter — dra-bar skuff med samme design/UX som infodraweren i
+         turkart (v12.1.4): avrundede topphjørner, håndtak, minimer/standard/
+         maksimer. Kun maksimert tilstand dimmer kartet bak. -->
     <Transition name="overlay-fade">
-      <div v-if="showSaved" class="absolute inset-0 z-40 flex items-end justify-center bg-black/60"
-           @click.self="showSaved = false">
-        <div class="w-full max-w-[560px] bg-zinc-900 border-t border-white/10 rounded-t-2xl max-h-[70dvh] flex flex-col">
-          <div class="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-white/8 flex items-center justify-between gap-3">
-            <div class="text-white text-[14px] font-semibold">Mine ruter
-              <span v-if="savedRoutes.length" class="text-white/45 font-normal text-[12px]">· {{ savedRoutes.length }} ruter</span>
+      <div v-if="showSaved" class="absolute inset-0 z-40 pointer-events-none">
+        <div v-if="savedDrawer.isMaximized.value"
+             class="absolute inset-0 bg-black/60 pointer-events-auto"
+             @click="showSaved = false"></div>
+        <div class="absolute inset-x-0 bottom-0 mx-auto w-full max-w-[560px] pointer-events-auto
+                    backdrop-blur-md bg-zinc-900/95 border-t border-white/10 rounded-t-2xl
+                    flex flex-col overflow-hidden shadow-2xl"
+             :style="savedDrawer.drawerHeightStyle.value">
+          <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
+               @pointerdown="savedDrawer.onPointerDown($event)"
+               @pointermove="savedDrawer.onPointerMove($event)"
+               @pointerup="savedDrawer.onPointerUp($event)"
+               @pointercancel="savedDrawer.onPointerUp($event)">
+            <div class="pt-3 pb-1.5 flex justify-center">
+              <div class="w-12 h-1.5 rounded-full bg-white/40"
+                   :style="{ opacity: savedDrawer.handleOpacity.value }"></div>
             </div>
-            <button @click="showSaved = false" aria-label="Lukk"
-                    class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center bg-white/5
-                           border border-white/10 text-white/60 active:scale-90 transition">
-              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
-            </button>
+            <div class="px-4 pb-2.5 flex items-center justify-between gap-3">
+              <div class="text-white text-[14px] font-semibold">Mine ruter
+                <span v-if="savedRoutes.length" class="text-white/45 font-normal text-[12px]">· {{ savedRoutes.length }} ruter</span>
+              </div>
+              <button @pointerdown.stop @click.stop="showSaved = false" aria-label="Lukk"
+                      class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center bg-white/5
+                             border border-white/10 text-white/60 active:scale-90 transition">
+                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+              </button>
+            </div>
           </div>
-          <div class="flex-1 overflow-y-auto px-4 py-3">
+          <div class="flex-1 overflow-y-auto px-4 pb-3 border-t border-white/8 pt-3">
+            <!-- Vises kun med mange lagrede ruter. Handler om ryddighet og at
+                 veinettet endrer seg (ruter kan trenge re-beregning), ikke MB
+                 — samme varseltype som i lagrede turkart. -->
+            <div v-if="savedRoutes.length > 9"
+                 class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
+                        text-amber-200/80 text-[11px] leading-snug">
+              Du har mange og potensielt utdaterte ruter. Veinettet endrer seg over tid — slett
+              ruter du ikke trenger lenger, og beregn viktige ruter på nytt før tur.
+            </div>
             <div v-if="!savedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
               Ingen lagrede ruter ennå. Beregn en rute i Planlegg-modus og trykk «Lagre».
             </div>

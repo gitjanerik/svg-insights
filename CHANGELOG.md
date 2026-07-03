@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.4: Ruteplanlegger — Mine ruter som dra-bar skuff, tap-bug-fiks og tydeligere lagre-flyt
+
+Fire forbedringer i Ruteplanleggeren. **(1) Skuff-design:** både Planlegg-skuffen og «Mine ruter» har nå samme design som infodraweren i turkart (avrundede topphjørner, backdrop-blur); «Mine ruter» er ombygd til en dra-bar skuff med minimer/standard/maksimer — kun maksimert tilstand dimmer kartet. **(2) Gul ryddighets-alert** over lagrede ruter når det finnes 10+ (samme varseltype som lagrede turkart) — handler om orden og at veinettet endrer seg, ikke lagringsplass. **(3) Tap-bug fikset:** ett fysisk tap i kartet kunne sette både A og B på nøyaktig samme punkt (A skjult under B) fordi mobil-nettlesere syntetiserer mouse-events etter touchend — mouse-handlerne ignorerer nå alt i 800 ms etter touch, pluss 1 s cooldown mellom tap-to-set av A og B. **(4) Lagre-flyten** er tydeligere: knappen heter «Lagre …», og trykket bytter handlingsraden til et innrammet navngivnings-steg («Gi ruta et navn») med autofokusert felt, Enter-støtte og primærknapp «Lagre rute».
+
+---
+
 ## 2026-07-03 — v12.1.3: Ruteplanlegger — delingsmodus låser UI-et og banneret flyter over kartet
 
 Mottak av delt grusrute er nå en ekte «delingsmodus» (samme filosofi som turkartets del-flyt der UI-elementer låses midlertidig): banneret flyter OPPÅ kartet i stedet for å dytte det ned, «Utforsk»/«Planlegg»-pillen skjules, toppbar-knappene (tilbake + lagrede ruter) deaktiveres, Fra/Til-feltene er read-only og GPS-/kartvalg-/bytt-knappene deaktiveres — mottakeren ledes til én handling: «Finn grusrute» (eller X for å avbryte). Kart-pan/zoom og skuff-drag er fortsatt fritt, så mottakeren kan se på strekningen før beregning. Når ruta er beregnet avsluttes delingsmodusen automatisk og hele UI-et låses opp.
