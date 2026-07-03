@@ -1,4 +1,4 @@
-# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 2, matcher
+# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 3, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: BALANSERT variant — foretrekker grus, men tar asfalt-snarveier
@@ -38,15 +38,16 @@ assign defaultaccess =
   switch motorcycle=no|private false
   true
 
-# Turvei-heuristikk: track dedikert gående/syklende uten eksplisitt
-# motor-access er i praksis turvei (jf. grusstien langs Drammenselva) — forby.
-assign turvei =
-  and highway=track
+# Gang-/sykkelvei-heuristikk (v3, generalisert fra track-only): ALT som er
+# dedikert gående/syklende (foot/bicycle=designated) uten eksplisitt
+# motor-access er ulovlig for MC — også med grusdekke og tagget
+# unclassified/service/track (jf. grusstien langs Drammenselva).
+assign gangsykkel =
   and or foot=designated bicycle=designated
   not motor_vehicle=yes
 
 assign onlyroads =
-  switch turvei false
+  switch gangsykkel false
   switch highway=motorway|motorway_link false
   switch highway=trunk|trunk_link false
   switch highway=footway|pedestrian|cycleway|path|bridleway|steps|construction|proposed false
