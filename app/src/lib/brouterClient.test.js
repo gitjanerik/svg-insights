@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   uploadProfile, ensureProfileId, fetchRoute, parseRoute, classifyWayTags,
   snapDistances, routesLookIdentical, MAX_SNAP_DIST_M,
+  snapHardLimitM, SNAP_HARD_MIN_M, fmtAvstandM, estimateMcTimeS, MC_SPEED_KMH,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE,
 } from './brouterClient.js'
 import fixture from './brouterFixture.json'
@@ -114,6 +115,9 @@ describe('parseRoute', () => {
     expect(r.segments[0]).toMatchObject({ fromIdx: 0, surface: 'paved', gravel: false })
     expect(r.segments.at(-1).toIdx).toBe(6)
     expect(r.segments.filter((s) => s.gravel).map((s) => s.distM)).toEqual([1800, 1400, 800])
+    // 4000 m grus i grus-fart + 1200 m asfalt i asfalt-fart — IKKE BRouters
+    // total-time (som blandet sykkel- og bilmodell på tvers av forslag).
+    expect(r.estimatedTimeS).toBe(Math.round(4000 / (MC_SPEED_KMH.gravel / 3.6) + 1200 / (MC_SPEED_KMH.paved / 3.6)))
   })
   it('mangler messages → null-fallback, geometri beholdes', () => {
     const noMsg = JSON.parse(JSON.stringify(fixture))
@@ -122,6 +126,7 @@ describe('parseRoute', () => {
     expect(r.points).toHaveLength(7)
     expect(r.segments).toBe(null)
     expect(r.gravelShare).toBe(null)
+    expect(r.estimatedTimeS).toBe(Math.round(5200 / (MC_SPEED_KMH.unknown / 3.6)))
   })
   it('messages-koordinater som ikke matcher geometrien → segments null, men andel beholdes når distansene stemmer', () => {
     const off = JSON.parse(JSON.stringify(fixture))
@@ -133,6 +138,42 @@ describe('parseRoute', () => {
   it('kaster ved manglende geometri', () => {
     expect(() => parseRoute({ features: [] })).toThrow('rutegeometri')
     expect(() => parseRoute(null)).toThrow('rutegeometri')
+  })
+})
+
+describe('estimateMcTimeS', () => {
+  it('uten underlagsdata → hele lengden i ukjent-fart', () => {
+    expect(estimateMcTimeS(10000)).toBe(Math.round(10000 / (MC_SPEED_KMH.unknown / 3.6)))
+    expect(estimateMcTimeS(0)).toBe(null)
+    expect(estimateMcTimeS(null)).toBe(null)
+  })
+  it('ren grus går i grus-fart', () => {
+    expect(estimateMcTimeS(6200, { gravelM: 6200 })).toBe(Math.round(6200 / (MC_SPEED_KMH.gravel / 3.6)))
+  })
+  it('miks: grus + ukjent + resten som fast dekke', () => {
+    const s = estimateMcTimeS(5200, { gravelM: 4000, unknownM: 0 })
+    expect(s).toBe(Math.round(4000 / (MC_SPEED_KMH.gravel / 3.6) + 1200 / (MC_SPEED_KMH.paved / 3.6)))
+  })
+  it('tidsestimatet er MONOTONT rimelig: 6,3 km blir aldri timer (skjermbilde-buggen)', () => {
+    const s = estimateMcTimeS(6300, { gravelM: 6300 * 0.97 })
+    expect(s).toBeLessThan(15 * 60)
+    expect(s).toBeGreaterThan(5 * 60)
+  })
+})
+
+describe('snapHardLimitM / fmtAvstandM', () => {
+  it('gulv på korte turer, 25 % av luftlinja på lange', () => {
+    expect(snapHardLimitM(1000)).toBe(SNAP_HARD_MIN_M)
+    expect(snapHardLimitM(0)).toBe(SNAP_HARD_MIN_M)
+    expect(snapHardLimitM(null)).toBe(SNAP_HARD_MIN_M)
+    expect(snapHardLimitM(13200)).toBe(3300)
+  })
+  it('skjermbilde-tilfellet: A snappet ~7 km unna på 13,2 km luftlinje → over grensen', () => {
+    expect(7000 > snapHardLimitM(13200)).toBe(true)
+  })
+  it('formaterer meter og km', () => {
+    expect(fmtAvstandM(312)).toBe('312 m')
+    expect(fmtAvstandM(3200)).toBe('3.2 km')
   })
 })
 

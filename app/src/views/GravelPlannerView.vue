@@ -14,6 +14,7 @@ import { lonLatToWorldPx, worldPxToLonLat, lonLatToScreenPx, screenPxToLonLat, v
 import { buildGravelQuery, extractGravelWays, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
 import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
+import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
 import { useNominatim } from '../composables/useNominatim.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
@@ -390,6 +391,37 @@ const markerA = computed(() => mode.value === 'planlegg' && pointA.value && mapS
 const markerB = computed(() => mode.value === 'planlegg' && pointB.value && mapSize.value.w
   ? lonLatToScreenPx(pointB.value.lon, pointB.value.lat, view.value) : null)
 
+// Stiplede forbindelseslinjer A → rutestart / ruteslutt → B når BRouter måtte
+// snappe punktet et stykke bort til nærmeste kjørbare vei — gapet skal SYNES
+// i kartet, ikke bare stå i et varsel.
+const snapConnectorPaths = computed(() => {
+  const r = route.value
+  if (mode.value !== 'planlegg' || !r?.points?.length || !mapSize.value.w) return []
+  const out = []
+  const ends = [
+    [pointA.value, r.points[0], r.snapStartM],
+    [pointB.value, r.points[r.points.length - 1], r.snapEndM],
+  ]
+  for (const [wp, pt, gapM] of ends) {
+    if (!wp || !(gapM > 30)) continue
+    const a = lonLatToScreenPx(wp.lon, wp.lat, view.value)
+    const b = lonLatToScreenPx(pt[0], pt[1], view.value)
+    out.push(`M${a.x.toFixed(1)} ${a.y.toFixed(1)} L${b.x.toFixed(1)} ${b.y.toFixed(1)}`)
+  }
+  return out
+})
+
+// Amber-varsel i rutekortet når ruta ikke starter/slutter ved A/B.
+const snapWarning = computed(() => {
+  const r = route.value
+  if (!r) return null
+  const parts = []
+  if (r.snapStartM > MAX_SNAP_DIST_M) parts.push(`starter ${fmtAvstandM(r.snapStartM)} fra A`)
+  if (r.snapEndM > MAX_SNAP_DIST_M) parts.push(`slutter ${fmtAvstandM(r.snapEndM)} fra B`)
+  if (!parts.length) return null
+  return `Ruta ${parts.join(' og ')} — nærmeste kjørbare vei ligger et stykke fra punktet ditt (stiplet linje i kartet).`
+})
+
 // ── Rute-kort, forslag + lagring ────────────────────────────────────────────
 const showSaved = ref(false)
 // Refresh lista hver gang arket åpnes — ruter kan være lagret i en annen
@@ -419,6 +451,13 @@ function fmtTid(s) {
 }
 function fmtGrus(share) {
   return share != null ? `${Math.round(share * 100)} %` : null
+}
+// Lagrede ruter fra før v12.1.10 mangler estimatedTimeS — regn ut fra
+// grusandelen (samme modell som parseRoute bruker).
+function recTidS(rec) {
+  return rec.estimatedTimeS ?? estimateMcTimeS(rec.lengthM, {
+    gravelM: rec.gravelShare != null ? rec.gravelShare * rec.lengthM : null,
+  })
 }
 
 // ── «Vis hele ruten»-FAB: nullstill zoom/senter så hele ruta (inkl. A/B)
@@ -731,6 +770,9 @@ onUnmounted(() => {
           <path v-for="s in routePaths" :key="'rt-' + s.key" :d="s.d" fill="none"
                 :stroke="s.gravel ? '#e8802b' : '#94a3b8'" stroke-width="4.5"
                 stroke-linecap="round" stroke-linejoin="round" />
+          <path v-for="(d, i) in snapConnectorPaths" :key="'snap-' + i" :d="d" fill="none"
+                stroke="#fbbf24" stroke-width="2.5" stroke-dasharray="2 7"
+                stroke-linecap="round" opacity="0.9" />
         </template>
       </svg>
 
@@ -1083,6 +1125,13 @@ onUnmounted(() => {
           </div>
         </div>
 
+        <!-- Snap-varsel: ruta traff ikke A/B eksakt — vis hvor stort gapet er. -->
+        <div v-if="snapWarning"
+             class="mt-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
+                    text-amber-200/85 text-[11px] leading-snug">
+          {{ snapWarning }}
+        </div>
+
         <!-- Ruteforslag -->
         <template v-if="proposals.length > 1">
           <div class="flex items-center justify-between mt-3 mb-1.5">
@@ -1101,7 +1150,7 @@ onUnmounted(() => {
                              text-sky-200 text-[9px] font-bold tracking-wide">{{ p.badge }}</span>
               </div>
               <div class="text-[11px] text-white/50 tabular-nums">
-                {{ fmtKm(p.lengthM) }} km<template v-if="fmtGrus(p.gravelShare)"> · Grus {{ fmtGrus(p.gravelShare) }}</template><template v-if="fmtTid(p.totalTimeS)"> · {{ fmtTid(p.totalTimeS) }}</template>
+                {{ fmtKm(p.lengthM) }} km<template v-if="fmtGrus(p.gravelShare)"> · Grus {{ fmtGrus(p.gravelShare) }}</template><template v-if="fmtTid(p.estimatedTimeS)"> · {{ fmtTid(p.estimatedTimeS) }}</template>
               </div>
             </div>
             <svg v-if="selectedId === p.id" viewBox="0 0 24 24" class="w-4 h-4 text-emerald-400 shrink-0"
@@ -1125,7 +1174,7 @@ onUnmounted(() => {
         <div class="grid grid-cols-3 gap-2 mt-3">
           <div class="rounded-lg bg-white/5 px-2.5 py-2">
             <div class="text-[10px] text-white/45">Estimert tid</div>
-            <div class="text-[13px] font-semibold text-white tabular-nums">{{ fmtTid(route.totalTimeS) ?? '–' }}</div>
+            <div class="text-[13px] font-semibold text-white tabular-nums">{{ fmtTid(route.estimatedTimeS) ?? '–' }}</div>
           </div>
           <div class="rounded-lg bg-white/5 px-2.5 py-2">
             <div class="text-[10px] text-white/45">Grus-strekk</div>
@@ -1235,7 +1284,7 @@ onUnmounted(() => {
               <button @click="onOpenSaved(rec)" class="flex-1 min-w-0 text-left active:opacity-70 transition">
                 <div class="text-[13px] text-white font-medium truncate">{{ rec.navn }}</div>
                 <div class="text-[11px] text-white/50 tabular-nums">
-                  {{ fmtKm(rec.lengthM) }} km<template v-if="rec.gravelShare != null"> · Grus {{ Math.round(rec.gravelShare * 100) }} %</template><template v-if="fmtTid(rec.totalTimeS)"> · {{ fmtTid(rec.totalTimeS) }}</template>
+                  {{ fmtKm(rec.lengthM) }} km<template v-if="rec.gravelShare != null"> · Grus {{ Math.round(rec.gravelShare * 100) }} %</template><template v-if="fmtTid(recTidS(rec))"> · {{ fmtTid(recTidS(rec)) }}</template>
                 </div>
                 <div class="text-[10px] text-white/35 tabular-nums">
                   {{ new Date(rec.opprettet).toLocaleDateString('no-NO') }} ·
