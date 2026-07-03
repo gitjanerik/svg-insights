@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import {
   ensureProfileId, fetchRoute, parseRoute, clearProfileCache, haversineM,
+  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_TIMEOUT_MS,
 } from '../lib/brouterClient.js'
 import {
@@ -106,9 +107,24 @@ export function useGravelPlanner() {
         PROPOSAL_DEFS.map((def) => fetchProposal(def, waypoints, ac.signal)),
       )
       if (ac.signal.aborted && routeAbort !== ac) return
-      const ok = results.filter((r) => r.status === 'fulfilled').map((r) => r.value)
+      let ok = results.filter((r) => r.status === 'fulfilled').map((r) => r.value)
       if (!ok.length) {
         throw results.find((r) => r.status === 'rejected')?.reason ?? new Error('Ruteberegning feilet')
+      }
+      // Dropp forslag som snapper A/B lenger unna enn 200 m — bilprofilen kan
+      // ellers «bomme totalt» på et punkt satt utenfor vei.
+      const snapped = ok.filter((p) => {
+        const d = snapDistances(p, waypoints)
+        return d.start <= MAX_SNAP_DIST_M && d.end <= MAX_SNAP_DIST_M
+      })
+      if (!snapped.length) {
+        throw new Error(`Fant ingen kjørbar vei innen ${MAX_SNAP_DIST_M} m fra start- eller målpunktet. Flytt A/B nærmere en vei.`)
+      }
+      // Aldri to identiske forslag: behold første i prioritert rekkefølge
+      // (Mest grus → Balansert → Kortest) — «inntil 3 ruteforslag».
+      ok = []
+      for (const p of snapped) {
+        if (!ok.some((q) => routesLookIdentical(q, p))) ok.push(p)
       }
       proposals.value = ok
       selectedId.value = ok.some((p) => p.id === DEFAULT_PROPOSAL) ? DEFAULT_PROPOSAL : ok[0].id

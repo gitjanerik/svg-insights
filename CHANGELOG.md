@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.5: Ruteplanlegger — synlige skuff-hjørner, bruks-hint, fjern A/B og smartere ruteforslag
+
+Fire forbedringer. **(1) Avrundede hjørner synes nå:** Planlegg-skuffen overlapper kartets nedre kant med 16 px (`-mt-4`) — før lå skuffen UNDER kartet i flyten, så de avrundede hjørnene avslørte bare svart side-bakgrunn og skuffen så firkantet ut; attribusjonen løftes tilsvarende i Planlegg-modus. **(2) Bruks-hint øverst i skjemaet:** to trykk i kartet setter A og B (med fargede chip-illustrasjoner), og tips om at «Utforsk»-fanen viser grus (heltrukket) / mulig grus (stiplet). **(3) Fjern-knapp (X)** på både Fra- og Til-feltet fjerner satt punkt enkeltvis. **(4) Smartere ruteforslag:** forslag der BRouter snappet start/mål mer enn 200 m unna brukerens punkt droppes (bilprofilen kunne «bomme totalt» når B sto utenfor vei — feilmelding hvis ingen vei finnes innen 200 m), og identiske forslag dedupliseres (lengde ±10 m + midtpunkt <30 m) så «Balansert» og «Kortest» aldri vises som to like kort — det er «inntil 3» forslag, aldri to identiske.
+
+---
+
 ## 2026-07-03 — v12.1.4: Ruteplanlegger — Mine ruter som dra-bar skuff, tap-bug-fiks og tydeligere lagre-flyt
 
 Fire forbedringer i Ruteplanleggeren. **(1) Skuff-design:** både Planlegg-skuffen og «Mine ruter» har nå samme design som infodraweren i turkart (avrundede topphjørner, backdrop-blur); «Mine ruter» er ombygd til en dra-bar skuff med minimer/standard/maksimer — kun maksimert tilstand dimmer kartet. **(2) Gul ryddighets-alert** over lagrede ruter når det finnes 10+ (samme varseltype som lagrede turkart) — handler om orden og at veinettet endrer seg, ikke lagringsplass. **(3) Tap-bug fikset:** ett fysisk tap i kartet kunne sette både A og B på nøyaktig samme punkt (A skjult under B) fordi mobil-nettlesere syntetiserer mouse-events etter touchend — mouse-handlerne ignorerer nå alt i 800 ms etter touch, pluss 1 s cooldown mellom tap-to-set av A og B. **(4) Lagre-flyten** er tydeligere: knappen heter «Lagre …», og trykket bytter handlingsraden til et innrammet navngivnings-steg («Gi ruta et navn») med autofokusert felt, Enter-støtte og primærknapp «Lagre rute».
