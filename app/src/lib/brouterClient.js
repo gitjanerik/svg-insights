@@ -13,7 +13,7 @@
 export const BROUTER_BASE = 'https://brouter.de/brouter'
 // Bumpes når grusprofil.brf endres → invaliderer cachet profileid så neste
 // rutekall laster opp ny profil.
-export const PROFILE_VERSION = 2
+export const PROFILE_VERSION = 3
 export const BROUTER_TIMEOUT_MS = 20000
 const PROFILE_CACHE_KEY = 'grus-brouter-profile'
 
@@ -26,6 +26,9 @@ export async function uploadProfile(profileText, { fetchFn = fetch } = {}) {
   const res = await fetchFn(`${BROUTER_BASE}/profile`, { method: 'POST', body: profileText })
   if (!res.ok) throw new Error(`BRouter profil-opplasting feilet (${res.status})`)
   const data = await res.json()
+  // BRouter svarer 200 med {error: "…"} ved syntaksfeil i profilen — uten
+  // denne sjekken degraderer vi stille til fallback-profil uten å vite hvorfor.
+  if (data?.error) throw new Error(`BRouter avviste profilen: ${String(data.error).slice(0, 200)}`)
   if (!data?.profileid) throw new Error(`BRouter profil-opplasting ga uventet svar: ${JSON.stringify(data).slice(0, 120)}`)
   return data.profileid
 }

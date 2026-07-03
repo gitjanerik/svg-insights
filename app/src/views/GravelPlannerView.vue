@@ -435,15 +435,25 @@ function fitPointsView(lonLatPts) {
   }
   const spanX = Math.max(maxX - minX, 1e-9)
   const spanY = Math.max(maxY - minY, 1e-9)
+  // Skuffen flyter over kartets nedre del — sikt innrammingen på den synlige
+  // flaten over skuffen, og skyv senteret slik at innholdet sentreres der.
+  const obstructPx = mode.value === 'planlegg'
+    ? Math.min(drawer.visibleHeightPx.value, mapSize.value.h * 0.7) : 0
+  const effH = Math.max(80, mapSize.value.h - obstructPx)
   // Største heltalls-zoom der world-px-spennet (zoom 0 × 2^z) får 15 % margin.
   const margin = 0.85
   const zFit = Math.floor(Math.min(
     Math.log2((mapSize.value.w * margin) / spanX),
-    Math.log2((mapSize.value.h * margin) / spanY),
+    Math.log2((effH * margin) / spanY),
   ))
   zoom.value = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zFit))
-  const mid = worldPxToLonLat((minX + maxX) / 2, (minY + maxY) / 2, 0)
-  center.value = { lat: mid.lat, lon: mid.lon }
+  const scale = Math.pow(2, zoom.value)
+  const c = worldPxToLonLat(
+    ((minX + maxX) / 2) * scale,
+    ((minY + maxY) / 2) * scale + obstructPx / 2,
+    zoom.value,
+  )
+  center.value = { lat: c.lat, lon: c.lon }
 }
 
 function fitRouteView() {
@@ -750,11 +760,13 @@ onUnmounted(() => {
                     tabular-nums pointer-events-none">z{{ zoom }}</div>
       </div>
 
-      <!-- FAB: nullstill zoom og vis hele ruten (Planlegg-modus med rute) -->
+      <!-- FAB: nullstill zoom og vis hele ruten (Planlegg-modus med rute).
+           Følger skuffens overkant siden skuffen nå flyter over kartet. -->
       <button v-if="mode === 'planlegg' && route" @click.stop="fitRouteView"
               @mousedown.stop @touchstart.stop
               aria-label="Vis hele ruten"
-              class="absolute right-3 bottom-7 z-10 w-12 h-12 rounded-full bg-zinc-950/90 border
+              :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+              class="absolute right-3 z-10 w-12 h-12 rounded-full bg-zinc-950/90 border
                      border-white/15 text-white shadow-lg flex items-center justify-center
                      active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"
@@ -892,11 +904,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Attribusjon (løftes i Planlegg-modus — skuffen overlapper kartets
-           nederste 16 px for de avrundede hjørnene) -->
+      <!-- Attribusjon (løftes over skuffen i Planlegg-modus) -->
       <div class="absolute right-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/60 text-[8px]
                   border border-white/15 leading-tight pointer-events-none z-10"
-           :class="mode === 'planlegg' ? 'bottom-5' : 'bottom-1'">
+           :style="{ bottom: (mode === 'planlegg' ? drawer.visibleHeightPx.value + 4 : 4) + 'px' }">
         © Kartverket · © OpenStreetMap-bidragsytere · Ruting: BRouter (brouter.de)
       </div>
     </div>
@@ -918,12 +929,13 @@ onUnmounted(() => {
     <!-- PLANLEGG: dra-bar bunn-skuff (samme UX som turkartets skuffer):
          dra i håndtaket for å minimere (peek med håndtak + header) eller
          maksimere (kart-stripe på 56 px igjen i toppen). -->
-    <!-- -mt-4 lar skuffen overlappe kartets nedre kant — ellers avslører de
-         avrundede hjørnene bare den svarte side-bakgrunnen (svart på svart)
-         og skuffen ser firkantet ut. -->
+    <!-- Skuffen flyter OVER kartet (absolute, v12.1.6) i stedet for å ligge i
+         flex-flyten: kartflaten er da konstant uansett om skuffen er åpen,
+         minimert eller maksimert — utsnittet «hopper» ikke ved modus-bytte,
+         så Utforsk og Planlegg kan sammenliknes direkte. -->
     <div v-if="mode === 'planlegg'"
-         class="shrink-0 z-20 -mt-4 backdrop-blur-md bg-zinc-900/92 border-t border-white/10 rounded-t-2xl
-                flex flex-col overflow-hidden shadow-2xl"
+         class="absolute inset-x-0 bottom-0 z-20 backdrop-blur-md bg-zinc-900/92 border-t border-white/10
+                rounded-t-2xl flex flex-col overflow-hidden shadow-2xl"
          :style="drawer.drawerHeightStyle.value">
       <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
            @pointerdown="drawer.onPointerDown($event)"
@@ -1057,8 +1069,15 @@ onUnmounted(() => {
                   pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <div class="max-w-[560px] mx-auto">
         <div class="text-[12px] text-white/50 truncate">
-          <template v-if="route.usedFallbackProfile">Standard grusprofil · </template>
           {{ route.navn ?? `${labelFor(pointA)} → ${labelFor(pointB)}` }}
+        </div>
+        <!-- Fallback-varsel: grusprofilen kunne ikke brukes → standard
+             bilprofil (lovlige kjøreveier, men ingen grus-prioritering). -->
+        <div v-if="route.usedFallbackProfile"
+             class="mt-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
+                    text-amber-200/85 text-[11px] leading-snug">
+          Grusprofilen kunne ikke lastes hos rutetjenesten — ruta bruker standard bilprofil.
+          Lovlige kjøreveier, men uten grus-prioritering. Prøv igjen senere for full grusrute.
         </div>
 
         <!-- Ruteforslag -->

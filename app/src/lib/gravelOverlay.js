@@ -59,9 +59,10 @@ export function isMotorAccessible(tags = {}) {
       return true
     }
   }
-  // Turvei-heuristikk: track dedikert gående/syklende uten eksplisitt
-  // motor-access er i praksis en turvei — ikke lovlig for MC.
-  if (tags.highway === 'track' && (tags.foot === 'designated' || tags.bicycle === 'designated')) {
+  // Gang-/sykkelvei-heuristikk (generalisert i v12.1.6, var track-only):
+  // ALT dedikert gående/syklende uten eksplisitt motor-access er i praksis
+  // turvei / gang- og sykkelvei — ikke lovlig for MC, uansett highway-type.
+  if (tags.foot === 'designated' || tags.bicycle === 'designated') {
     return false
   }
   return true

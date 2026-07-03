@@ -27,10 +27,12 @@ const PROPOSAL_DEFS = [
 ]
 const DEFAULT_PROPOSAL = 'balansert'
 
-// Fallback hvis egen profil-opplasting feiler: BRouter har en innebygd
-// 'gravel'-standardprofil — mindre grus-aggressiv, men funksjonell. Flagges
+// Fallback hvis egen profil-opplasting feiler. VIKTIG: må være en MOTOR-
+// profil — den tidligere fallbacken 'gravel' er BRouters SYKKELPROFIL og
+// ruter gladelig på gang-/sykkelveier (ulovlig for MC). 'car-fast' mangler
+// grus-prioritering, men holder seg på lovlige kjøreveier. Flagges tydelig
 // i UI via usedFallbackProfile.
-const FALLBACK_PROFILE = 'gravel'
+const FALLBACK_PROFILE = 'car-fast'
 
 function loadProfileText(asset) {
   return async () => {

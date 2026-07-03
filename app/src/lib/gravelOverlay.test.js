@@ -44,9 +44,11 @@ describe('classifyGravelWay', () => {
     expect(classifyGravelWay({ highway: 'track', motor_vehicle: 'agricultural;forestry' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', vehicle: 'no' }, { enrich: () => 'surfaced' })).toBe(null)
   })
-  it('turvei-heuristikk: track med foot/bicycle=designated uten motor-access → null', () => {
+  it('gang/sykkelvei-heuristikk: foot/bicycle=designated uten motor-access → null (alle veityper)', () => {
     expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', bicycle: 'designated' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'unclassified', surface: 'gravel', bicycle: 'designated' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'service', surface: 'compacted', foot: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated', motor_vehicle: 'yes' })).toBe('surfaced')
   })
 })
