@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildGravelQuery, classifyGravelWay, extractGravelWays,
+  classifyBarrierNode, extractBarrierNodes,
   bboxContains, padBbox, GRAVEL_SURFACES, isMotorAccessible,
 } from './gravelOverlay.js'
 
@@ -14,6 +15,11 @@ describe('buildGravelQuery', () => {
     expect(q).toContain('way["highway"="track"][!"surface"]["tracktype"!~"^grade1$"]')
     expect(q).toContain('out geom;')
     expect(q).toContain('[timeout:25]')
+  })
+  it('henter barrier-noder på de samme veiene', () => {
+    const q = buildGravelQuery(BBOX)
+    expect(q).toContain('node(w)["barrier"];')
+    expect(q.indexOf('node(w)')).toBeGreaterThan(q.indexOf('out geom;'))
   })
 })
 
@@ -93,6 +99,61 @@ describe('extractGravelWays', () => {
   it('tåler tomt/manglende svar', () => {
     expect(extractGravelWays({})).toEqual([])
     expect(extractGravelWays(null)).toEqual([])
+  })
+})
+
+describe('classifyBarrierNode', () => {
+  it('bom uten access-tags → stengt (norsk skogsbilvei-stance)', () => {
+    expect(classifyBarrierNode({ barrier: 'gate' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'lift_gate' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'swing_gate' })).toBe('closed')
+  })
+  it('eksplisitt access på noden vinner, mest spesifikke først', () => {
+    expect(classifyBarrierNode({ barrier: 'gate', access: 'yes' })).toBe('open')
+    expect(classifyBarrierNode({ barrier: 'gate', motor_vehicle: 'yes' })).toBe('open')
+    expect(classifyBarrierNode({ barrier: 'gate', access: 'yes', motor_vehicle: 'no' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'gate', motor_vehicle: 'agricultural;forestry' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'gate', access: 'private' })).toBe('closed')
+  })
+  it('destination på noden er lovlig (kjøring til eiendom)', () => {
+    expect(classifyBarrierNode({ barrier: 'gate', motor_vehicle: 'destination' })).toBe('open')
+  })
+  it('locked=yes → stengt uansett bom-type', () => {
+    expect(classifyBarrierNode({ barrier: 'gate', locked: 'yes' })).toBe('closed')
+  })
+  it('fysiske sperringer → stengt; passerbare → null', () => {
+    expect(classifyBarrierNode({ barrier: 'bollard' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'chain' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'log' })).toBe('closed')
+    expect(classifyBarrierNode({ barrier: 'cattle_grid' })).toBe(null)
+    expect(classifyBarrierNode({ barrier: 'entrance' })).toBe(null)
+    expect(classifyBarrierNode({ barrier: 'toll_booth' })).toBe(null)
+  })
+  it('ukjent barriertype uten tags → null (markeres ikke)', () => {
+    expect(classifyBarrierNode({ barrier: 'noe_rart' })).toBe(null)
+    expect(classifyBarrierNode({})).toBe(null)
+  })
+})
+
+describe('extractBarrierNodes', () => {
+  it('trekker ut klassifiserte noder med koordinater', () => {
+    const json = {
+      elements: [
+        { type: 'way', id: 1, tags: { highway: 'track' }, geometry: [{ lat: 60, lon: 11 }] },
+        { type: 'node', id: 10, lat: 60.1, lon: 11.2, tags: { barrier: 'gate' } },
+        { type: 'node', id: 11, lat: 60.2, lon: 11.3, tags: { barrier: 'gate', access: 'yes' } },
+        { type: 'node', id: 12, lat: 60.3, lon: 11.4, tags: { barrier: 'cattle_grid' } },
+        { type: 'node', id: 13, tags: { barrier: 'gate' } },   // mangler koordinater
+      ],
+    }
+    const nodes = extractBarrierNodes(json)
+    expect(nodes.map((n) => n.id)).toEqual([10, 11])
+    expect(nodes[0]).toMatchObject({ kind: 'closed', lon: 11.2, lat: 60.1 })
+    expect(nodes[1].kind).toBe('open')
+  })
+  it('tåler tomt svar', () => {
+    expect(extractBarrierNodes({})).toEqual([])
+    expect(extractBarrierNodes(null)).toEqual([])
   })
 })
 

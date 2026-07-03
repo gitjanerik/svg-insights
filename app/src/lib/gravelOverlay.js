@@ -26,6 +26,9 @@ const OVERLAY_HIGHWAYS = new Set(['track', 'unclassified', 'tertiary', 'secondar
 
 export function buildGravelQuery(bbox, { timeoutS = 25 } = {}) {
   const b = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`
+  // Etter `out geom;` står way-settet fortsatt i `_` — `node(w)["barrier"]`
+  // henter barrier-nodene PÅ de samme veiene (bommer, kjettinger, steiner …)
+  // så stengte innkjøringer kan markeres i overlayen.
   return `
 [out:json][timeout:${timeoutS}][bbox:${b}];
 (
@@ -33,6 +36,8 @@ export function buildGravelQuery(bbox, { timeoutS = 25 } = {}) {
   way["highway"="track"][!"surface"]["tracktype"!~"^grade1$"];
 );
 out geom;
+node(w)["barrier"];
+out;
 `.trim()
 }
 
@@ -108,6 +113,62 @@ export function extractGravelWays(overpassJson, { enrich } = {}) {
       tags: el.tags ?? {},
       points: el.geometry.map((g) => [g.lon, g.lat]),
     })
+  }
+  return out
+}
+
+// ── Bommer og fysiske sperringer (v12.1.15) ─────────────────────────────────
+// «Grusvei bak bom»-problemet: bommen ligger i OSM som en NODE
+// (barrier=gate/lift_gate), som regel uten access-tags på selve veien.
+// Norsk stance: bom på skogsbilvei = stengt for allmenn motorferdsel med
+// mindre noden eksplisitt sier noe annet — motsatt default av veier.
+
+// Fysisk umulig/ulovlig for MC uansett access-tags på noden.
+const BARRIER_HARD_BLOCKED = new Set([
+  'bollard', 'block', 'cycle_barrier', 'chain', 'log', 'debris', 'planter',
+  'jersey_barrier', 'motorcycle_barrier', 'turnstile', 'full-height_turnstile',
+  'kissing_gate', 'stile', 'horse_stile',
+])
+// Bom-familien: stengt med mindre eksplisitt åpen.
+const BARRIER_GATE_LIKE = new Set([
+  'gate', 'lift_gate', 'swing_gate', 'sliding_gate', 'wicket_gate',
+  'barrier_board', 'hampshire_gate',
+])
+// Passerbare for MC — aldri markert.
+const BARRIER_PASSABLE = new Set([
+  'entrance', 'cattle_grid', 'toll_booth', 'border_control',
+  'height_restrictor', 'sally_port', 'bump_gate', 'kerb',
+])
+
+/**
+ * Klassifiser en barrier-NODE for MC: 'closed' | 'open' | null (irrelevant).
+ * Eksplisitt access-tag på noden vinner (mest spesifikke først, som for
+ * veier); ellers: fysiske sperringer og låste/umerkede bommer er stengt.
+ */
+export function classifyBarrierNode(tags = {}) {
+  const barrier = tags.barrier
+  if (!barrier || BARRIER_PASSABLE.has(barrier)) return null
+  for (const key of ['motorcycle', 'motor_vehicle', 'vehicle', 'access']) {
+    const v = tags[key]
+    if (v != null && v !== '') return accessBlocked(v) ? 'closed' : 'open'
+  }
+  if (tags.locked === 'yes') return 'closed'
+  if (BARRIER_HARD_BLOCKED.has(barrier)) return 'closed'
+  if (BARRIER_GATE_LIKE.has(barrier)) return 'closed'
+  return null
+}
+
+/**
+ * Trekk barrier-noder ut av samme Overpass-svar som extractGravelWays
+ * (`node(w)["barrier"]`-delen). Returnerer kun klassifiserte noder.
+ */
+export function extractBarrierNodes(overpassJson) {
+  const out = []
+  for (const el of overpassJson?.elements ?? []) {
+    if (el.type !== 'node' || !Number.isFinite(el.lat) || !Number.isFinite(el.lon)) continue
+    const kind = classifyBarrierNode(el.tags ?? {})
+    if (!kind) continue
+    out.push({ id: el.id, kind, lon: el.lon, lat: el.lat, tags: el.tags ?? {} })
   }
   return out
 }
