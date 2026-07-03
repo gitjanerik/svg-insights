@@ -52,6 +52,37 @@ export function clearProfileCache(storage, key = 'grus') {
   try { store?.removeItem(`${PROFILE_CACHE_KEY}:${key}`) } catch { /* noop */ }
 }
 
+// Maks avstand fra brukerens A/B-punkt til der ruta faktisk starter/slutter.
+// BRouter snapper waypoints til nærmeste rutbare vei UTEN avstandstak — med
+// B midt på et jorde kan f.eks. bilprofilen snappe til en helt annen vei og
+// «bomme totalt» på punktet. Forslag som snapper lenger unna enn dette droppes.
+export const MAX_SNAP_DIST_M = 200
+
+/**
+ * Avstand (meter) fra ønsket A/B til rutas faktiske start-/sluttpunkt.
+ * parsed = parseRoute-resultat, waypoints = [{lat,lon}, …] (A først, B sist).
+ */
+export function snapDistances(parsed, waypoints) {
+  const first = parsed.points[0]
+  const last = parsed.points[parsed.points.length - 1]
+  return {
+    start: haversineM(waypoints[0], { lat: first[1], lon: first[0] }),
+    end: haversineM(waypoints[waypoints.length - 1], { lat: last[1], lon: last[0] }),
+  }
+}
+
+/**
+ * Ser to ruteforslag identiske ut for brukeren? Samme lengde (±10 m) og
+ * midtpunkt innen ~30 m — presist nok til å luke «Balansert» == «Kortest»
+ * uten å sammenlikne full geometri.
+ */
+export function routesLookIdentical(a, b) {
+  if (Math.abs((a.lengthM ?? 0) - (b.lengthM ?? 0)) > 10) return false
+  const am = a.points[Math.floor(a.points.length / 2)]
+  const bm = b.points[Math.floor(b.points.length / 2)]
+  return haversineM({ lat: am[1], lon: am[0] }, { lat: bm[1], lon: bm[0] }) < 30
+}
+
 // Luftlinje-avstand (haversine) i meter — «Luftlinje»-flisa i rute-resultatet.
 export function haversineM(a, b) {
   const R = 6371000

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   uploadProfile, ensureProfileId, fetchRoute, parseRoute, classifyWayTags,
+  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE,
 } from './brouterClient.js'
 import fixture from './brouterFixture.json'
@@ -128,5 +129,38 @@ describe('parseRoute', () => {
   it('kaster ved manglende geometri', () => {
     expect(() => parseRoute({ features: [] })).toThrow('rutegeometri')
     expect(() => parseRoute(null)).toThrow('rutegeometri')
+  })
+})
+
+describe('snapDistances', () => {
+  // Rute som starter i (61.0, 8.0) og slutter i (61.01, 8.02).
+  const parsed = { points: [[8.0, 61.0], [8.01, 61.005], [8.02, 61.01]] }
+  it('~0 når waypoints ligger på rutas endepunkter', () => {
+    const d = snapDistances(parsed, [{ lat: 61.0, lon: 8.0 }, { lat: 61.01, lon: 8.02 }])
+    expect(d.start).toBeLessThan(1)
+    expect(d.end).toBeLessThan(1)
+  })
+  it('måler avstanden når BRouter snappet langt unna', () => {
+    // 0.01° lat ≈ 1113 m — godt over MAX_SNAP_DIST_M.
+    const d = snapDistances(parsed, [{ lat: 61.01, lon: 8.0 }, { lat: 61.01, lon: 8.02 }])
+    expect(d.start).toBeGreaterThan(MAX_SNAP_DIST_M)
+    expect(d.end).toBeLessThan(1)
+  })
+})
+
+describe('routesLookIdentical', () => {
+  const base = {
+    lengthM: 2400,
+    points: [[8.0, 61.0], [8.01, 61.005], [8.02, 61.01]],
+  }
+  it('samme lengde og midtpunkt → identiske', () => {
+    expect(routesLookIdentical(base, { ...base, lengthM: 2405 })).toBe(true)
+  })
+  it('ulik lengde → forskjellige', () => {
+    expect(routesLookIdentical(base, { ...base, lengthM: 2600 })).toBe(false)
+  })
+  it('samme lengde men annet midtpunkt → forskjellige', () => {
+    const other = { lengthM: 2400, points: [[8.0, 61.0], [8.03, 61.02], [8.02, 61.01]] }
+    expect(routesLookIdentical(base, other)).toBe(false)
   })
 })

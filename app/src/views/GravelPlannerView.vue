@@ -892,9 +892,11 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Attribusjon -->
-      <div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/60 text-[8px]
-                  border border-white/15 leading-tight pointer-events-none z-10">
+      <!-- Attribusjon (løftes i Planlegg-modus — skuffen overlapper kartets
+           nederste 16 px for de avrundede hjørnene) -->
+      <div class="absolute right-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/60 text-[8px]
+                  border border-white/15 leading-tight pointer-events-none z-10"
+           :class="mode === 'planlegg' ? 'bottom-5' : 'bottom-1'">
         © Kartverket · © OpenStreetMap-bidragsytere · Ruting: BRouter (brouter.de)
       </div>
     </div>
@@ -916,8 +918,11 @@ onUnmounted(() => {
     <!-- PLANLEGG: dra-bar bunn-skuff (samme UX som turkartets skuffer):
          dra i håndtaket for å minimere (peek med håndtak + header) eller
          maksimere (kart-stripe på 56 px igjen i toppen). -->
+    <!-- -mt-4 lar skuffen overlappe kartets nedre kant — ellers avslører de
+         avrundede hjørnene bare den svarte side-bakgrunnen (svart på svart)
+         og skuffen ser firkantet ut. -->
     <div v-if="mode === 'planlegg'"
-         class="shrink-0 z-20 backdrop-blur-md bg-zinc-900/92 border-t border-white/10 rounded-t-2xl
+         class="shrink-0 z-20 -mt-4 backdrop-blur-md bg-zinc-900/92 border-t border-white/10 rounded-t-2xl
                 flex flex-col overflow-hidden shadow-2xl"
          :style="drawer.drawerHeightStyle.value">
       <div class="shrink-0 select-none touch-none cursor-grab active:cursor-grabbing"
@@ -949,6 +954,21 @@ onUnmounted(() => {
            class="flex-1 overflow-y-auto px-4 pt-1
                   pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <div class="max-w-[560px] mx-auto">
+        <!-- Hvordan-hint: to trykk i kartet setter A og B, og Utforsk-fanen
+             viser grus-dekningen visuelt. Skjules i delingsmodus (der er
+             punktene låst og banneret forklarer flyten). -->
+        <div v-if="!routeInvite"
+             class="mb-2.5 px-3 py-2 rounded-lg bg-sky-500/[0.07] border border-sky-400/15
+                    text-[11px] text-white/60 leading-snug">
+          Trykk i kartet for å sette start
+          <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500
+                       text-white text-[9px] font-bold align-middle">A</span>
+          og trykk en gang til for mål
+          <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500
+                       text-white text-[9px] font-bold align-middle">B</span>
+          — eller bruk søk/GPS. Tips: fanen «Utforsk» viser hvor det er grus (heltrukket)
+          og mulig grus (stiplet).
+        </div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
             <button @click="swapPoints" aria-label="Bytt start og mål" :disabled="!!routeInvite"
@@ -971,6 +991,15 @@ onUnmounted(() => {
                    :placeholder="field === 'A' ? 'Fra — startsted' : 'Til — destinasjon'"
                    class="flex-1 min-w-0 py-2 bg-transparent text-[13px] placeholder-white/35
                           focus:outline-none" />
+            <!-- Angre: fjern satt punkt (skjult i delingsmodus) -->
+            <button v-if="(field === 'A' ? pointA : pointB) && !routeInvite"
+                    @click="setPoint(field, null)"
+                    :aria-label="`Fjern ${field === 'A' ? 'start' : 'mål'}`"
+                    class="w-8 h-8 shrink-0 rounded-lg bg-white/5 border border-white/10 text-white/50
+                           flex items-center justify-center active:scale-95 transition">
+              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            </button>
             <button v-if="field === 'A'" @click="onGpsForA" aria-label="Bruk min posisjon som start"
                     :disabled="gpsState.status === 'locating' || !!routeInvite"
                     class="w-8 h-8 shrink-0 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-300
