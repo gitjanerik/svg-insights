@@ -1,9 +1,9 @@
 # SVG Insights
 
-Vue 3-mobilapp med tre hovedfunksjoner: konverter bilder til interaktive
-SVG-strektegninger, lag din egen webfont med `.otf`-eksport, og generer
-ISOM-inspirerte turkart fra åpne norske data. Alt kjører klient-side — ingen
-backend, ingen kart-engine.
+Vue 3-mobilapp med fire hovedfunksjoner: planlegg grusruter for motorsykkel,
+generer ISOM-inspirerte turkart fra åpne norske data, konverter bilder til
+interaktive SVG-strektegninger, og lag din egen webfont med `.otf`-eksport.
+Alt kjører klient-side — ingen backend, ingen kart-engine.
 
 **Live demo:** https://gitjanerik.github.io/svg-insights/
 
@@ -11,31 +11,23 @@ Gjeldende versjon er autoritativ i [`app/src/version.js`](app/src/version.js).
 
 ## Funksjoner
 
-### 1. Lag SVG-tegning
+### 1. Ruteplanlegger (grusruter for MC)
 
-Konverterer et foto til en interaktiv SVG-strektegning via en 12-trinns
-bildeprosesseringspipeline (ren JavaScript, ingen bildebibliotek).
+Finner sammenhengende grusvei-strekninger for tur-MC over lange avstander.
+Fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) med to moduser.
 
-- **Multi-skala Canny-kantdeteksjon** — kombinerer kanter ved sigma 0.7 / 1.4 / 2.8
-- **Luminans-konturer** — iso-luminans-grenselinjer for indre detaljer
-- **Skravering / kryssskravering** i mørke regioner for dybde
-- **Hudtone-deteksjon** (YCbCr) og adaptiv detaljering (min. 1000 vektorer)
-- **Rasterpunkt-modus** (halftone) med interaktive modi: Magnet, Antistoff, Sort hull
-- **3D-visning** med pinch-zoom
+- **Utforsk**: grusvei-overlay i synlig utsnitt via Overpass — heltrukket for
+  bekreftet grus-dekke, stiplet for «antatt grus» (skogsbilveier uten dekke-data)
+- **Planlegg**: A→B med inntil tre forslag via BRouter (brouter.de) — «Mest grus»
+  (egen kostprofil som maksimerer grus), «Balansert» og «Kortest» (bilprofil);
+  identiske forslag dedupliseres, forslag som bommer på A/B lukes bort
+- **Kun lovlige kjøreveier**: private/landbruksbegrensede veier, turveier og
+  gang-/sykkelveier filtreres i både overlay og ruteprofiler (OSM access-tags)
+- **Fargekodet rute** per segment (grus/fast dekke) med grusandel, tid og luftlinje
+- **Lagrede ruter** (IndexedDB), **deling** via lenke (mottaker beregner samme
+  rute med ett trykk, med «installer som app»-tilbud) og **GPX-eksport**
 
-### 2. Lag webfont
-
-Genererer en egen `.otf`-font basert på en valgt Google-font som inspirasjon.
-
-- **24 kuraterte Google-fonter** som utgangspunkt (serif, sans, håndskrift)
-- **Glyf-for-glyf Bezier-editor** med anker-drag, kontrollhåndtak, undo/redo
-- **Kvikk-handlinger**: gjør myk, rett, forenkle, tykkere, tynnere
-- **Tegne-/pensel-modus** med boolean-union av strøk (`polygon-clipping`)
-- **Foto-til-glyf**: ta bilde av en enkeltbokstav og spor konturen
-- **Live forhåndsvisning** via FontFace API, **.otf-eksport** via opentype.js
-- **Headless kvalitetstester** (`npm run test:fonts`) → HTML-rapport
-
-### 3. Vis turkart
+### 2. Vis turkart
 
 ISOM 2017-2-inspirerte sportskart bygget fra åpne norske data — print-kvalitets
 SVG med mm-baserte streker.
@@ -50,6 +42,30 @@ SVG med mm-baserte streker.
 - **A-format-utsnitt** klart for print/PDF/SVG-eksport
 - **GPS-prikk, kompass, måling, annotering og GPS-sporing** i visningen
 
+### 3. Lag SVG-tegning
+
+Konverterer et foto til en interaktiv SVG-strektegning via en 12-trinns
+bildeprosesseringspipeline (ren JavaScript, ingen bildebibliotek).
+
+- **Multi-skala Canny-kantdeteksjon** — kombinerer kanter ved sigma 0.7 / 1.4 / 2.8
+- **Luminans-konturer** — iso-luminans-grenselinjer for indre detaljer
+- **Skravering / kryssskravering** i mørke regioner for dybde
+- **Hudtone-deteksjon** (YCbCr) og adaptiv detaljering (min. 1000 vektorer)
+- **Rasterpunkt-modus** (halftone) med interaktive modi: Magnet, Antistoff, Sort hull
+- **3D-visning** med pinch-zoom
+
+### 4. Lag webfont (beta)
+
+Genererer en egen `.otf`-font basert på en valgt Google-font som inspirasjon.
+
+- **24 kuraterte Google-fonter** som utgangspunkt (serif, sans, håndskrift)
+- **Glyf-for-glyf Bezier-editor** med anker-drag, kontrollhåndtak, undo/redo
+- **Kvikk-handlinger**: gjør myk, rett, forenkle, tykkere, tynnere
+- **Tegne-/pensel-modus** med boolean-union av strøk (`polygon-clipping`)
+- **Foto-til-glyf**: ta bilde av en enkeltbokstav og spor konturen
+- **Live forhåndsvisning** via FontFace API, **.otf-eksport** via opentype.js
+- **Headless kvalitetstester** (`npm run test:fonts`) → HTML-rapport
+
 > Appen inneholder også **CurveInvaders**, et lite kart-basert mini-spill
 > (kodenavn CurveBall internt).
 
@@ -61,7 +77,7 @@ SVG med mm-baserte streker.
 | Bygg | Vite |
 | Styling | Tailwind CSS 4 (`@import "tailwindcss"`, ingen config-fil) |
 | Ruting | Vue Router 4 (`createWebHistory`) |
-| Testing | Vitest (372 tester) + headless font-kvalitetstester |
+| Testing | Vitest (870+ tester) + headless font-kvalitetstester |
 | Lagring | IndexedDB (kart), localStorage (innstillinger) |
 | Offline | PWA med service worker (`app/public/sw.js`) |
 | Hosting | GitHub Pages (auto-deploy via GitHub Actions) |
@@ -86,7 +102,10 @@ hentes både i CI og klient-side.
 - **Kartverket DTM/DOM** (WCS) — terreng-/overflatemodell for konturer og vegetasjon
 - **Kartverket Sjøkart Dybdedata** (WFS) — dybdeareal, sjømerker, fyr
 - **NVE** (NVE API + HydAPI) — innsjø-dyp/-areal/-volum og sanntids vannstand
-- **Nominatim** (OSM) — stedssøk i kart-velgeren
+- **Nominatim** (OSM) — stedssøk i kart-velgeren og ruteplanleggeren
+- **BRouter** (brouter.de) — ruteberegning i ruteplanleggeren, med egne
+  opplastede kostprofiler (`app/public/brouter/*.brf`)
+- **Kartverket topografisk WMTS** — bakgrunnsfliser i kart-velger og ruteplanlegger
 
 ## Prosjektstruktur
 
@@ -96,6 +115,7 @@ svg-insights/
     public/
       sw.js                    # Service worker (offline / PWA-cache)
       maps/vardasen.svg        # Innebygd demo-turkart (bygget i CI fra ekte WCS)
+      brouter/*.brf            # BRouter-kostprofiler (grus-maks + balansert)
     src/
       lib/
         imageToSvg.js          # SVG-spor: bilde → SVG (12-trinns pipeline)
@@ -115,7 +135,10 @@ svg-insights/
         n50Fetcher.js                   # N50-vann (Havflate/Innsjø/ElvBekk)
         nveLakeFetcher.js / nveHydApi.js # NVE innsjø-data + sanntids vannstand
         printExport.js         # SVG/PNG/PDF/print-eksport
-        mapStorage.js          # IndexedDB-wrapper
+        mapStorage.js          # IndexedDB-wrapper (kart + grusruter)
+        brouterClient.js       # Rute-spor: BRouter-klient (profil-opplasting, parsing)
+        gravelOverlay.js       # Rute-spor: Overpass-grusvei-overlay + lovlighetsfilter
+        gpxExport.js           # Rute-spor: GPX-eksport
       composables/
         usePinchZoom.js        # Pinch/pan/rotate + mus-pan (desktop)
         useUserPosition.js     # GPS via watchPosition
@@ -123,8 +146,10 @@ svg-insights/
         useScreenWakeLock.js   # Hold skjerm våken (opt-in)
         useHalftoneGame.js     # Interaktivt rasterlag + solsystem-modus
         useFontProject.js / useGlyphEditor.js   # Font-tilstand + editor
+        useGravelPlanner.js    # Rute-spor: tilstand + BRouter-orkestrering
       views/
-        HomeView.vue           # Portal (tre kort)
+        HomeView.vue           # Portal (fire kort)
+        GravelPlannerView.vue  # Rute-spor: Utforsk/Planlegg-kart
         CaptureView.vue / ViewerView.vue        # SVG-spor
         FontChooserView.vue / FontEditorView.vue / FontPreviewView.vue
         MapHomeView.vue / MapPickerView.vue / MapView.vue   # Kart-spor
