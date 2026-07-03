@@ -1,4 +1,4 @@
-# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 3, matcher
+# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 4, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: MC-turplanlegging som MAKSIMERER sammenhengende grusvei A->B i Norge.
@@ -27,15 +27,15 @@ assign initialcost = 0
 
 # Tilgang: bil/MC-lovlige veier. Forby private/stengte, landbruks-/skogsdrift-
 # begrensede og rene gangarealer — ruta skal være LOVLIG for motorisert ferdsel.
+# VIKTIG (v4): BRouter-lookups tillater KUN primaer-verdier i uttrykk —
+# aliaser gir parse-feil ved opplasting (forestry = alias for agricultural,
+# delivery = alias for destination pa motor_vehicle). v2/v3 brukte aliaser og
+# hele profilen ble avvist -> stille fallback til feil profil.
 assign defaultaccess =
-  switch access=no false
-  switch access=private false
-  switch access=agricultural|forestry|delivery|permit|emergency|military false
-  switch vehicle=no|private|agricultural|forestry false
-  switch motor_vehicle=no false
-  switch motor_vehicle=private false
-  switch motor_vehicle=agricultural|forestry|delivery|permit false
-  switch motorcycle=no|private false
+  switch access=no|private|agricultural|military|customers|delivery|permit false
+  switch vehicle=no|private|agricultural false
+  switch motor_vehicle=no|private|agricultural|permit false
+  switch motorcycle=no|private|agricultural false
   true
 
 # Gang-/sykkelvei-heuristikk (v3, generalisert fra track-only): ALT som er
@@ -104,18 +104,17 @@ assign costfactor =
 
 ---context:node
 
+# Kun primaer-verdier og tags som finnes i node-lookups (locked finnes IKKE
+# og ga parse-feil; swing_gate/block er usikre -> droppet).
 assign defaultaccess =
-  switch access=no false
-  switch access=private false
-  switch motor_vehicle=no false
-  switch motor_vehicle=private false
+  switch access=no|private false
+  switch motor_vehicle=no|private false
   switch vehicle=no|private false
   switch motorcycle=no false
   true
 
 assign initialcost =
   switch not defaultaccess 1000000
-  switch barrier=gate ( switch locked=yes 1000000 300 )
-  switch barrier=lift_gate|swing_gate 300
-  switch barrier=bollard|block|cycle_barrier 1000000
+  switch barrier=gate|lift_gate 300
+  switch barrier=bollard|cycle_barrier 1000000
   0

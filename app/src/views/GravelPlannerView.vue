@@ -1078,6 +1078,9 @@ onUnmounted(() => {
                     text-amber-200/85 text-[11px] leading-snug">
           Grusprofilen kunne ikke lastes hos rutetjenesten — ruta bruker standard bilprofil.
           Lovlige kjøreveier, men uten grus-prioritering. Prøv igjen senere for full grusrute.
+          <div v-if="route.fallbackReason" class="mt-1 text-[10px] text-amber-200/55 break-words">
+            Teknisk årsak: {{ route.fallbackReason }}
+          </div>
         </div>
 
         <!-- Ruteforslag -->
