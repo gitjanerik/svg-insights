@@ -31,3 +31,39 @@ export function applyUpdate() {
     window.location.reload()
   }
 }
+
+// Manuell «Se etter oppdatering» (Om-siden, v12.1.13): tving en SW-sjekk NÅ og
+// rapporter utfallet, i stedet for å vente på time-intervallet/forgrunns-
+// sjekken i main.js. Returnerer:
+//   'update-ready' — ny versjon står klar (kall applyUpdate() for å bytte)
+//   'up-to-date'   — serveren har samme versjon som den som kjører
+//   'unsupported'  — ingen SW-støtte/registrering (dev-modus, http, iframe)
+// MERK: GitHub Pages cacher med ~10 min HTTP-cache; rett etter en deploy kan
+// 'up-to-date' derfor være noen minutter forsinket — det er server-cache, ikke
+// klient-tilstand, og løses av å prøve igjen litt senere.
+export async function checkForUpdateNow() {
+  if (!('serviceWorker' in navigator)) return 'unsupported'
+  const reg = await navigator.serviceWorker.getRegistration().catch(() => null)
+  if (!reg) return 'unsupported'
+  await reg.update().catch(() => { /* nettfeil — bedøm ut fra reg-tilstanden */ })
+  if (reg.waiting && navigator.serviceWorker.controller) {
+    setWaitingWorker(reg.waiting)
+    return 'update-ready'
+  }
+  // update() fant ny versjon som fortsatt installerer — vent til den lander
+  // (bounded: 15 s), ellers regn som oppdatert.
+  const installing = reg.installing
+  if (installing) {
+    const state = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(installing.state), 15000)
+      installing.addEventListener('statechange', () => {
+        if (installing.state !== 'installing') { clearTimeout(t); resolve(installing.state) }
+      })
+    })
+    if (state === 'installed' && navigator.serviceWorker.controller) {
+      setWaitingWorker(reg.waiting ?? installing)
+      return 'update-ready'
+    }
+  }
+  return 'up-to-date'
+}

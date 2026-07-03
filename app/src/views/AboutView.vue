@@ -2,8 +2,28 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { APP_VERSION } from '../version.js'
+import { checkForUpdateNow, applyUpdate } from '../lib/swUpdate.js'
 
 const router = useRouter()
+
+// «Se etter oppdatering» (v12.1.13): tvinger SW-sjekk der og da — nyttig ved
+// hyppig testing, siden auto-sjekken ellers venter på forgrunns-/time-trigger
+// og en ny versjon uansett står og venter på «Oppdater»-banneret.
+const updateState = ref('idle')   // 'idle' | 'checking' | 'latest' | 'updating' | 'unsupported'
+async function onCheckUpdate() {
+  if (updateState.value === 'checking' || updateState.value === 'updating') return
+  updateState.value = 'checking'
+  const result = await checkForUpdateNow()
+  if (result === 'update-ready') {
+    // Brukeren ba eksplisitt om oppdatering — bytt med én gang (SKIP_WAITING →
+    // controllerchange → reload i main.js), ikke vent på banner-bekreftelse.
+    updateState.value = 'updating'
+    applyUpdate()
+    return
+  }
+  updateState.value = result === 'unsupported' ? 'unsupported' : 'latest'
+  setTimeout(() => { if (updateState.value !== 'updating') updateState.value = 'idle' }, 4000)
+}
 
 // Fire tabs i samme rekkefølge som kortene på forsiden:
 //   1. Ruteplanlegging (BRouter-grusruter for MC)
@@ -41,6 +61,26 @@ const TABS = [
           SVG Insights
         </h2>
         <p class="text-xs text-white/40 mt-1">Versjon {{ APP_VERSION }}</p>
+        <button @click="onCheckUpdate" :disabled="updateState === 'checking' || updateState === 'updating'"
+                class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium
+                       border bg-white/5 border-white/15 text-white/70 active:scale-95 transition
+                       disabled:opacity-60">
+          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5"
+               :class="(updateState === 'checking' || updateState === 'updating') ? 'animate-spin' : ''"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>
+          </svg>
+          {{ updateState === 'checking' ? 'Sjekker …'
+             : updateState === 'updating' ? 'Oppdaterer …'
+             : 'Se etter oppdatering' }}
+        </button>
+        <p v-if="updateState === 'latest'" class="text-[11px] text-emerald-300/85 mt-1.5">
+          Du har nyeste versjon (v{{ APP_VERSION }}). Rett etter en utgivelse kan det ta
+          noen minutter før serveren svarer med den nye.
+        </p>
+        <p v-else-if="updateState === 'unsupported'" class="text-[11px] text-white/45 mt-1.5">
+          Oppdaterings-sjekk er ikke tilgjengelig her (krever installert app / produksjonsmodus).
+        </p>
       </div>
 
       <!-- Tabs (fire — mindre tekst/padding så de får plass på mobil) -->
