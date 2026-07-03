@@ -242,7 +242,7 @@ function selectResult(field, r) {
 }
 
 function onMapTap(px) {
-  if (mode.value !== 'planlegg') return
+  if (mode.value !== 'planlegg' || routeInvite.value) return
   // Tap setter armert felt, ellers første tomme (A først, så B).
   const field = armedField.value ?? (!pointA.value ? 'A' : (!pointB.value ? 'B' : null))
   if (!field) return
@@ -433,6 +433,9 @@ async function onFindRoute() {
   await planner.computeRoute()
   if (route.value) {
     if (routeInvite.value?.proposalId) planner.selectProposal(routeInvite.value.proposalId)
+    // Delingsmodus er fullført når ruta er beregnet — fjern banneret og
+    // lås opp UI-et (mottakeren står nå med en vanlig rute).
+    if (routeInvite.value) dismissRouteInvite()
     drawer.reset()
     nextTick(() => { measureMap(); fitRouteView() })
   }
@@ -635,80 +638,22 @@ onUnmounted(() => {
     <!-- Toppbar: tilbake · tittel · lagrede ruter (badge) -->
     <div class="shrink-0 z-30 bg-zinc-950/90 backdrop-blur border-b border-white/10">
       <div class="flex items-center gap-2 px-3 py-2.5">
-        <button @click="router.push('/')" aria-label="Tilbake"
+        <button @click="router.push('/')" aria-label="Tilbake" :disabled="!!routeInvite"
                 class="w-9 h-9 rounded-full flex items-center justify-center bg-white/5 border border-white/10
-                       text-white/70 active:scale-95 transition shrink-0">
+                       text-white/70 active:scale-95 transition shrink-0 disabled:opacity-35">
           <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
         <div class="flex-1 text-center text-[15px] font-semibold text-white truncate">Ruteplanlegger</div>
-        <button @click="showSaved = true" aria-label="Lagrede ruter"
+        <button @click="showSaved = true" aria-label="Lagrede ruter" :disabled="!!routeInvite"
                 class="w-9 h-9 rounded-full flex items-center justify-center bg-white/5 border border-white/10
-                       text-white/70 active:scale-95 transition shrink-0 relative">
+                       text-white/70 active:scale-95 transition shrink-0 relative disabled:opacity-35">
           <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
                stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
           <span v-if="savedRoutes.length"
                 class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-[9px]
                        font-bold text-white flex items-center justify-center">{{ savedRoutes.length }}</span>
         </button>
-      </div>
-    </div>
-
-    <!-- Mottaker av delt rute: banner med prefilte A/B og install-tilbud
-         (speiler «Del kart»-banneret i kartvelgeren). -->
-    <div v-if="routeInvite" class="shrink-0 z-20 bg-[#0e1116] px-3 pt-3">
-      <div class="relative max-w-[560px] mx-auto rounded-xl border border-sky-300/40 bg-sky-500/10 px-4 py-3">
-        <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
-                class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
-                       text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15 active:scale-95 transition">
-          <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
-        </button>
-        <div class="flex items-center gap-3 pr-8">
-          <div class="shrink-0 w-10 h-10 rounded-full bg-sky-400/20 border border-sky-300/40
-                      flex items-center justify-center text-sky-200">
-            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
-                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-            </svg>
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="text-[13px] font-semibold text-sky-100">Noen har delt en grusrute med deg!</div>
-            <div v-if="routeInvite.navn" class="text-[11px] text-sky-100/75 truncate">
-              Rute: {{ routeInvite.navn }}
-            </div>
-          </div>
-        </div>
-        <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-          Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
-        </div>
-        <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
-          <label class="flex items-start gap-2.5 cursor-pointer">
-            <input type="checkbox" v-model="installRequested"
-                   class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
-            <span class="flex-1 text-[11px] text-sky-100/85 leading-relaxed">
-              Installer appen for en bedre opplevelse
-              <button type="button" @click.prevent="showInstallInfo = !showInstallInfo"
-                      aria-label="Hva betyr det?" :aria-expanded="showInstallInfo"
-                      class="inline-flex items-center justify-center align-middle ml-1
-                             w-4 h-4 rounded-full border border-sky-300/50 text-sky-200/90
-                             text-[9px] font-bold leading-none active:scale-90 transition">
-                i
-              </button>
-            </span>
-          </label>
-          <Transition name="overlay-fade">
-            <div v-if="showInstallInfo"
-                 class="mt-2 ml-[26px] text-[10px] text-sky-100/60 leading-relaxed">
-              Installasjon legger appen på hjemskjermen din, så den åpner i fullskjerm og fungerer
-              offline. Du kan også gjøre dette senere fra forsiden.
-            </div>
-          </Transition>
-        </div>
       </div>
     </div>
 
@@ -789,11 +734,73 @@ onUnmounted(() => {
         </svg>
       </button>
 
+      <!-- Mottaker av delt rute: banner som flyter OPPÅ kartet (v12.1.3 — lå
+           før i flyten og dyttet kartet ned). Delingsmodus låser resten av
+           UI-et (toppbar-knapper, modus-pille, Fra/Til) til CTA eller X —
+           men kart-pan/zoom og skuff-drag er fortsatt fritt. -->
+      <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-30 flex justify-center"
+           @mousedown.stop @touchstart.stop @wheel.stop>
+        <div class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
+                    backdrop-blur px-4 py-3 shadow-2xl">
+          <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
+                  class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
+                         text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15 active:scale-95 transition">
+            <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+          <div class="flex items-center gap-3 pr-8">
+            <div class="shrink-0 w-10 h-10 rounded-full bg-sky-400/20 border border-sky-300/40
+                        flex items-center justify-center text-sky-200">
+              <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-[13px] font-semibold text-sky-100">Noen har delt en grusrute med deg!</div>
+              <div v-if="routeInvite.navn" class="text-[11px] text-sky-100/75 truncate">
+                Rute: {{ routeInvite.navn }}
+              </div>
+            </div>
+          </div>
+          <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
+            Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
+          </div>
+          <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
+            <label class="flex items-start gap-2.5 cursor-pointer">
+              <input type="checkbox" v-model="installRequested"
+                     class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
+              <span class="flex-1 text-[11px] text-sky-100/85 leading-relaxed">
+                Installer appen for en bedre opplevelse
+                <button type="button" @click.prevent="showInstallInfo = !showInstallInfo"
+                        aria-label="Hva betyr det?" :aria-expanded="showInstallInfo"
+                        class="inline-flex items-center justify-center align-middle ml-1
+                               w-4 h-4 rounded-full border border-sky-300/50 text-sky-200/90
+                               text-[9px] font-bold leading-none active:scale-90 transition">
+                  i
+                </button>
+              </span>
+            </label>
+            <Transition name="overlay-fade">
+              <div v-if="showInstallInfo"
+                   class="mt-2 ml-[26px] text-[10px] text-sky-100/60 leading-relaxed">
+                Installasjon legger appen på hjemskjermen din, så den åpner i fullskjerm og fungerer
+                offline. Du kan også gjøre dette senere fra forsiden.
+              </div>
+            </Transition>
+          </div>
+        </div>
+      </div>
+
       <!-- Modus-segmentkontroll: Utforsk / Planlegg — flyter fritt over kartet
            (v12.1.2: ut av toppbaren, fullskjermskart minus toppbar). Egen mørk
            pille-bakgrunn for kontrast; mousedown/touchstart stoppes så trykk
-           ikke lekker til kartets pan/tap-håndtering. -->
-      <div class="absolute left-1/2 -translate-x-1/2 top-3 z-20"
+           ikke lekker til kartets pan/tap-håndtering. Skjules i delingsmodus. -->
+      <div v-if="!routeInvite" class="absolute left-1/2 -translate-x-1/2 top-3 z-20"
            @mousedown.stop @touchstart.stop>
         <div class="inline-flex rounded-full bg-zinc-950/85 backdrop-blur border border-white/15 p-1 shadow-lg"
              role="group" aria-label="Modus">
@@ -913,9 +920,9 @@ onUnmounted(() => {
       <div class="max-w-[560px] mx-auto">
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
-            <button @click="swapPoints" aria-label="Bytt start og mål"
+            <button @click="swapPoints" aria-label="Bytt start og mål" :disabled="!!routeInvite"
                     class="w-8 h-8 rounded-full bg-zinc-800 border border-white/15 text-white/70
-                           flex items-center justify-center active:scale-90 transition">
+                           flex items-center justify-center active:scale-90 transition disabled:opacity-35">
               <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
                    stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 4v13M8 4 5 7M8 4l3 3"/><path d="M16 20V7m0 13 3-3m-3 3-3-3"/>
@@ -927,14 +934,14 @@ onUnmounted(() => {
             <span class="w-2.5 h-2.5 shrink-0 rounded-full"
                   :class="field === 'A' ? 'bg-emerald-500' : 'bg-rose-500'"></span>
             <input :value="field === 'A' ? searchA.query.value : searchB.query.value"
-                   @input="(field === 'A' ? searchA : searchB).query.value = $event.target.value; activeSearch = field"
-                   @focus="activeSearch = field"
-                   type="search" autocomplete="off"
+                   @input="routeInvite || ((field === 'A' ? searchA : searchB).query.value = $event.target.value, activeSearch = field)"
+                   @focus="activeSearch = routeInvite ? null : field"
+                   type="search" autocomplete="off" :readonly="!!routeInvite"
                    :placeholder="field === 'A' ? 'Fra — startsted' : 'Til — destinasjon'"
                    class="flex-1 min-w-0 py-2 bg-transparent text-[13px] placeholder-white/35
                           focus:outline-none" />
             <button v-if="field === 'A'" @click="onGpsForA" aria-label="Bruk min posisjon som start"
-                    :disabled="gpsState.status === 'locating'"
+                    :disabled="gpsState.status === 'locating' || !!routeInvite"
                     class="w-8 h-8 shrink-0 rounded-lg bg-sky-500/15 border border-sky-400/30 text-sky-300
                            flex items-center justify-center active:scale-95 transition disabled:opacity-50">
               <svg viewBox="0 0 24 24" class="w-4 h-4" :class="gpsState.status === 'locating' ? 'animate-spin' : ''"
@@ -948,9 +955,10 @@ onUnmounted(() => {
               </svg>
             </button>
             <button @click="armedField = armedField === field ? null : field"
-                    :aria-pressed="armedField === field"
+                    :aria-pressed="armedField === field" :disabled="!!routeInvite"
                     :aria-label="`Velg ${field === 'A' ? 'start' : 'mål'} i kartet`"
-                    class="w-8 h-8 shrink-0 rounded-lg border flex items-center justify-center active:scale-95 transition"
+                    class="w-8 h-8 shrink-0 rounded-lg border flex items-center justify-center
+                           active:scale-95 transition disabled:opacity-35"
                     :class="armedField === field ? 'bg-sky-500/25 border-sky-400/50 text-sky-200' : 'bg-white/5 border-white/10 text-white/60'">
               <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
                    stroke-linecap="round" stroke-linejoin="round">
