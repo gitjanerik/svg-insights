@@ -16,6 +16,9 @@ import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_M
 import { useLodTuning } from '../composables/useLodTuning.js'
 import { useLabelFonts } from '../composables/useLabelFonts.js'
 import { useLabelDensity } from '../composables/useLabelDensity.js'
+import { useStrokeTuning } from '../composables/useStrokeTuning.js'
+import { useReliefSettings } from '../composables/useReliefSettings.js'
+import { buildStrokeOverrideCss, STROKE_GROUPS } from '../lib/strokeOverrides.js'
 import { declutter, makeMinZoomOf } from '../lib/labelDeclutter.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import { norwegianName } from '../lib/placeName.js'
@@ -777,11 +780,36 @@ function stopCurveBall() {
   curveball.deactivate()
 }
 
+// Standard zoom-nivå for «Sentrer»-FAB-en (Zoom-panelet, v12.0.18). 1 = dagens
+// fulle reset (hele kartet). > 1 = sentrer ved den skalaen: på GPS-posisjonen
+// når GPS er aktiv og innenfor kartet, ellers kartsenteret. Global innstilling.
+const DEFAULT_ZOOM_LS_KEY = 'svg-insights-default-zoom'
+const DEFAULT_ZOOM_MIN = 1
+const DEFAULT_ZOOM_MAX = 5
+const defaultZoomScale = ref((() => {
+  try {
+    const v = parseFloat(localStorage.getItem(DEFAULT_ZOOM_LS_KEY))
+    if (Number.isFinite(v) && v >= DEFAULT_ZOOM_MIN && v <= DEFAULT_ZOOM_MAX) return v
+  } catch { /* noop */ }
+  return 1
+})())
+watch(defaultZoomScale, (v) => {
+  try { localStorage.setItem(DEFAULT_ZOOM_LS_KEY, String(v)) } catch { /* noop */ }
+})
+
 // v8.5.2: «Sentrer»-FAB resetter pinch/zoom OG tvinger en fersk GPS-fix
 // hvis GPS er aktivert. På toget kan watchPosition henge på en cached
 // koordinat — getCurrentPosition med maximumAge=0 gir alltid ny måling.
 function onResetAndRefreshGps() {
-  reset()
+  const z = defaultZoomScale.value
+  const m = meta.value
+  if (z > 1 && m?.widthM && m?.heightM) {
+    const gpsOk = userPos.isWatching && userPos.svgX != null && !userPos.isOutsideMap
+    panTo(gpsOk ? userPos.svgX : m.widthM / 2, gpsOk ? userPos.svgY : m.heightM / 2,
+          { vbWidth: m.widthM, vbHeight: m.heightM, targetScale: z })
+  } else {
+    reset()
+  }
   // v9.1.19: «Nullstill zoom» rører KUN zoom/pan/rotasjon — IKKE strek- og
   // relieff-knottene. Brukeren vil beholde sine valgte strek-/relieff-nivåer
   // når de bare vil sentrere/uvri kartet.
@@ -1158,20 +1186,21 @@ const mapSizeSlider = computed({
 // samme senter på nytt i den valgte kartstørrelsen, så man kan teste LOD-en på
 // samme sted ved ulik bredde uten å gå tilbake til forsiden. Lager et NYTT kart
 // (ny id) og navigerer dit. «Standard» = fast 10 km kvadrat (defaultMapDims).
-async function rebuildAtChosenSize() {
+async function rebuildAtChosenSize(km = mapSizeKm.value) {
   const m = meta.value
   if (!m?.bbox || buildingOnTheFly.value) return
   const lat = (m.bbox.south + m.bbox.north) / 2
   const lon = (m.bbox.west + m.bbox.east) / 2
-  const dims = mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : defaultMapDims()
+  const dims = km ? { halfKm: km / 2, aspect: 1 } : defaultMapDims()
   closeDrawer()
+  knobPanel.value = null
   buildingOnTheFly.value = true
   buildingProgress.value = 'Bygger om i valgt størrelse …'
   try {
     const { id } = await buildMapFromCenter({
       center: { lat, lon, name: m.navn ?? 'Kart' },
       ...dims,
-      equidistanceM: equidistanceForWidthKm(mapSizeKm.value),
+      equidistanceM: equidistanceForWidthKm(km),
       navn: m.navn ?? 'Kart',
       terrainFirst: true,
       onProgress: (msg) => { buildingProgress.value = msg },
@@ -1195,25 +1224,25 @@ const MAX_TILES_LS_KEY = 'svg-insights-max-tiles'
 const maxTileIndex = ref(loadKnobStep(MAX_TILES_LS_KEY, MAX_TILE_DEFAULT_IDX, MAX_TILE_STEPS.length))
 const maxTiles = computed(() => MAX_TILE_STEPS[maxTileIndex.value])
 
-// Relieff (terrengskygge) av/på — bruker-innstilling. PÅ (default): hillshade
-// genereres for aktiv + nabofliser, og relieff-FAB-knotten vises (styrer intensitet).
-// AV: ingen hillshade genereres (sparer GPU/RAM per flis), og knotten skjules.
-const RELIEF_ENABLED_LS_KEY = 'svg-insights-relief-enabled'
-const reliefEnabled = ref((() => {
-  try { return localStorage.getItem(RELIEF_ENABLED_LS_KEY) !== '0' } catch { return true }
-})())
-
-// Relieff-stil (v11.0.44) — 'vektor' (default) = diskrete tone-bånd som rene
-// SVG-polygoner: knivskarpt ved zoom/print, tema-bart, og ~KB i SVG-en. 'mjuk'
-// = den klassiske myke gradient-PNG-en (<image>), som bærer en multi-MB base64-
-// streng i live-DOM og bakes inn ved .svg-eksport. Vektor er default fordi den
-// løser filstørrelse-/minne-problemet; brukeren kan velge mjuk for det myke
-// foto-relieffet. Bånd-relieffet hoppes over på spøkelses-naboflisene (perf).
-const RELIEF_MODE_LS_KEY = 'svg-insights-relief-mode'
+// Relieff (terrengskygge) av/på + stil — fra v12.0.18 PER KART med global
+// standard som fallback (useReliefSettings). `reliefEnabled`/`reliefMode` er de
+// EFFEKTIVE verdiene for kartet som vises (leses av applyHillshade, buildGhostSvg
+// og FAB-en); Innstillinger-fanen binder de GLOBALE. Relieff-FAB-panelet
+// (long-press) redigerer per-kart-verdiene. 'vektor' (default) = diskrete
+// tone-bånd som rene SVG-polygoner; 'mjuk' = myk gradient-PNG (<image>).
 const RELIEF_BANDS = 5
-const reliefMode = ref((() => {
-  try { return localStorage.getItem(RELIEF_MODE_LS_KEY) === 'mjuk' ? 'mjuk' : 'vektor' } catch { return 'vektor' }
-})())
+const reliefSettings = useReliefSettings()
+const reliefEnabled = reliefSettings.reliefEnabled
+const reliefMode = reliefSettings.reliefMode
+const globalReliefEnabled = reliefSettings.globalReliefEnabled
+const globalReliefMode = reliefSettings.globalReliefMode
+
+// Per-element strek-tuning (Strek-FAB-panelet, v12.0.18) — per kart med global
+// standard. Effektive multiplikatorer injiseres som override-CSS i kart-SVG-en
+// (applyStrokeOverrides) og ganges med den globale --stroke-scale-knotten.
+const strokeTuning = useStrokeTuning()
+// Top-level ref → auto-unwrap i template (nested refs unwrappes ikke).
+const strokeEffective = strokeTuning.effective
 
 // Flerspråklige navn (norsk - samisk - finsk) i Nord-Norge. Default AV = vis
 // kun det norske leddet for et renere kart; PÅ = vis hele det flerspråklige
@@ -1289,6 +1318,25 @@ function applyStrokeScale() {
   if (svg) svg.style.setProperty('--stroke-scale', String(strokeScale.value))
 }
 
+// Per-element strek-overstyring (Strek-FAB-panelet): injiserer !important-regler
+// som slår kartets bakede symbolizer-CSS. Nøytrale sliders → tom CSS → identisk
+// rendering med i dag. Ghost-fliser og detalj-inset arver reglene siden de
+// nestes/klones inn under samme SVG-rot; eksport klones fra live-DOM → WYSIWYG.
+function applyStrokeOverrides() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  let el = svg.querySelector('#stroke-override-style')
+  const css = buildStrokeOverrideCss(strokeTuning.effective.value)
+  if (!css) { el?.remove(); return }
+  if (!el) {
+    el = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+    el.setAttribute('id', 'stroke-override-style')
+    svg.appendChild(el)
+  }
+  el.textContent = css
+}
+watch(strokeTuning.effective, applyStrokeOverrides)
+
 // Tekst-skala — settes som CSS-var på kart-SVG-en; alle [data-label]-font-sizes
 // ganges med den via calc() i symbolizer-CSS-en (se `fs()` der). Sanntid, ingen
 // re-render.
@@ -1346,10 +1394,11 @@ watch(maxTileIndex, () => {
   flashKnobHint(`Maks ${maxTiles.value} kartfliser`)
 })
 
-// Relieff av/på: persistér, regenerer aktiv-flisas hillshade og re-render mosaikken
-// (spøkelses-relieff opprettes/fjernes i buildGhostSvg etter reliefEnabled).
+// Relieff av/på (effektiv verdi — reagerer på både per-kart- og global-endring):
+// regenerer aktiv-flisas hillshade og re-render mosaikken (spøkelses-relieff
+// opprettes/fjernes i buildGhostSvg etter reliefEnabled). Persistering skjer i
+// useReliefSettings.
 watch(reliefEnabled, () => {
-  try { localStorage.setItem(RELIEF_ENABLED_LS_KEY, reliefEnabled.value ? '1' : '0') } catch { /* noop */ }
   applyHillshade()
   void renderGhostTiles()
   flashKnobHint(reliefEnabled.value ? 'Relieff på' : 'Relieff av')
@@ -1359,7 +1408,6 @@ watch(reliefEnabled, () => {
 // nullstill bånd-cachen, bygg på nytt, og re-render mosaikken (spøkelses-relieff
 // gates på modus i buildGhostSvg).
 watch(reliefMode, () => {
-  try { localStorage.setItem(RELIEF_MODE_LS_KEY, reliefMode.value) } catch { /* noop */ }
   svgHostRef.value?.querySelector('svg #hillshade-layer')?.remove()
   cachedBandsKey = null
   applyHillshade()
@@ -1367,20 +1415,22 @@ watch(reliefMode, () => {
   flashKnobHint(reliefMode.value === 'vektor' ? 'Skarpt relieff (vektor)' : 'Mjukt relieff (bilde)')
 })
 
-// Tap = step (wrap), lang-trykk (500 ms) = nullstill til default.
-// `knobSettled` gjør at ett trykk gir nøyaktig ett hakk: et avsluttet trykk
-// (committet step ELLER lang-trykk-reset) markeres settled, så et nytt
-// avsluttende event ikke kan telle om igjen.
+// Tap = step (wrap) / sentrer, lang-trykk (600 ms) = åpne FAB-ens innstillings-
+// panel (v12.0.18 — erstattet lang-trykk-nullstill; nullstilling bor nå som
+// egen knapp i panelene). `knobSettled` gjør at ett trykk gir nøyaktig ett
+// hakk: et avsluttet trykk (committet step ELLER lang-trykk) markeres settled,
+// så et nytt avsluttende event ikke kan telle om igjen.
+const knobPanel = ref(null)   // 'stroke' | 'relief' | 'zoom' | null
+const KNOB_HOLD_MS = 600
 let knobTimer = null
 let knobSettled = true
 function knobDown(kind) {
   knobSettled = false
   if (knobTimer) clearTimeout(knobTimer)
   knobTimer = setTimeout(() => {
-    knobSettled = true   // lang-trykk konsumerer trykket → ingen step ved release
-    if (kind === 'stroke') strokeStepIndex.value = STROKE_DEFAULT_IDX
-    else reliefStepIndex.value = RELIEF_DEFAULT_IDX
-  }, 500)
+    knobSettled = true   // lang-trykk konsumerer trykket → ingen step/sentrer ved release
+    knobPanel.value = kind === 'center' ? 'zoom' : kind
+  }, KNOB_HOLD_MS)
 }
 // Bindes til BÅDE pointerup og pointercancel. Enkelte mobil-nettlesere
 // (sett på Samsung Internet) sender `pointercancel` i stedet for `pointerup`
@@ -1392,9 +1442,65 @@ function knobUp(kind) {
   if (knobTimer) { clearTimeout(knobTimer); knobTimer = null }
   if (knobSettled) return
   knobSettled = true
-  if (kind === 'stroke') strokeStepIndex.value = (strokeStepIndex.value + 1) % STROKE_STEPS.length
-  else reliefStepIndex.value = (reliefStepIndex.value + 1) % RELIEF_STEPS.length
+  if (kind === 'stroke') {
+    strokeStepIndex.value = (strokeStepIndex.value + 1) % STROKE_STEPS.length
+  } else if (kind === 'relief') {
+    if (!reliefEnabled.value) { flashKnobHint('Relieff er av — hold for innstillinger'); return }
+    reliefStepIndex.value = (reliefStepIndex.value + 1) % RELIEF_STEPS.length
+  } else {
+    onResetAndRefreshGps()
+  }
 }
+
+// «Kartstørrelse» i Zoom-FAB-panelet gjelder KUN ombygging av det aktive
+// kartet — rører ikke den globale nye-kart-preferansen (mapSizeKm). Initieres
+// til gjeldende kartbredde når panelet åpnes. (MERK: watch-en må stå ETTER
+// knobPanel-deklarasjonen — TDZ, jf. showFullNames-merknaden.)
+const rebuildSizeKm = ref(DEFAULT_MAP_WIDTH_KM)
+watch(knobPanel, (p) => {
+  if (p !== 'zoom') return
+  const w = Math.round((meta.value?.widthM ?? 0) / 1000)
+  rebuildSizeKm.value = Math.min(MAP_SIZE_MAX_KM, Math.max(MAP_SIZE_MIN_KM, w || DEFAULT_MAP_WIDTH_KM))
+})
+
+// Panel-handlinger: «Angi som standard» løfter kartets verdier til global
+// standard; «Nullstill» setter kartet tilbake (strek → 1× + knott-default,
+// relieff → på + vektor + knott-default). Feedback vises i panel-footeren
+// (panelHint) — knobHint-bobla ligger bak panelet.
+const panelHint = ref('')
+let panelHintTimer = null
+function flashPanelHint(text) {
+  panelHint.value = text
+  if (panelHintTimer) clearTimeout(panelHintTimer)
+  panelHintTimer = setTimeout(() => { panelHint.value = '' }, 2000)
+}
+function strokePanelSaveDefault() {
+  strokeTuning.saveAsDefault()
+  flashPanelHint('Lagret som standard for alle kart')
+}
+function strokePanelReset() {
+  strokeTuning.resetToNeutral()
+  strokeStepIndex.value = STROKE_DEFAULT_IDX
+  flashPanelHint('Strek nullstilt')
+}
+function reliefPanelSaveDefault() {
+  reliefSettings.saveReliefAsDefault()
+  flashPanelHint('Lagret som standard for alle kart')
+}
+function reliefPanelReset() {
+  reliefSettings.resetRelief()
+  reliefStepIndex.value = RELIEF_DEFAULT_IDX
+  flashPanelHint('Relieff nullstilt')
+}
+function closeKnobPanel() {
+  knobPanel.value = null
+  panelHint.value = ''
+}
+const knobPanelTitle = computed(() => (
+  knobPanel.value === 'stroke' ? 'Strek — dette kartet'
+  : knobPanel.value === 'relief' ? 'Relieff — dette kartet'
+  : 'Zoom og kartutsnitt'
+))
 
 // Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
 // alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
@@ -1457,8 +1563,13 @@ function pointNorth() {
 
 // Annoteringsmodus — point-symboler over auto-generert kart
 const mapId = computed(() => route.params.id ?? 'vardasen')
-// Bind navnetetthetens per-kart-overstyring til kartet som vises.
-watch(mapId, (id) => setDensityMap(id), { immediate: true })
+// Bind per-kart-overstyringene (navnetetthet, strek-tuning, relieff) til
+// kartet som vises.
+watch(mapId, (id) => {
+  setDensityMap(id)
+  strokeTuning.setCurrentMap(id)
+  reliefSettings.setCurrentMap(id)
+}, { immediate: true })
 const annot = useMapAnnotations(mapId.value)
 // Stifinner — rutenavigasjon A→B på sti-laget. Egen modus-maskin (idle →
 // pickingStart → showing); gjensidig utelukkende med måling/annotering.
@@ -4992,6 +5103,7 @@ async function loadMap({ silent = false } = {}) {
     applyTheme()
     applyPurpleTrails()            // Utvikler-test: lilla stier oppå tema-fargen
     applyStrokeScale()
+    applyStrokeOverrides()         // per-element strek (Strek-FAB-panelet)
     applyLabelScale()
     applyLabelFonts()
     userPos.recompute()
@@ -6253,11 +6365,11 @@ onUnmounted(() => {
            via bryteren i Innstillinger-fanen. Runtime-toasts (offline, «flyttet
            sentrum») rendres som et eget element nederst på kartet. -->
       <!-- Strek-knott: tap = tykkere (wrapper til tynnest etter tykkest),
-           lang-trykk = nullstill. Bua viser nivå; senter-streken tegnes i
-           faktisk valgt tykkelse (selv-demonstrerende). -->
+           lang-trykk = åpne strek-panelet (per-element-sliders). Bua viser nivå;
+           senter-streken tegnes i faktisk valgt tykkelse (selv-demonstrerende). -->
       <button @pointerdown="knobDown('stroke')" @pointerup="knobUp('stroke')"
               @pointercancel="knobUp('stroke')"
-              aria-label="Strektykkelse — tap for å justere, hold for å nullstille"
+              aria-label="Strektykkelse — tap for å justere, hold for innstillinger"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-7 h-7" fill="none">
@@ -6269,13 +6381,15 @@ onUnmounted(() => {
         </svg>
       </button>
       <!-- Relieff-knott: tap = mer relieff (wrapper til av etter max),
-           lang-trykk = nullstill. Senter-bumpens skygge følger nivået. Skjules
-           helt når relieff er slått av i Innstillinger (reliefEnabled). -->
-      <button v-if="reliefEnabled" @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
+           lang-trykk = åpne relieff-panelet. Senter-bumpens skygge følger nivået.
+           Dimmes (ikke skjules) når relieff er av, så panelet — eneste sted
+           per-kart-relieff kan skrus PÅ igjen — forblir tilgjengelig. -->
+      <button @pointerdown="knobDown('relief')" @pointerup="knobUp('relief')"
               @pointercancel="knobUp('relief')"
-              aria-label="Relieff-styrke — tap for å justere, hold for å nullstille"
+              aria-label="Relieff-styrke — tap for å justere, hold for innstillinger"
               class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
-                     flex items-center justify-center active:scale-95 transition">
+                     flex items-center justify-center active:scale-95 transition"
+              :class="reliefEnabled ? '' : 'opacity-40'">
         <svg viewBox="0 0 24 24" class="w-7 h-7" fill="none">
           <path :d="knobTrackD" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" opacity="0.22"/>
@@ -6285,8 +6399,13 @@ onUnmounted(() => {
                 stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/>
         </svg>
       </button>
-      <button @click="onResetAndRefreshGps" :aria-label="userPos.isWatching ? 'Sentrer + oppdater GPS' : 'Sentrer'"
-              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg
+      <!-- Sentrer-knapp: tap = sentrer (+ GPS-refresh), lang-trykk = åpne
+           zoom-panelet. Pointer-events (ikke @click) så lang-trykk ikke
+           utløser sentrering ved release — samme knobSettled-mønster. -->
+      <button @pointerdown="knobDown('center')" @pointerup="knobUp('center')"
+              @pointercancel="knobUp('center')"
+              :aria-label="userPos.isWatching ? 'Sentrer + oppdater GPS — hold for innstillinger' : 'Sentrer — hold for innstillinger'"
+              class="w-12 h-12 rounded-full bg-zinc-950 text-white shadow-lg touch-none
                      flex items-center justify-center active:scale-95 transition relative">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -7455,7 +7574,7 @@ onUnmounted(() => {
               </div>
               <!-- Bygg om gjeldende område i valgt størrelse — slipper å gå til
                    forsiden for å teste samme sted ved en annen bredde. -->
-              <button @click="rebuildAtChosenSize" :disabled="buildingOnTheFly || !meta?.bbox"
+              <button @click="rebuildAtChosenSize()" :disabled="buildingOnTheFly || !meta?.bbox"
                       class="w-full mt-2 px-3 py-2 rounded-lg text-[12px] font-medium border transition
                              active:scale-[0.98] disabled:opacity-50
                              bg-sky-500/15 border-sky-400/40 text-sky-100">
@@ -7520,40 +7639,42 @@ onUnmounted(() => {
                 område, men mer lagringsplass på enheten. De fjerneste fra der du er kappes først.
               </div>
             </div>
-            <!-- Relieff av/på: hillshade lages som ett bilde per kartflis og bruker
-                 minne/GPU. Av skjuler relieff-knappen og hopper over genereringen. -->
+            <!-- Relieff av/på (GLOBAL standard — per-kart-overstyring gjøres i
+                 relieff-FAB-panelet via long-press): hillshade lages som ett
+                 bilde per kartflis og bruker minne/GPU. -->
             <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3 flex items-center gap-3">
               <div class="flex-1 min-w-0">
                 <div class="text-[13px] text-white font-medium">Relieff (terrengskygge)</div>
                 <div class="text-[11px] text-white/55 leading-snug">
-                  Lages som ett bilde per kartflis og bruker mer minne/GPU. Slå av relieff
-                  (eller senk antall fliser) på svake enheter. Av skjuler også relieff-knappen.
+                  Standard for alle kart. Lages som ett bilde per kartflis og bruker mer
+                  minne/GPU — slå av (eller senk antall fliser) på svake enheter.
+                  Hold relieff-knappen på kartet for å overstyre kun dette kartet.
                 </div>
               </div>
-              <button @click="reliefEnabled = !reliefEnabled"
-                      :aria-pressed="reliefEnabled"
-                      :aria-label="reliefEnabled ? 'Slå av relieff' : 'Slå på relieff'"
+              <button @click="globalReliefEnabled = !globalReliefEnabled"
+                      :aria-pressed="globalReliefEnabled"
+                      :aria-label="globalReliefEnabled ? 'Slå av relieff' : 'Slå på relieff'"
                       class="relative w-11 h-6 rounded-full transition-colors shrink-0"
-                      :class="reliefEnabled ? 'bg-emerald-500' : 'bg-white/15'">
+                      :class="globalReliefEnabled ? 'bg-emerald-500' : 'bg-white/15'">
                 <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
-                      :class="reliefEnabled ? 'left-5' : 'left-0.5'" />
+                      :class="globalReliefEnabled ? 'left-5' : 'left-0.5'" />
               </button>
             </div>
-            <!-- Relieff-stil: vektor (skarpe tone-bånd, liten fil, best print) vs
-                 mjuk (myk PNG-gradient, men multi-MB i fil/eksport). -->
-            <div v-if="reliefEnabled" class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+            <!-- Relieff-stil (global standard): vektor (skarpe tone-bånd, liten fil,
+                 best print) vs mjuk (myk PNG-gradient, men multi-MB i fil/eksport). -->
+            <div v-if="globalReliefEnabled" class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
               <div class="text-[13px] text-white font-medium mb-2">Relieff-stil</div>
               <div class="flex gap-2" role="group" aria-label="Relieff-stil">
-                <button @click="reliefMode = 'vektor'"
-                        :aria-pressed="reliefMode === 'vektor'"
+                <button @click="globalReliefMode = 'vektor'"
+                        :aria-pressed="globalReliefMode === 'vektor'"
                         class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
-                        :class="reliefMode === 'vektor' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                        :class="globalReliefMode === 'vektor' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
                   Skarp (vektor)
                 </button>
-                <button @click="reliefMode = 'mjuk'"
-                        :aria-pressed="reliefMode === 'mjuk'"
+                <button @click="globalReliefMode = 'mjuk'"
+                        :aria-pressed="globalReliefMode === 'mjuk'"
                         class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
-                        :class="reliefMode === 'mjuk' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                        :class="globalReliefMode === 'mjuk' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
                   Mjuk (bilde)
                 </button>
               </div>
@@ -7747,6 +7868,167 @@ onUnmounted(() => {
 
     <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
     <CurveBallFlippers :flipp="curveball" :map-rect="mapRect"/>
+
+    <!-- FAB-innstillingspanel (v12.0.18): long-press på Strek-/Relieff-/Sentrer-
+         FAB-ene åpner ett delt bottom-sheet med panelet for den knappen.
+         z-50 > FAB-stacken (z-40). Tap på backdrop = lukk. -->
+    <Transition name="overlay-fade">
+      <div v-if="knobPanel" class="absolute inset-0 z-50 flex items-end justify-center bg-black/60"
+           @click.self="closeKnobPanel">
+        <div class="w-full max-w-[560px] bg-zinc-900 border-t border-white/10 rounded-t-2xl
+                    max-h-[75dvh] flex flex-col">
+          <div class="shrink-0 px-4 pt-3.5 pb-2.5 border-b border-white/8 flex items-center justify-between gap-3">
+            <div class="text-white text-[14px] font-semibold">{{ knobPanelTitle }}</div>
+            <button @click="closeKnobPanel" aria-label="Lukk panel"
+                    class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center
+                           bg-white/5 border border-white/10 text-white/60 active:scale-90 transition">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round">
+                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-4 pt-3 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+
+            <!-- STREK: per-element strekbredde for dette kartet -->
+            <template v-if="knobPanel === 'stroke'">
+              <div class="text-[11px] text-white/55 leading-snug mb-3">
+                Strekbredde per element for dette kartet. Ganges med Strek-knotten,
+                som fortsatt skalerer alt under ett.
+              </div>
+              <div v-for="g in STROKE_GROUPS" :key="g.id"
+                   class="rounded-lg bg-white/5 px-3 py-2.5 mb-2">
+                <div class="flex items-center justify-between gap-3 mb-1.5">
+                  <div class="text-[13px] text-white font-medium">{{ g.label }}</div>
+                  <span class="text-white/60 text-[12px] tabular-nums">{{ strokeEffective[g.id].toFixed(2) }}×</span>
+                </div>
+                <input type="range" min="0.5" max="2.5" step="0.05"
+                       :value="strokeEffective[g.id]"
+                       @input="strokeTuning.setGroup(g.id, Number($event.target.value))"
+                       :aria-label="`Strekbredde ${g.label}`"
+                       class="w-full accent-sky-400"/>
+              </div>
+            </template>
+
+            <!-- RELIEFF: av/på + stil for dette kartet -->
+            <template v-else-if="knobPanel === 'relief'">
+              <div class="text-[11px] text-white/55 leading-snug mb-3">
+                Gjelder dette kartet. Standard for alle kart settes i Innstillinger-fanen
+                eller med «Angi som standard» under.
+              </div>
+              <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-2 flex items-center gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="text-[13px] text-white font-medium">Relieff (terrengskygge)</div>
+                  <div class="text-[11px] text-white/55 leading-snug">
+                    Bruker mer minne/GPU — slå av på svake enheter.
+                  </div>
+                </div>
+                <button @click="reliefEnabled = !reliefEnabled"
+                        :aria-pressed="reliefEnabled"
+                        :aria-label="reliefEnabled ? 'Slå av relieff for dette kartet' : 'Slå på relieff for dette kartet'"
+                        class="relative w-11 h-6 rounded-full transition-colors shrink-0"
+                        :class="reliefEnabled ? 'bg-emerald-500' : 'bg-white/15'">
+                  <span class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
+                        :class="reliefEnabled ? 'left-5' : 'left-0.5'" />
+                </button>
+              </div>
+              <div v-if="reliefEnabled" class="rounded-lg bg-white/5 px-3 py-2.5 mb-2">
+                <div class="text-[13px] text-white font-medium mb-2">Relieff-stil</div>
+                <div class="flex gap-2" role="group" aria-label="Relieff-stil for dette kartet">
+                  <button @click="reliefMode = 'vektor'"
+                          :aria-pressed="reliefMode === 'vektor'"
+                          class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
+                          :class="reliefMode === 'vektor' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                    Skarp (vektor)
+                  </button>
+                  <button @click="reliefMode = 'mjuk'"
+                          :aria-pressed="reliefMode === 'mjuk'"
+                          class="flex-1 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors"
+                          :class="reliefMode === 'mjuk' ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white/70'">
+                    Mjuk (bilde)
+                  </button>
+                </div>
+                <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                  Skarp = tone-bånd som vektor: liten fil, knivskarpt ved zoom og print.
+                  Mjuk = myk gradient (foto-relieff), men gir et tungt bilde i kart-fila.
+                </div>
+              </div>
+            </template>
+
+            <!-- ZOOM: standard zoom-nivå + kartfliser + ombygging -->
+            <template v-else>
+              <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-2">
+                <div class="flex items-center justify-between gap-3 mb-1.5">
+                  <div class="text-[13px] text-white font-medium">Standard zoom-nivå</div>
+                  <span class="text-white/60 text-[12px] tabular-nums">
+                    {{ defaultZoomScale === 1 ? 'Hele kartet' : `${defaultZoomScale.toFixed(1)}×` }}
+                  </span>
+                </div>
+                <input type="range" :min="DEFAULT_ZOOM_MIN" :max="DEFAULT_ZOOM_MAX" step="0.5"
+                       v-model.number="defaultZoomScale"
+                       aria-label="Standard zoom-nivå for Sentrer-knappen"
+                       class="w-full accent-sky-400"/>
+                <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                  Hva Sentrer-knappen zoomer til: 1× viser hele kartet; høyere nivå
+                  sentrerer på GPS-posisjonen (eller kartsenteret) ved den skalaen.
+                </div>
+              </div>
+              <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-2">
+                <div class="flex items-center justify-between gap-3 mb-1.5">
+                  <div class="text-[13px] text-white font-medium">Maks kartfliser</div>
+                  <span class="text-white/60 text-[12px] tabular-nums">{{ maxTiles }}</span>
+                </div>
+                <input type="range" min="0" :max="MAX_TILE_STEPS.length - 1" step="1"
+                       v-model.number="maxTileIndex"
+                       aria-label="Maks antall kartfliser i mosaikken"
+                       class="w-full accent-sky-400"/>
+                <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                  Hvor mange kart-utsnitt som beholdes i mosaikken. Gjelder alle kart.
+                </div>
+              </div>
+              <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-2">
+                <div class="flex items-center justify-between gap-3 mb-1.5">
+                  <div class="text-[13px] text-white font-medium">Kartstørrelse</div>
+                  <span class="text-white/60 text-[12px] tabular-nums">{{ rebuildSizeKm }} km</span>
+                </div>
+                <input type="range" :min="MAP_SIZE_MIN_KM" :max="MAP_SIZE_MAX_KM" step="1"
+                       v-model.number="rebuildSizeKm"
+                       aria-label="Kartstørrelse for ombygging av dette området"
+                       class="w-full accent-sky-400"/>
+                <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                  Gjelder kun dette kartet: bygger området på nytt i valgt bredde
+                  (nytt kart, samme senter).
+                </div>
+                <button @click="rebuildAtChosenSize(rebuildSizeKm)"
+                        :disabled="buildingOnTheFly || !meta?.bbox"
+                        class="w-full mt-2 px-3 py-2 rounded-lg text-[12px] font-medium border transition
+                               active:scale-[0.98] disabled:opacity-50
+                               bg-sky-500/15 border-sky-400/40 text-sky-100">
+                  Bygg om dette området i valgt størrelse
+                </button>
+              </div>
+            </template>
+
+            <!-- Footer: Angi som standard / Nullstill (strek + relieff) + feedback -->
+            <div v-if="knobPanel !== 'zoom'" class="flex gap-2 mt-3">
+              <button @click="knobPanel === 'stroke' ? strokePanelSaveDefault() : reliefPanelSaveDefault()"
+                      class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border transition
+                             active:scale-[0.98] bg-emerald-500/15 border-emerald-400/40 text-emerald-100">
+                Angi som standard
+              </button>
+              <button @click="knobPanel === 'stroke' ? strokePanelReset() : reliefPanelReset()"
+                      class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border transition
+                             active:scale-[0.98] bg-white/5 border-white/15 text-white/80">
+                Nullstill
+              </button>
+            </div>
+            <div v-if="panelHint" class="text-center text-[11px] text-emerald-300 mt-2">
+              {{ panelHint }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Long-press kontekstmeny (bottom-sheet). Åpnes ved long-press eller
          høyreklikk på kartet. Viser koordinater, høyde, nærmeste sted/sti,
@@ -8600,6 +8882,10 @@ onUnmounted(() => {
 .hint-fade-enter-from, .hint-fade-leave-to       { opacity: 0; }
 .overlay-fade-enter-active, .overlay-fade-leave-active { transition: opacity 0.22s ease; }
 .overlay-fade-enter-from, .overlay-fade-leave-to       { opacity: 0; }
+/* Under fade-UT dekker inset-0-overlayet fortsatt skjermen og spiser
+   pointer-events i 220 ms — et raskt nytt trykk (f.eks. re-åpne et FAB-panel)
+   traff det usynlige laget i stedet for knappen. Slipp pekeren gjennom. */
+.overlay-fade-leave-active { pointer-events: none; }
 </style>
 
 <!-- Ikke-scoped: kart-SVG-en injiseres via createElementNS (utenfor template-
