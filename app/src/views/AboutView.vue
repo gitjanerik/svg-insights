@@ -60,19 +60,19 @@ const TABS = [
         <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Ruteplanlegging — grusruter for motorsykkel</h3>
         <p class="text-sm text-white/65 leading-relaxed">
           Ruteplanleggeren finner sammenhengende grusvei-strekninger for tur-MC over lange avstander.
-          Kartet er et fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) med to moduser:
-          <strong class="text-white/75">Utforsk</strong> viser alle grusveier i synlig utsnitt, og
-          <strong class="text-white/75">Planlegg</strong> beregner A→B-ruter med inntil tre forslag.
+          Kartet er et fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) der alt skjer i
+          samme bilde: grusvei-overlayen vises når du zoomer inn, og A→B-ruter med inntil tre
+          forslag beregnes fra skuffen nederst.
         </p>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Utforsk — grusvei-overlay</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Grusvei-overlay</h4>
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">Bekreftet grus</strong> (heltrukket): veier med registrert grus-dekke i OpenStreetMap</li>
           <li><strong class="text-white/75">Antatt grus</strong> (stiplet): skogsbilveier uten dekke-data — i Norge nesten alltid grus</li>
           <li>Veier der motorisert ferdsel ikke er lovlig (private, landbruks-/skogsdriftsbegrensede, gang- og sykkelveier) vises ikke</li>
         </ul>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Planlegg — inntil tre ruteforslag</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Inntil tre ruteforslag</h4>
         <ol class="text-xs text-white/50 space-y-1.5 list-decimal list-inside leading-relaxed">
           <li>Sett start og mål med søk, GPS eller to trykk i kartet</li>
           <li><strong class="text-white/75">Mest grus</strong> — egen kostprofil som maksimerer sammenhengende grus (asfalt koster 4–5×)</li>

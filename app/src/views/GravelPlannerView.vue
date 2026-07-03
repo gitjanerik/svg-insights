@@ -1,10 +1,11 @@
 <script setup>
 // Ruteplanlegger (v12.1.0) — grusvei-turplanlegging for MC over lange
-// avstander. UX fra Claude Design-handoff: to moduser via segmentkontroll —
-//   «Utforsk»: grusvei-overlay i synlig utsnitt (Overpass, zoom-gatet)
-//   «Planlegg»: A→B med tre ruteforslag fra BRouter (Mest grus / Balansert /
-//   Kortest), fargekodet per segment, grus/asfalt-bar, stat-fliser (tid /
-//   grus-strekk / luftlinje), GPX og lagrede ruter.
+// avstander. ÉN modus (v12.1.11 — Utforsk/Planlegg-segmentkontrollen er
+// fjernet): grusvei-overlayen (Overpass, zoom-gatet) vises alltid ved
+// innzooming, og A→B-planlegging med tre ruteforslag fra BRouter (Mest grus /
+// Balansert / Kortest) skjer i samme bilde — fargekodet per segment,
+// grus/asfalt-bar, stat-fliser (tid / grus-strekk / luftlinje), GPX og
+// lagrede ruter.
 // Interaksjonskoden (pan/pinch/wheel/tiles) er forket fra MapPickerView —
 // picker-en er halfKm-drevet med 8 km-tak; her trengs fri heltalls-zoom z5–z15.
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
@@ -29,9 +30,6 @@ const {
 
 // Forslags-farger (design): Mest grus oransje, Balansert lilla, Kortest rød.
 const PROPOSAL_COLORS = { 'mest-grus': '#e8802b', balansert: '#8b5cf6', kortest: '#ef4444' }
-
-// ── Modus: Utforsk (overlay) / Planlegg (A→B) ───────────────────────────────
-const mode = ref('utforsk')
 
 // ── Planlegg-skuff: samme drag-UX som turkartets skuffer (useDraggableDrawer:
 // standard 45 dvh, minimert peek med håndtak + header, maksimert med 56 px
@@ -265,7 +263,7 @@ let lastMapTapSetAt = 0
 const MAP_TAP_COOLDOWN_MS = 1000
 
 function onMapTap(px) {
-  if (mode.value !== 'planlegg' || routeInvite.value) return
+  if (routeInvite.value) return
   if (Date.now() - lastMapTapSetAt < MAP_TAP_COOLDOWN_MS) return
   // Tap setter armert felt, ellers første tomme (A først, så B).
   const field = armedField.value ?? (!pointA.value ? 'A' : (!pointB.value ? 'B' : null))
@@ -292,7 +290,7 @@ function onGpsForA() {
   )
 }
 
-// ── Grusvei-overlay (Utforsk-modus): hent + tegn ────────────────────────────
+// ── Grusvei-overlay: hent + tegn (alltid aktiv, zoom-gatet) ─────────────────
 const overlayState = ref('idle')     // 'idle' | 'loading' | 'error'
 const overlayWays = ref([])          // [{id, kind, worldPts:[[x,y]…]}] i world-px ved fetchZoom
 const overlayFetchZoom = ref(null)
@@ -305,7 +303,7 @@ const overlayGated = computed(() =>
   (mapSize.value.w > 0 && bboxAreaKm2(viewBbox(view.value)) > MAX_OVERLAY_AREA_KM2))
 
 async function refreshOverlay() {
-  if (!mapSize.value.w || mode.value !== 'utforsk') return
+  if (!mapSize.value.w) return
   if (overlayGated.value) {
     overlayAbort?.abort()
     overlayWays.value = []
@@ -347,14 +345,14 @@ async function refreshOverlay() {
   }
 }
 
-watch([center, zoom, mapSize, mode], () => {
+watch([center, zoom, mapSize], () => {
   if (overlayDebounce) clearTimeout(overlayDebounce)
   overlayDebounce = setTimeout(refreshOverlay, 400)
 }, { deep: true })
 
 // world-px (fetchZoom) → skjerm-px path-streng for gjeldende view.
 const overlayPaths = computed(() => {
-  if (mode.value !== 'utforsk' || !overlayWays.value.length || !mapSize.value.w) return []
+  if (!overlayWays.value.length || !mapSize.value.w) return []
   const scale = Math.pow(2, zoom.value - overlayFetchZoom.value)
   const c = lonLatToWorldPx(center.value.lon, center.value.lat, zoom.value)
   const ox = mapSize.value.w / 2 - c.x
@@ -366,10 +364,10 @@ const overlayPaths = computed(() => {
   }))
 })
 
-// ── Rute-tegning (Planlegg-modus) ───────────────────────────────────────────
+// ── Rute-tegning ────────────────────────────────────────────────────────────
 const routePaths = computed(() => {
   const r = route.value
-  if (mode.value !== 'planlegg' || !r || !mapSize.value.w) return []
+  if (!r || !mapSize.value.w) return []
   const toPx = ([lon, lat]) => {
     const p = lonLatToScreenPx(lon, lat, view.value)
     return `${p.x.toFixed(1)} ${p.y.toFixed(1)}`
@@ -386,9 +384,9 @@ const routePaths = computed(() => {
     }))
 })
 
-const markerA = computed(() => mode.value === 'planlegg' && pointA.value && mapSize.value.w
+const markerA = computed(() => pointA.value && mapSize.value.w
   ? lonLatToScreenPx(pointA.value.lon, pointA.value.lat, view.value) : null)
-const markerB = computed(() => mode.value === 'planlegg' && pointB.value && mapSize.value.w
+const markerB = computed(() => pointB.value && mapSize.value.w
   ? lonLatToScreenPx(pointB.value.lon, pointB.value.lat, view.value) : null)
 
 // Stiplede forbindelseslinjer A → rutestart / ruteslutt → B når BRouter måtte
@@ -396,7 +394,7 @@ const markerB = computed(() => mode.value === 'planlegg' && pointB.value && mapS
 // i kartet, ikke bare stå i et varsel.
 const snapConnectorPaths = computed(() => {
   const r = route.value
-  if (mode.value !== 'planlegg' || !r?.points?.length || !mapSize.value.w) return []
+  if (!r?.points?.length || !mapSize.value.w) return []
   const out = []
   const ends = [
     [pointA.value, r.points[0], r.snapStartM],
@@ -476,8 +474,7 @@ function fitPointsView(lonLatPts) {
   const spanY = Math.max(maxY - minY, 1e-9)
   // Skuffen flyter over kartets nedre del — sikt innrammingen på den synlige
   // flaten over skuffen, og skyv senteret slik at innholdet sentreres der.
-  const obstructPx = mode.value === 'planlegg'
-    ? Math.min(drawer.visibleHeightPx.value, mapSize.value.h * 0.7) : 0
+  const obstructPx = Math.min(drawer.visibleHeightPx.value, mapSize.value.h * 0.7)
   const effH = Math.max(80, mapSize.value.h - obstructPx)
   // Største heltalls-zoom der world-px-spennet (zoom 0 × 2^z) får 15 % margin.
   const margin = 0.85
@@ -627,7 +624,6 @@ async function confirmSave() {
 function onOpenSaved(rec) {
   planner.openSaved(rec)
   showSaved.value = false
-  mode.value = 'planlegg'
   searchA.query.value = labelFor(pointA.value)
   searchB.query.value = labelFor(pointB.value)
   drawer.reset()
@@ -682,11 +678,10 @@ onMounted(() => {
       mapResizeObs = new ResizeObserver(measureMap)
       mapResizeObs.observe(mapRef.value)
     }
-    // Delt rute i URL-en: prefill A/B, hopp til Planlegg og ram inn punktene.
+    // Delt rute i URL-en: prefill A/B og ram inn punktene.
     const invite = parseRouteInvite()
     if (invite) {
       routeInvite.value = invite
-      mode.value = 'planlegg'
       setPoint('A', invite.a)
       setPoint('B', invite.b)
       nextTick(() => {
@@ -756,14 +751,23 @@ onUnmounted(() => {
       <!-- Grusvei-overlay + rute (skjerm-px-rom, samme som tilene).
            Bekreftet grus: kraftig heltrukket. Antatt grus: tynnere, lysere og
            stiplet — usikkerheten skal synes på avstand, ikke bare i tegn-
-           forklaringen (dash + vekt + lyshet skiller også for fargeblinde). -->
+           forklaringen (dash + vekt + lyshet skiller også for fargeblinde).
+           Hvit halo UNDER begge (v12.1.11) løfter dem fra topoens småveier;
+           antatt-haloen bruker samme dasharray på samme path så dashene
+           ligger perfekt oppå hverandre og gapene forblir gjennomsiktige. -->
       <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
+        <path v-for="w in overlayPaths" :key="'ovh-' + w.id" :d="w.d" fill="none"
+              stroke="#ffffff"
+              :stroke-width="w.kind === 'assumed' ? 4.4 : 5.5"
+              stroke-linecap="round" stroke-linejoin="round"
+              :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
+              :opacity="w.kind === 'assumed' ? 0.75 : 0.85" />
         <path v-for="w in overlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
               :stroke="w.kind === 'assumed' ? '#d9a05b' : '#c2703d'"
               :stroke-width="w.kind === 'assumed' ? 2.4 : 3.5"
               stroke-linecap="round" stroke-linejoin="round"
               :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
-              :opacity="w.kind === 'assumed' ? 0.6 : 0.95" />
+              :opacity="w.kind === 'assumed' ? 0.8 : 0.95" />
         <template v-if="routePaths.length">
           <path v-for="s in routePaths" :key="'halo-' + s.key" :d="s.d" fill="none"
                 stroke="#0e1116" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
@@ -789,7 +793,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Zoom-knapper + nivå-badge. mousedown/touchstart stoppes så knappe-
-           trykk ikke tolkes som kart-tap (tap-to-set i Planlegg-modus). -->
+           trykk ikke tolkes som kart-tap (tap-to-set for A/B). -->
       <div class="absolute right-3 top-3 z-10 flex flex-col items-center gap-1.5"
            @mousedown.stop @touchstart.stop>
         <button @click.stop="stepZoom(1)" aria-label="Zoom inn"
@@ -802,9 +806,9 @@ onUnmounted(() => {
                     tabular-nums pointer-events-none">z{{ zoom }}</div>
       </div>
 
-      <!-- FAB: nullstill zoom og vis hele ruten (Planlegg-modus med rute).
-           Følger skuffens overkant siden skuffen nå flyter over kartet. -->
-      <button v-if="mode === 'planlegg' && route" @click.stop="fitRouteView"
+      <!-- FAB: nullstill zoom og vis hele ruten.
+           Følger skuffens overkant siden skuffen flyter over kartet. -->
+      <button v-if="route" @click.stop="fitRouteView"
               @mousedown.stop @touchstart.stop
               aria-label="Vis hele ruten"
               :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
@@ -881,39 +885,14 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Modus-segmentkontroll: Utforsk / Planlegg — flyter fritt over kartet
-           (v12.1.2: ut av toppbaren, fullskjermskart minus toppbar). Egen mørk
-           pille-bakgrunn for kontrast; mousedown/touchstart stoppes så trykk
-           ikke lekker til kartets pan/tap-håndtering. Skjules i delingsmodus. -->
-      <div v-if="!routeInvite" class="absolute left-1/2 -translate-x-1/2 top-3 z-20"
-           @mousedown.stop @touchstart.stop>
-        <div class="inline-flex rounded-full bg-zinc-950/85 backdrop-blur border border-white/15 p-1 shadow-lg"
-             role="group" aria-label="Modus">
-          <button @click="mode = 'utforsk'" :aria-pressed="mode === 'utforsk'"
-                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
-                  :class="mode === 'utforsk' ? 'bg-emerald-500 text-white' : 'text-white/60'">
-            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>
-            Utforsk
-          </button>
-          <button @click="mode = 'planlegg'" :aria-pressed="mode === 'planlegg'"
-                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
-                  :class="mode === 'planlegg' ? 'bg-emerald-500 text-white' : 'text-white/60'">
-            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round"><path d="M4 19 L10 7 L15 15 L20 5"/></svg>
-            Planlegg
-          </button>
-        </div>
-      </div>
-
       <!-- Status-chips: armert tap-to-set / overlay-gate / lasting / feil
-           (under den flytende modus-pillen) -->
-      <div class="absolute left-1/2 -translate-x-1/2 top-16 z-10 flex flex-col items-center gap-1.5 pointer-events-none">
-        <div v-if="mode === 'planlegg' && armedField"
+           (modus-pillen er fjernet i v12.1.11 — chipsene flyter øverst) -->
+      <div class="absolute left-1/2 -translate-x-1/2 top-3 z-10 flex flex-col items-center gap-1.5 pointer-events-none">
+        <div v-if="armedField"
              class="px-3 py-1.5 rounded-full bg-sky-500/90 text-white text-[12px] font-medium shadow-lg">
           Trykk i kartet for å sette {{ armedField === 'A' ? 'start' : 'mål' }}
         </div>
-        <div v-else-if="mode === 'utforsk' && overlayGated"
+        <div v-else-if="overlayGated && !route"
              class="px-3 py-1.5 rounded-full bg-zinc-950/85 border border-white/15 text-white/75 text-[11px] shadow">
           Zoom inn for å se grusveier
         </div>
@@ -929,9 +908,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Tegnforklaring (Utforsk-modus) -->
-      <div v-if="mode === 'utforsk' && overlayPaths.length"
-           class="absolute left-3 bottom-3 z-10 rounded-lg bg-zinc-950/85 border border-white/15 px-2.5 py-2
+      <!-- Tegnforklaring (når overlayen vises) — løftes over skuffen -->
+      <div v-if="overlayPaths.length"
+           :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+           class="absolute left-3 z-10 rounded-lg bg-zinc-950/85 border border-white/15 px-2.5 py-2
                   pointer-events-none">
         <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Grusveier</div>
         <div class="text-[10px] text-white/75 space-y-1">
@@ -946,10 +926,10 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Attribusjon (løftes over skuffen i Planlegg-modus) -->
+      <!-- Attribusjon (løftes over skuffen) -->
       <div class="absolute right-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/60 text-[8px]
                   border border-white/15 leading-tight pointer-events-none z-10"
-           :style="{ bottom: (mode === 'planlegg' ? drawer.visibleHeightPx.value + 4 : 4) + 'px' }">
+           :style="{ bottom: (drawer.visibleHeightPx.value + 4) + 'px' }">
         © Kartverket · © OpenStreetMap-bidragsytere · Ruting: BRouter (brouter.de)
       </div>
     </div>
@@ -958,7 +938,7 @@ onUnmounted(() => {
     <div v-if="isOffline || routeState === 'error'"
          class="absolute left-3 right-3 z-30 max-w-[560px] mx-auto rounded-xl border px-4 py-3
                 text-[13px] shadow-2xl"
-         :style="{ bottom: (mode === 'planlegg' ? drawer.visibleHeightPx.value + 12 : 24) + 'px' }"
+         :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
          :class="isOffline ? 'bg-zinc-900/95 border-white/15 text-white/80'
                            : 'bg-rose-950/95 border-rose-500/40 text-rose-100'">
       <template v-if="isOffline">Ruteplanleggeren krever nettilkobling.</template>
@@ -968,14 +948,13 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- PLANLEGG: dra-bar bunn-skuff (samme UX som turkartets skuffer):
-         dra i håndtaket for å minimere (peek med håndtak + header) eller
-         maksimere (kart-stripe på 56 px igjen i toppen). -->
+    <!-- Dra-bar bunn-skuff (samme UX som turkartets skuffer): dra i håndtaket
+         for å minimere (peek med håndtak + header) eller maksimere
+         (kart-stripe på 56 px igjen i toppen). Alltid synlig (v12.1.11). -->
     <!-- Skuffen flyter OVER kartet (absolute, v12.1.6) i stedet for å ligge i
          flex-flyten: kartflaten er da konstant uansett om skuffen er åpen,
-         minimert eller maksimert — utsnittet «hopper» ikke ved modus-bytte,
-         så Utforsk og Planlegg kan sammenliknes direkte. -->
-    <div v-if="mode === 'planlegg'"
+         minimert eller maksimert. -->
+    <div
          class="absolute inset-x-0 bottom-0 z-20 backdrop-blur-md bg-zinc-900/92 border-t border-white/10
                 rounded-t-2xl flex flex-col overflow-hidden shadow-2xl"
          :style="drawer.drawerHeightStyle.value">
@@ -1008,9 +987,9 @@ onUnmounted(() => {
            class="flex-1 overflow-y-auto px-4 pt-1
                   pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
       <div class="max-w-[560px] mx-auto">
-        <!-- Hvordan-hint: to trykk i kartet setter A og B, og Utforsk-fanen
-             viser grus-dekningen visuelt. Skjules i delingsmodus (der er
-             punktene låst og banneret forklarer flyten). -->
+        <!-- Hvordan-hint: to trykk i kartet setter A og B; grusvei-overlayen
+             vises direkte i kartet ved innzooming. Skjules i delingsmodus
+             (der er punktene låst og banneret forklarer flyten). -->
         <div v-if="!routeInvite"
              class="mb-2.5 px-3 py-2 rounded-lg bg-sky-500/[0.07] border border-sky-400/15
                     text-[11px] text-white/60 leading-snug">
@@ -1020,8 +999,8 @@ onUnmounted(() => {
           og trykk en gang til for mål
           <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500
                        text-white text-[9px] font-bold align-middle">B</span>
-          — eller bruk søk/GPS. Tips: fanen «Utforsk» viser hvor det er grus (heltrukket)
-          og mulig grus (stiplet).
+          — eller bruk søk/GPS. Tips: zoom inn, så viser kartet hvor det er grus
+          (heltrukket) og mulig grus (stiplet).
         </div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
@@ -1270,7 +1249,7 @@ onUnmounted(() => {
               ruter du ikke trenger lenger, og beregn viktige ruter på nytt før tur.
             </div>
             <div v-if="!savedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
-              Ingen lagrede ruter ennå. Beregn en rute i Planlegg-modus og trykk «Lagre».
+              Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
             </div>
             <div v-for="rec in savedRoutes" :key="rec.id"
                  class="rounded-lg bg-white/5 px-3 py-2.5 mb-2 flex items-center gap-3">
