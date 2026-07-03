@@ -20,14 +20,19 @@ planlegging skjer i samme bilde.
 - **Grusvei-overlay** i synlig utsnitt via Overpass (vises ved innzooming) —
   heltrukket for bekreftet grus-dekke, stiplet for «antatt grus» (skogsbilveier
   uten dekke-data), begge med hvit halo så de skiller seg fra topo-kartets veier
-- **A→B-ruting** med inntil tre forslag via BRouter (brouter.de) — «Mest grus»
-  (egen kostprofil som maksimerer grus), «Balansert» og «Kortest» (bilprofil);
-  identiske forslag dedupliseres, forslag som bommer på A/B lukes bort
+- **A→B-ruting** med inntil tre forslag via BRouter (brouter.de) — tre
+  kostprofiler (grus-maks, balansert, standard bilprofil) presentert som
+  «Rute 1–3» med data-avledede badges: **Mest grus** (høyest grusandel),
+  **Kortest** (kortest uavhengig av underlag) og **Raskest** (lavest
+  tidsestimat); identiske forslag dedupliseres, forslag som bommer på A/B lukes bort
 - **Kun lovlige kjøreveier**: private/landbruksbegrensede veier, turveier og
   gang-/sykkelveier filtreres i både overlay og ruteprofiler (OSM access-tags)
 - **Fargekodet rute** per segment (grus/fast dekke) med grusandel, tid og luftlinje
+- **Interaktiv høydeprofil** (SVG) fargekodet etter underlag — høyder fra
+  BRouter-geometrien, med Kartverket WCS DTM som fallback for lagrede ruter
 - **Lagrede ruter** (IndexedDB), **deling** via lenke (mottaker beregner samme
-  rute med ett trykk, med «installer som app»-tilbud) og **GPX-eksport**
+  rute med ett trykk, med «installer som app»-tilbud), **GPX-eksport** og
+  **stilisert SVG-plakat-eksport** (rute + nøkkeltall + høydeprofil)
 
 ### 2. Vis turkart
 
@@ -141,6 +146,8 @@ svg-insights/
         brouterClient.js       # Rute-spor: BRouter-klient (profil-opplasting, parsing)
         gravelOverlay.js       # Rute-spor: Overpass-grusvei-overlay + lovlighetsfilter
         gpxExport.js           # Rute-spor: GPX-eksport
+        routeElevation.js      # Rute-spor: høydeprofil (BRouter-høyder / DTM-sampling)
+        routeSvgExport.js      # Rute-spor: stilisert plakat-SVG-eksport
       composables/
         usePinchZoom.js        # Pinch/pan/rotate + mus-pan (desktop)
         useUserPosition.js     # GPS via watchPosition
@@ -149,6 +156,7 @@ svg-insights/
         useHalftoneGame.js     # Interaktivt rasterlag + solsystem-modus
         useFontProject.js / useGlyphEditor.js   # Font-tilstand + editor
         useGravelPlanner.js    # Rute-spor: tilstand + BRouter-orkestrering
+        useRouteElevation.js   # Rute-spor: høydeprofil-tilstand (m/ DTM-fallback)
       views/
         HomeView.vue           # Portal (fire kort)
         GravelPlannerView.vue  # Rute-spor: kart med grus-overlay + A→B-planlegging

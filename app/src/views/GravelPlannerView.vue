@@ -18,8 +18,10 @@ import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
 import { useNominatim } from '../composables/useNominatim.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
+import { useRouteElevation } from '../composables/useRouteElevation.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
+import RouteElevationProfile from '../components/RouteElevationProfile.vue'
 
 const router = useRouter()
 const currentRoute = useRoute()
@@ -28,7 +30,12 @@ const {
   pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
 } = planner
 
-// Forslags-farger (design): Mest grus oransje, Balansert lilla, Kortest rød.
+// Høydeprofil for valgt rute: BRouter-høyder når geometrien har dem,
+// Kartverket-DTM-fallback for lagrede ruter (uten høyde i lagringen).
+const { profile: elevProfile, state: elevState, source: elevSource } = useRouteElevation(route)
+
+// Forslags-farger (design) pr profil-id: grus-maks oransje, balansert lilla,
+// bilprofil rød. (Brukervendte navn er nøytrale «Rute 1–3» + data-badges.)
 const PROPOSAL_COLORS = { 'mest-grus': '#e8802b', balansert: '#8b5cf6', kortest: '#ef4444' }
 
 // ── Planlegg-skuff: samme drag-UX som turkartets skuffer (useDraggableDrawer:
@@ -749,28 +756,27 @@ onUnmounted(() => {
            draggable="false" @error="onTopoTileError" />
 
       <!-- Grusvei-overlay + rute (skjerm-px-rom, samme som tilene).
-           Bekreftet grus: kraftig heltrukket. Antatt grus: tynnere, lysere og
-           stiplet — usikkerheten skal synes på avstand, ikke bare i tegn-
-           forklaringen (dash + vekt + lyshet skiller også for fargeblinde).
+           Bekreftet grus: heltrukket. Antatt grus: stiplet — SAMME farge og
+           bredde som bekreftet (v12.1.14; den tynnere/lysere varianten leste
+           som en annen veitype, ikke som usikkerhet). Stiplingen alene
+           skiller klassene, og virker også for fargeblinde.
            Hvit halo UNDER begge (v12.1.11) løfter dem fra topoens småveier;
            antatt-haloen bruker samme dasharray på samme path så dashene
            ligger perfekt oppå hverandre og gapene forblir gjennomsiktige.
-           Farge (v12.1.12): cyan/blågrå — oransje smeltet sammen med topoens
+           Farge (v12.1.12): cyan — oransje smeltet sammen med topoens
            stier/skiløyper og rute-oransjen (#e8802b); cyan finnes ikke i
            Kartverket-topoen og skiller også overlay fra beregnet rute. -->
       <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
         <path v-for="w in overlayPaths" :key="'ovh-' + w.id" :d="w.d" fill="none"
-              stroke="#ffffff"
-              :stroke-width="w.kind === 'assumed' ? 4.4 : 5.5"
+              stroke="#ffffff" stroke-width="5.5"
               stroke-linecap="round" stroke-linejoin="round"
-              :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
-              :opacity="w.kind === 'assumed' ? 0.75 : 0.85" />
+              :stroke-dasharray="w.kind === 'assumed' ? '4 7' : undefined"
+              opacity="0.85" />
         <path v-for="w in overlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
-              :stroke="w.kind === 'assumed' ? '#06b6d4' : '#0e7490'"
-              :stroke-width="w.kind === 'assumed' ? 2.4 : 3.5"
+              stroke="#0e7490" stroke-width="3.5"
               stroke-linecap="round" stroke-linejoin="round"
-              :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
-              :opacity="w.kind === 'assumed' ? 0.8 : 0.95" />
+              :stroke-dasharray="w.kind === 'assumed' ? '4 7' : undefined"
+              opacity="0.95" />
         <template v-if="routePaths.length">
           <path v-for="s in routePaths" :key="'halo-' + s.key" :d="s.d" fill="none"
                 stroke="#0e1116" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
@@ -923,7 +929,7 @@ onUnmounted(() => {
             Bekreftet grus (dekke registrert)
           </div>
           <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-2 border-dashed border-[#06b6d4]/80 rounded"></span>
+            <span class="inline-block w-5 h-0 border-t-[3.5px] border-dashed border-[#0e7490] rounded"></span>
             Antatt grus (skogsbilvei)
           </div>
         </div>
@@ -1126,10 +1132,13 @@ onUnmounted(() => {
                   :class="selectedId === p.id ? 'bg-white/[0.08] border-white/25' : 'bg-white/[0.03] border-white/10'">
             <span class="w-2.5 h-2.5 shrink-0 rounded-full" :style="{ background: PROPOSAL_COLORS[p.id] ?? '#e8802b' }"></span>
             <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-[13px] text-white font-medium">{{ p.label }}</span>
-                <span v-if="p.badge" class="px-1.5 py-0.5 rounded-md bg-sky-500/25 border border-sky-400/40
-                             text-sky-200 text-[9px] font-bold tracking-wide">{{ p.badge }}</span>
+                <span v-for="b in p.badges" :key="b.text"
+                      class="px-1.5 py-0.5 rounded-md border text-[9px] font-bold tracking-wide"
+                      :class="b.tone === 'green'
+                              ? 'bg-emerald-500/25 border-emerald-400/40 text-emerald-200'
+                              : 'bg-sky-500/25 border-sky-400/40 text-sky-200'">{{ b.text }}</span>
               </div>
               <div class="text-[11px] text-white/50 tabular-nums">
                 {{ fmtKm(p.lengthM) }} km<template v-if="fmtGrus(p.gravelShare)"> · Grus {{ fmtGrus(p.gravelShare) }}</template><template v-if="fmtTid(p.estimatedTimeS)"> · {{ fmtTid(p.estimatedTimeS) }}</template>
@@ -1170,23 +1179,36 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Handlinger. Lagre-trykket bytter hele raden til et tydelig
+        <!-- Høydeprofil (v12.1.14) — interaktiv SVG: dra i grafen for å lese
+             km/moh, linja er fargekodet grus/asfalt som kartet. -->
+        <RouteElevationProfile class="mt-2" :profile="elevProfile" :state="elevState" :source="elevSource" />
+
+        <!-- Handlinger. Lagre-trykket bytter radene til et tydelig
              navngivnings-steg («Lagre …»-ellipsen signaliserer at et steg
-             følger) i stedet for å stable en uventet tekstboks under. -->
-        <div v-if="!savingName" class="flex gap-1.5 mt-3">
-          <button @click="planner.exportGpx()" aria-label="Last ned GPX"
-                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                         text-white/80 active:scale-95 transition">GPX</button>
-          <button @click="onShareRoute" aria-label="Del rute"
-                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                         text-white/80 active:scale-95 transition">
-            {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
-          <button @click="startSave" aria-label="Lagre rute"
-                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-emerald-500/15
-                         border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre …</button>
-          <button @click="onReset" aria-label="Nullstill rute"
-                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                         text-white/60 active:scale-95 transition">Nullstill</button>
+             følger) i stedet for å stable en uventet tekstboks under.
+             Eksport (GPX/SVG/Del) og rute-handlinger (Lagre/Nullstill) på
+             hver sin rad — fem knapper på én rad ble for trangt på mobil. -->
+        <div v-if="!savingName" class="mt-3 space-y-1.5">
+          <div class="flex gap-1.5">
+            <button @click="planner.exportGpx()" aria-label="Last ned GPX"
+                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                           text-white/80 active:scale-95 transition">GPX</button>
+            <button @click="planner.exportSvg(elevProfile)" aria-label="Last ned stilisert SVG"
+                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                           text-white/80 active:scale-95 transition">SVG</button>
+            <button @click="onShareRoute" aria-label="Del rute"
+                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                           text-white/80 active:scale-95 transition">
+              {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
+          </div>
+          <div class="flex gap-1.5">
+            <button @click="startSave" aria-label="Lagre rute"
+                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-emerald-500/15
+                           border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre …</button>
+            <button @click="onReset" aria-label="Nullstill rute"
+                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                           text-white/60 active:scale-95 transition">Nullstill</button>
+          </div>
         </div>
         <div v-else class="mt-3 rounded-xl bg-white/[0.04] border border-emerald-400/25 px-3 py-2.5">
           <div class="text-[11px] text-emerald-200/80 font-medium mb-1.5">Gi ruta et navn</div>

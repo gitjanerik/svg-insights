@@ -105,6 +105,31 @@ export function routesLookIdentical(a, b) {
   return haversineM({ lat: am[1], lon: am[0] }, { lat: bm[1], lon: bm[0] }) < 30
 }
 
+/**
+ * Presentasjon av ruteforslag (v12.1.14): profilnavnene («Mest grus» /
+ * «Balansert» / «Kortest») var misvisende — «Kortest»-profilen er f.eks. ikke
+ * garantert kortest når snap-filteret har herjet. Nøytrale navn i liste-
+ * rekkefølge («Rute 1» …) + DATA-avledede badges i stedet. Badges settes kun
+ * når det finnes mer enn ett forslag (én rute trenger ingen sammenlikning):
+ *   MEST GRUS — høyest grusandel (krever kjent andel > 0)
+ *   KORTEST   — kortest lengde, uavhengig av underlag
+ *   RASKEST   — lavest tidsestimat (grønn tone)
+ * Ett forslag kan bære flere badges; ved likhet vinner første i lista.
+ */
+export function decorateProposals(list) {
+  const out = list.map((p, i) => ({ ...p, label: `Rute ${i + 1}`, badges: [] }))
+  if (out.length > 1) {
+    const best = (cands, better) => cands.reduce((a, b) => (better(b, a) ? b : a))
+    const grus = out.filter((p) => Number.isFinite(p.gravelShare) && p.gravelShare > 0)
+    if (grus.length) best(grus, (b, a) => b.gravelShare > a.gravelShare).badges.push({ text: 'MEST GRUS', tone: 'sky' })
+    const kort = out.filter((p) => Number.isFinite(p.lengthM))
+    if (kort.length) best(kort, (b, a) => b.lengthM < a.lengthM).badges.push({ text: 'KORTEST', tone: 'sky' })
+    const rask = out.filter((p) => Number.isFinite(p.estimatedTimeS))
+    if (rask.length) best(rask, (b, a) => b.estimatedTimeS < a.estimatedTimeS).badges.push({ text: 'RASKEST', tone: 'green' })
+  }
+  return out
+}
+
 // MC-tur-tidsestimat (v12.1.10). BRouter sin total-time er UBRUKELIG på tvers
 // av forslagene våre: custom-profilene arver BRouters sykkel-kinematikk
 // (default maxSpeed 45 km/t uansett underlag), mens innebygde bilprofiler
