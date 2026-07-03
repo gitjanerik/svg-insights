@@ -754,7 +754,10 @@ onUnmounted(() => {
            forklaringen (dash + vekt + lyshet skiller også for fargeblinde).
            Hvit halo UNDER begge (v12.1.11) løfter dem fra topoens småveier;
            antatt-haloen bruker samme dasharray på samme path så dashene
-           ligger perfekt oppå hverandre og gapene forblir gjennomsiktige. -->
+           ligger perfekt oppå hverandre og gapene forblir gjennomsiktige.
+           Farge (v12.1.12): cyan/blågrå — oransje smeltet sammen med topoens
+           stier/skiløyper og rute-oransjen (#e8802b); cyan finnes ikke i
+           Kartverket-topoen og skiller også overlay fra beregnet rute. -->
       <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
         <path v-for="w in overlayPaths" :key="'ovh-' + w.id" :d="w.d" fill="none"
               stroke="#ffffff"
@@ -763,7 +766,7 @@ onUnmounted(() => {
               :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
               :opacity="w.kind === 'assumed' ? 0.75 : 0.85" />
         <path v-for="w in overlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
-              :stroke="w.kind === 'assumed' ? '#d9a05b' : '#c2703d'"
+              :stroke="w.kind === 'assumed' ? '#06b6d4' : '#0e7490'"
               :stroke-width="w.kind === 'assumed' ? 2.4 : 3.5"
               stroke-linecap="round" stroke-linejoin="round"
               :stroke-dasharray="w.kind === 'assumed' ? '4 5' : undefined"
@@ -916,11 +919,11 @@ onUnmounted(() => {
         <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Grusveier</div>
         <div class="text-[10px] text-white/75 space-y-1">
           <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-[3.5px] border-[#c2703d] rounded"></span>
+            <span class="inline-block w-5 h-0 border-t-[3.5px] border-[#0e7490] rounded"></span>
             Bekreftet grus (dekke registrert)
           </div>
           <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-2 border-dashed border-[#d9a05b]/70 rounded"></span>
+            <span class="inline-block w-5 h-0 border-t-2 border-dashed border-[#06b6d4]/80 rounded"></span>
             Antatt grus (skogsbilvei)
           </div>
         </div>

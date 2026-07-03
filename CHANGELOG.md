@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.12: Ruteplanlegger — cyan grusvei-overlay + noindex for gh-pages
+
+**(1) Grusvei-overlayen er ikke lenger oransje.** Oransje smeltet sammen med for mye annet i Kartverket-topoen (stier, skiløyper) og med selve rute-fargen — bekreftet grus er nå cyan (#0e7490, heltrukket) og antatt grus lysere cyan (#06b6d4, stiplet), fortsatt med hvit halo under. Cyan finnes ikke i topo-paletten, så overlayen popper, og beregnet rute (oransje) skilles nå tydelig fra overlayen. Tegnforklaringen følger. **(2) Søkemotor-sperre:** `<meta name="robots" content="noindex, nofollow">` i `index.html` (og dermed `404.html`, som deploy-workflowen kopierer fra den — dekker alle SPA-ruter). `robots.txt` med `Disallow: /` er også lagt i `app/public/`, med dokumentert forbehold: GitHub Pages project-sites ligger under `/svg-insights/`-stien og søkemotorer leser robots.txt kun fra domene-roten, så meta-taggen er den effektive mekanismen; fila blir virksom ved evt. eget domene.
+
+---
+
 ## 2026-07-03 — v12.1.11: Ruteplanlegger — én modus (Utforsk + Planlegg slått sammen) og hvit halo på grusvei-overlayen
 
 To UX-grep fra mobiltest. **(1) Modusene er slått sammen:** Utforsk/Planlegg-segmentkontrollen øverst er fjernet — grusvei-overlayen (fortsatt zoom-gatet) vises nå alltid ved innzooming, A/B-skuffen er alltid tilgjengelig nederst, og tap-i-kart setter A/B som før (pan/pinch setter aldri punkter). Man ser altså grusdekningen *mens* man planlegger, uten modus-hopp. Tegnforklaringen og attribusjonen følger skuffens overkant. **(2) Hvit halo under grusvei-markeringene:** både bekreftet (heltrukket) og antatt (stiplet) grus var for like Kartverket-topoens småveier — begge får nå et hvitt halo-pass under fargestreken. Antatt-haloen bruker samme dasharray på samme path-geometri, så dashene ligger perfekt oppå hverandre og stiplet-signalet bevares; antatt-opacity er samtidig økt 0,6 → 0,8 siden haloen nå gir separasjonen. Om-siden og README er oppdatert til én-modus-beskrivelsen.
