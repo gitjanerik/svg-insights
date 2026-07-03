@@ -12,7 +12,7 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { tileMosaic, metersPerPixel } from '../lib/tileBackground.js'
 import { lonLatToWorldPx, worldPxToLonLat, lonLatToScreenPx, screenPxToLonLat, viewBbox, bboxAreaKm2, TILE_SIZE } from '../lib/webMercator.js'
-import { buildGravelQuery, extractGravelWays, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
+import { buildGravelQuery, extractGravelWays, extractBarrierNodes, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
 import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
@@ -300,6 +300,7 @@ function onGpsForA() {
 // ── Grusvei-overlay: hent + tegn (alltid aktiv, zoom-gatet) ─────────────────
 const overlayState = ref('idle')     // 'idle' | 'loading' | 'error'
 const overlayWays = ref([])          // [{id, kind, worldPts:[[x,y]…]}] i world-px ved fetchZoom
+const overlayBarriers = ref([])      // stengte bommer: [{id, worldPt:[x,y]}] ved fetchZoom
 const overlayFetchZoom = ref(null)
 let overlayFetchedBbox = null
 let overlayAbort = null
@@ -314,6 +315,7 @@ async function refreshOverlay() {
   if (overlayGated.value) {
     overlayAbort?.abort()
     overlayWays.value = []
+    overlayBarriers.value = []
     overlayFetchedBbox = null
     overlayState.value = 'idle'
     return
@@ -341,6 +343,11 @@ async function refreshOverlay() {
         0.75,
       ),
     }))
+    // Stengte bommer på de samme veiene («grusvei bak bom») — markeres i
+    // kartet; ruteprofilene (v6) nekter samtidig å rute gjennom dem.
+    overlayBarriers.value = extractBarrierNodes(json)
+      .filter((b) => b.kind === 'closed')
+      .map((b) => { const p = lonLatToWorldPx(b.lon, b.lat, fetchZoom); return { id: b.id, worldPt: [p.x, p.y] } })
     overlayFetchedBbox = fetchBbox
     overlayFetchZoom.value = fetchZoom
     overlayState.value = 'idle'
@@ -368,6 +375,20 @@ const overlayPaths = computed(() => {
     id: w.id,
     kind: w.kind,
     d: 'M' + w.worldPts.map(([x, y]) => `${(x * scale + ox).toFixed(1)} ${(y * scale + oy).toFixed(1)}`).join(' L'),
+  }))
+})
+
+// Stengte bommer i skjerm-px (samme projisering som overlayPaths).
+const overlayBarrierPts = computed(() => {
+  if (!overlayBarriers.value.length || !mapSize.value.w || overlayFetchZoom.value == null) return []
+  const scale = Math.pow(2, zoom.value - overlayFetchZoom.value)
+  const c = lonLatToWorldPx(center.value.lon, center.value.lat, zoom.value)
+  const ox = mapSize.value.w / 2 - c.x
+  const oy = mapSize.value.h / 2 - c.y
+  return overlayBarriers.value.map((b) => ({
+    id: b.id,
+    x: b.worldPt[0] * scale + ox,
+    y: b.worldPt[1] * scale + oy,
   }))
 })
 
@@ -777,6 +798,12 @@ onUnmounted(() => {
               stroke-linecap="round" stroke-linejoin="round"
               :stroke-dasharray="w.kind === 'assumed' ? '4 7' : undefined"
               opacity="0.95" />
+        <!-- Stengte bommer (v12.1.15): mini «innkjøring forbudt»-skilt der
+             grusveien har bom/sperring uten lovlig motor-tilgang. -->
+        <g v-for="b in overlayBarrierPts" :key="'bar-' + b.id" aria-hidden="true">
+          <circle :cx="b.x" :cy="b.y" r="5.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
+          <rect :x="b.x - 3.2" :y="b.y - 1" width="6.4" height="2" rx="1" fill="#ffffff" />
+        </g>
         <template v-if="routePaths.length">
           <path v-for="s in routePaths" :key="'halo-' + s.key" :d="s.d" fill="none"
                 stroke="#0e1116" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" opacity="0.55" />
@@ -931,6 +958,14 @@ onUnmounted(() => {
           <div class="flex items-center gap-1.5">
             <span class="inline-block w-5 h-0 border-t-[3.5px] border-dashed border-[#0e7490] rounded"></span>
             Antatt grus (skogsbilvei)
+          </div>
+          <div v-if="overlayBarrierPts.length" class="flex items-center gap-1.5">
+            <span class="inline-flex w-5 justify-center">
+              <span class="w-3 h-3 rounded-full bg-[#dc2626] border border-white flex items-center justify-center">
+                <span class="block w-1.5 h-[2px] rounded bg-white"></span>
+              </span>
+            </span>
+            Bom — stengt for motorkjøretøy
           </div>
         </div>
       </div>

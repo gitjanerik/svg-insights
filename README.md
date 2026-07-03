@@ -26,7 +26,10 @@ planlegging skjer i samme bilde.
   **Kortest** (kortest uavhengig av underlag) og **Raskest** (lavest
   tidsestimat); identiske forslag dedupliseres, forslag som bommer på A/B lukes bort
 - **Kun lovlige kjøreveier**: private/landbruksbegrensede veier, turveier og
-  gang-/sykkelveier filtreres i både overlay og ruteprofiler (OSM access-tags)
+  gang-/sykkelveier filtreres i både overlay og ruteprofiler (OSM access-tags);
+  **bommer** (`barrier=gate`-noder) regnes som stengt uten eksplisitt åpen
+  tilgang — ruteprofilene nekter å passere dem (hele nettet bak bom
+  ekskluderes), og stengte bommer markeres med rødt skilt i overlayen
 - **Fargekodet rute** per segment (grus/fast dekke) med grusandel, tid og luftlinje
 - **Interaktiv høydeprofil** (SVG) fargekodet etter underlag — høyder fra
   BRouter-geometrien, med Kartverket WCS DTM som fallback for lagrede ruter

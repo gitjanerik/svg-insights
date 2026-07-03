@@ -1,4 +1,4 @@
-# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 5, matcher
+# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 6, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: BALANSERT variant — foretrekker grus, men tar asfalt-snarveier
@@ -117,8 +117,22 @@ assign defaultaccess =
   switch motorcycle=no false
   true
 
+# Eksplisitt aapen motor-tilgang paa selve noden (bom merket som kjoerbar).
+assign nodeopen =
+  or access=yes
+  or vehicle=yes
+  or motor_vehicle=yes
+  motorcycle=yes
+
+# BOM = STENGT (v6): bom paa norsk skogsbilvei betyr stengt for allmenn
+# motorferdsel, og taggingen ligger som regel KUN paa noden. v5 ga
+# gate/lift_gate initialcost 300 (~300 m ekvivalent) -- ingenting paa en
+# mils rute, saa forslagene rutet gladelig "bak bommen". Naa: bom uten
+# eksplisitt aapen tilgang er i praksis forbudt (1000000); eksplisitt aapen
+# bom koster 60 (stopp-og-aapne). Dette ekskluderer automatisk HELE
+# veinettet bak bommen -- eneste vei inn gaar gjennom noden.
 assign initialcost =
   switch not defaultaccess 1000000
-  switch barrier=gate|lift_gate 300
   switch barrier=bollard|cycle_barrier 1000000
+  switch barrier=gate|lift_gate ( switch nodeopen 60 1000000 )
   0

@@ -109,6 +109,7 @@ const TABS = [
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">Bekreftet grus</strong> (heltrukket): veier med registrert grus-dekke i OpenStreetMap</li>
           <li><strong class="text-white/75">Antatt grus</strong> (stiplet): skogsbilveier uten dekke-data — i Norge nesten alltid grus</li>
+          <li><strong class="text-white/75">Bom-markører</strong> (rødt skilt): bommer og fysiske sperringer uten lovlig motor-tilgang vises der de står</li>
           <li>Veier der motorisert ferdsel ikke er lovlig (private, landbruks-/skogsdriftsbegrensede, gang- og sykkelveier) vises ikke</li>
         </ul>
 
@@ -131,8 +132,11 @@ const TABS = [
           <code>access/vehicle/motor_vehicle</code>-begrensninger (private, landbruk/skogsdrift),
           turveier og gang-/sykkelveier (<code>foot/bicycle=designated</code> uten motor-tilgang) —
           også når de har grusdekke. Kjøring-til-eiendom-veier (<code>destination</code>) straffes
-          kraftig for gjennomkjøring. Datagrunnlaget er OSM-tagging, så feil-taggede veier kan
-          forekomme — meld gjerne fra i OpenStreetMap.
+          kraftig for gjennomkjøring. <strong class="text-white/70">Bommer</strong>
+          (<code>barrier=gate</code>-noder) regnes som stengt for allmenn motorferdsel med mindre
+          de eksplisitt er merket åpne — skogsbilvei bak bom rutes det derfor ikke på, og hele
+          veinettet bak bommen ekskluderes automatisk. Datagrunnlaget er OSM-tagging, så
+          umerkede bommer kan forekomme — meld gjerne fra i OpenStreetMap.
         </p>
 
         <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Lagring, deling og eksport</h4>
