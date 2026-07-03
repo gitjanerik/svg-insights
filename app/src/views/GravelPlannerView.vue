@@ -572,7 +572,27 @@ const isOffline = ref(!navigator.onLine)
 const onlineHandler = () => { isOffline.value = false }
 const offlineHandler = () => { isOffline.value = true }
 
+// Lås dokument-scroll mens planleggeren er åpen (samme fiks som MapView):
+// roten er h-[100dvh] overflow-hidden, men på mobil kan body likevel få en
+// residual scroll-offset (SPA-navigasjon, tastatur-fokus i søkefeltene,
+// adresselinje-kollaps) som skyver toppbaren ut av synsfeltet.
+let prevHtmlOverflow = ''
+let prevBodyOverflow = ''
+function lockBodyScroll() {
+  const html = document.documentElement
+  prevHtmlOverflow = html.style.overflow
+  prevBodyOverflow = document.body.style.overflow
+  html.style.overflow = 'hidden'
+  document.body.style.overflow = 'hidden'
+  window.scrollTo(0, 0)
+}
+function unlockBodyScroll() {
+  document.documentElement.style.overflow = prevHtmlOverflow
+  document.body.style.overflow = prevBodyOverflow
+}
+
 onMounted(() => {
+  lockBodyScroll()
   nextTick(() => {
     measureMap()
     if (typeof ResizeObserver !== 'undefined' && mapRef.value) {
@@ -598,6 +618,7 @@ onMounted(() => {
   void planner.refreshSaved()
 })
 onUnmounted(() => {
+  unlockBodyScroll()
   mapResizeObs?.disconnect()
   window.removeEventListener('resize', measureMap)
   window.removeEventListener('online', onlineHandler)
@@ -630,25 +651,6 @@ onUnmounted(() => {
                 class="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-sky-500 text-[9px]
                        font-bold text-white flex items-center justify-center">{{ savedRoutes.length }}</span>
         </button>
-      </div>
-      <!-- Modus-segmentkontroll: Utforsk / Planlegg -->
-      <div class="px-3 pb-2.5 flex justify-center">
-        <div class="inline-flex rounded-full bg-white/[0.06] border border-white/10 p-1" role="group" aria-label="Modus">
-          <button @click="mode = 'utforsk'" :aria-pressed="mode === 'utforsk'"
-                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
-                  :class="mode === 'utforsk' ? 'bg-emerald-500 text-white' : 'text-white/60'">
-            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>
-            Utforsk
-          </button>
-          <button @click="mode = 'planlegg'" :aria-pressed="mode === 'planlegg'"
-                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
-                  :class="mode === 'planlegg' ? 'bg-emerald-500 text-white' : 'text-white/60'">
-            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round"><path d="M4 19 L10 7 L15 15 L20 5"/></svg>
-            Planlegg
-          </button>
-        </div>
       </div>
     </div>
 
@@ -787,8 +789,34 @@ onUnmounted(() => {
         </svg>
       </button>
 
-      <!-- Status-chips: armert tap-to-set / overlay-gate / lasting / feil -->
-      <div class="absolute left-1/2 -translate-x-1/2 top-3 z-10 flex flex-col items-center gap-1.5 pointer-events-none">
+      <!-- Modus-segmentkontroll: Utforsk / Planlegg — flyter fritt over kartet
+           (v12.1.2: ut av toppbaren, fullskjermskart minus toppbar). Egen mørk
+           pille-bakgrunn for kontrast; mousedown/touchstart stoppes så trykk
+           ikke lekker til kartets pan/tap-håndtering. -->
+      <div class="absolute left-1/2 -translate-x-1/2 top-3 z-20"
+           @mousedown.stop @touchstart.stop>
+        <div class="inline-flex rounded-full bg-zinc-950/85 backdrop-blur border border-white/15 p-1 shadow-lg"
+             role="group" aria-label="Modus">
+          <button @click="mode = 'utforsk'" :aria-pressed="mode === 'utforsk'"
+                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
+                  :class="mode === 'utforsk' ? 'bg-emerald-500 text-white' : 'text-white/60'">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>
+            Utforsk
+          </button>
+          <button @click="mode = 'planlegg'" :aria-pressed="mode === 'planlegg'"
+                  class="px-4 py-1.5 rounded-full text-[12px] font-medium transition flex items-center gap-1.5"
+                  :class="mode === 'planlegg' ? 'bg-emerald-500 text-white' : 'text-white/60'">
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round"><path d="M4 19 L10 7 L15 15 L20 5"/></svg>
+            Planlegg
+          </button>
+        </div>
+      </div>
+
+      <!-- Status-chips: armert tap-to-set / overlay-gate / lasting / feil
+           (under den flytende modus-pillen) -->
+      <div class="absolute left-1/2 -translate-x-1/2 top-16 z-10 flex flex-col items-center gap-1.5 pointer-events-none">
         <div v-if="mode === 'planlegg' && armedField"
              class="px-3 py-1.5 rounded-full bg-sky-500/90 text-white text-[12px] font-medium shadow-lg">
           Trykk i kartet for å sette {{ armedField === 'A' ? 'start' : 'mål' }}
