@@ -28,6 +28,10 @@ describe('uploadProfile', () => {
     await expect(uploadProfile('x', { fetchFn: async () => jsonResponse({}, false, 500) })).rejects.toThrow('500')
     await expect(uploadProfile('x', { fetchFn: async () => jsonResponse({ feil: 1 }) })).rejects.toThrow('uventet svar')
   })
+  it('kaster når BRouter svarer 200 med error-felt (syntaksfeil i profilen)', async () => {
+    const fetchFn = async () => jsonResponse({ profileid: 'custom_1', error: 'unknown expression: foo' })
+    await expect(uploadProfile('x', { fetchFn })).rejects.toThrow('avviste profilen')
+  })
 })
 
 describe('ensureProfileId', () => {
