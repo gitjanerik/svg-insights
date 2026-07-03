@@ -37,7 +37,7 @@ describe('useHomePreference', () => {
 
   it('alle valg peker på rutenavn som finnes i routeren', () => {
     // Speiler navnene i router.js — fanger opp utilsiktede omdøpinger.
-    const valid = new Set(['home', 'capture', 'kart-hjem', 'font-chooser'])
+    const valid = new Set(['home', 'capture', 'kart-hjem', 'font-chooser', 'ruteplanlegger'])
     for (const { route } of Object.values(HOME_APPS)) {
       expect(valid.has(route)).toBe(true)
     }

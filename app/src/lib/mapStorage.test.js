@@ -4,7 +4,7 @@
 // hver saveMap — kontrakten låses her (IndexedDB selv testes ikke i jsdom-løs
 // vitest; 'maps'-storet forblir source of truth og meta er gjenoppbyggbart).
 import { describe, it, expect } from 'vitest'
-import { projectMetaEntry } from './mapStorage.js'
+import { projectMetaEntry, generateGravelRouteId } from './mapStorage.js'
 
 const entry = {
   id: 'kart_abc123',
@@ -52,5 +52,14 @@ describe('projectMetaEntry — lett liste-projeksjon', () => {
     const m = projectMetaEntry({ id: 'x', navn: 'y', opprettet: 1 })
     expect(m.sizeBytes).toBe(0)
     expect(m.hasDem).toBe(false)
+  })
+})
+
+describe('generateGravelRouteId', () => {
+  it('gir grus_-prefiks og unike id-er', () => {
+    const a = generateGravelRouteId()
+    const b = generateGravelRouteId()
+    expect(a).toMatch(/^grus_[a-z0-9]+$/)
+    expect(a).not.toBe(b)
   })
 })

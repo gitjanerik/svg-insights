@@ -23,10 +23,11 @@ const STORAGE_KEY = 'svgInsights.homeApp'
  * 'portal' er spesiell: ingen redirect, vis vanlig forside.
  */
 export const HOME_APPS = {
-  portal: { route: 'home',         label: 'Forsiden' },
-  draw:   { route: 'capture',      label: 'Illustrasjon' },
-  kart:   { route: 'kart-hjem',    label: 'Turkart' },
-  font:   { route: 'font-chooser', label: 'Webfont' },
+  portal: { route: 'home',            label: 'Forsiden' },
+  draw:   { route: 'capture',         label: 'Illustrasjon' },
+  kart:   { route: 'kart-hjem',       label: 'Turkart' },
+  rute:   { route: 'ruteplanlegger',  label: 'Rute' },
+  font:   { route: 'font-chooser',    label: 'Webfont' },
 }
 
 function read() {

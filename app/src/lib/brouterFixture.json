@@ -1,0 +1,38 @@
+{
+  "_kommentar": "SYNTETISK fixture for BRouter geojson-respons (brouter.de var proxy-blokkert fra utviklingssandkassen). Strukturen følger dokumentert format: features[0] LineString, properties.track-length (streng, meter), properties.messages med header-rad og mikrograders lon/lat. Erstattes gjerne med innspilt ekte respons ved anledning.",
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "creator": "BRouter-1.7.8",
+        "name": "brouter_custom_0",
+        "track-length": "5200",
+        "filtered ascend": "42",
+        "plain-ascend": "18",
+        "total-time": "780",
+        "total-energy": "0",
+        "cost": "6400",
+        "messages": [
+          ["Longitude", "Latitude", "Elevation", "Distance", "CostPerKm", "ElevCost", "TurnCost", "NodeCost", "InitialCost", "WayTags", "NodeTags", "Time", "Energy"],
+          ["11210000", "60110000", "180", "1200", "1030", "0", "0", "0", "0", "highway=unclassified surface=asphalt", "", "120", "0"],
+          ["11230000", "60125000", "195", "1800", "1000", "0", "0", "0", "0", "highway=track surface=gravel", "", "310", "0"],
+          ["11250000", "60140000", "210", "1400", "1000", "0", "0", "0", "0", "highway=track", "", "255", "0"],
+          ["11265000", "60150000", "205", "800", "1010", "0", "0", "0", "0", "highway=tertiary surface=compacted", "", "95", "0"]
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [11.2, 60.1, 175.0],
+          [11.21, 60.11, 180.0],
+          [11.22, 60.118, 188.0],
+          [11.23, 60.125, 195.0],
+          [11.24, 60.133, 202.0],
+          [11.25, 60.14, 210.0],
+          [11.265, 60.15, 205.0]
+        ]
+      }
+    }
+  ]
+}

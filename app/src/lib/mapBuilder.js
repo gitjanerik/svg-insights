@@ -31,34 +31,19 @@ import { bboxOfPoints, unionBbox, cellKeyFor, bboxAttr } from './spatialBucket.j
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
 import polygonClipping from 'polygon-clipping'
+import {
+  raceOverpassMirrors, fetchOverpassWithRetry,
+  OVERPASS_TIMEOUT_MS, OVERPASS_TIMEOUT_MAX_MS,
+} from './overpassClient.js'
 
-// Overpass-ventetid er den dominerende flaskehalsen i kart-bygging (81–97 % av
-// total tid, målt v9.3.25 — 4,7–11,5 s), og det varierer hvilket speil som er
-// overlastet. Vi kjører derfor flere speil i kappløp (Promise.any) og tar det
-// første gyldige svaret. Alle støtter CORS for browser-fetch.
-const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.fr/api/interpreter',
-]
-const OVERPASS_HEADERS = {
-  'Content-Type': 'application/x-www-form-urlencoded',
-  'Accept': 'application/json',
-  'User-Agent': 'svg-insights/6.0 (https://github.com/gitjanerik/svg-insights)',
-}
-// Klient-side tak PER FORSØK på Overpass-ventetid. Server-spørringen har
-// timeout:90, men uten et klient-tak henger «Fyller inn stier og detaljer …»-
-// spinneren til server-timeouten slår inn (føltes som «det skjer ikke noe mer»).
-// 30 s er romslig for et par km² (svar kommer typisk på 5–15 s) — men taket
-// MÅ skalere med arealet: et stort kart (14–20 km bredde = ~200–400 km², 100×
-// et 4 km-kart) i et tett kyst-/byområde (Oslofjorden, Nesøya) gir en spørring
-// som lovlig bruker 40–80 s på serveren. Med et fast 30 s-tak ble den avbrutt
-// klient-side FØR svaret kom, 3 forsøk på rad → «Fikk ikke lastet stier og
-// detaljer» selv om terrenget (som ikke venter på Overpass på store kart)
-// allerede var tegnet. Vi lar derfor taket vokse med bbox-arealet opp mot
-// serverens egen 90 s-grense. Se overpassTimeoutForBbox.
-const OVERPASS_TIMEOUT_MS = 30000
-const OVERPASS_TIMEOUT_MAX_MS = 90000   // matcher [timeout:90] i spørringen
+// Overpass-transporten (speil-kappløp + retry/backoff, klient-tak-konstanter)
+// bor i overpassClient.js (v12.1.0) — delt med Ruteplanleggerens grusvei-
+// overlay. Areal-skaleringen av taket er kart-spesifikk og bor her:
+// Server-spørringen har timeout:90, men uten et klient-tak henger «Fyller inn
+// stier og detaljer …»-spinneren til server-timeouten slår inn. 30 s er romslig
+// for et par km², men taket MÅ skalere med arealet: et stort kart (200–400 km²)
+// i tett kyst-/byområde gir en spørring som lovlig bruker 40–80 s på serveren.
+// Se overpassTimeoutForBbox.
 
 // Skaler klient-taket med kart-arealet. ~16 km² (4×4) → 30 s; ~200 km² (≈14 km)
 // → 90 s; klampet til [30, 90] s. Et større utsnitt = flere OSM-elementer =
@@ -78,13 +63,6 @@ export function overpassTimeoutForBbox(bbox) {
   const scaled = OVERPASS_TIMEOUT_MS + Math.max(0, areaKm2 - 16) * 340
   return Math.round(Math.min(OVERPASS_TIMEOUT_MAX_MS, Math.max(OVERPASS_TIMEOUT_MS, scaled)))
 }
-// Overpass-speilene feiler ofte forbigående (429/502/504/timeout under last) og
-// lykkes på neste forsøk. Detalj-fyllingen er den vanligste klagen, så vi prøver
-// på nytt med backoff i stedet for å gi opp etter ett kappløp. Terreng vises
-// allerede (terreng-først), så litt ekstra bakgrunns-ventetid er akseptabelt.
-const OVERPASS_ATTEMPTS = 3
-const OVERPASS_BACKOFF_MS = [1500, 4000]   // ventetid før forsøk 2 og 3
-
 // timeoutS: server-timeouten skal matche klient-taket (overpassTimeoutForBbox)
 // — en fast [timeout:90] lot en zombie-kjøring fortsette å okkupere server-slots
 // i opptil 90 s etter at klienten ga opp ved 30 s, og blokkere våre egne retries.
@@ -164,80 +142,6 @@ ${includeBuildings ? '  way["building"];' : ''}
 );
 out geom;
 `.trim()
-}
-
-// Ett kappløp mellom speilene: første gyldige svar vinner, resten avbrytes
-// (sparer båndbredde/last). Hvert speil har egen AbortController, lenket til
-// ekstern signal slik at prefetch-avbrudd stopper alle. Klient-tak avbryter alle
-// hvis ingen har svart, så et hengende endpoint ikke fryser oss til server-
-// timeouten (90 s). Kaster ved feil; retry-laget i fetchOverpass håndterer det.
-async function raceOverpassMirrors(body, { signal, timeoutMs = OVERPASS_TIMEOUT_MS } = {}) {
-  if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
-  const controllers = OVERPASS_MIRRORS.map(() => new AbortController())
-  const abortAll = () => controllers.forEach(c => { try { c.abort() } catch { /* noop */ } })
-  if (signal) signal.addEventListener('abort', abortAll, { once: true })
-  let timedOut = false
-  const timeoutTimer = setTimeout(() => { timedOut = true; abortAll() }, timeoutMs)
-
-  const attempts = OVERPASS_MIRRORS.map((url, i) => (async () => {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: OVERPASS_HEADERS,
-      body,
-      signal: controllers[i].signal,
-    })
-    if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`Overpass-feil ${res.status} (${url}): ${text.slice(0, 200)}`)
-    }
-    return res.json()
-  })())
-
-  try {
-    const data = await Promise.any(attempts)
-    abortAll()   // stopp de tapende speilene
-    return data
-  } catch (e) {
-    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
-    if (timedOut) throw new Error(`Overpass svarte ikke innen ${Math.round(timeoutMs / 1000)} s`)
-    // Promise.any → AggregateError når ALLE speil feilet.
-    const errs = e?.errors ?? [e]
-    throw new Error(`Alle Overpass-speil feilet: ${errs.map(x => x?.message ?? String(x)).join(' | ')}`)
-  } finally {
-    clearTimeout(timeoutTimer)
-    if (signal) signal.removeEventListener('abort', abortAll)
-  }
-}
-
-const delay = (ms, signal) => new Promise((resolve, reject) => {
-  const t = setTimeout(resolve, ms)
-  if (signal) signal.addEventListener('abort', () => {
-    clearTimeout(t)
-    reject(new DOMException('Avbrutt', 'AbortError'))
-  }, { once: true })
-})
-
-// Retry-loop med backoff rundt speil-kappløpet. onProgress varsler brukeren
-// før hvert nye forsøk — tidligere var retries usynlige og spinneren så «død»
-// ut i opptil flere minutter.
-async function fetchOverpassWithRetry(body, { signal, timeoutMs, onProgress } = {}) {
-  let lastErr
-  for (let attempt = 0; attempt < OVERPASS_ATTEMPTS; attempt++) {
-    if (signal?.aborted) throw new DOMException('Avbrutt', 'AbortError')
-    if (attempt > 0) {
-      const backoff = OVERPASS_BACKOFF_MS[attempt - 1] ?? OVERPASS_BACKOFF_MS.at(-1)
-      console.warn(`[Overpass] forsøk ${attempt} feilet (${lastErr?.message ?? lastErr}) — prøver igjen om ${backoff} ms`)
-      onProgress?.(`Henter kartdata … (forsøk ${attempt + 1} av ${OVERPASS_ATTEMPTS})`)
-      await delay(backoff, signal)
-    }
-    try {
-      return await raceOverpassMirrors(body, { signal, timeoutMs })
-    } catch (e) {
-      if (e?.name === 'AbortError' || signal?.aborted) throw e
-      lastErr = e
-    }
-  }
-  throw new Error(`Overpass feilet etter ${OVERPASS_ATTEMPTS} forsøk: ${lastErr?.message ?? lastErr}`)
 }
 
 // Bygninger i egen spørring for store kart: way["building"] er den suverent

@@ -13,7 +13,8 @@
 const DB_NAME = 'svg-insights-maps'
 const STORE = 'maps'
 const META_STORE = 'meta'
-const VERSION = 2
+const GRAVEL_STORE = 'gravelRoutes'   // Ruteplanleggerens lagrede grusruter (v3)
+const VERSION = 3
 
 let dbPromise = null
 
@@ -29,6 +30,10 @@ function open() {
       }
       if (!db.objectStoreNames.contains(META_STORE)) {
         db.createObjectStore(META_STORE, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(GRAVEL_STORE)) {
+        const gs = db.createObjectStore(GRAVEL_STORE, { keyPath: 'id' })
+        gs.createIndex('opprettet', 'opprettet')
       }
     }
     req.onsuccess = () => resolve(req.result)
@@ -125,6 +130,48 @@ export async function clearAll() {
   const t = await tx('readwrite', [STORE, META_STORE])
   t.objectStore(STORE).clear()
   t.objectStore(META_STORE).clear()
+  await new Promise((resolve, reject) => {
+    t.oncomplete = resolve
+    t.onerror = () => reject(t.error)
+    t.onabort = () => reject(t.error)
+  })
+}
+
+// ---------- Ruteplanleggerens lagrede grusruter (gravelRoutes, v3) ----------
+// Record: { id, navn, opprettet, waypoints: [{lat,lon,name}], points:
+// [[lon,lat,ele]…] (DP-forenklet), segments|null, lengthM, gravelShare|null,
+// profileVersion }. Små records (typisk < 100 kB) → ingen meta-projeksjon,
+// listGravelRoutes leser alt.
+
+export function generateGravelRouteId() {
+  return 'grus_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+}
+
+export async function saveGravelRoute(route) {
+  const t = await tx('readwrite', GRAVEL_STORE)
+  t.objectStore(GRAVEL_STORE).put(route)
+  await new Promise((resolve, reject) => {
+    t.oncomplete = resolve
+    t.onerror = () => reject(t.error)
+    t.onabort = () => reject(t.error)
+  })
+  return route
+}
+
+export async function listGravelRoutes() {
+  const t = await tx('readonly', GRAVEL_STORE)
+  const all = await asPromise(t.objectStore(GRAVEL_STORE).getAll())
+  return all.sort((a, b) => b.opprettet - a.opprettet)
+}
+
+export async function loadGravelRoute(id) {
+  const t = await tx('readonly', GRAVEL_STORE)
+  return (await asPromise(t.objectStore(GRAVEL_STORE).get(id))) ?? null
+}
+
+export async function deleteGravelRoute(id) {
+  const t = await tx('readwrite', GRAVEL_STORE)
+  t.objectStore(GRAVEL_STORE).delete(id)
   await new Promise((resolve, reject) => {
     t.oncomplete = resolve
     t.onerror = () => reject(t.error)
