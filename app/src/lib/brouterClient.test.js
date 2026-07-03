@@ -110,6 +110,17 @@ describe('parseRoute', () => {
     expect(r.segments.at(-1).toIdx).toBe(6)
     expect(r.segments.filter((s) => s.gravel).map((s) => s.distM)).toEqual([1800, 1400, 800])
   })
+  it('strekker siste segment til rutas ende når siste rad ikke matcher siste punkt', () => {
+    const f = JSON.parse(JSON.stringify(fixture))
+    const rows = f.features[0].properties.messages
+    // Siste rad peker på nest siste punkt (11.25, 60.14) i stedet for enden.
+    rows[rows.length - 1][0] = '11250000'
+    rows[rows.length - 1][1] = '60140000'
+    const r = parseRoute(f)
+    expect(r.segments).not.toBe(null)
+    expect(r.segments.at(-1).toIdx).toBe(6)   // halen mot B mangler ikke
+  })
+
   it('mangler messages → null-fallback, geometri beholdes', () => {
     const noMsg = JSON.parse(JSON.stringify(fixture))
     delete noMsg.features[0].properties.messages

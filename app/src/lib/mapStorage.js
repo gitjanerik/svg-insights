@@ -22,6 +22,9 @@ function open() {
   if (dbPromise) return dbPromise
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, VERSION)
+    // Ikke cache en avvist open for alltid — én forbigående feil (låst DB,
+    // privat modus-quota) ville ellers brikke all lagring resten av økten.
+    req.onerror = () => { dbPromise = null; reject(req.error) }
     req.onupgradeneeded = () => {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE)) {
@@ -37,7 +40,6 @@ function open() {
       }
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
   })
   return dbPromise
 }

@@ -20,7 +20,7 @@ assign turnInstructionMode = 0
 
 assign ispaved = or surface=asphalt or surface=paved or surface=concrete or surface=paving_stones surface=sett
 assign isgravel = or surface=gravel or surface=compacted or surface=fine_gravel or surface=unpaved or surface=ground or surface=dirt surface=pebblestone
-assign nosurface = not or ispaved or isgravel surface=
+assign nosurface = surface=
 
 assign turncost = 0
 assign initialcost = 0
@@ -31,7 +31,6 @@ assign defaultaccess =
   switch access=private false
   switch motor_vehicle=no false
   switch motor_vehicle=private false
-  switch motorcycle=no false
   true
 
 assign onlyroads =
@@ -42,8 +41,8 @@ assign onlyroads =
   defaultaccess
 
 assign costfactor =
-  switch not onlyroads 100000
   switch route=ferry 8
+  switch not onlyroads 100000
 
   # Skogsbilvei / track: kjernen i grusnettet. grade1 = fast dekke -> dyrere;
   # grade5 kan være ukjørbart for tur-MC -> straffes.
@@ -93,7 +92,7 @@ assign defaultaccess =
 
 assign initialcost =
   switch not defaultaccess 1000000
-  switch barrier=gate ( switch locked=yes 1000000 300 )
-  switch barrier=lift_gate|swing_gate 300
-  switch barrier=bollard|block|cycle_barrier 1000000
+  switch barrier=gate 300
+  switch barrier=lift_gate 300
+  switch barrier=bollard|block|cycle_barrier 100000
   0

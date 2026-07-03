@@ -32,8 +32,8 @@ const DEFAULT_PROPOSAL = 'balansert'
 const FALLBACK_PROFILE = 'gravel'
 
 function loadProfileText(asset) {
-  return async () => {
-    const res = await fetch(`${import.meta.env.BASE_URL}brouter/${asset}`)
+  return async (signal) => {
+    const res = await fetch(`${import.meta.env.BASE_URL}brouter/${asset}`, { signal })
     if (!res.ok) throw new Error(`Fikk ikke lastet grusprofilen (${res.status})`)
     return res.text()
   }
@@ -59,13 +59,16 @@ export function useGravelPlanner() {
     } else {
       const load = loadProfileText(def.asset)
       try {
-        let profileId = await ensureProfileId(load, { key: def.profileKey })
+        // signal dekker hele løypa (profiltekst-fetch + opplasting + ruting)
+        // så 20 s-taket faktisk gjelder — uten den kunne spinneren henge på
+        // en treg profil-opplasting langt forbi timeouten (review-funn).
+        let profileId = await ensureProfileId(load, { key: def.profileKey, signal })
         try {
           geojson = await fetchRoute(waypoints, profileId, { signal })
         } catch (e) {
           if (!(e instanceof ProfileExpiredError)) throw e
           clearProfileCache(undefined, def.profileKey)
-          profileId = await ensureProfileId(load, { key: def.profileKey })
+          profileId = await ensureProfileId(load, { key: def.profileKey, signal })
           geojson = await fetchRoute(waypoints, profileId, { signal })
         }
       } catch (e) {
@@ -78,14 +81,18 @@ export function useGravelPlanner() {
     return { ...def, ...parseRoute(geojson), usedFallbackProfile }
   }
 
+  // Veipunktene fryses ved beregnings-start — applySelection skal ikke lese
+  // levende pointA/pointB (kan endres mens ruting pågår → feil merking/lagring).
+  let computedWaypoints = null
+
   function applySelection() {
     const p = proposals.value.find((x) => x.id === selectedId.value) ?? proposals.value[0]
-    if (!p) { route.value = null; return }
+    if (!p || !computedWaypoints) { route.value = null; return }
     selectedId.value = p.id
     route.value = {
       ...p,
-      waypoints: [pointA.value, pointB.value],
-      directM: haversineM(pointA.value, pointB.value),
+      waypoints: computedWaypoints,
+      directM: haversineM(computedWaypoints[0], computedWaypoints.at(-1)),
     }
   }
 
@@ -97,10 +104,8 @@ export function useGravelPlanner() {
     const timer = setTimeout(() => ac.abort(), BROUTER_TIMEOUT_MS)
     routeState.value = 'routing'
     routeError.value = ''
-    const waypoints = [
-      { lat: pointA.value.lat, lon: pointA.value.lon },
-      { lat: pointB.value.lat, lon: pointB.value.lon },
-    ]
+    computedWaypoints = [{ ...pointA.value }, { ...pointB.value }]
+    const waypoints = computedWaypoints.map((p) => ({ lat: p.lat, lon: p.lon }))
     try {
       const results = await Promise.allSettled(
         PROPOSAL_DEFS.map((def) => fetchProposal(def, waypoints, ac.signal)),
@@ -136,6 +141,7 @@ export function useGravelPlanner() {
 
   function clearRoute() {
     routeAbort?.abort()
+    computedWaypoints = null
     route.value = null
     proposals.value = []
     routeState.value = 'idle'
@@ -173,8 +179,10 @@ export function useGravelPlanner() {
   }
 
   function openSaved(record) {
+    routeAbort?.abort()   // pågående ruting skal ikke overskrive den gjenåpnede ruta
     pointA.value = record.waypoints?.[0] ?? null
     pointB.value = record.waypoints?.at(-1) ?? null
+    computedWaypoints = record.waypoints ?? null
     proposals.value = []
     route.value = {
       id: record.proposalId ?? 'lagret',

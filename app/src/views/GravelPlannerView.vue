@@ -16,6 +16,7 @@ import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { useNominatim } from '../composables/useNominatim.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
+import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 
 const router = useRouter()
 const planner = useGravelPlanner()
@@ -28,6 +29,17 @@ const PROPOSAL_COLORS = { 'mest-grus': '#e8802b', balansert: '#8b5cf6', kortest:
 
 // ── Modus: Utforsk (overlay) / Planlegg (A→B) ───────────────────────────────
 const mode = ref('utforsk')
+
+// Planlegg-arket er en drabar drawer med samme UX som turkartets infodrawer:
+// 45 dvh standard, dra i midtstilt håndtak for maksimér/standard/minimér.
+// Minimert viser håndtak + kompakt tittel-/oppsummeringslinje, så brukeren
+// kan se hele kartet og dra arket opp igjen. Kun maksimert dimmer kartet.
+const SHEET_PEEK_PX = 92
+// maxTopGapPx MÅ være større enn toppbaren (~106 px, z-30 over drawerens
+// z-20) — med turkartets 56 px havnet håndtaket BAK toppbaren i maksimert
+// tilstand og kunne ikke gripes (fanget av E2E).
+const sheetDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: SHEET_PEEK_PX, maxTopGapPx: 150, allowMinimize: true })
+watch(mode, (m) => { if (m === 'planlegg') sheetDrawer.reset() })
 
 // ── Kart-tilstand ───────────────────────────────────────────────────────────
 const VIEW_LS_KEY = 'svg-insights-ruteplanlegger-view'
@@ -115,7 +127,14 @@ function touchDist(e) {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+// Interaktive barn (zoom-knapper o.l.) skal ikke starte pan/tap på kartet —
+// uten denne satte et tap på zoom-knappen et A/B-veipunkt (review-funn).
+function onInteractiveChild(e) {
+  return e.target instanceof Element && e.target.closest('button')
+}
+
 function onTouchStart(e) {
+  if (onInteractiveChild(e)) return
   if (e.touches.length === 2) {
     pinching = true; panning = false; tapStart = null
     lastDist = touchDist(e); pinchRatio = 1
@@ -160,7 +179,7 @@ function onTouchEnd(e) {
   }
 }
 function onMouseDown(e) {
-  if (e.button !== 0) return
+  if (e.button !== 0 || onInteractiveChild(e)) return
   panning = true
   panStart = { x: e.clientX, y: e.clientY, lat: center.value.lat, lon: center.value.lon }
   tapStart = { x: e.clientX, y: e.clientY, t: Date.now() }
@@ -220,6 +239,15 @@ function swapPoints() {
 
 function selectResult(field, r) {
   setPoint(field, { lat: r.lat, lon: r.lon, name: r.shortName ?? r.name }, { pan: true })
+}
+
+// Dropdown vises kun når brukeren faktisk har skrevet noe annet enn valgt
+// punkts etikett — setPoint skriver query programmatisk, og uten denne vakta
+// trigget det et Nominatim-søk på etiketten og gjenåpnet stale treff ved fokus.
+function showDropdown(field) {
+  const s = field === 'A' ? searchA : searchB
+  const p = field === 'A' ? pointA.value : pointB.value
+  return activeSearch.value === field && s.results.value.length > 0 && s.query.value !== labelFor(p)
 }
 
 function onMapTap(px) {
@@ -380,6 +408,7 @@ async function onFindRoute() {
     // Sentrer på rutas midtpunkt (grov innramming — brukeren justerer selv).
     const mid = route.value.points[Math.floor(route.value.points.length / 2)]
     center.value = { lat: mid[1], lon: mid[0] }
+    sheetDrawer.reset()   // resultatet åpner i standard-høyde
   }
 }
 
@@ -388,16 +417,28 @@ function startSave() {
     `${pointA.value?.name ?? 'A'} – ${pointB.value?.name ?? 'B'}`
   savingName.value = true
 }
+const saveBusy = ref(false)
 async function confirmSave() {
-  const rec = await planner.saveCurrentRoute(saveName.value.trim())
-  savingName.value = false
-  if (rec) { savedFlash.value = 'Ruta er lagret'; setTimeout(() => { savedFlash.value = '' }, 2000) }
+  if (saveBusy.value) return   // dobbel-tap skal ikke lagre duplikat
+  saveBusy.value = true
+  try {
+    const rec = await planner.saveCurrentRoute(saveName.value.trim())
+    savingName.value = false
+    if (rec) { savedFlash.value = 'Ruta er lagret'; setTimeout(() => { savedFlash.value = '' }, 2000) }
+  } catch (e) {
+    console.warn('[Ruteplanlegger] lagring feilet:', e?.message ?? e)
+    savedFlash.value = 'Lagring feilet — prøv igjen'
+    setTimeout(() => { savedFlash.value = '' }, 3000)
+  } finally {
+    saveBusy.value = false
+  }
 }
 
 function onOpenSaved(rec) {
   planner.openSaved(rec)
   showSaved.value = false
   mode.value = 'planlegg'
+  sheetDrawer.reset()
   const mid = rec.points[Math.floor(rec.points.length / 2)]
   if (mid) center.value = { lat: mid[1], lon: mid[0] }
   if (zoom.value < 8) zoom.value = 8
@@ -426,14 +467,24 @@ const isOffline = ref(!navigator.onLine)
 const onlineHandler = () => { isOffline.value = false }
 const offlineHandler = () => { isOffline.value = true }
 
+let mapResizeObs = null
 onMounted(() => {
-  nextTick(measureMap)
+  nextTick(() => {
+    measureMap()
+    // ResizeObserver fanger layout-endringer window-resize ikke ser
+    // (adressefelt-kollaps på mobil, rotasjon, framtidige layout-skift).
+    if (mapRef.value && typeof ResizeObserver !== 'undefined') {
+      mapResizeObs = new ResizeObserver(measureMap)
+      mapResizeObs.observe(mapRef.value)
+    }
+  })
   window.addEventListener('resize', measureMap)
   window.addEventListener('online', onlineHandler)
   window.addEventListener('offline', offlineHandler)
   void planner.refreshSaved()
 })
 onUnmounted(() => {
+  mapResizeObs?.disconnect()
   window.removeEventListener('resize', measureMap)
   window.removeEventListener('online', onlineHandler)
   window.removeEventListener('offline', offlineHandler)
@@ -598,11 +649,46 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- PLANLEGG: Fra/Til-sheet (før rute) -->
-    <div v-if="mode === 'planlegg' && !route" class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 px-4 pt-3
-                pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
-      <div class="max-w-[560px] mx-auto">
-        <div class="text-[14px] font-semibold text-white mb-2.5">Planlegg grusrute</div>
+    <!-- PLANLEGG: drabar drawer (samme UX som turkartets infodrawer) — bytter
+         mellom Fra/Til-skjema og rute-resultat. Kun maksimert dimmer/sperrer
+         kartet; ellers er kartet interaktivt bak (tap-to-set virker med
+         drawer i standard/minimert høyde). -->
+    <div v-if="mode === 'planlegg'"
+         class="absolute inset-0 z-20 flex items-end justify-center transition-colors duration-200"
+         :class="sheetDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
+         @click.self="sheetDrawer.reset()">
+      <div class="w-full max-w-[560px] bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col pointer-events-auto"
+           :style="sheetDrawer.drawerHeightStyle.value">
+        <!-- Dra-håndtak: samme hit-flate og følsomhet som infodraweren. -->
+        <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-3.5 pb-2 flex justify-center"
+             @pointerdown="sheetDrawer.onPointerDown($event)"
+             @pointermove="sheetDrawer.onPointerMove($event)"
+             @pointerup="sheetDrawer.onPointerUp($event)"
+             @pointercancel="sheetDrawer.onPointerUp($event)">
+          <div class="w-12 h-1.5 rounded-full bg-white/40"
+               :style="{ opacity: sheetDrawer.handleOpacity.value }"></div>
+        </div>
+        <!-- Kompakt header — synlig også i minimert peek -->
+        <div class="shrink-0 px-4 pb-2">
+          <template v-if="route && routeState !== 'routing'">
+            <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
+            <div class="flex items-baseline gap-2 mt-0.5">
+              <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
+              <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
+                · Grus {{ fmtGrus(route.gravelShare) }}</span>
+              <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
+            </div>
+          </template>
+          <template v-else>
+            <div class="text-[14px] font-semibold text-white">Planlegg grusrute</div>
+          </template>
+        </div>
+        <!-- Innhold (skjules i minimert peek) -->
+        <div v-show="!sheetDrawer.isMinimized.value"
+             class="flex-1 overflow-y-auto px-4 pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+
+        <!-- Fra/Til-skjema -->
+        <template v-if="!route || routeState === 'routing'">
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
             <button @click="swapPoints" aria-label="Bytt start og mål"
@@ -651,7 +737,7 @@ onUnmounted(() => {
             </button>
           </div>
           <!-- Nominatim-treff (åpner OPPOVER så de ikke drukner under sheeten) -->
-          <div v-if="activeSearch === field && (field === 'A' ? searchA : searchB).results.value.length"
+          <div v-if="showDropdown(field)"
                class="absolute left-0 right-0 bottom-full mb-1 rounded-xl bg-zinc-900/98 backdrop-blur
                       border border-white/10 shadow-2xl max-h-[36dvh] overflow-y-auto z-30">
             <button v-for="r in (field === 'A' ? searchA : searchB).results.value" :key="r.id"
@@ -671,22 +757,11 @@ onUnmounted(() => {
                 class="w-4 h-4 border-2 border-emerald-200/30 border-t-emerald-100 rounded-full animate-spin"></span>
           {{ routeState === 'routing' ? 'Beregner tre ruteforslag …' : 'Finn grusrute' }}
         </button>
-      </div>
-    </div>
+        </template>
 
-    <!-- PLANLEGG: rute-resultat (GRUSRUTE + tre forslag + stat-fliser) -->
-    <div v-if="mode === 'planlegg' && route && routeState !== 'routing'"
-         class="shrink-0 z-20 bg-zinc-900 border-t border-white/10 px-4 pt-3 max-h-[52dvh] overflow-y-auto
-                pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
-      <div class="max-w-[560px] mx-auto">
-        <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
-        <div class="flex items-baseline gap-2 mt-0.5">
-          <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
-          <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
-            · Grus {{ fmtGrus(route.gravelShare) }}</span>
-          <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
-        </div>
-        <div class="text-[12px] text-white/50 mt-1 truncate">
+        <!-- Rute-resultat (GRUSRUTE-headeren ligger i drawer-headeren over) -->
+        <template v-else>
+        <div class="text-[12px] text-white/50 truncate">
           <template v-if="route.usedFallbackProfile">Standard grusprofil · </template>
           {{ route.navn ?? `${labelFor(pointA)} → ${labelFor(pointB)}` }}
         </div>
@@ -771,6 +846,9 @@ onUnmounted(() => {
                          active:scale-95 transition">Avbryt</button>
         </div>
         <div v-if="savedFlash" class="mt-1.5 text-center text-[11px] text-emerald-300">{{ savedFlash }}</div>
+        </template>
+
+        </div>
       </div>
     </div>
 

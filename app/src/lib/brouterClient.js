@@ -21,11 +21,14 @@ export class ProfileExpiredError extends Error {
   constructor(msg) { super(msg); this.name = 'ProfileExpiredError' }
 }
 
-// POST profilteksten → {profileid: "custom_…"}.
-export async function uploadProfile(profileText, { fetchFn = fetch } = {}) {
-  const res = await fetchFn(`${BROUTER_BASE}/profile`, { method: 'POST', body: profileText })
+// POST profilteksten → {profileid: "custom_…"}. Svaret kan inneholde et
+// `error`-felt selv med 200 OK (ugyldig profilskript) — uten sjekken ville en
+// forgiftet profileid blitt cachet og alle rutekall feilet stille.
+export async function uploadProfile(profileText, { fetchFn = fetch, signal } = {}) {
+  const res = await fetchFn(`${BROUTER_BASE}/profile`, { method: 'POST', body: profileText, signal })
   if (!res.ok) throw new Error(`BRouter profil-opplasting feilet (${res.status})`)
   const data = await res.json()
+  if (data?.error) throw new Error(`BRouter avviste profilen: ${String(data.error).slice(0, 200)}`)
   if (!data?.profileid) throw new Error(`BRouter profil-opplasting ga uventet svar: ${JSON.stringify(data).slice(0, 120)}`)
   return data.profileid
 }
@@ -34,15 +37,15 @@ export async function uploadProfile(profileText, { fetchFn = fetch } = {}) {
 // men ikke ny fane — profileid-er på serveren er uansett kortlevde, så en
 // re-opplasting ved ny økt er riktig oppførsel. `key` skiller flere profiler
 // (grus-maks / balansert) i samme cache-navnerom.
-export async function ensureProfileId(loadProfileText, { fetchFn = fetch, storage, key = 'grus' } = {}) {
+export async function ensureProfileId(loadProfileText, { fetchFn = fetch, storage, key = 'grus', signal } = {}) {
   const store = storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : null)
   const cacheKey = `${PROFILE_CACHE_KEY}:${key}`
   try {
     const cached = JSON.parse(store?.getItem(cacheKey) ?? 'null')
     if (cached?.id && cached.v === PROFILE_VERSION) return cached.id
   } catch { /* korrupt cache — last opp på nytt */ }
-  const text = await loadProfileText()
-  const id = await uploadProfile(text, { fetchFn })
+  const text = await loadProfileText(signal)
+  const id = await uploadProfile(text, { fetchFn, signal })
   try { store?.setItem(cacheKey, JSON.stringify({ id, v: PROFILE_VERSION, t: 0 })) } catch { /* noop */ }
   return id
 }
@@ -165,6 +168,13 @@ export function parseRoute(geojson) {
       matchedM += distM
     }
     if (cls === 'gravel') gravelM += distM
+  }
+
+  // Rutehalen: siste messages-rad matcher ikke alltid siste linjepunkt
+  // (avrunding/duplikater) — strekk siste segment til enden så B-halen
+  // ikke mangler visuelt.
+  if (segments.length && segments.at(-1).toIdx < points.length - 1) {
+    segments.at(-1).toIdx = points.length - 1
   }
 
   const denom = totalMsgM || lengthM
