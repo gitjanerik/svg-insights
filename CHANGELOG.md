@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.3: Ruteplanlegger — delingsmodus låser UI-et og banneret flyter over kartet
+
+Mottak av delt grusrute er nå en ekte «delingsmodus» (samme filosofi som turkartets del-flyt der UI-elementer låses midlertidig): banneret flyter OPPÅ kartet i stedet for å dytte det ned, «Utforsk»/«Planlegg»-pillen skjules, toppbar-knappene (tilbake + lagrede ruter) deaktiveres, Fra/Til-feltene er read-only og GPS-/kartvalg-/bytt-knappene deaktiveres — mottakeren ledes til én handling: «Finn grusrute» (eller X for å avbryte). Kart-pan/zoom og skuff-drag er fortsatt fritt, så mottakeren kan se på strekningen før beregning. Når ruta er beregnet avsluttes delingsmodusen automatisk og hele UI-et låses opp.
+
+---
+
 ## 2026-07-03 — v12.1.2: Ruteplanlegger — scroll-lås og frittflytende modus-knapper
 
 To UX-fikser i Ruteplanleggeren. **Scroll-lås:** SPA-navigasjon/tastatur-fokus kunne gi en residual body-scroll som skjøv toppbaren ut av synsfeltet (kjent Vue-SPA-problem); planleggeren låser nå dokument-scroll ved mount og nullstiller offset — samme `lockBodyScroll`-mønster som MapView. **Fristilte modus-knapper:** «Utforsk»/«Planlegg»-segmentet er flyttet ut av den sorte toppbaren og flyter nå som en frittstående pille øverst midt over kartet — man ser fullskjermskart minus selve toppbaren. Status-chipsene er flyttet ned under pillen, og trykk på pillen lekker ikke til kartets pan/tap-håndtering.
