@@ -55,10 +55,12 @@ export function clearProfileCache(storage, key = 'grus') {
   try { store?.removeItem(`${PROFILE_CACHE_KEY}:${key}`) } catch { /* noop */ }
 }
 
-// Maks avstand fra brukerens A/B-punkt til der ruta faktisk starter/slutter.
-// BRouter snapper waypoints til nærmeste rutbare vei UTEN avstandstak — med
-// B midt på et jorde kan f.eks. bilprofilen snappe til en helt annen vei og
-// «bomme totalt» på punktet. Forslag som snapper lenger unna enn dette droppes.
+// RELATIV snap-toleranse (v12.1.7 — var absolutt 200 m-grense): et forslag
+// droppes kun når det snapper mer enn dette DÅRLIGERE enn det beste forslaget.
+// Absolutt grense feilet på generelle stedssøk («Dombås» → «Lesja») der
+// sentrums-punktet kan ligge et stykke fra nærmeste rutbare vei for ALLE
+// profiler — det er greit, alle er like «off». Signalet vi vil luke er
+// bilprofilen som snapper til en HELT ANNEN vei enn de andre forslagene.
 export const MAX_SNAP_DIST_M = 200
 
 /**
