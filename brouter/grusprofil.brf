@@ -1,4 +1,4 @@
-# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 4, matcher
+# grusprofil.brf — SVG Insights Ruteplanlegger (versjon 5, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: MC-turplanlegging som MAKSIMERER sammenhengende grusvei A->B i Norge.
@@ -15,6 +15,15 @@
 assign processUnusedTags = false
 assign validForCars = true
 assign turnInstructionMode = 0
+
+# Snapping (v5): BRouter sin default «dynamic range»-matching er KOST-vektet
+# og kan feste A/B til en billig grusvei mange km unna punktet (opptil ~50 km)
+# — eller til en isolert vei-stump ("target island detected"). Skru den av og
+# bruk fast fangst-radius i stedet: punktet må ligge innen 500 m fra en lovlig
+# vei, ellers svarer BRouter med en tydelig feil i stedet for en villedende
+# rute som verken starter eller slutter der brukeren pekte.
+assign use_dynamic_range = false
+assign waypointCatchingRange = 500
 
 ---context:way
 
