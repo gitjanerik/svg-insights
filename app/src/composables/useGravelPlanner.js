@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import {
   ensureProfileId, fetchRoute, parseRoute, clearProfileCache, haversineM,
-  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M,
+  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M, snapHardLimitM,
+  fmtAvstandM, estimateMcTimeS,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_TIMEOUT_MS,
 } from '../lib/brouterClient.js'
 import {
@@ -32,6 +33,10 @@ const DEFAULT_PROPOSAL = 'balansert'
 // ruter gladelig på gang-/sykkelveier (ulovlig for MC). 'car-fast' mangler
 // grus-prioritering, men holder seg på lovlige kjøreveier. Flagges tydelig
 // i UI via usedFallbackProfile.
+// MERK (v12.1.10): fallbacken gjelder KUN profil-lasting/-opplasting. En
+// RUTE-feil under grusprofilen (f.eks. «target island detected» eller punkt
+// utenfor fangst-radius) skal forkaste forslaget, ikke maskeres med en
+// bilrute merket «GRUSRUTE · Grus 4 %».
 const FALLBACK_PROFILE = 'car-fast'
 
 function loadProfileText(asset) {
@@ -53,32 +58,38 @@ export function useGravelPlanner() {
   const savedRoutes = ref([])
   let routeAbort = null
 
-  // Ett forslag: egen profil (m/ utløps-retry og bilprofil-fallback) eller
-  // innebygd. Fallback-årsaken føres til UI-et (amber-varsel) for diagnose.
+  // Ett forslag: egen profil (m/ utløps-retry) eller innebygd. Bilprofil-
+  // fallback KUN når selve profilen ikke lot seg laste/laste opp — rutefeil
+  // forkaster forslaget (Promise.allSettled lar de andre leve videre).
+  // Fallback-årsaken føres til UI-et (amber-varsel) for diagnose.
   async function fetchProposal(def, waypoints, signal) {
+    if (def.builtin) {
+      const geojson = await fetchRoute(waypoints, def.builtin, { signal })
+      return { ...def, ...parseRoute(geojson), usedFallbackProfile: false, fallbackReason: null }
+    }
+    const load = loadProfileText(def.asset)
     let usedFallbackProfile = false
     let fallbackReason = null
+    let profileId = null
+    try {
+      profileId = await ensureProfileId(load, { key: def.profileKey })
+    } catch (e) {
+      if (e?.name === 'AbortError') throw e
+      console.warn(`[Ruteplanlegger] profil «${def.id}» kunne ikke lastes, bruker innebygd ${FALLBACK_PROFILE}:`, e?.message ?? e)
+      usedFallbackProfile = true
+      fallbackReason = String(e?.message ?? e).slice(0, 160)
+    }
     let geojson
-    if (def.builtin) {
-      geojson = await fetchRoute(waypoints, def.builtin, { signal })
+    if (usedFallbackProfile) {
+      geojson = await fetchRoute(waypoints, FALLBACK_PROFILE, { signal })
     } else {
-      const load = loadProfileText(def.asset)
       try {
-        let profileId = await ensureProfileId(load, { key: def.profileKey })
-        try {
-          geojson = await fetchRoute(waypoints, profileId, { signal })
-        } catch (e) {
-          if (!(e instanceof ProfileExpiredError)) throw e
-          clearProfileCache(undefined, def.profileKey)
-          profileId = await ensureProfileId(load, { key: def.profileKey })
-          geojson = await fetchRoute(waypoints, profileId, { signal })
-        }
+        geojson = await fetchRoute(waypoints, profileId, { signal })
       } catch (e) {
-        if (e?.name === 'AbortError') throw e
-        console.warn(`[Ruteplanlegger] profil «${def.id}» feilet, bruker innebygd ${FALLBACK_PROFILE}:`, e?.message ?? e)
-        geojson = await fetchRoute(waypoints, FALLBACK_PROFILE, { signal })
-        usedFallbackProfile = true
-        fallbackReason = String(e?.message ?? e).slice(0, 160)
+        if (!(e instanceof ProfileExpiredError)) throw e
+        clearProfileCache(undefined, def.profileKey)
+        profileId = await ensureProfileId(load, { key: def.profileKey })
+        geojson = await fetchRoute(waypoints, profileId, { signal })
       }
     }
     return { ...def, ...parseRoute(geojson), usedFallbackProfile, fallbackReason }
@@ -120,12 +131,29 @@ export function useGravelPlanner() {
       // enn det beste forslaget (bilprofilen kan «bomme totalt» og treffe en
       // helt annen vei). Beste forslag beholdes alltid — generelle stedssøk
       // der alle profiler snapper likt langt («Dombås») skal ikke feile.
-      const withSnap = ok.map((p) => ({ p, d: snapDistances(p, waypoints) }))
-      const bestStart = Math.min(...withSnap.map((x) => x.d.start))
-      const bestEnd = Math.min(...withSnap.map((x) => x.d.end))
-      const snapped = withSnap
-        .filter(({ d }) => d.start <= bestStart + MAX_SNAP_DIST_M && d.end <= bestEnd + MAX_SNAP_DIST_M)
-        .map((x) => x.p)
+      const withSnap = ok.map((p) => {
+        const d = snapDistances(p, waypoints)
+        return { ...p, snapStartM: d.start, snapEndM: d.end }
+      })
+      const bestStart = Math.min(...withSnap.map((p) => p.snapStartM))
+      const bestEnd = Math.min(...withSnap.map((p) => p.snapEndM))
+      let snapped = withSnap
+        .filter((p) => p.snapStartM <= bestStart + MAX_SNAP_DIST_M && p.snapEndM <= bestEnd + MAX_SNAP_DIST_M)
+      // ABSOLUTT fornufts-grense (v12.1.10): en rute som starter/slutter
+      // håpløst langt fra A/B (punkt i veiløst terreng → alle forslag snappet
+      // til samme fjerne grusvei) er verre enn ingen rute — forklar heller
+      // hvor langt unna nærmeste kjørbare vei ligger.
+      const directM = haversineM(waypoints[0], waypoints[1])
+      const limitM = snapHardLimitM(directM)
+      snapped = snapped.filter((p) => p.snapStartM <= limitM && p.snapEndM <= limitM)
+      if (!snapped.length) {
+        const deler = []
+        if (bestStart > limitM) deler.push(`${fmtAvstandM(bestStart)} fra start (A)`)
+        if (bestEnd > limitM) deler.push(`${fmtAvstandM(bestEnd)} fra mål (B)`)
+        throw new Error(deler.length
+          ? `Fant ingen kjørbar vei nær ${deler.length === 2 ? 'punktene' : (bestStart > limitM ? 'startpunktet' : 'målpunktet')} — nærmeste lovlige kjørevei er ${deler.join(' og ')}. Flytt ${deler.length === 2 ? 'punktene' : 'punktet'} nærmere en vei og prøv igjen.`
+          : 'Ruteforslagene traff ikke start- og målpunktet samtidig. Flytt punktene nærmere en vei og prøv igjen.')
+      }
       // Aldri to identiske forslag: behold første i prioritert rekkefølge
       // (Mest grus → Balansert → Kortest) — «inntil 3 ruteforslag».
       ok = []
@@ -186,6 +214,7 @@ export function useGravelPlanner() {
       lengthM: r.lengthM,
       gravelShare: r.gravelShare,
       totalTimeS: r.totalTimeS,
+      estimatedTimeS: r.estimatedTimeS ?? null,
       proposalId: r.id,
       profileVersion: PROFILE_VERSION,
     }))
@@ -198,6 +227,9 @@ export function useGravelPlanner() {
     pointA.value = record.waypoints?.[0] ?? null
     pointB.value = record.waypoints?.at(-1) ?? null
     proposals.value = []
+    const gravelM = record.gravelShare != null ? record.gravelShare * record.lengthM : null
+    const snap = (record.points?.length >= 2 && pointA.value && pointB.value)
+      ? snapDistances({ points: record.points }, [pointA.value, pointB.value]) : null
     route.value = {
       id: record.proposalId ?? 'lagret',
       label: 'Lagret rute',
@@ -205,8 +237,11 @@ export function useGravelPlanner() {
       lengthM: record.lengthM,
       segments: null,               // lagrede segmenter mangler geometri-indekser → uniform farge
       gravelShare: record.gravelShare,
-      gravelM: record.gravelShare != null ? record.gravelShare * record.lengthM : null,
+      gravelM,
       totalTimeS: record.totalTimeS ?? null,
+      estimatedTimeS: record.estimatedTimeS ?? estimateMcTimeS(record.lengthM, { gravelM }),
+      snapStartM: snap?.start ?? null,
+      snapEndM: snap?.end ?? null,
       waypoints: record.waypoints,
       directM: (pointA.value && pointB.value) ? haversineM(pointA.value, pointB.value) : null,
       usedFallbackProfile: false,

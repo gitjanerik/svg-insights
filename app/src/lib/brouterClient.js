@@ -13,7 +13,7 @@
 export const BROUTER_BASE = 'https://brouter.de/brouter'
 // Bumpes når grusprofil.brf endres → invaliderer cachet profileid så neste
 // rutekall laster opp ny profil.
-export const PROFILE_VERSION = 4
+export const PROFILE_VERSION = 5
 export const BROUTER_TIMEOUT_MS = 20000
 const PROFILE_CACHE_KEY = 'grus-brouter-profile'
 
@@ -63,6 +63,23 @@ export function clearProfileCache(storage, key = 'grus') {
 // bilprofilen som snapper til en HELT ANNEN vei enn de andre forslagene.
 export const MAX_SNAP_DIST_M = 200
 
+// ABSOLUTT fornufts-grense (v12.1.10): den relative sjekken over beholder
+// alltid det beste forslaget — men når A/B står i veiløst terreng snapper
+// BRouter sin kost-vektede «dynamic range»-matching ALLE forslag til nærmeste
+// billige grusvei, gjerne flere km unna (observert: rute 6,2 km med luftlinje
+// 13,2 km). En rute som verken starter eller slutter i nærheten av punktene
+// er verre enn ingen rute. Grensen er relativ til luftlinja med et gulv, så
+// korte turer ikke får urimelig slingringsmonn.
+export const SNAP_HARD_MIN_M = 500
+export function snapHardLimitM(directM) {
+  return Math.max(SNAP_HARD_MIN_M, 0.25 * (directM || 0))
+}
+
+// «312 m» / «3,2 km» — brukes i snap-varsler og feilmeldinger.
+export function fmtAvstandM(m) {
+  return m >= 995 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`
+}
+
 /**
  * Avstand (meter) fra ønsket A/B til rutas faktiske start-/sluttpunkt.
  * parsed = parseRoute-resultat, waypoints = [{lat,lon}, …] (A først, B sist).
@@ -86,6 +103,32 @@ export function routesLookIdentical(a, b) {
   const am = a.points[Math.floor(a.points.length / 2)]
   const bm = b.points[Math.floor(b.points.length / 2)]
   return haversineM({ lat: am[1], lon: am[0] }, { lat: bm[1], lon: bm[0] }) < 30
+}
+
+// MC-tur-tidsestimat (v12.1.10). BRouter sin total-time er UBRUKELIG på tvers
+// av forslagene våre: custom-profilene arver BRouters sykkel-kinematikk
+// (default maxSpeed 45 km/t uansett underlag), mens innebygde bilprofiler
+// bruker en annen modell — observert 2 km/t på grus («6,3 km · 3 t 04 min»
+// side om side med «6,2 km · 8 min»). Ett konsistent klient-estimat fra
+// underlagsmiksen i stedet; total-time beholdes i data men vises ikke.
+export const MC_SPEED_KMH = { gravel: 40, paved: 65, unknown: 50 }
+
+/**
+ * Estimert kjøretid i sekunder for tur-MC. gravelM null → hele lengden i
+ * ukjent-fart; ellers grus/ukjent/asfalt hver med sin fart (resten etter
+ * grus og ukjent regnes som fast dekke).
+ */
+export function estimateMcTimeS(lengthM, { gravelM = null, unknownM = 0 } = {}) {
+  if (!(lengthM > 0)) return null
+  if (gravelM == null) return Math.round(lengthM / (MC_SPEED_KMH.unknown / 3.6))
+  const g = Math.min(gravelM, lengthM)
+  const u = Math.min(unknownM || 0, lengthM - g)
+  const p = lengthM - g - u
+  return Math.round(
+    g / (MC_SPEED_KMH.gravel / 3.6) +
+    u / (MC_SPEED_KMH.unknown / 3.6) +
+    p / (MC_SPEED_KMH.paved / 3.6),
+  )
 }
 
 // Luftlinje-avstand (haversine) i meter — «Luftlinje»-flisa i rute-resultatet.
@@ -163,19 +206,20 @@ export function parseRoute(geojson) {
   const lengthM = Number(feat.properties?.['track-length']) || 0
   const totalTimeS = Number(feat.properties?.['total-time']) || null
 
+  const noSurface = () => ({
+    points, lengthM, totalTimeS, segments: null, gravelShare: null, gravelM: null,
+    estimatedTimeS: estimateMcTimeS(lengthM),
+  })
+
   const messages = feat.properties?.messages
-  if (!Array.isArray(messages) || messages.length < 2) {
-    return { points, lengthM, totalTimeS, segments: null, gravelShare: null, gravelM: null }
-  }
+  if (!Array.isArray(messages) || messages.length < 2) return noSurface()
 
   const header = messages[0].map((h) => String(h).toLowerCase())
   const iLon = header.indexOf('longitude')
   const iLat = header.indexOf('latitude')
   const iDist = header.indexOf('distance')
   const iTags = header.indexOf('waytags')
-  if (iLon < 0 || iLat < 0 || iDist < 0 || iTags < 0) {
-    return { points, lengthM, totalTimeS, segments: null, gravelShare: null, gravelM: null }
-  }
+  if (iLon < 0 || iLat < 0 || iDist < 0 || iTags < 0) return noSurface()
 
   // Indeksér linjepunktene på avrundet lon/lat for nærmeste-punkt-match.
   const key = (lon, lat) => `${lon.toFixed(5)},${lat.toFixed(5)}`
@@ -186,6 +230,7 @@ export function parseRoute(geojson) {
   let prevIdx = 0
   let matchedM = 0
   let gravelM = 0
+  let unknownM = 0
   let totalMsgM = 0
   for (let r = 1; r < messages.length; r++) {
     const row = messages[r]
@@ -201,7 +246,15 @@ export function parseRoute(geojson) {
       matchedM += distM
     }
     if (cls === 'gravel') gravelM += distM
+    else if (cls === 'unknown') unknownM += distM
   }
+
+  // Underlagsmiksen skaleres til track-length så tidsestimatet bruker samme
+  // total som lengde-visningen (messages-summen kan avvike marginalt).
+  const timeEst = (denom) => estimateMcTimeS(lengthM, {
+    gravelM: (gravelM / denom) * lengthM,
+    unknownM: (unknownM / denom) * lengthM,
+  })
 
   const denom = totalMsgM || lengthM
   if (!denom || matchedM / denom < 0.8) {
@@ -213,7 +266,12 @@ export function parseRoute(geojson) {
       segments: null,
       gravelShare: shareOk ? gravelM / denom : null,
       gravelM: shareOk ? gravelM : null,
+      estimatedTimeS: shareOk ? timeEst(denom) : estimateMcTimeS(lengthM),
     }
   }
-  return { points, lengthM, totalTimeS, segments, gravelShare: gravelM / denom, gravelM }
+  return {
+    points, lengthM, totalTimeS, segments,
+    gravelShare: gravelM / denom, gravelM,
+    estimatedTimeS: timeEst(denom),
+  }
 }

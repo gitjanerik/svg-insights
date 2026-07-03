@@ -1,4 +1,4 @@
-# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 4, matcher
+# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 5, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: BALANSERT variant — foretrekker grus, men tar asfalt-snarveier
@@ -15,6 +15,10 @@
 assign processUnusedTags = false
 assign validForCars = true
 assign turnInstructionMode = 0
+
+# Snapping (v5): samme fiks som grusprofil.brf — se kommentaren der.
+assign use_dynamic_range = false
+assign waypointCatchingRange = 500
 
 ---context:way
 
