@@ -9,6 +9,10 @@
 //  - Umerket unclassified/tertiary tas IKKE inn i overlayen (for mange falske
 //    positiver i tettbygde strøk) — den antakelsen håndteres kun i rute-
 //    profilens kostheuristikk (grusprofil.brf).
+//  - Overlayen er for MOTORSYKLISTER: ways der motorisert ferdsel er forbudt
+//    (access/vehicle/motor_vehicle no|private|agricultural|forestry|…) vises
+//    ikke, og track tagget som turvei (foot/bicycle=designated uten eksplisitt
+//    motor_vehicle=yes) filtreres — «grusveien langs Drammenselva»-tilfellet.
 //  - Fase 2 (NVDB Vegdekke): `classifyGravelWay` tar en valgfri `enrich`-
 //    callback som konsulteres FØR OSM-heuristikken — der plugges offisiell
 //    dekketype inn uten endring i overlay eller lagringsskjema.
@@ -32,13 +36,46 @@ out geom;
 `.trim()
 }
 
+// Access-verdier som betyr at allmenn motorisert ferdsel IKKE er tillatt.
+// «destination» er lovlig (kjøring til eiendom) og beholdes.
+const MOTOR_BLOCKED = new Set(['no', 'private', 'agricultural', 'forestry', 'delivery', 'permit', 'emergency', 'military', 'customers'])
+
+function accessBlocked(value) {
+  if (!value) return false
+  // OSM tillater semikolon-lister («agricultural;forestry») — blokkert hvis
+  // ALLE deler er blokkert (én lovlig verdi holder for å kjøre der).
+  return String(value).split(';').every((v) => MOTOR_BLOCKED.has(v.trim()))
+}
+
+/**
+ * Er motorisert ferdsel (MC) lovlig på way-en etter OSM-access-tags?
+ * Mest spesifikke tag vinner (motorcycle > motor_vehicle > vehicle > access).
+ */
+export function isMotorAccessible(tags = {}) {
+  for (const key of ['motorcycle', 'motor_vehicle', 'vehicle', 'access']) {
+    const v = tags[key]
+    if (v != null && v !== '') {
+      if (accessBlocked(v)) return false
+      return true
+    }
+  }
+  // Turvei-heuristikk: track dedikert gående/syklende uten eksplisitt
+  // motor-access er i praksis en turvei — ikke lovlig for MC.
+  if (tags.highway === 'track' && (tags.foot === 'designated' || tags.bicycle === 'designated')) {
+    return false
+  }
+  return true
+}
+
 /**
  * Klassifiser én way etter tags: 'surfaced' (bekreftet grus), 'assumed'
  * (antatt grus — track uten surface), eller null (ikke i overlayen).
  * `enrich(tags)` kan returnere 'surfaced' | 'paved' | null og vinner over
- * OSM-heuristikken (fase 2: NVDB dekketype).
+ * OSM-heuristikken (fase 2: NVDB dekketype). Access-filteret (motorisert
+ * ferdsel) gjelder ALLTID — også når enrich sier 'surfaced'.
  */
 export function classifyGravelWay(tags = {}, { enrich } = {}) {
+  if (!isMotorAccessible(tags)) return null
   if (enrich) {
     const e = enrich(tags)
     if (e === 'surfaced') return 'surfaced'

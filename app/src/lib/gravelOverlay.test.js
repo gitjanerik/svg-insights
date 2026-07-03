@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildGravelQuery, classifyGravelWay, extractGravelWays,
-  bboxContains, padBbox, GRAVEL_SURFACES,
+  bboxContains, padBbox, GRAVEL_SURFACES, isMotorAccessible,
 } from './gravelOverlay.js'
 
 const BBOX = { south: 60.1, west: 11.2, north: 60.3, east: 11.6 }
@@ -37,6 +37,33 @@ describe('classifyGravelWay', () => {
     expect(classifyGravelWay({ highway: 'residential' }, { enrich: () => 'surfaced' })).toBe('surfaced')
     expect(classifyGravelWay({ highway: 'track' }, { enrich: () => 'paved' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track' }, { enrich: () => null })).toBe('assumed')
+  })
+  it('ulovlig motorisert ferdsel → null (også med grus-surface og enrich)', () => {
+    expect(classifyGravelWay({ highway: 'track', surface: 'gravel', motor_vehicle: 'no' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', access: 'private' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', motor_vehicle: 'agricultural;forestry' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', vehicle: 'no' }, { enrich: () => 'surfaced' })).toBe(null)
+  })
+  it('turvei-heuristikk: track med foot/bicycle=designated uten motor-access → null', () => {
+    expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', bicycle: 'designated' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated', motor_vehicle: 'yes' })).toBe('surfaced')
+  })
+})
+
+describe('isMotorAccessible', () => {
+  it('default (ingen access-tags) → true', () => {
+    expect(isMotorAccessible({ highway: 'track' })).toBe(true)
+    expect(isMotorAccessible({})).toBe(true)
+  })
+  it('mest spesifikke tag vinner', () => {
+    expect(isMotorAccessible({ access: 'no', motor_vehicle: 'yes' })).toBe(true)
+    expect(isMotorAccessible({ access: 'yes', motor_vehicle: 'no' })).toBe(false)
+    expect(isMotorAccessible({ motor_vehicle: 'no', motorcycle: 'yes' })).toBe(true)
+  })
+  it('destination er lovlig', () => {
+    expect(isMotorAccessible({ motor_vehicle: 'destination' })).toBe(true)
+    expect(isMotorAccessible({ access: 'destination' })).toBe(true)
   })
 })
 
