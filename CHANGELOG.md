@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.0.19: FAB-panelene er nå drabare drawers som kontekst-arket
+
+De tre nye FAB-innstillingspanelene (strek/relieff/zoom, v12.0.18) oppfører seg nå identisk med long-press-infodraweren: åpner i standard-høyde 45 dvh, og det midtstilte håndtaket øverst drar panelet mellom minimert / standard / maksimert med samme følsomhet som de andre skuffene. Kun maksimert tilstand dimmer og sperrer kartet — ellers er kartet interaktivt bak panelet, så man kan lynraskt justere en slider, minimere, se effekten på kartet, og maksimere igjen. Hovedmeny-skuffen viker når et FAB-panel åpnes, og FAB-panelet viker tilsvarende for kontekst-arket ved long-press på kartet.
+
+---
+
 ## 2026-07-03 — v12.0.18: Hurtigpaneler på FAB-knappene — strek per element, relieff og zoom
 
 Long-press (hold ~0,6 s) på de tre FAB-knappene nede til høyre åpner nå hvert sitt innstillingspanel (bottom sheet); kort tap virker som før. **Strek-panelet** gir individuelle strekbredde-sliders (0,5–2,5×) for høydekurver, stier, liten/stor vei, stup, naturreservat-omriss, store bygninger og idrettsbaner — verdiene lagres per kart, ganges med den globale Strek-knotten, og virker på alle allerede bygde kart (runtime-injisert override-CSS som også følger med i eksport og mosaikk-fliser). **Relieff-panelet** flytter relieff av/på + Skarp/Mjuk-stilen til per-kart-nivå; Innstillinger-fanen styrer nå den globale standarden (samme lagrings-nøkler som før, så eksisterende valg beholdes). **Zoom-panelet** har nytt «Standard zoom-nivå» for Sentrer-knappen (1× = hele kartet; høyere sentrerer på GPS-posisjonen eller kartsenteret ved den skalaen), en kopi av «Maks kartfliser», og en «Kartstørrelse»-slider som kun gjelder ombygging av det aktive området («Bygg om dette området i valgt størrelse»). Strek- og relieff-panelene har «Angi som standard» (løfter kartets verdier til global standard) og «Nullstill». Lang-trykk-nullstillingen på strek-/relieff-knottene er erstattet av panelene, og relieff-knotten dimmes i stedet for å skjules når relieff er av, så panelet fortsatt kan nås.
