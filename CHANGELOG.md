@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.8: Om-siden med Ruteplanlegging-fane, README-oppdatering, eget rute-ikon og BETA-badge på webfont
+
+Dokumentasjons- og forside-pakke. **Om-siden** (`/about`) har fått en ny fane «Ruteplanlegging» (Utforsk/Planlegg, lovlighetsfilter, deling/GPX, datakilder inkl. BRouter-attribusjon), og fanene følger nå samme rekkefølge som kortene på forsiden: Ruteplanlegging → Turkart → Illustrasjon → Webfont. **README.md** beskriver den nye funksjonen (nå «fire hovedfunksjoner», seksjonsrekkefølge som forsiden) med oppdatert prosjektstruktur og datakilder. **Font Awesome er fjernet:** motorsykkel-ikonet på forsiden (CC BY-lisensiert FA-ikon fra v12.1.1) er erstattet med den opprinnelige egne vektortegningen — slynget rute-strek med grønn start- og rød mål-sirkel som matcher A/B-markørene i kartet; ingen FA-spor igjen i koden (lisens-stance: vi har tidligere vurdert og droppet FA). **«Lag webfont»** har fått gul BETA-badge på forsiden (samme stil som ruteplanleggerens NY-badge).
+
+---
+
 ## 2026-07-03 — v12.1.7: Ruteplanlegger — relativ snap-sjekk i stedet for absolutt 200 m-grense
 
 Den absolutte 200 m-grensen fra v12.1.5 feilet på generelle stedssøk («Dombås» → «Lesja»): Nominatim-sentroiden kan ligge over 200 m fra nærmeste rutbare vei for ALLE profiler, og alle forslag ble droppet med feilmelding. Sjekken er nå RELATIV: det beste forslaget beholdes alltid, og et forslag droppes kun når det snapper mer enn 200 m dårligere enn det beste — det fanger fortsatt bilprofilen som «bommer totalt» og treffer en helt annen vei, uten å straffe søk der alle profiler er like langt unna punktet.

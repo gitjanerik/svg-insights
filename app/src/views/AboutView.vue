@@ -5,15 +5,17 @@ import { APP_VERSION } from '../version.js'
 
 const router = useRouter()
 
-// Tre tabs i samme rekkefølge som CTA-knappene på forsiden:
-//   1. Illustrasjon (capture/SVG-tegning)
+// Fire tabs i samme rekkefølge som kortene på forsiden:
+//   1. Ruteplanlegging (BRouter-grusruter for MC)
 //   2. Turkart (ISOM-pipeline)
-//   3. Webfont (font-builder)
-const activeTab = ref('illustrasjon')
+//   3. Illustrasjon (capture/SVG-tegning)
+//   4. Webfont (font-builder)
+const activeTab = ref('ruteplanlegging')
 const TABS = [
-  { key: 'illustrasjon', label: 'Illustrasjon' },
-  { key: 'turkart',      label: 'Turkart' },
-  { key: 'webfont',      label: 'Webfont' },
+  { key: 'ruteplanlegging', label: 'Ruteplanlegging' },
+  { key: 'turkart',         label: 'Turkart' },
+  { key: 'illustrasjon',    label: 'Illustrasjon' },
+  { key: 'webfont',         label: 'Webfont' },
 ]
 </script>
 
@@ -41,17 +43,70 @@ const TABS = [
         <p class="text-xs text-white/40 mt-1">Versjon {{ APP_VERSION }}</p>
       </div>
 
-      <!-- Tabs -->
-      <div class="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/10">
+      <!-- Tabs (fire — mindre tekst/padding så de får plass på mobil) -->
+      <div class="flex gap-1 p-1 rounded-xl bg-white/[0.04] border border-white/10">
         <button v-for="t in TABS" :key="t.key"
                 @click="activeTab = t.key"
-                class="flex-1 px-3 py-2 rounded-lg text-[13px] font-medium transition"
+                class="flex-1 px-1.5 py-2 rounded-lg text-[11px] font-medium transition whitespace-nowrap"
                 :class="activeTab === t.key
                         ? 'bg-slate-400/25 text-white border border-slate-300/40'
                         : 'text-white/55 active:bg-white/5 border border-transparent'">
           {{ t.label }}
         </button>
       </div>
+
+      <!-- Tab: Ruteplanlegging (grusruter for MC) -->
+      <section v-show="activeTab === 'ruteplanlegging'">
+        <h3 class="text-sm font-semibold text-white/65 uppercase tracking-wider mb-3">Ruteplanlegging — grusruter for motorsykkel</h3>
+        <p class="text-sm text-white/65 leading-relaxed">
+          Ruteplanleggeren finner sammenhengende grusvei-strekninger for tur-MC over lange avstander.
+          Kartet er et fullskjerms Norgeskart (Kartverket-topo over OSM-underlag) med to moduser:
+          <strong class="text-white/75">Utforsk</strong> viser alle grusveier i synlig utsnitt, og
+          <strong class="text-white/75">Planlegg</strong> beregner A→B-ruter med inntil tre forslag.
+        </p>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Utforsk — grusvei-overlay</h4>
+        <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/75">Bekreftet grus</strong> (heltrukket): veier med registrert grus-dekke i OpenStreetMap</li>
+          <li><strong class="text-white/75">Antatt grus</strong> (stiplet): skogsbilveier uten dekke-data — i Norge nesten alltid grus</li>
+          <li>Veier der motorisert ferdsel ikke er lovlig (private, landbruks-/skogsdriftsbegrensede, gang- og sykkelveier) vises ikke</li>
+        </ul>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Planlegg — inntil tre ruteforslag</h4>
+        <ol class="text-xs text-white/50 space-y-1.5 list-decimal list-inside leading-relaxed">
+          <li>Sett start og mål med søk, GPS eller to trykk i kartet</li>
+          <li><strong class="text-white/75">Mest grus</strong> — egen kostprofil som maksimerer sammenhengende grus (asfalt koster 4–5×)</li>
+          <li><strong class="text-white/75">Balansert</strong> — foretrekker grus, men tar asfalt-snarveier der grus-omveien blir stor</li>
+          <li><strong class="text-white/75">Kortest</strong> — standard bilprofil som referanse</li>
+          <li>Ruta fargekodes per segment (grus/fast dekke) med grusandel, estimert tid og luftlinje</li>
+          <li>Identiske forslag vises aldri dobbelt, og forslag som bommer på start-/målpunktet lukes bort</li>
+        </ol>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Lovlighet for motorisert ferdsel</h4>
+        <p class="text-xs text-white/50 leading-relaxed">
+          Alle ruter skal være lovlige kjøreveier: profilene forbyr veier med
+          <code>access/vehicle/motor_vehicle</code>-begrensninger (private, landbruk/skogsdrift),
+          turveier og gang-/sykkelveier (<code>foot/bicycle=designated</code> uten motor-tilgang) —
+          også når de har grusdekke. Kjøring-til-eiendom-veier (<code>destination</code>) straffes
+          kraftig for gjennomkjøring. Datagrunnlaget er OSM-tagging, så feil-taggede veier kan
+          forekomme — meld gjerne fra i OpenStreetMap.
+        </p>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Lagring, deling og eksport</h4>
+        <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/75">Lagrede ruter</strong> i IndexedDB med navn, lengde, grusandel og tid</li>
+          <li><strong class="text-white/75">Deling</strong>: lenke med start/mål — mottakeren får punktene ferdig utfylt og beregner samme rute med ett trykk</li>
+          <li><strong class="text-white/75">GPX-eksport</strong> for navigasjons-apper og GPS-enheter</li>
+        </ul>
+
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder og tjenester</h4>
+        <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
+          <li><strong class="text-white/75">BRouter</strong> (brouter.de) — ruteberegning med egne opplastede kostprofiler; donasjonsdrevet tjeneste, ett kall per brukerhandling</li>
+          <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — grusvei-overlay og rute-datagrunnlag (ODbL)</li>
+          <li><strong class="text-white/75">Kartverket</strong> — topografisk bakgrunnskart (WMTS-fliser, CC BY 4.0)</li>
+          <li><strong class="text-white/75">Nominatim</strong> (OSM) — stedssøk for start/mål</li>
+        </ul>
+      </section>
 
       <!-- Tab: Illustrasjon (Bilde-til-SVG) -->
       <section v-show="activeTab === 'illustrasjon'">
