@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 — v12.1.13: «Se etter oppdatering»-knapp i Om-siden
+
+Versjonsoppdateringer opplevdes trege å få ut på mobil — ikke fordi deployen feilet (gh-pages oppdateres på ~2 min), men fordi klient-flyten er brukerstyrt: ny service worker står og venter på «Oppdater»-banneret, auto-sjekken kjører ved oppstart/forgrunn/hver time, og GitHub Pages har ~10 min HTTP-cache. Om-siden har nå en **«Se etter oppdatering»-knapp** under versjonsnummeret: den tvinger en SW-sjekk der og da (`checkForUpdateNow()` i `swUpdate.js` — `reg.update()` + bounded venting på installerende worker), og siden brukeren eksplisitt ba om oppdatering, aktiveres en ventende versjon umiddelbart (SKIP_WAITING → reload) uten banner-omvei. Finnes ingen ny versjon vises «Du har nyeste versjon (vX)» med forbehold om server-cache rett etter utgivelse; i dev/uten SW-støtte vises en nøytral melding.
+
+---
+
 ## 2026-07-03 — v12.1.12: Ruteplanlegger — cyan grusvei-overlay + noindex for gh-pages
 
 **(1) Grusvei-overlayen er ikke lenger oransje.** Oransje smeltet sammen med for mye annet i Kartverket-topoen (stier, skiløyper) og med selve rute-fargen — bekreftet grus er nå cyan (#0e7490, heltrukket) og antatt grus lysere cyan (#06b6d4, stiplet), fortsatt med hvit halo under. Cyan finnes ikke i topo-paletten, så overlayen popper, og beregnet rute (oransje) skilles nå tydelig fra overlayen. Tegnforklaringen følger. **(2) Søkemotor-sperre:** `<meta name="robots" content="noindex, nofollow">` i `index.html` (og dermed `404.html`, som deploy-workflowen kopierer fra den — dekker alle SPA-ruter). `robots.txt` med `Disallow: /` er også lagt i `app/public/`, med dokumentert forbehold: GitHub Pages project-sites ligger under `/svg-insights/`-stien og søkemotorer leser robots.txt kun fra domene-roten, så meta-taggen er den effektive mekanismen; fila blir virksom ved evt. eget domene.
