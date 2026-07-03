@@ -115,10 +115,13 @@ const TABS = [
         <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Inntil tre ruteforslag</h4>
         <ol class="text-xs text-white/50 space-y-1.5 list-decimal list-inside leading-relaxed">
           <li>Sett start og mål med søk, GPS eller to trykk i kartet</li>
-          <li><strong class="text-white/75">Mest grus</strong> — egen kostprofil som maksimerer sammenhengende grus (asfalt koster 4–5×)</li>
-          <li><strong class="text-white/75">Balansert</strong> — foretrekker grus, men tar asfalt-snarveier der grus-omveien blir stor</li>
-          <li><strong class="text-white/75">Kortest</strong> — standard bilprofil som referanse</li>
+          <li>Tre kostprofiler beregnes parallelt: grus-maks (asfalt koster 4–5×), balansert (asfalt-snarveier der grus-omveien blir stor) og standard bilprofil</li>
+          <li>Forslagene heter <strong class="text-white/75">Rute 1–3</strong> og merkes data-drevet:
+            <strong class="text-white/75">Mest grus</strong> (høyest grusandel),
+            <strong class="text-white/75">Kortest</strong> (kortest, uavhengig av underlag) og
+            <strong class="text-white/75">Raskest</strong> (lavest tidsestimat)</li>
           <li>Ruta fargekodes per segment (grus/fast dekke) med grusandel, estimert tid og luftlinje</li>
+          <li><strong class="text-white/75">Høydeprofil</strong> som interaktiv SVG — dra i grafen for å lese km/moh; høyder fra BRouter-geometrien, eller Kartverket-DTM for lagrede ruter</li>
           <li>Identiske forslag vises aldri dobbelt, og forslag som bommer på start-/målpunktet lukes bort</li>
         </ol>
 
@@ -137,13 +140,14 @@ const TABS = [
           <li><strong class="text-white/75">Lagrede ruter</strong> i IndexedDB med navn, lengde, grusandel og tid</li>
           <li><strong class="text-white/75">Deling</strong>: lenke med start/mål — mottakeren får punktene ferdig utfylt og beregner samme rute med ett trykk</li>
           <li><strong class="text-white/75">GPX-eksport</strong> for navigasjons-apper og GPS-enheter</li>
+          <li><strong class="text-white/75">SVG-eksport</strong>: stilisert plakat med rutegeometri, nøkkeltall og høydeprofil</li>
         </ul>
 
         <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder og tjenester</h4>
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">BRouter</strong> (brouter.de) — ruteberegning med egne opplastede kostprofiler; donasjonsdrevet tjeneste, ett kall per brukerhandling</li>
           <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — grusvei-overlay og rute-datagrunnlag (ODbL)</li>
-          <li><strong class="text-white/75">Kartverket</strong> — topografisk bakgrunnskart (WMTS-fliser, CC BY 4.0)</li>
+          <li><strong class="text-white/75">Kartverket</strong> — topografisk bakgrunnskart (WMTS-fliser, CC BY 4.0) og høydedata (WCS DTM) for høydeprofil på lagrede ruter</li>
           <li><strong class="text-white/75">Nominatim</strong> (OSM) — stedssøk for start/mål</li>
         </ul>
       </section>

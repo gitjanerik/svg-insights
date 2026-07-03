@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   uploadProfile, ensureProfileId, fetchRoute, parseRoute, classifyWayTags,
-  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M,
+  snapDistances, routesLookIdentical, decorateProposals, MAX_SNAP_DIST_M,
   snapHardLimitM, SNAP_HARD_MIN_M, fmtAvstandM, estimateMcTimeS, MC_SPEED_KMH,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE,
 } from './brouterClient.js'
@@ -207,5 +207,50 @@ describe('routesLookIdentical', () => {
   it('samme lengde men annet midtpunkt → forskjellige', () => {
     const other = { lengthM: 2400, points: [[8.0, 61.0], [8.03, 61.02], [8.02, 61.01]] }
     expect(routesLookIdentical(base, other)).toBe(false)
+  })
+})
+
+describe('decorateProposals', () => {
+  const p = (id, lengthM, gravelShare, estimatedTimeS) => ({ id, lengthM, gravelShare, estimatedTimeS })
+
+  it('gir nøytrale navn i listerekkefølge', () => {
+    const out = decorateProposals([p('mest-grus', 7400, 0.95, 660), p('kortest', 22100, 0.25, 1440)])
+    expect(out.map((x) => x.label)).toEqual(['Rute 1', 'Rute 2'])
+  })
+  it('ett forslag → ingen badges (ingenting å sammenlikne med)', () => {
+    const out = decorateProposals([p('mest-grus', 7400, 0.95, 660)])
+    expect(out[0].label).toBe('Rute 1')
+    expect(out[0].badges).toEqual([])
+  })
+  it('setter MEST GRUS, KORTEST og RASKEST data-drevet', () => {
+    const out = decorateProposals([
+      p('mest-grus', 22000, 0.95, 2100),
+      p('balansert', 15000, 0.60, 1100),
+      p('kortest', 16000, 0.10, 1200),
+    ])
+    expect(out[0].badges).toEqual([{ text: 'MEST GRUS', tone: 'sky' }])
+    expect(out[1].badges).toEqual([
+      { text: 'KORTEST', tone: 'sky' },
+      { text: 'RASKEST', tone: 'green' },
+    ])
+    expect(out[2].badges).toEqual([])
+  })
+  it('KORTEST følger lengden uavhengig av underlag, og ett forslag kan ha flere badges', () => {
+    const out = decorateProposals([
+      p('mest-grus', 7400, 0.95, 660),
+      p('kortest', 22100, 0.25, 1440),
+    ])
+    expect(out[0].badges.map((b) => b.text)).toEqual(['MEST GRUS', 'KORTEST', 'RASKEST'])
+    expect(out[1].badges).toEqual([])
+  })
+  it('hopper over MEST GRUS når ingen har kjent grusandel > 0', () => {
+    const out = decorateProposals([p('a', 10000, null, 900), p('b', 12000, 0, 1000)])
+    expect(out.flatMap((x) => x.badges.map((b) => b.text))).toEqual(['KORTEST', 'RASKEST'])
+  })
+  it('muterer ikke input-lista', () => {
+    const input = [p('a', 10000, 0.5, 900), p('b', 12000, 0.4, 1000)]
+    decorateProposals(input)
+    expect(input[0].badges).toBeUndefined()
+    expect(input[0].label).toBeUndefined()
   })
 })

@@ -1,14 +1,15 @@
 import { ref } from 'vue'
 import {
   ensureProfileId, fetchRoute, parseRoute, clearProfileCache, haversineM,
-  snapDistances, routesLookIdentical, MAX_SNAP_DIST_M, snapHardLimitM,
-  fmtAvstandM, estimateMcTimeS,
+  snapDistances, routesLookIdentical, decorateProposals, MAX_SNAP_DIST_M,
+  snapHardLimitM, fmtAvstandM, estimateMcTimeS,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_TIMEOUT_MS,
 } from '../lib/brouterClient.js'
 import {
   saveGravelRoute, listGravelRoutes, deleteGravelRoute, generateGravelRouteId,
 } from '../lib/mapStorage.js'
 import { downloadRouteGpx } from '../lib/gpxExport.js'
+import { downloadRouteSvg } from '../lib/routeSvgExport.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 
 // Ruteplanleggerens tilstand + BRouter-orkestrering (v12.1.0). DOM-nær
@@ -21,10 +22,13 @@ import { simplifyDP } from '../lib/pathUtils.js'
 // rutekall + maks to profil-opplastinger (cachet per økt) — innenfor rimelig
 // fair use mot donasjonsdrevne brouter.de; ingen polling.
 
+// Brukervendte navn/badges settes DATA-drevet av decorateProposals etter
+// dedup («Rute 1» … + MEST GRUS/KORTEST/RASKEST) — id-ene her er kun
+// profilvalg og fargenøkler.
 const PROPOSAL_DEFS = [
-  { id: 'mest-grus', label: 'Mest grus', badge: 'MEST GRUS', profileKey: 'grus', asset: 'grusprofil.brf' },
-  { id: 'balansert', label: 'Balansert', badge: null, profileKey: 'balansert', asset: 'grusprofil-balansert.brf' },
-  { id: 'kortest', label: 'Kortest', badge: 'KORTEST', profileKey: null, builtin: 'car-fast' },
+  { id: 'mest-grus', profileKey: 'grus', asset: 'grusprofil.brf' },
+  { id: 'balansert', profileKey: 'balansert', asset: 'grusprofil-balansert.brf' },
+  { id: 'kortest', profileKey: null, builtin: 'car-fast' },
 ]
 const DEFAULT_PROPOSAL = 'balansert'
 
@@ -160,7 +164,7 @@ export function useGravelPlanner() {
       for (const p of snapped) {
         if (!ok.some((q) => routesLookIdentical(q, p))) ok.push(p)
       }
-      proposals.value = ok
+      proposals.value = decorateProposals(ok)
       selectedId.value = ok.some((p) => p.id === DEFAULT_PROPOSAL) ? DEFAULT_PROPOSAL : ok[0].id
       applySelection()
       routeState.value = 'idle'
@@ -233,6 +237,7 @@ export function useGravelPlanner() {
     route.value = {
       id: record.proposalId ?? 'lagret',
       label: 'Lagret rute',
+      badges: [],
       points: record.points,
       lengthM: record.lengthM,
       segments: null,               // lagrede segmenter mangler geometri-indekser → uniform farge
@@ -268,9 +273,18 @@ export function useGravelPlanner() {
     downloadRouteGpx({ points: r.points, navn, opprettet: Date.now() })
   }
 
+  // Stilisert plakat-SVG (v12.1.14) — `profile` er høydeprofilen fra
+  // useRouteElevation (eies av view-en, som også viser den interaktivt).
+  function exportSvg(profile = null) {
+    const r = route.value
+    if (!r) return
+    const navn = r.navn || `${r.waypoints?.[0]?.name ?? 'A'} – ${r.waypoints?.at(-1)?.name ?? 'B'}`
+    downloadRouteSvg({ ...r, navn }, { profile })
+  }
+
   return {
     pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
     computeRoute, selectProposal, clearRoute, saveCurrentRoute, openSaved,
-    deleteSaved, deleteAllSaved, refreshSaved, exportGpx,
+    deleteSaved, deleteAllSaved, refreshSaved, exportGpx, exportSvg,
   }
 }
