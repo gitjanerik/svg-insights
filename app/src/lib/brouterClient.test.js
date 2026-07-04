@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   uploadProfile, ensureProfileId, fetchRoute, parseRoute, classifyWayTags,
-  snapDistances, routesLookIdentical, decorateProposals, MAX_SNAP_DIST_M,
+  snapDistances, routesLookIdentical, routeOverlapShare, decorateProposals, MAX_SNAP_DIST_M,
   snapHardLimitM, SNAP_HARD_MIN_M, fmtAvstandM, estimateMcTimeS, MC_SPEED_KMH,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE, applyProfileFlags,
 } from './brouterClient.js'
@@ -223,20 +223,42 @@ describe('snapDistances', () => {
   })
 })
 
-describe('routesLookIdentical', () => {
-  const base = {
-    lengthM: 2400,
-    points: [[8.0, 61.0], [8.01, 61.005], [8.02, 61.01]],
+describe('routeOverlapShare / routesLookIdentical', () => {
+  // Syntetiske ruter langs en sør–nord-linje ved 61°N (1° lat ≈ 111,32 km).
+  // line(fromKm, toKm, {lonShiftM, shiftFromKm, shiftToKm}) gir punkter hver
+  // 250 m; punkter i shift-vinduet forskyves lonShiftM meter østover (en
+  // «omvei» på parallell vei).
+  const M_PER_LAT = 111320
+  const M_PER_LON = 111320 * Math.cos(61 * Math.PI / 180)
+  const line = (fromKm, toKm, { lonShiftM = 0, shiftFromKm = Infinity, shiftToKm = -Infinity } = {}) => {
+    const pts = []
+    for (let km = fromKm; km <= toKm + 1e-9; km += 0.25) {
+      const shifted = km >= shiftFromKm && km <= shiftToKm
+      pts.push([8.0 + (shifted ? lonShiftM / M_PER_LON : 0), 61.0 + (km * 1000) / M_PER_LAT])
+    }
+    return pts
   }
-  it('samme lengde og midtpunkt → identiske', () => {
-    expect(routesLookIdentical(base, { ...base, lengthM: 2405 })).toBe(true)
+  const straight = { lengthM: 10000, points: line(0, 10) }
+
+  it('identisk geometri → overlapp 1 og identiske', () => {
+    expect(routeOverlapShare(straight, { points: line(0, 10) })).toBe(1)
+    expect(routesLookIdentical(straight, { ...straight, lengthM: 10180 })).toBe(true)
   })
-  it('ulik lengde → forskjellige', () => {
-    expect(routesLookIdentical(base, { ...base, lengthM: 2600 })).toBe(false)
+  it('liten omvei midtveis (~3 % av distansen) → fortsatt identiske', () => {
+    const detour = { lengthM: 10050, points: line(0, 10, { lonShiftM: 120, shiftFromKm: 4.85, shiftToKm: 5.15 }) }
+    expect(routesLookIdentical(straight, detour)).toBe(true)
   })
-  it('samme lengde men annet midtpunkt → forskjellige', () => {
-    const other = { lengthM: 2400, points: [[8.0, 61.0], [8.03, 61.02], [8.02, 61.01]] }
-    expect(routesLookIdentical(base, other)).toBe(false)
+  it('parallell vei 500 m unna hele veien → forskjellige', () => {
+    const parallel = { lengthM: 10000, points: line(0, 10, { lonShiftM: 500, shiftFromKm: -1, shiftToKm: 11 }) }
+    expect(routeOverlapShare(straight, parallel)).toBe(0)
+    expect(routesLookIdentical(straight, parallel)).toBe(false)
+  })
+  it('stor omvei på halve ruta → forskjellige', () => {
+    const half = { lengthM: 10600, points: line(0, 10, { lonShiftM: 400, shiftFromKm: 2, shiftToKm: 7 }) }
+    expect(routesLookIdentical(straight, half)).toBe(false)
+  })
+  it('lengde-hurtigsjekk: >25 % lengdeforskjell → forskjellige uten geometrisammenlikning', () => {
+    expect(routesLookIdentical(straight, { points: line(0, 10), lengthM: 14000 })).toBe(false)
   })
 })
 
