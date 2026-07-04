@@ -12,7 +12,9 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { tileMosaic, metersPerPixel } from '../lib/tileBackground.js'
 import { lonLatToWorldPx, worldPxToLonLat, lonLatToScreenPx, screenPxToLonLat, viewBbox, bboxAreaKm2, TILE_SIZE } from '../lib/webMercator.js'
-import { buildGravelQuery, extractGravelWays, extractBarrierNodes, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
+import { buildGravelQuery, extractGravelWays, extractBarrierNodes, extractParkingSpots, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
+import { thinParkering, PARKERING_MIN_SEP_M } from '../lib/parkingRules.js'
+import { buildUtNoUrl } from '../lib/utNoLink.js'
 import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
@@ -121,6 +123,45 @@ let tapStart = null
 let lastTouchEndAt = 0
 const SYNTH_MOUSE_SUPPRESS_MS = 800
 
+// ── UT.no-pin: hold inne et punkt (long-press, 600 ms uten bevegelse) eller
+// høyreklikk → pin med koordinater + «Åpne i UT.no»-lenke. Kort tap er
+// fortsatt A/B-setting (< 400 ms); spennet 400–600 ms gjør ingenting, så de
+// to gestene ikke kolliderer. Pinnen følger kartet ved pan/zoom (geo-ankret),
+// og et vanlig tap lukker den uten å sette A/B.
+const LONG_PRESS_MS = 600
+const utNoPin = ref(null)            // { lat, lon } | null
+let longPressTimer = null
+
+function cancelLongPress() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+}
+
+function openUtNoPinAt(px) {
+  const geo = screenPxToLonLat(px.x, px.y, view.value)
+  utNoPin.value = { lat: geo.lat, lon: geo.lon }
+  try { navigator.vibrate?.(15) } catch { /* noop */ }
+}
+
+function armLongPress(clientX, clientY) {
+  cancelLongPress()
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null
+    const p = localPoint(clientX, clientY)
+    if (!p) return
+    openUtNoPinAt(p)
+    // Gesten er konsumert: ikke pan videre, og ikke tolk slippet som tap.
+    panning = false; panStart = null; tapStart = null
+  }, LONG_PRESS_MS)
+}
+
+function onContextMenu(e) {
+  const p = localPoint(e.clientX, e.clientY)
+  if (!p) return
+  cancelLongPress()
+  panning = false; panStart = null; tapStart = null
+  openUtNoPinAt(p)
+}
+
 function panShiftToCenter(dxPx, dyPx) {
   const mPerPx = metersPerPixel(center.value.lat, zoom.value)
   const dLat = (dyPx * mPerPx) / 111111
@@ -157,6 +198,7 @@ function touchDist(e) {
 function onTouchStart(e) {
   if (e.touches.length === 2) {
     pinching = true; panning = false; tapStart = null
+    cancelLongPress()
     lastDist = touchDist(e); pinchRatio = 1
     e.preventDefault()
   } else if (e.touches.length === 1) {
@@ -164,6 +206,7 @@ function onTouchStart(e) {
     const t = e.touches[0]
     panStart = { x: t.clientX, y: t.clientY, lat: center.value.lat, lon: center.value.lon }
     tapStart = { x: t.clientX, y: t.clientY, t: Date.now() }
+    armLongPress(t.clientX, t.clientY)
   }
 }
 function onTouchMove(e) {
@@ -183,12 +226,13 @@ function onTouchMove(e) {
     e.preventDefault()
     const dxPx = e.touches[0].clientX - panStart.x
     const dyPx = e.touches[0].clientY - panStart.y
-    if (tapStart && Math.hypot(dxPx, dyPx) > 8) tapStart = null
+    if (tapStart && Math.hypot(dxPx, dyPx) > 8) { tapStart = null; cancelLongPress() }
     const { dLat, dLon } = panShiftToCenter(dxPx, dyPx)
     center.value = { lat: panStart.lat + dLat, lon: panStart.lon + dLon }
   }
 }
 function onTouchEnd(e) {
+  cancelLongPress()
   if (e.touches.length < 2) { pinching = false; pinchRatio = 1 }
   if (e.touches.length < 1) {
     lastTouchEndAt = Date.now()
@@ -205,6 +249,7 @@ function onMouseDown(e) {
   panning = true
   panStart = { x: e.clientX, y: e.clientY, lat: center.value.lat, lon: center.value.lon }
   tapStart = { x: e.clientX, y: e.clientY, t: Date.now() }
+  armLongPress(e.clientX, e.clientY)
   e.preventDefault()
 }
 function onMouseMove(e) {
@@ -212,11 +257,12 @@ function onMouseMove(e) {
   e.preventDefault()
   const dxPx = e.clientX - panStart.x
   const dyPx = e.clientY - panStart.y
-  if (tapStart && Math.hypot(dxPx, dyPx) > 8) tapStart = null
+  if (tapStart && Math.hypot(dxPx, dyPx) > 8) { tapStart = null; cancelLongPress() }
   const { dLat, dLon } = panShiftToCenter(dxPx, dyPx)
   center.value = { lat: panStart.lat + dLat, lon: panStart.lon + dLon }
 }
 function onMouseUp(e) {
+  cancelLongPress()
   if (Date.now() - lastTouchEndAt < SYNTH_MOUSE_SUPPRESS_MS) return
   if (panning && tapStart && Date.now() - tapStart.t < 400) {
     const p = localPoint(e.clientX, e.clientY)
@@ -270,6 +316,8 @@ let lastMapTapSetAt = 0
 const MAP_TAP_COOLDOWN_MS = 1000
 
 function onMapTap(px) {
+  // Åpen UT.no-pin: tap lukker pinnen i stedet for å sette A/B.
+  if (utNoPin.value) { utNoPin.value = null; return }
   if (routeInvite.value) return
   if (Date.now() - lastMapTapSetAt < MAP_TAP_COOLDOWN_MS) return
   // Tap setter armert felt, ellers første tomme (A først, så B).
@@ -297,10 +345,33 @@ function onGpsForA() {
   )
 }
 
+// ── Kartlag-toggles (v12.1.16): bekreftet grus / antatt grus / parkering ────
+// Grus-togglene filtrerer klient-side (dataene er alltid hentet); parkering
+// er default AV og hentes først når laget skrus på (samme Overpass-kall som
+// grusveiene, se buildGravelQuery includeParking).
+const LAYERS_LS_KEY = 'svg-insights-ruteplanlegger-lag'
+const LAYER_DEFAULTS = { surfaced: true, assumed: true, parking: false }
+function loadLayers() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAYERS_LS_KEY) ?? 'null')
+    if (v && typeof v === 'object') return { ...LAYER_DEFAULTS, ...v }
+  } catch { /* noop */ }
+  return { ...LAYER_DEFAULTS }
+}
+const layers = ref(loadLayers())
+watch(layers, () => {
+  try { localStorage.setItem(LAYERS_LS_KEY, JSON.stringify(layers.value)) } catch { /* noop */ }
+}, { deep: true })
+function toggleLayer(key) {
+  layers.value = { ...layers.value, [key]: !layers.value[key] }
+}
+
 // ── Grusvei-overlay: hent + tegn (alltid aktiv, zoom-gatet) ─────────────────
 const overlayState = ref('idle')     // 'idle' | 'loading' | 'error'
 const overlayWays = ref([])          // [{id, kind, worldPts:[[x,y]…]}] i world-px ved fetchZoom
 const overlayBarriers = ref([])      // stengte bommer: [{id, worldPt:[x,y]}] ved fetchZoom
+const overlayParking = ref([])       // [{id, lat, lon, p:{x,y} meter, utfart}] — uttynnes pr zoom
+const overlayHasParking = ref(false) // om forrige henting inkluderte parkering
 const overlayFetchZoom = ref(null)
 let overlayFetchedBbox = null
 let overlayAbort = null
@@ -316,22 +387,28 @@ async function refreshOverlay() {
     overlayAbort?.abort()
     overlayWays.value = []
     overlayBarriers.value = []
+    overlayParking.value = []
+    overlayHasParking.value = false
     overlayFetchedBbox = null
     overlayState.value = 'idle'
     return
   }
   const visible = viewBbox(view.value)
   const sameBand = overlayFetchZoom.value != null && Math.abs(zoom.value - overlayFetchZoom.value) < 2
-  if (sameBand && bboxContains(overlayFetchedBbox, visible)) return   // dekket — kun re-projisering
+  // Dekket av forrige henting → kun re-projisering. Unntak: parkering-laget
+  // er skrudd på etter en henting UTEN parkering — da må vi hente på nytt.
+  const parkingSatisfied = !layers.value.parking || overlayHasParking.value
+  if (sameBand && bboxContains(overlayFetchedBbox, visible) && parkingSatisfied) return
   overlayAbort?.abort()
   const ac = new AbortController()
   overlayAbort = ac
   overlayState.value = 'loading'
   const fetchBbox = padBbox(visible, 1.5)
   const fetchZoom = zoom.value
+  const includeParking = layers.value.parking
   try {
     const json = await fetchOverpassWithRetry(
-      'data=' + encodeURIComponent(buildGravelQuery(fetchBbox)),
+      'data=' + encodeURIComponent(buildGravelQuery(fetchBbox, { includeParking })),
       { signal: ac.signal, timeoutMs: 25000 },
     )
     if (ac.signal.aborted) return
@@ -348,6 +425,8 @@ async function refreshOverlay() {
     overlayBarriers.value = extractBarrierNodes(json)
       .filter((b) => b.kind === 'closed')
       .map((b) => { const p = lonLatToWorldPx(b.lon, b.lat, fetchZoom); return { id: b.id, worldPt: [p.x, p.y] } })
+    overlayParking.value = includeParking ? extractParkingSpots(json) : []
+    overlayHasParking.value = includeParking
     overlayFetchedBbox = fetchBbox
     overlayFetchZoom.value = fetchZoom
     overlayState.value = 'idle'
@@ -364,6 +443,12 @@ watch([center, zoom, mapSize], () => {
   overlayDebounce = setTimeout(refreshOverlay, 400)
 }, { deep: true })
 
+// Parkering-laget skrus på etter en henting uten parkering → hent på nytt
+// (refreshOverlay ser selv at cachen ikke dekker parkering).
+watch(() => layers.value.parking, (on) => {
+  if (on && !overlayHasParking.value) void refreshOverlay()
+})
+
 // world-px (fetchZoom) → skjerm-px path-streng for gjeldende view.
 const overlayPaths = computed(() => {
   if (!overlayWays.value.length || !mapSize.value.w) return []
@@ -377,6 +462,40 @@ const overlayPaths = computed(() => {
     d: 'M' + w.worldPts.map(([x, y]) => `${(x * scale + ox).toFixed(1)} ${(y * scale + oy).toFixed(1)}`).join(' L'),
   }))
 })
+
+// Kartlag-filtrert variant til tegning: kind ('surfaced'|'assumed') matcher
+// toggle-nøklene direkte.
+const visibleOverlayPaths = computed(() =>
+  overlayPaths.value.filter((w) => layers.value[w.kind] !== false))
+
+// Parkering i skjerm-px: turkartets uttynningsregel (thinParkering — utfart
+// vises ALLTID, vanlige P min 50 m fra hverandre), generalisert til zoombar
+// visning ved at min-avstanden aldri er mindre enn ~28 skjerm-px, så P-skilt
+// ikke smelter sammen ved utzooming. Kulles til synlig flate (+30 px margin).
+const PARKING_MIN_SEP_PX = 28
+const parkingMarkers = computed(() => {
+  if (!layers.value.parking || !overlayParking.value.length || !mapSize.value.w) return []
+  const mPerPx = metersPerPixel(center.value.lat, zoom.value)
+  const minSepM = Math.max(PARKERING_MIN_SEP_M, mPerPx * PARKING_MIN_SEP_PX)
+  const { w, h } = mapSize.value
+  const out = []
+  for (const s of thinParkering(overlayParking.value, minSepM)) {
+    const p = lonLatToScreenPx(s.lon, s.lat, view.value)
+    if (p.x < -30 || p.y < -30 || p.x > w + 30 || p.y > h + 30) continue
+    out.push({ id: s.id, x: p.x, y: p.y, utfart: s.utfart })
+  }
+  return out
+})
+
+// Fire frittstående hjørne-braketter rundt utfarts-P (samme visuelle språk
+// som turkartets 534u — sorte braketter, se mapBuilder for begrunnelsen).
+function utfartBracketPath(x, y) {
+  const o = 12, l = 5
+  return `M${x - o + l} ${y - o} L${x - o} ${y - o} L${x - o} ${y - o + l}` +
+         ` M${x + o - l} ${y - o} L${x + o} ${y - o} L${x + o} ${y - o + l}` +
+         ` M${x - o + l} ${y + o} L${x - o} ${y + o} L${x - o} ${y + o - l}` +
+         ` M${x + o - l} ${y + o} L${x + o} ${y + o} L${x + o} ${y + o - l}`
+}
 
 // Stengte bommer i skjerm-px (samme projisering som overlayPaths).
 const overlayBarrierPts = computed(() => {
@@ -411,6 +530,13 @@ const routePaths = computed(() => {
       d: 'M' + r.points.slice(s.fromIdx, s.toIdx + 1).map(toPx).join(' L'),
     }))
 })
+
+// UT.no-pin i skjerm-px (geo-ankret — følger kartet) + ferdig bygget lenke
+// med gjeldende zoom, så UT.no åpner samme utsnitt.
+const utNoPinPx = computed(() => utNoPin.value && mapSize.value.w
+  ? lonLatToScreenPx(utNoPin.value.lon, utNoPin.value.lat, view.value) : null)
+const utNoUrl = computed(() => utNoPin.value
+  ? buildUtNoUrl({ lat: utNoPin.value.lat, lon: utNoPin.value.lon, zoom: zoom.value }) : null)
 
 const markerA = computed(() => pointA.value && mapSize.value.w
   ? lonLatToScreenPx(pointA.value.lon, pointA.value.lat, view.value) : null)
@@ -732,6 +858,7 @@ onUnmounted(() => {
   overlayAbort?.abort()
   if (overlayDebounce) clearTimeout(overlayDebounce)
   if (shareResetTimer) clearTimeout(shareResetTimer)
+  cancelLongPress()
 })
 </script>
 
@@ -765,7 +892,7 @@ onUnmounted(() => {
          class="relative flex-1 overflow-hidden bg-zinc-800 cursor-move touch-none select-none"
          @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd" @touchcancel="onTouchEnd"
          @mousedown="onMouseDown" @mousemove="onMouseMove" @mouseup="onMouseUp" @mouseleave="onMouseUp"
-         @wheel="onWheel">
+         @wheel="onWheel" @contextmenu.prevent="onContextMenu">
       <!-- OSM-underlag (global dekning) + Kartverket-topo over (skjules ved feil) -->
       <img v-for="t in tiles" :key="'osm-' + t.url" :src="t.osmUrl" alt=""
            class="absolute pointer-events-none select-none"
@@ -788,12 +915,12 @@ onUnmounted(() => {
            stier/skiløyper og rute-oransjen (#e8802b); cyan finnes ikke i
            Kartverket-topoen og skiller også overlay fra beregnet rute. -->
       <svg class="absolute inset-0 w-full h-full pointer-events-none" aria-hidden="true">
-        <path v-for="w in overlayPaths" :key="'ovh-' + w.id" :d="w.d" fill="none"
+        <path v-for="w in visibleOverlayPaths" :key="'ovh-' + w.id" :d="w.d" fill="none"
               stroke="#ffffff" stroke-width="5.5"
               stroke-linecap="round" stroke-linejoin="round"
               :stroke-dasharray="w.kind === 'assumed' ? '4 7' : undefined"
               opacity="0.85" />
-        <path v-for="w in overlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
+        <path v-for="w in visibleOverlayPaths" :key="'ov-' + w.id" :d="w.d" fill="none"
               stroke="#0e7490" stroke-width="3.5"
               stroke-linecap="round" stroke-linejoin="round"
               :stroke-dasharray="w.kind === 'assumed' ? '4 7' : undefined"
@@ -803,6 +930,22 @@ onUnmounted(() => {
         <g v-for="b in overlayBarrierPts" :key="'bar-' + b.id" aria-hidden="true">
           <circle :cx="b.x" :cy="b.y" r="5.5" fill="#dc2626" stroke="#ffffff" stroke-width="1.5" />
           <rect :x="b.x - 3.2" :y="b.y - 1" width="6.4" height="2" rx="1" fill="#ffffff" />
+        </g>
+        <!-- Parkering (v12.1.16, samme regler som turkartets 534/534u): blått
+             P-skilt; utfartsparkering får fire sorte hjørne-braketter (med
+             hvit halo så de leses mot mørk topo). -->
+        <g v-for="pk in parkingMarkers" :key="'pk-' + pk.id" aria-hidden="true">
+          <template v-if="pk.utfart">
+            <path :d="utfartBracketPath(pk.x, pk.y)" fill="none" stroke="#ffffff"
+                  stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+            <path :d="utfartBracketPath(pk.x, pk.y)" fill="none" stroke="#111827"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </template>
+          <rect :x="pk.x - 8" :y="pk.y - 8" width="16" height="16" rx="3.5"
+                fill="#1d4ed8" stroke="#ffffff" stroke-width="1.5" />
+          <text :x="pk.x" :y="pk.y + 4.5" text-anchor="middle" fill="#ffffff"
+                font-size="12" font-weight="700"
+                font-family="system-ui, -apple-system, sans-serif">P</text>
         </g>
         <template v-if="routePaths.length">
           <path v-for="s in routePaths" :key="'halo-' + s.key" :d="s.d" fill="none"
@@ -827,6 +970,51 @@ onUnmounted(() => {
         <div class="w-6 h-6 rounded-full bg-rose-500 border-2 border-white shadow-lg flex items-center
                     justify-center text-[11px] font-bold text-white">B</div>
       </div>
+
+      <!-- UT.no-pin (v12.1.16): long-press / høyreklikk i kartet. Geo-ankret
+           trådkors + kort med koordinater og «Åpne i UT.no»-lenke som tar med
+           gjeldende zoom (ut.no/kart#zoom/lat/lon). Tap i kartet lukker. -->
+      <template v-if="utNoPin && utNoPinPx">
+        <div class="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
+             :style="{ left: utNoPinPx.x + 'px', top: utNoPinPx.y + 'px' }">
+          <div class="w-5 h-5 rounded-full border-2 border-sky-400 bg-sky-400/25 shadow-lg
+                      flex items-center justify-center">
+            <div class="w-1.5 h-1.5 rounded-full bg-sky-300"></div>
+          </div>
+        </div>
+        <div class="absolute z-20" @mousedown.stop @touchstart.stop @wheel.stop @contextmenu.stop.prevent
+             :style="{ left: utNoPinPx.x + 'px', top: (utNoPinPx.y - 16) + 'px',
+                       transform: 'translate(-50%, -100%)' }">
+          <div class="rounded-xl bg-zinc-950/95 backdrop-blur border border-white/15 shadow-2xl
+                      px-3 py-2.5 w-max">
+            <div class="flex items-center gap-3">
+              <div class="text-[10px] text-white/55 tabular-nums">
+                {{ utNoPin.lat.toFixed(5) }}, {{ utNoPin.lon.toFixed(5) }}
+              </div>
+              <button @click="utNoPin = null" aria-label="Lukk"
+                      class="w-6 h-6 -mr-1 rounded-full flex items-center justify-center text-white/50
+                             hover:text-white/80 active:scale-90 transition">
+                <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+              </button>
+            </div>
+            <a :href="utNoUrl ?? undefined" target="_blank" rel="noopener noreferrer"
+               @click="utNoPin = null"
+               class="mt-1.5 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px]
+                      font-semibold border bg-sky-500/20 border-sky-400/50 text-sky-100
+                      active:scale-95 transition">
+              Åpne i UT.no
+              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+          </div>
+          <!-- liten pil ned mot pinnen -->
+          <div class="mx-auto w-2.5 h-2.5 -mt-[5px] rotate-45 bg-zinc-950/95 border-r border-b border-white/15"></div>
+        </div>
+      </template>
 
       <!-- Zoom-knapper + nivå-badge. mousedown/touchstart stoppes så knappe-
            trykk ikke tolkes som kart-tap (tap-to-set for A/B). -->
@@ -936,7 +1124,7 @@ onUnmounted(() => {
              class="px-3 py-1.5 rounded-full bg-zinc-950/85 border border-white/15 text-white/75 text-[11px]
                     shadow flex items-center gap-2">
           <span class="w-3 h-3 border-2 border-white/20 border-t-white/80 rounded-full animate-spin"></span>
-          Henter grusveier …
+          Henter kartlag …
         </div>
         <div v-if="overlayState === 'error'"
              class="px-3 py-1.5 rounded-full bg-amber-500/90 text-zinc-950 text-[11px] font-medium shadow">
@@ -944,23 +1132,57 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Tegnforklaring (når overlayen vises) — løftes over skuffen -->
-      <div v-if="overlayPaths.length"
+      <!-- Kartlag-panel (v12.1.16): tegnforklaring OG lag-velger i ett — hver
+           rad er en toggle (bekreftet grus / antatt grus / parkering). Vises
+           når overlayen er aktiv (innzoomet); valg huskes i localStorage. -->
+      <div v-if="!overlayGated"
            :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
-           class="absolute left-3 z-10 rounded-lg bg-zinc-950/85 border border-white/15 px-2.5 py-2
-                  pointer-events-none">
-        <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Grusveier</div>
-        <div class="text-[10px] text-white/75 space-y-1">
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-[3.5px] border-[#0e7490] rounded"></span>
-            Bekreftet grus (dekke registrert)
-          </div>
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block w-5 h-0 border-t-[3.5px] border-dashed border-[#0e7490] rounded"></span>
-            Antatt grus (skogsbilvei)
-          </div>
-          <div v-if="overlayBarrierPts.length" class="flex items-center gap-1.5">
-            <span class="inline-flex w-5 justify-center">
+           class="absolute left-3 z-10 rounded-lg bg-zinc-950/85 border border-white/15 px-2.5 py-2"
+           @mousedown.stop @touchstart.stop @wheel.stop>
+        <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Kartlag</div>
+        <div class="text-[10px] text-white/75 space-y-0.5">
+          <button @click="toggleLayer('surfaced')" :aria-pressed="layers.surfaced"
+                  class="flex items-center gap-1.5 w-full text-left py-0.5 active:opacity-60 transition"
+                  :class="layers.surfaced ? '' : 'opacity-40'">
+            <span class="inline-block w-5 h-0 border-t-[3.5px] border-[#0e7490] rounded shrink-0"></span>
+            <span class="flex-1 pr-1">Bekreftet grus</span>
+            <span class="w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center"
+                  :class="layers.surfaced ? 'bg-sky-500 border-sky-400' : 'border-white/30'">
+              <svg v-if="layers.surfaced" viewBox="0 0 24 24" class="w-2.5 h-2.5 text-white" fill="none"
+                   stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                   stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+          </button>
+          <button @click="toggleLayer('assumed')" :aria-pressed="layers.assumed"
+                  class="flex items-center gap-1.5 w-full text-left py-0.5 active:opacity-60 transition"
+                  :class="layers.assumed ? '' : 'opacity-40'">
+            <span class="inline-block w-5 h-0 border-t-[3.5px] border-dashed border-[#0e7490] rounded shrink-0"></span>
+            <span class="flex-1 pr-1">Antatt grus (skogsbilvei)</span>
+            <span class="w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center"
+                  :class="layers.assumed ? 'bg-sky-500 border-sky-400' : 'border-white/30'">
+              <svg v-if="layers.assumed" viewBox="0 0 24 24" class="w-2.5 h-2.5 text-white" fill="none"
+                   stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                   stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+          </button>
+          <button @click="toggleLayer('parking')" :aria-pressed="layers.parking"
+                  class="flex items-center gap-1.5 w-full text-left py-0.5 active:opacity-60 transition"
+                  :class="layers.parking ? '' : 'opacity-40'">
+            <span class="inline-flex w-5 justify-center shrink-0">
+              <span class="w-3.5 h-3.5 rounded-[3px] bg-[#1d4ed8] border border-white text-white
+                           text-[8px] font-bold flex items-center justify-center leading-none">P</span>
+            </span>
+            <span class="flex-1 pr-1">Parkering</span>
+            <span class="w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center"
+                  :class="layers.parking ? 'bg-sky-500 border-sky-400' : 'border-white/30'">
+              <svg v-if="layers.parking" viewBox="0 0 24 24" class="w-2.5 h-2.5 text-white" fill="none"
+                   stroke="currentColor" stroke-width="3.5" stroke-linecap="round"
+                   stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+          </button>
+          <div v-if="overlayBarrierPts.length && (layers.surfaced || layers.assumed)"
+               class="flex items-center gap-1.5 py-0.5 pointer-events-none">
+            <span class="inline-flex w-5 justify-center shrink-0">
               <span class="w-3 h-3 rounded-full bg-[#dc2626] border border-white flex items-center justify-center">
                 <span class="block w-1.5 h-[2px] rounded bg-white"></span>
               </span>
@@ -1044,7 +1266,8 @@ onUnmounted(() => {
           <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500
                        text-white text-[9px] font-bold align-middle">B</span>
           — eller bruk søk/GPS. Tips: zoom inn, så viser kartet hvor det er grus
-          (heltrukket) og mulig grus (stiplet).
+          (heltrukket) og mulig grus (stiplet). Hold inne et punkt i kartet for å
+          åpne det på UT.no sitt turkart.
         </div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">

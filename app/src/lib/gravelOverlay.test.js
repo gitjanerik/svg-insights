@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildGravelQuery, classifyGravelWay, extractGravelWays,
-  classifyBarrierNode, extractBarrierNodes,
+  classifyBarrierNode, extractBarrierNodes, extractParkingSpots,
   bboxContains, padBbox, GRAVEL_SURFACES, isMotorAccessible,
+  PARKING_STI_FETCH_RADIUS_M, UTFART_STI_MAXDIST_M,
 } from './gravelOverlay.js'
 
 const BBOX = { south: 60.1, west: 11.2, north: 60.3, east: 11.6 }
@@ -20,6 +21,21 @@ describe('buildGravelQuery', () => {
     const q = buildGravelQuery(BBOX)
     expect(q).toContain('node(w)["barrier"];')
     expect(q.indexOf('node(w)')).toBeGreaterThan(q.indexOf('out geom;'))
+  })
+  it('uten includeParking: ingen parkering i spørringen (default)', () => {
+    expect(buildGravelQuery(BBOX)).not.toContain('parking')
+  })
+  it('med includeParking: parkering (node+way, out center) + sti rundt P-plassene', () => {
+    const q = buildGravelQuery(BBOX, { includeParking: true })
+    expect(q).toContain('node["amenity"="parking"];')
+    expect(q).toContain('way["amenity"="parking"];')
+    expect(q).toContain('.pk out center;')
+    expect(q).toContain(`way(around.pk:${PARKING_STI_FETCH_RADIUS_M})`)
+    expect(q).toContain('"highway"~"^(track|path|footway|bridleway|steps)$"')
+    expect(q).toContain('.sti out geom;')
+    // Parkerings-delen kommer ETTER grus+barrier-delen (endrer ikke `_`-settet
+    // som node(w) leser fra).
+    expect(q.indexOf('amenity')).toBeGreaterThan(q.indexOf('node(w)'))
   })
 })
 
@@ -99,6 +115,72 @@ describe('extractGravelWays', () => {
   it('tåler tomt/manglende svar', () => {
     expect(extractGravelWays({})).toEqual([])
     expect(extractGravelWays(null)).toEqual([])
+  })
+  it('dedup på way-id (samme way i grus- og sti-out-blokkene)', () => {
+    const dup = {
+      elements: [
+        fixture.elements[0],
+        { ...fixture.elements[0] },   // samme id fra .sti-blokken
+      ],
+    }
+    expect(extractGravelWays(dup)).toHaveLength(1)
+  })
+})
+
+describe('extractParkingSpots — turkartets 534/534u-regler i planleggeren', () => {
+  // Ved 60°N: 50 m ≈ 0.000449° lat. Sti 22 m nord for P-punktet → innen 50 m;
+  // sti 111 m nord (0.001°) → utenfor.
+  const P_LAT = 60.0
+  const P_LON = 11.0
+  const stiNear = {
+    type: 'way', id: 100, tags: { highway: 'path' },
+    geometry: [{ lat: 60.0002, lon: 10.995 }, { lat: 60.0002, lon: 11.005 }],
+  }
+  const stiFar = {
+    type: 'way', id: 101, tags: { highway: 'path' },
+    geometry: [{ lat: 60.001, lon: 10.995 }, { lat: 60.001, lon: 11.005 }],
+  }
+  const node = (id, tags) => ({ type: 'node', id, lat: P_LAT, lon: P_LON, tags: { amenity: 'parking', ...tags } })
+
+  it('node-parkering plukkes med lat/lon og meter-koordinater', () => {
+    const spots = extractParkingSpots({ elements: [node(1, {})] })
+    expect(spots).toHaveLength(1)
+    expect(spots[0]).toMatchObject({ lat: P_LAT, lon: P_LON, utfart: false })
+    expect(Number.isFinite(spots[0].p.x)).toBe(true)
+    expect(Number.isFinite(spots[0].p.y)).toBe(true)
+  })
+  it('way-parkering bruker Overpass-center; uten center droppes den', () => {
+    const spots = extractParkingSpots({ elements: [
+      { type: 'way', id: 2, center: { lat: P_LAT, lon: P_LON }, tags: { amenity: 'parking' } },
+      { type: 'way', id: 3, tags: { amenity: 'parking' } },
+    ] })
+    expect(spots).toHaveLength(1)
+    expect(spots[0].lat).toBe(P_LAT)
+  })
+  it('utfart krever BÅDE offentlig/utfarts-tagging OG sti innen 50 m', () => {
+    const offentlig = node(1, { access: 'yes' })
+    // (a)+(b) oppfylt → utfart
+    expect(extractParkingSpots({ elements: [offentlig, stiNear] })[0].utfart).toBe(true)
+    // (a) uten (b): ingen sti nær → vanlig P
+    expect(extractParkingSpots({ elements: [offentlig, stiFar] })[0].utfart).toBe(false)
+    // (b) uten (a): privat P ved sti → vanlig P
+    expect(extractParkingSpots({ elements: [node(1, { access: 'private' }), stiNear] })[0].utfart).toBe(false)
+    // Utfarts-navn slår access-default (samme som turkartet)
+    expect(extractParkingSpots({ elements: [node(1, { name: 'Utfartsparkering Knivåsen' }), stiNear] })[0].utfart).toBe(true)
+  })
+  it('sti-nærhet måles i ekte meter (UTFART_STI_MAXDIST_M)', () => {
+    expect(UTFART_STI_MAXDIST_M).toBe(50)
+  })
+  it('grus-track fra hoveddelen av svaret teller som sti (ISOM 504)', () => {
+    const track = {
+      type: 'way', id: 200, tags: { highway: 'track' },
+      geometry: [{ lat: 60.0002, lon: 10.995 }, { lat: 60.0002, lon: 11.005 }],
+    }
+    expect(extractParkingSpots({ elements: [node(1, { access: 'yes' }), track] })[0].utfart).toBe(true)
+  })
+  it('tåler tomt/manglende svar', () => {
+    expect(extractParkingSpots({})).toEqual([])
+    expect(extractParkingSpots(null)).toEqual([])
   })
 })
 

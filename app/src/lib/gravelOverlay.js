@@ -17,6 +17,9 @@
 //    callback som konsulteres FØR OSM-heuristikken — der plugges offisiell
 //    dekketype inn uten endring i overlay eller lagringsskjema.
 
+import { isTrailheadParking } from './parkingRules.js'
+import { isPointNearPolylines } from './pathUtils.js'
+
 export const MIN_OVERLAY_ZOOM = 11        // under dette: for stort areal, vis hint
 export const MAX_OVERLAY_AREA_KM2 = 600
 
@@ -24,11 +27,26 @@ export const GRAVEL_SURFACES = ['gravel', 'compacted', 'fine_gravel', 'unpaved',
 const GRAVEL_SURFACE_SET = new Set(GRAVEL_SURFACES)
 const OVERLAY_HIGHWAYS = new Set(['track', 'unclassified', 'tertiary', 'secondary', 'residential', 'service'])
 
-export function buildGravelQuery(bbox, { timeoutS = 25 } = {}) {
+export function buildGravelQuery(bbox, { timeoutS = 25, includeParking = false } = {}) {
   const b = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`
   // Etter `out geom;` står way-settet fortsatt i `_` — `node(w)["barrier"]`
   // henter barrier-nodene PÅ de samme veiene (bommer, kjettinger, steiner …)
   // så stengte innkjøringer kan markeres i overlayen.
+  //
+  // Parkering (valgfritt, samme regler som turkartets ISOM 534): node- og
+  // way-parkering hentes med `out center` (centroid holder — vi rendrer et
+  // punktsymbol). Utfart-regelens (b)-krav trenger sti/skogsbilvei NÆR hver
+  // P-plass; `way(around.pk:…)` henter kun de få sti-way-ene innen 100 m av
+  // en parkering (klient-side måles så eksakt 50 m fra P-punktet), i stedet
+  // for alle stier i hele bbox-en.
+  const parking = includeParking ? `
+(
+  node["amenity"="parking"];
+  way["amenity"="parking"];
+)->.pk;
+.pk out center;
+way(around.pk:${PARKING_STI_FETCH_RADIUS_M})["highway"~"^(${PARKING_STI_HIGHWAYS.join('|')})$"]->.sti;
+.sti out geom;` : ''
   return `
 [out:json][timeout:${timeoutS}][bbox:${b}];
 (
@@ -37,7 +55,7 @@ export function buildGravelQuery(bbox, { timeoutS = 25 } = {}) {
 );
 out geom;
 node(w)["barrier"];
-out;
+out;${parking}
 `.trim()
 }
 
@@ -103,8 +121,13 @@ export function classifyGravelWay(tags = {}, { enrich } = {}) {
  */
 export function extractGravelWays(overpassJson, { enrich } = {}) {
   const out = []
+  // Samme way kan dukke opp i to `out`-blokker (grus-settet OG sti-rundt-
+  // parkering-settet når includeParking er på) — dedup på id.
+  const seen = new Set()
   for (const el of overpassJson?.elements ?? []) {
     if (el.type !== 'way' || !Array.isArray(el.geometry) || el.geometry.length < 2) continue
+    if (seen.has(el.id)) continue
+    seen.add(el.id)
     const kind = classifyGravelWay(el.tags ?? {}, { enrich })
     if (!kind) continue
     out.push({
@@ -171,6 +194,62 @@ export function extractBarrierNodes(overpassJson) {
     out.push({ id: el.id, kind, lon: el.lon, lat: el.lat, tags: el.tags ?? {} })
   }
   return out
+}
+
+// ── Parkering (v12.1.16) — samme regler som turkartets ISOM 534/534u ───────
+// Kilder: amenity=parking som node (punkt) og way (polygon → Overpass
+// `out center`-centroid). Utfart-status krever BEGGE (identisk med
+// mapBuilder):
+//   (a) isTrailheadParking(tags) — offentlig access eller utfart-/tur-navn
+//   (b) sti/skogsbilvei (highway=track/path/footway/bridleway/steps — samme
+//       OSM-tags som klassifiseres til ISOM 504–507) innen 50 m av P-punktet
+// Uttynning gjøres av kallere via thinParkering (utfart vises alltid).
+
+// OSM highway-verdier som tilsvarer turkartets STI_CODES 504–507.
+export const PARKING_STI_HIGHWAYS = ['track', 'path', 'footway', 'bridleway', 'steps']
+const PARKING_STI_HIGHWAY_SET = new Set(PARKING_STI_HIGHWAYS)
+export const UTFART_STI_MAXDIST_M = 50
+// Overpass-around-radius: raus nok til at klient-sidens eksakte 50 m-måling
+// fra way-parkeringens CENTROID alltid har sti-geometrien tilgjengelig
+// (around måler fra way-geometrien, ikke centroiden).
+export const PARKING_STI_FETCH_RADIUS_M = 100
+
+/**
+ * Trekk parkeringsplasser ut av et Overpass-svar bygget med
+ * `buildGravelQuery(bbox, { includeParking: true })`. Returnerer
+ * `{ id, lat, lon, p:{x,y} (meter, lokal ekvirektangulær), utfart }` —
+ * formen thinParkering forventer, så kallere kan tynne i ekte meter.
+ */
+export function extractParkingSpots(overpassJson) {
+  const parkings = []
+  const stiLls = []
+  const seenWays = new Set()
+  for (const el of overpassJson?.elements ?? []) {
+    const t = el.tags ?? {}
+    if (t.amenity === 'parking') {
+      const lat = el.type === 'node' ? el.lat : el.center?.lat
+      const lon = el.type === 'node' ? el.lon : el.center?.lon
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        parkings.push({ id: `${el.type}-${el.id}`, lat, lon, tags: t })
+      }
+    } else if (el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length >= 2 &&
+               PARKING_STI_HIGHWAY_SET.has(t.highway) && !seenWays.has(el.id)) {
+      seenWays.add(el.id)
+      stiLls.push(el.geometry)
+    }
+  }
+  if (!parkings.length) return []
+  // Lokal meter-projeksjon rundt utsnittet — god nok for 50 m-avstander.
+  const lat0 = parkings[0].lat
+  const mPerDegLat = 111320
+  const mPerDegLon = 111320 * Math.cos((lat0 * Math.PI) / 180)
+  const toM = (lat, lon) => ({ x: lon * mPerDegLon, y: lat * mPerDegLat })
+  const stiM = stiLls.map((g) => g.map((pt) => toM(pt.lat, pt.lon)))
+  return parkings.map(({ id, lat, lon, tags }) => {
+    const p = toM(lat, lon)
+    const utfart = isTrailheadParking(tags) && isPointNearPolylines(p, stiM, UTFART_STI_MAXDIST_M)
+    return { id, lat, lon, p, utfart }
+  })
 }
 
 // Bbox-primitiver for én-slots hentecache (padBbox ved fetch, bboxContains
