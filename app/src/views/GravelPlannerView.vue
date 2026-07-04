@@ -15,6 +15,7 @@ import { lonLatToWorldPx, worldPxToLonLat, lonLatToScreenPx, screenPxToLonLat, v
 import { buildGravelQuery, extractGravelWays, extractBarrierNodes, extractParkingSpots, bboxContains, padBbox, MIN_OVERLAY_ZOOM, MAX_OVERLAY_AREA_KM2 } from '../lib/gravelOverlay.js'
 import { thinParkering, PARKERING_MIN_SEP_M } from '../lib/parkingRules.js'
 import { buildUtNoUrl } from '../lib/utNoLink.js'
+import { gmapsUrl, streetViewUrl, buildVegkartUrl } from '../lib/externalMapLinks.js'
 import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
@@ -365,6 +366,11 @@ watch(layers, () => {
 function toggleLayer(key) {
   layers.value = { ...layers.value, [key]: !layers.value[key] }
 }
+// Panelet er kollapset til en liten lag-knapp som default (v12.1.17 — det
+// alltid-åpne panelet spiste kartflate og kolliderte visuelt med P-markører,
+// se mobil-skjermbildet). Åpen tilstand persisteres ikke — kartet skal alltid
+// starte ryddig.
+const layersPanelOpen = ref(false)
 
 // ── Grusvei-overlay: hent + tegn (alltid aktiv, zoom-gatet) ─────────────────
 const overlayState = ref('idle')     // 'idle' | 'loading' | 'error'
@@ -531,12 +537,21 @@ const routePaths = computed(() => {
     }))
 })
 
-// UT.no-pin i skjerm-px (geo-ankret — følger kartet) + ferdig bygget lenke
-// med gjeldende zoom, så UT.no åpner samme utsnitt.
+// UT.no-pin i skjerm-px (geo-ankret — følger kartet) + ferdig bygde lenker.
+// UT.no og Vegkart tar med gjeldende zoom så de åpner samme utsnitt;
+// Google Maps/Street View er punkt-lenker (samme som turkartets ark).
 const utNoPinPx = computed(() => utNoPin.value && mapSize.value.w
   ? lonLatToScreenPx(utNoPin.value.lon, utNoPin.value.lat, view.value) : null)
-const utNoUrl = computed(() => utNoPin.value
-  ? buildUtNoUrl({ lat: utNoPin.value.lat, lon: utNoPin.value.lon, zoom: zoom.value }) : null)
+const pinLinks = computed(() => {
+  const p = utNoPin.value
+  if (!p) return []
+  return [
+    { label: 'UT.no', href: buildUtNoUrl({ lat: p.lat, lon: p.lon, zoom: zoom.value }) },
+    { label: 'Vegkart (Vegvesen.no)', href: buildVegkartUrl({ lat: p.lat, lon: p.lon, zoom: zoom.value }) },
+    { label: 'Google Maps', href: gmapsUrl(p.lat, p.lon) },
+    { label: 'Street View', href: streetViewUrl(p.lat, p.lon) },
+  ].filter((l) => l.href)
+})
 
 const markerA = computed(() => pointA.value && mapSize.value.w
   ? lonLatToScreenPx(pointA.value.lon, pointA.value.lat, view.value) : null)
@@ -998,18 +1013,20 @@ onUnmounted(() => {
                      stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
               </button>
             </div>
-            <a :href="utNoUrl ?? undefined" target="_blank" rel="noopener noreferrer"
-               @click="utNoPin = null"
-               class="mt-1.5 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px]
-                      font-semibold border bg-sky-500/20 border-sky-400/50 text-sky-100
-                      active:scale-95 transition">
-              Åpne i UT.no
-              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
+            <div class="mt-1.5 space-y-1">
+              <a v-for="l in pinLinks" :key="l.label" :href="l.href"
+                 target="_blank" rel="noopener noreferrer" @click="utNoPin = null"
+                 class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-[12px]
+                        font-medium border bg-white/[0.06] border-white/15 text-white/85
+                        active:scale-[0.98] transition">
+                Åpne i {{ l.label }}
+                <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0 text-white/50" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </a>
+            </div>
           </div>
           <!-- liten pil ned mot pinnen -->
           <div class="mx-auto w-2.5 h-2.5 -mt-[5px] rotate-45 bg-zinc-950/95 border-r border-b border-white/15"></div>
@@ -1132,14 +1149,37 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Kartlag-panel (v12.1.16): tegnforklaring OG lag-velger i ett — hver
-           rad er en toggle (bekreftet grus / antatt grus / parkering). Vises
-           når overlayen er aktiv (innzoomet); valg huskes i localStorage. -->
-      <div v-if="!overlayGated"
+      <!-- Kartlag (v12.1.16, kollapset v12.1.17): tegnforklaring OG lag-velger
+           i ett — hver rad er en toggle (bekreftet grus / antatt grus /
+           parkering). Default vises bare en liten lag-knapp; panelet åpnes on
+           demand og lukkes med X. Solid bakgrunn + z-20 så kart-markører aldri
+           skinner gjennom. Valg huskes i localStorage. -->
+      <button v-if="!overlayGated && !layersPanelOpen" @click.stop="layersPanelOpen = true"
+              @mousedown.stop @touchstart.stop
+              aria-label="Kartlag" :aria-expanded="false"
+              :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+              class="absolute left-3 z-20 w-10 h-10 rounded-lg bg-zinc-950/90 border border-white/15
+                     text-white/80 shadow-lg flex items-center justify-center active:scale-95 transition">
+        <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 22 8.5 12 15 2 8.5"/>
+          <polyline points="2 14 12 20.5 22 14"/>
+        </svg>
+      </button>
+      <div v-else-if="!overlayGated"
            :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
-           class="absolute left-3 z-10 rounded-lg bg-zinc-950/85 border border-white/15 px-2.5 py-2"
+           class="absolute left-3 z-20 rounded-lg bg-zinc-950/95 backdrop-blur border border-white/15
+                  px-2.5 py-2 shadow-xl"
            @mousedown.stop @touchstart.stop @wheel.stop>
-        <div class="text-[9px] uppercase tracking-wide text-white/45 mb-1">Kartlag</div>
+        <div class="flex items-center justify-between gap-4 mb-1">
+          <div class="text-[9px] uppercase tracking-wide text-white/45">Kartlag</div>
+          <button @click.stop="layersPanelOpen = false" aria-label="Lukk kartlag"
+                  class="w-5 h-5 -mr-1 rounded-full flex items-center justify-center text-white/50
+                         hover:text-white/80 active:scale-90 transition">
+            <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.4"
+                 stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+          </button>
+        </div>
         <div class="text-[10px] text-white/75 space-y-0.5">
           <button @click="toggleLayer('surfaced')" :aria-pressed="layers.surfaced"
                   class="flex items-center gap-1.5 w-full text-left py-0.5 active:opacity-60 transition"
@@ -1267,7 +1307,7 @@ onUnmounted(() => {
                        text-white text-[9px] font-bold align-middle">B</span>
           — eller bruk søk/GPS. Tips: zoom inn, så viser kartet hvor det er grus
           (heltrukket) og mulig grus (stiplet). Hold inne et punkt i kartet for å
-          åpne det på UT.no sitt turkart.
+          åpne det i UT.no, Vegkart eller Google Maps.
         </div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">

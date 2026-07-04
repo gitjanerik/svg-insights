@@ -11,12 +11,23 @@ const ZONE = 32
 const LON0 = ((ZONE * 6) - 183) * Math.PI / 180  // 9° for sone 32
 
 export function wgs84ToUtm32(lat, lon) {
+  return wgs84ToUtmZone(lat, lon, LON0)
+}
+
+// UTM 33N (EPSG:25833-kompatibel) — Vegvesenets Vegkart bruker sone 33 i
+// kart-hashen sin (@easting,northing,zoom). Samme serie-formler, annen
+// sentralmeridian (15°).
+export function wgs84ToUtm33(lat, lon) {
+  return wgs84ToUtmZone(lat, lon, ((33 * 6) - 183) * Math.PI / 180)
+}
+
+function wgs84ToUtmZone(lat, lon, lon0) {
   const phi = lat * Math.PI / 180
   const lam = lon * Math.PI / 180
   const N = A / Math.sqrt(1 - E2 * Math.sin(phi) ** 2)
   const T = Math.tan(phi) ** 2
   const C = EP2 * Math.cos(phi) ** 2
-  const Aa = (lam - LON0) * Math.cos(phi)
+  const Aa = (lam - lon0) * Math.cos(phi)
 
   const M = A * (
     (1 - E2 / 4 - 3 * E2 * E2 / 64 - 5 * E2 ** 3 / 256) * phi

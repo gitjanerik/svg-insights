@@ -40,6 +40,7 @@ import {
 } from '../lib/viewportCull.js'
 import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
+import { gmapsUrl, streetViewUrl, buildVegkartUrl } from '../lib/externalMapLinks.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -3182,10 +3183,8 @@ function restoreProximityAlert() {
   if (!userPos.isWatching) startPositioning()
 }
 
-function gmapsUrl(lat, lon) { return `https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}` }
-function streetViewUrl(lat, lon) {
-  return `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat.toFixed(6)},${lon.toFixed(6)}`
-}
+// gmapsUrl/streetViewUrl bor i lib/externalMapLinks.js (v12.1.17 — delt med
+// Ruteplanleggerens long-press-pin).
 
 async function onCopyCoords() {
   const info = contextMenuInfo.value
@@ -3302,21 +3301,30 @@ function onOpenStreetView() {
   if (!info) return
   window.open(streetViewUrl(info.lat, info.lon), '_blank', 'noopener')
 }
-// Åpne punktet på UT.no sitt turkart (ut.no/kart#zoom/lat/lon). Zoom avledes
-// av gjeldende visnings bakkeoppløsning (SVG-viewBox-meter pr rendret px,
-// inkl. pinch-zoom via getBoundingClientRect) så UT.no åpner på omtrent samme
-// utsnitt som brukeren ser her.
-function onOpenUtNo() {
-  const info = contextMenuInfo.value
-  if (!info) return
-  let zoom = UTNO_DEFAULT_ZOOM
+// Web-zoom som matcher gjeldende visnings bakkeoppløsning (SVG-viewBox-meter
+// pr rendret px, inkl. pinch-zoom via getBoundingClientRect) — så eksterne
+// kart (UT.no, Vegkart) åpner på omtrent samme utsnitt som brukeren ser her.
+function currentViewWebZoom(lat) {
   try {
     const svg = svgHostRef.value?.querySelector('svg')
     const vb = svg?.viewBox?.baseVal
     const rect = svg?.getBoundingClientRect()
-    if (vb?.width && rect?.width) zoom = utNoZoomForMPerPx(vb.width / rect.width, info.lat)
+    if (vb?.width && rect?.width) return utNoZoomForMPerPx(vb.width / rect.width, lat)
   } catch { /* fall tilbake til default-zoom */ }
-  const url = buildUtNoUrl({ lat: info.lat, lon: info.lon, zoom })
+  return UTNO_DEFAULT_ZOOM
+}
+// Åpne punktet på UT.no sitt turkart (ut.no/kart#zoom/lat/lon).
+function onOpenUtNo() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  const url = buildUtNoUrl({ lat: info.lat, lon: info.lon, zoom: currentViewWebZoom(info.lat) })
+  if (url) window.open(url, '_blank', 'noopener')
+}
+// Åpne punktet i Vegvesenets Vegkart (UTM 33N-hash, se externalMapLinks.js).
+function onOpenVegkart() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  const url = buildVegkartUrl({ lat: info.lat, lon: info.lon, zoom: currentViewWebZoom(info.lat) })
   if (url) window.open(url, '_blank', 'noopener')
 }
 function onPlaceAnnotationFromContext(symbolKey) {
@@ -8553,6 +8561,16 @@ onUnmounted(() => {
                 <path d="M7.5 11 L9 12.5 L10.5 11"/>
               </svg>
               <span>UT.no-kart</span>
+            </button>
+            <button @click="onOpenVegkart"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 21 C8 15 8 9 12 9 s4 6 8 12"/>
+                <path d="M12 3 v3 M12 9 v3 M12 15 v3"/>
+              </svg>
+              <span>Vegkart (Vegvesen.no)</span>
             </button>
             <button @click="toggleProximityPanel"
                     :aria-expanded="proximityPanelOpen"
