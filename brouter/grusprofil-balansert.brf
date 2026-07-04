@@ -1,4 +1,4 @@
-# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 6, matcher
+# grusprofil-balansert.brf — SVG Insights Ruteplanlegger (versjon 7, matcher
 # PROFILE_VERSION i brouterClient.js — bump begge ved endring).
 #
 # Formål: BALANSERT variant — foretrekker grus, men tar asfalt-snarveier
@@ -50,8 +50,18 @@ assign gangsykkel =
   and or foot=designated bicycle=designated
   not motor_vehicle=yes
 
+# Lysløype (v7): samme sperre som grusprofil.brf — se kommentaren der.
+assign islysloype =
+  and piste:type=nordic
+  and not lit= not lit=no
+
+# Antatt grusvei i ruteforslag — styres av UI-sjekkboksen, klienten bytter
+# true/false ved opplasting (applyProfileFlags i brouterClient.js).
+assign inkluder_antatt_grus = true
+
 assign onlyroads =
   switch gangsykkel false
+  switch islysloype false
   switch highway=motorway|motorway_link false
   switch highway=trunk|trunk_link false
   switch highway=footway|pedestrian|cycleway|path|bridleway|steps|construction|proposed false
@@ -63,11 +73,14 @@ assign costfactor =
   switch route=ferry 8
 
   # Skogsbilvei / track: kjernen i grusnettet. grade1 = fast dekke -> dyrere;
-  # grade5 kan være ukjørbart for tur-MC -> straffes.
+  # grade5 kan være ukjørbart for tur-MC -> straffes. Track uten bekreftet
+  # grus-dekke (antatt grus) er kun med når inkluder_antatt_grus er true.
   switch highway=track (
     switch tracktype=grade1 ( switch ispaved 2.2 1.6 )
-    switch tracktype=grade5 6
     switch ispaved 2.4
+    switch isgravel 1.0
+    switch not inkluder_antatt_grus 100000
+    switch tracktype=grade5 6
     1.0
   )
 
