@@ -628,6 +628,11 @@ const snapWarning = computed(() => {
 
 // ── Rute-kort, forslag + lagring ────────────────────────────────────────────
 const showSaved = ref(false)
+// Flytende kart-elementer (FAB, lag-knapp, attribusjon, feilbanner) ankres til
+// den AKTIVE skuffen: mens «Mine ruter» er åpen er planlegg-skuffen skjult
+// (én skuff om gangen, v12.1.20), så de følger savedDrawer i stedet.
+const floatBottomPx = computed(() =>
+  (showSaved.value ? savedDrawer : drawer).visibleHeightPx.value)
 // Refresh lista hver gang arket åpnes — ruter kan være lagret i en annen
 // fane/økt siden mount. Skuffen starter alltid i standard-høyde.
 watch(showSaved, (open) => {
@@ -1117,7 +1122,7 @@ onUnmounted(() => {
       <button v-if="route" @click.stop="fitRouteView"
               @mousedown.stop @touchstart.stop
               aria-label="Vis hele ruten"
-              :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+              :style="{ bottom: (floatBottomPx + 12) + 'px' }"
               class="absolute right-3 z-10 w-12 h-12 rounded-full bg-zinc-950/90 border
                      border-white/15 text-white shadow-lg flex items-center justify-center
                      active:scale-95 transition">
@@ -1222,7 +1227,7 @@ onUnmounted(() => {
       <button v-if="!overlayGated && !layersPanelOpen" @click.stop="layersPanelOpen = true"
               @mousedown.stop @touchstart.stop
               aria-label="Kartlag" :aria-expanded="false"
-              :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+              :style="{ bottom: (floatBottomPx + 12) + 'px' }"
               class="absolute left-3 z-20 w-10 h-10 rounded-lg bg-zinc-950/90 border border-white/15
                      text-white/80 shadow-lg flex items-center justify-center active:scale-95 transition">
         <svg viewBox="0 0 24 24" class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2"
@@ -1232,7 +1237,7 @@ onUnmounted(() => {
         </svg>
       </button>
       <div v-else-if="!overlayGated"
-           :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+           :style="{ bottom: (floatBottomPx + 12) + 'px' }"
            class="absolute left-3 z-20 rounded-lg bg-zinc-950/95 backdrop-blur border border-white/15
                   px-2.5 py-2 shadow-xl"
            @mousedown.stop @touchstart.stop @wheel.stop>
@@ -1300,7 +1305,7 @@ onUnmounted(() => {
       <!-- Attribusjon (løftes over skuffen) -->
       <div class="absolute right-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-white/60 text-[8px]
                   border border-white/15 leading-tight pointer-events-none z-10"
-           :style="{ bottom: (drawer.visibleHeightPx.value + 4) + 'px' }">
+           :style="{ bottom: (floatBottomPx + 4) + 'px' }">
         © Kartverket · © OpenStreetMap-bidragsytere · Ruting: BRouter (brouter.de)
       </div>
     </div>
@@ -1309,7 +1314,7 @@ onUnmounted(() => {
     <div v-if="isOffline || routeState === 'error'"
          class="absolute left-3 right-3 z-30 max-w-[560px] mx-auto rounded-xl border px-4 py-3
                 text-[13px] shadow-2xl"
-         :style="{ bottom: (drawer.visibleHeightPx.value + 12) + 'px' }"
+         :style="{ bottom: (floatBottomPx + 12) + 'px' }"
          :class="isOffline ? 'bg-zinc-900/95 border-white/15 text-white/80'
                            : 'bg-rose-950/95 border-rose-500/40 text-rose-100'">
       <template v-if="isOffline">Ruteplanleggeren krever nettilkobling.</template>
@@ -1321,11 +1326,14 @@ onUnmounted(() => {
 
     <!-- Dra-bar bunn-skuff (samme UX som turkartets skuffer): dra i håndtaket
          for å minimere (peek med håndtak + header) eller maksimere
-         (kart-stripe på 56 px igjen i toppen). Alltid synlig (v12.1.11). -->
+         (kart-stripe på 56 px igjen i toppen). -->
     <!-- Skuffen flyter OVER kartet (absolute, v12.1.6) i stedet for å ligge i
          flex-flyten: kartflaten er da konstant uansett om skuffen er åpen,
          minimert eller maksimert. -->
-    <div
+    <!-- Kun ÉN skuff om gangen (v12.1.20): mens «Mine ruter» er åpen skjules
+         planlegg-skuffen midlertidig (v-show — tilstanden består) og vises
+         igjen når lista lukkes. -->
+    <div v-show="!showSaved"
          class="absolute inset-x-0 bottom-0 z-20 backdrop-blur-md bg-zinc-900/92 border-t border-white/10
                 rounded-t-2xl flex flex-col overflow-hidden shadow-2xl"
          :style="drawer.drawerHeightStyle.value">
@@ -1353,10 +1361,11 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Fra/Til-skjema (før rute / under beregning) -->
-      <div v-if="!route || routeState === 'routing'"
-           class="flex-1 overflow-y-auto px-4 pt-1
-                  pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+      <!-- Fra/Til-skjema (før rute / under beregning). «Finn grusrute» ligger
+           i en sticky footer under scroll-regionen (v12.1.20) så den alltid
+           er synlig — den scrollet før ut av syne i lav skuff. -->
+      <template v-if="!route || routeState === 'routing'">
+      <div class="flex-1 min-h-0 overflow-y-auto px-4 pt-1 pb-3">
       <div class="max-w-[560px] mx-auto">
         <!-- Hvordan-hint: to trykk i kartet setter A og B; grusvei-overlayen
              vises direkte i kartet ved innzooming. Skjules i delingsmodus
@@ -1460,21 +1469,31 @@ onUnmounted(() => {
             </span>
           </span>
         </label>
-        <button @click="onFindRoute" :disabled="!pointA || !pointB || routeState === 'routing'"
-                class="w-full mt-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold border transition
-                       active:scale-[0.99] disabled:opacity-40
-                       bg-emerald-500/20 border-emerald-400/50 text-emerald-100 flex items-center justify-center gap-2">
-          <span v-if="routeState === 'routing'"
-                class="w-4 h-4 border-2 border-emerald-200/30 border-t-emerald-100 rounded-full animate-spin"></span>
-          {{ routeState === 'routing' ? 'Beregner tre ruteforslag …'
-             : (installRequested && canInstall ? 'Installer som app og finn grusrute' : 'Finn grusrute') }}
-        </button>
       </div>
       </div>
-
-      <!-- Rute-resultat (tre forslag + stat-fliser) -->
-      <div v-else class="flex-1 overflow-y-auto px-4
+      <!-- Sticky bunn-footer: skjules når skuffen er minimert (peek-høyden
+           skal kun romme håndtak + header). -->
+      <div v-show="!drawer.isMinimized.value"
+           class="shrink-0 border-t border-white/10 px-4 pt-2.5
                   pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+        <div class="max-w-[560px] mx-auto">
+          <button @click="onFindRoute" :disabled="!pointA || !pointB || routeState === 'routing'"
+                  class="w-full px-3 py-2.5 rounded-xl text-[13px] font-semibold border transition
+                         active:scale-[0.99] disabled:opacity-40
+                         bg-emerald-500/20 border-emerald-400/50 text-emerald-100 flex items-center justify-center gap-2">
+            <span v-if="routeState === 'routing'"
+                  class="w-4 h-4 border-2 border-emerald-200/30 border-t-emerald-100 rounded-full animate-spin"></span>
+            {{ routeState === 'routing' ? 'Beregner tre ruteforslag …'
+               : (installRequested && canInstall ? 'Installer som app og finn grusrute' : 'Finn grusrute') }}
+          </button>
+        </div>
+      </div>
+      </template>
+
+      <!-- Rute-resultat (tre forslag + stat-fliser). Lagre/Nullstill står i en
+           sticky footer (v12.1.20); eksport (GPX/Del) blir i scroll-innholdet. -->
+      <template v-else>
+      <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-3">
       <div class="max-w-[560px] mx-auto">
         <div class="text-[12px] text-white/50 truncate">
           {{ route.navn ?? `${labelFor(pointA)} → ${labelFor(pointB)}` }}
@@ -1561,51 +1580,54 @@ onUnmounted(() => {
              km/moh, linja er fargekodet grus/asfalt som kartet. -->
         <RouteElevationProfile class="mt-2" :profile="elevProfile" :state="elevState" :source="elevSource" />
 
-        <!-- Handlinger. Lagre-trykket bytter radene til et tydelig
-             navngivnings-steg («Lagre …»-ellipsen signaliserer at et steg
-             følger) i stedet for å stable en uventet tekstboks under.
-             Eksport (GPX/SVG/Del) og rute-handlinger (Lagre/Nullstill) på
-             hver sin rad — fem knapper på én rad ble for trangt på mobil. -->
-        <div v-if="!savingName" class="mt-3 space-y-1.5">
-          <div class="flex gap-1.5">
-            <button @click="planner.exportGpx()" aria-label="Last ned GPX"
-                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                           text-white/80 active:scale-95 transition">GPX</button>
-            <button @click="planner.exportSvg(elevProfile)" aria-label="Last ned stilisert SVG"
-                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                           text-white/80 active:scale-95 transition">SVG</button>
-            <button @click="onShareRoute" aria-label="Del rute"
-                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
-                           text-white/80 active:scale-95 transition">
-              {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
-          </div>
-          <div class="flex gap-1.5">
-            <button @click="startSave" aria-label="Lagre rute"
-                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-emerald-500/15
-                           border-emerald-400/40 text-emerald-100 active:scale-95 transition">Lagre …</button>
+        <!-- Eksport (GPX/Del) i scroll-innholdet. SVG-eksporten er fjernet i
+             v12.1.20 (begrenset nytte); Lagre/Nullstill står i sticky footer. -->
+        <div class="mt-3 flex gap-1.5">
+          <button @click="planner.exportGpx()" aria-label="Last ned GPX"
+                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                         text-white/80 active:scale-95 transition">GPX</button>
+          <button @click="onShareRoute" aria-label="Del rute"
+                  class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                         text-white/80 active:scale-95 transition">
+            {{ shareState === 'copied' ? 'Kopiert!' : (shareState === 'error' ? 'Feilet' : 'Del') }}</button>
+        </div>
+      </div>
+      </div>
+      <!-- Sticky bunn-footer: Nullstill + Lagre (grønn, høyre) 50/50. Lagre-
+           trykket bytter footer-innholdet til navngivnings-steget («Lagre …»-
+           ellipsen signaliserer at et steg følger). Skjules når skuffen er
+           minimert — peek-høyden rommer kun håndtak + header. -->
+      <div v-show="!drawer.isMinimized.value"
+           class="shrink-0 border-t border-white/10 px-4 pt-2.5
+                  pb-[max(env(safe-area-inset-bottom,0px),0.75rem)]">
+        <div class="max-w-[560px] mx-auto">
+          <div v-if="!savingName" class="flex gap-1.5">
             <button @click="onReset" aria-label="Nullstill rute"
-                    class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5 border-white/15
+                    class="flex-1 px-3 py-2.5 rounded-xl text-[13px] font-medium border bg-white/5 border-white/15
                            text-white/60 active:scale-95 transition">Nullstill</button>
+            <button @click="startSave" aria-label="Lagre rute"
+                    class="flex-1 px-3 py-2.5 rounded-xl text-[13px] font-semibold border bg-emerald-500/20
+                           border-emerald-400/50 text-emerald-100 active:scale-95 transition">Lagre …</button>
           </div>
-        </div>
-        <div v-else class="mt-3 rounded-xl bg-white/[0.04] border border-emerald-400/25 px-3 py-2.5">
-          <div class="text-[11px] text-emerald-200/80 font-medium mb-1.5">Gi ruta et navn</div>
-          <input ref="saveNameInput" v-model="saveName" type="text" placeholder="Navn på ruta"
-                 @keyup.enter="confirmSave"
-                 class="w-full px-3 py-2 rounded-lg bg-white/[0.06] border border-white/15 text-[13px]
-                        placeholder-white/30 focus:outline-none focus:border-emerald-300/50 transition" />
-          <div class="flex gap-1.5 mt-2">
-            <button @click="confirmSave"
-                    class="flex-1 px-4 py-2 rounded-lg text-[12px] font-semibold bg-emerald-500 text-white
-                           active:scale-95 transition">Lagre rute</button>
-            <button @click="savingName = false"
-                    class="px-4 py-2 rounded-lg text-[12px] border bg-white/5 border-white/15 text-white/60
-                           active:scale-95 transition">Avbryt</button>
+          <div v-else class="rounded-xl bg-white/[0.04] border border-emerald-400/25 px-3 py-2.5">
+            <div class="text-[11px] text-emerald-200/80 font-medium mb-1.5">Gi ruta et navn</div>
+            <input ref="saveNameInput" v-model="saveName" type="text" placeholder="Navn på ruta"
+                   @keyup.enter="confirmSave"
+                   class="w-full px-3 py-2 rounded-lg bg-white/[0.06] border border-white/15 text-[13px]
+                          placeholder-white/30 focus:outline-none focus:border-emerald-300/50 transition" />
+            <div class="flex gap-1.5 mt-2">
+              <button @click="confirmSave"
+                      class="flex-1 px-4 py-2 rounded-lg text-[12px] font-semibold bg-emerald-500 text-white
+                             active:scale-95 transition">Lagre rute</button>
+              <button @click="savingName = false"
+                      class="px-4 py-2 rounded-lg text-[12px] border bg-white/5 border-white/15 text-white/60
+                             active:scale-95 transition">Avbryt</button>
+            </div>
           </div>
+          <div v-if="savedFlash" class="mt-1.5 text-center text-[11px] text-emerald-300">{{ savedFlash }}</div>
         </div>
-        <div v-if="savedFlash" class="mt-1.5 text-center text-[11px] text-emerald-300">{{ savedFlash }}</div>
       </div>
-      </div>
+      </template>
     </div>
 
     <!-- Mine ruter — dra-bar skuff med samme design/UX som infodraweren i

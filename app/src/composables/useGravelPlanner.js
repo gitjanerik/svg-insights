@@ -9,7 +9,6 @@ import {
   saveGravelRoute, listGravelRoutes, deleteGravelRoute, generateGravelRouteId,
 } from '../lib/mapStorage.js'
 import { downloadRouteGpx } from '../lib/gpxExport.js'
-import { downloadRouteSvg } from '../lib/routeSvgExport.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 
 // Ruteplanleggerens tilstand + BRouter-orkestrering (v12.1.0). DOM-nær
@@ -291,19 +290,10 @@ export function useGravelPlanner() {
     downloadRouteGpx({ points: r.points, navn, opprettet: Date.now() })
   }
 
-  // Stilisert plakat-SVG (v12.1.14) — `profile` er høydeprofilen fra
-  // useRouteElevation (eies av view-en, som også viser den interaktivt).
-  function exportSvg(profile = null) {
-    const r = route.value
-    if (!r) return
-    const navn = r.navn || `${r.waypoints?.[0]?.name ?? 'A'} – ${r.waypoints?.at(-1)?.name ?? 'B'}`
-    downloadRouteSvg({ ...r, navn }, { profile })
-  }
-
   return {
     pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
     includeAssumed,
     computeRoute, selectProposal, clearRoute, saveCurrentRoute, openSaved,
-    deleteSaved, deleteAllSaved, refreshSaved, exportGpx, exportSvg,
+    deleteSaved, deleteAllSaved, refreshSaved, exportGpx,
   }
 }

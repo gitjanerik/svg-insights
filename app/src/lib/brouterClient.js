@@ -106,15 +106,76 @@ export function snapDistances(parsed, waypoints) {
 }
 
 /**
- * Ser to ruteforslag identiske ut for brukeren? Samme lengde (±10 m) og
- * midtpunkt innen ~30 m — presist nok til å luke «Balansert» == «Kortest»
- * uten å sammenlikne full geometri.
+ * Geometri-overlapp (v12.1.20): andelen av `samples` punkter jevnt fordelt
+ * langs a (etter kumulativ distanse) som ligger innenfor toleranceM fra b sin
+ * polylinje. Avstanden måles punkt-til-SEGMENT i en equirektangulær projeksjon
+ * rundt midt-latituden — BRouter-geometri kan ha noder flere hundre meter fra
+ * hverandre på rette strekk, så nærmeste-vertex alene overestimerer.
+ */
+export function routeOverlapShare(a, b, { toleranceM = 50, samples = 32 } = {}) {
+  const ap = a.points, bp = b.points
+  if (!ap?.length || !bp?.length) return 0
+  const latRef = ap[Math.floor(ap.length / 2)][1]
+  const mPerLon = 111320 * Math.cos(latRef * Math.PI / 180)
+  const proj = ([lon, lat]) => [lon * mPerLon, lat * 111320]
+  const A = ap.map(proj)
+  const B = bp.map(proj)
+
+  // Kumulative segmentlengder langs A for jevn distanse-sampling.
+  const cum = [0]
+  for (let i = 1; i < A.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(A[i][0] - A[i - 1][0], A[i][1] - A[i - 1][1]))
+  }
+  const total = cum[cum.length - 1]
+
+  function pointSegDist(p, s1, s2) {
+    const dx = s2[0] - s1[0], dy = s2[1] - s1[1]
+    const len2 = dx * dx + dy * dy
+    let t = len2 ? ((p[0] - s1[0]) * dx + (p[1] - s1[1]) * dy) / len2 : 0
+    t = Math.max(0, Math.min(1, t))
+    return Math.hypot(p[0] - (s1[0] + t * dx), p[1] - (s1[1] + t * dy))
+  }
+  function distToB(p) {
+    if (B.length === 1) return Math.hypot(p[0] - B[0][0], p[1] - B[0][1])
+    let best = Infinity
+    for (let i = 1; i < B.length; i++) {
+      const d = pointSegDist(p, B[i - 1], B[i])
+      if (d < best) best = d
+    }
+    return best
+  }
+  function sampleAt(dist) {
+    let i = 1
+    while (i < cum.length - 1 && cum[i] < dist) i++
+    const segLen = cum[i] - cum[i - 1]
+    const t = segLen > 0 ? (dist - cum[i - 1]) / segLen : 0
+    return [
+      A[i - 1][0] + t * (A[i][0] - A[i - 1][0]),
+      A[i - 1][1] + t * (A[i][1] - A[i - 1][1]),
+    ]
+  }
+
+  let inside = 0
+  for (let s = 0; s < samples; s++) {
+    const p = total > 0 ? sampleAt(total * (s + 0.5) / samples) : A[0]
+    if (distToB(p) <= toleranceM) inside++
+  }
+  return inside / samples
+}
+
+/**
+ * Ser to ruteforslag identiske ut for brukeren? v12.1.19-varianten (lengde
+ * ±10 m + midtpunkt <30 m) var for svak — to forslag med nesten lik geometri
+ * men en liten omvei midtveis slapp begge gjennom («tilnærmet identiske
+ * ruter» i felttest). Nå: symmetrisk geometri-overlapp ≥ 90 % innenfor 50 m
+ * (routeOverlapShare), med lengde-hurtigsjekk (>25 % forskjell → ulike) så vi
+ * slipper geometrisammenlikning for åpenbart ulike forslag.
  */
 export function routesLookIdentical(a, b) {
-  if (Math.abs((a.lengthM ?? 0) - (b.lengthM ?? 0)) > 10) return false
-  const am = a.points[Math.floor(a.points.length / 2)]
-  const bm = b.points[Math.floor(b.points.length / 2)]
-  return haversineM({ lat: am[1], lon: am[0] }, { lat: bm[1], lon: bm[0] }) < 30
+  const la = a.lengthM ?? 0
+  const lb = b.lengthM ?? 0
+  if (la > 0 && lb > 0 && Math.max(la, lb) > 1.25 * Math.min(la, lb)) return false
+  return Math.min(routeOverlapShare(a, b), routeOverlapShare(b, a)) >= 0.9
 }
 
 /**
