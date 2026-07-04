@@ -547,11 +547,47 @@ const pinLinks = computed(() => {
   if (!p) return []
   return [
     { label: 'UT.no', href: buildUtNoUrl({ lat: p.lat, lon: p.lon, zoom: zoom.value }) },
-    { label: 'Vegkart (Vegvesen.no)', href: buildVegkartUrl({ lat: p.lat, lon: p.lon, zoom: zoom.value }) },
+    { label: 'Vegkart', href: buildVegkartUrl({ lat: p.lat, lon: p.lon, zoom: zoom.value }) },
     { label: 'Google Maps', href: gmapsUrl(p.lat, p.lon) },
     { label: 'Street View', href: streetViewUrl(p.lat, p.lon) },
   ].filter((l) => l.href)
 })
+
+// Kort-plassering (v12.1.18): clamp horisontalt så kortet aldri klippes mot
+// viewport-kantene (mobil-skjermbilde: long-press nær høyre kant skar av
+// kortet), og flipp under pinnen når det ikke er plass over. Pilen skyves
+// motsatt vei av clampingen så den fortsatt peker på pinnen.
+const PIN_CARD_W = 212
+const PIN_CARD_EST_H = 215
+const PIN_CARD_MARGIN = 8
+const pinCardPlacement = computed(() => {
+  const px = utNoPinPx.value
+  if (!px || !mapSize.value.w) return null
+  const half = PIN_CARD_W / 2
+  const left = Math.min(
+    Math.max(px.x, PIN_CARD_MARGIN + half),
+    Math.max(PIN_CARD_MARGIN + half, mapSize.value.w - PIN_CARD_MARGIN - half),
+  )
+  const below = px.y - 16 - PIN_CARD_EST_H < PIN_CARD_MARGIN
+  const arrowShift = Math.max(-(half - 18), Math.min(half - 18, px.x - left))
+  return { left, below, arrowShift }
+})
+
+// «Kopier koordinater» i pin-kortet (samme feedback-mønster som turkartets
+// long-press-ark: ikon → hake i 1,4 s).
+const pinCopyState = ref('idle')   // 'idle' | 'copied' | 'failed'
+let pinCopyTimer = null
+async function onCopyPinCoords() {
+  const p = utNoPin.value
+  if (!p) return
+  try {
+    await navigator.clipboard.writeText(`${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`)
+    pinCopyState.value = 'copied'
+  } catch { pinCopyState.value = 'failed' }
+  if (pinCopyTimer) clearTimeout(pinCopyTimer)
+  pinCopyTimer = setTimeout(() => { pinCopyState.value = 'idle' }, 1400)
+}
+watch(utNoPin, () => { pinCopyState.value = 'idle' })
 
 const markerA = computed(() => pointA.value && mapSize.value.w
   ? lonLatToScreenPx(pointA.value.lon, pointA.value.lat, view.value) : null)
@@ -873,6 +909,7 @@ onUnmounted(() => {
   overlayAbort?.abort()
   if (overlayDebounce) clearTimeout(overlayDebounce)
   if (shareResetTimer) clearTimeout(shareResetTimer)
+  if (pinCopyTimer) clearTimeout(pinCopyTimer)
   cancelLongPress()
 })
 </script>
@@ -997,29 +1034,54 @@ onUnmounted(() => {
             <div class="w-1.5 h-1.5 rounded-full bg-sky-300"></div>
           </div>
         </div>
-        <div class="absolute z-20" @mousedown.stop @touchstart.stop @wheel.stop @contextmenu.stop.prevent
-             :style="{ left: utNoPinPx.x + 'px', top: (utNoPinPx.y - 16) + 'px',
-                       transform: 'translate(-50%, -100%)' }">
+        <div v-if="pinCardPlacement" class="absolute z-20"
+             @mousedown.stop @touchstart.stop @wheel.stop @contextmenu.stop.prevent
+             :style="{ left: pinCardPlacement.left + 'px',
+                       top: (pinCardPlacement.below ? utNoPinPx.y + 16 : utNoPinPx.y - 16) + 'px',
+                       transform: pinCardPlacement.below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)' }">
+          <!-- pil opp mot pinnen (kort UNDER pinnen) -->
+          <div v-if="pinCardPlacement.below"
+               class="mx-auto w-2.5 h-2.5 -mb-[5px] relative bg-zinc-950/95 border-l border-t border-white/15"
+               :style="{ transform: `translateX(${pinCardPlacement.arrowShift}px) rotate(45deg)` }"></div>
           <div class="rounded-xl bg-zinc-950/95 backdrop-blur border border-white/15 shadow-2xl
-                      px-3 py-2.5 w-max">
-            <div class="flex items-center gap-3">
-              <div class="text-[10px] text-white/55 tabular-nums">
+                      px-3 py-2.5" :style="{ width: PIN_CARD_W + 'px' }">
+            <div class="flex items-center gap-1.5">
+              <div class="flex-1 text-[10px] text-white/80 font-mono tabular-nums truncate">
                 {{ utNoPin.lat.toFixed(5) }}, {{ utNoPin.lon.toFixed(5) }}
               </div>
+              <button @click="onCopyPinCoords" aria-label="Kopier koordinater"
+                      class="w-6 h-6 shrink-0 rounded-full flex items-center justify-center border
+                             active:scale-90 transition"
+                      :class="pinCopyState === 'copied'
+                              ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                              : pinCopyState === 'failed'
+                                ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                                : 'bg-white/5 border-white/10 text-white/55'">
+                <svg v-if="pinCopyState !== 'copied'" viewBox="0 0 24 24" class="w-3 h-3" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="11" height="11" rx="2"/>
+                  <path d="M5 15 V5 a2 2 0 0 1 2 -2 h10"/>
+                </svg>
+                <svg v-else viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor"
+                     stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </button>
               <button @click="utNoPin = null" aria-label="Lukk"
-                      class="w-6 h-6 -mr-1 rounded-full flex items-center justify-center text-white/50
-                             hover:text-white/80 active:scale-90 transition">
+                      class="w-6 h-6 -mr-1 shrink-0 rounded-full flex items-center justify-center
+                             text-white/50 hover:text-white/80 active:scale-90 transition">
                 <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2"
                      stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
               </button>
             </div>
-            <div class="mt-1.5 space-y-1">
+            <div class="mt-1.5 text-[9px] uppercase tracking-wide text-white/45">Åpne i</div>
+            <div class="mt-1 space-y-1">
               <a v-for="l in pinLinks" :key="l.label" :href="l.href"
                  target="_blank" rel="noopener noreferrer" @click="utNoPin = null"
-                 class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-[12px]
+                 class="flex items-center justify-between gap-3 px-3 py-1.5 rounded-lg text-[12px]
                         font-medium border bg-white/[0.06] border-white/15 text-white/85
                         active:scale-[0.98] transition">
-                Åpne i {{ l.label }}
+                {{ l.label }}
                 <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0 text-white/50" fill="none"
                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
@@ -1028,8 +1090,10 @@ onUnmounted(() => {
               </a>
             </div>
           </div>
-          <!-- liten pil ned mot pinnen -->
-          <div class="mx-auto w-2.5 h-2.5 -mt-[5px] rotate-45 bg-zinc-950/95 border-r border-b border-white/15"></div>
+          <!-- pil ned mot pinnen (kort OVER pinnen) -->
+          <div v-if="!pinCardPlacement.below"
+               class="mx-auto w-2.5 h-2.5 -mt-[5px] relative bg-zinc-950/95 border-r border-b border-white/15"
+               :style="{ transform: `translateX(${pinCardPlacement.arrowShift}px) rotate(45deg)` }"></div>
         </div>
       </template>
 

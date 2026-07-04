@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-04 — v12.1.18: Long-press-pinnen polert — viewport-clamping, «Åpne i»-label, kopier koordinater
+
+Mobil-tilbakemelding på pin-kortet i Ruteplanleggeren: (1) **Kortet klippes ikke lenger mot kantene** — posisjonen clampes horisontalt innenfor viewporten og kortet flipper under pinnen når det ikke er plass over; pilen skyves motsatt vei av clampingen så den fortsatt peker på pinnen. (2) **«Åpne i» gjentatt 4× er erstattet** med én liten uppercase-label over lenkelisten (samme mønster som turkartets «Punkt»-header), og lenketekstene er kortet ned — «Vegkart» i stedet for «Vegkart (Vegvesen.no)». (3) **Kopier koordinater-knapp** i kortets header ved siden av X (samme hake-feedback som turkartets ark). Turkartets ark-knapp heter fortsatt «Vegkart (Vegvesen.no)» — der er det god plass i grid-en.
+
+---
+
 ## 2026-07-04 — v12.1.17: Flere eksterne kart-lenker (Vegkart, Google Maps, Street View) + kollapset Kartlag-panel
 
 Long-press-pinnen i Ruteplanleggeren har nå fire lenker: UT.no, **Vegkart (Vegvesen.no)** (ny), Google Maps og Street View (de to siste gjenbrukt fra turkartets ark — `gmapsUrl`/`streetViewUrl` er flyttet til delt `externalMapLinks.js`). Vegkart-lenken (`vegkart.atlas.vegvesen.no/#kartlag:geodata/@easting,northing,zoom`) bruker UTM 33N-koordinater — `wgs84ToUtm33` er lagt til i `utm.js` (samme serie-formler, sentralmeridian 15°) — og tar med gjeldende zoom. Turkartets long-press-ark har fått samme «Vegkart (Vegvesen.no)»-handling ved siden av UT.no-kart, med zoom avledet av gjeldende bakkeoppløsning (felles `currentViewWebZoom`-hjelper). I tillegg er **Kartlag-panelet kollapset som default** (mobil-tilbakemelding: det alltid-åpne panelet spiste kartflate og kolliderte visuelt med P-markører) — en liten lag-knapp nede til venstre åpner panelet, som nå har solid bakgrunn, X-lukking og z-orden over markørene.
