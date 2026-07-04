@@ -31,6 +31,7 @@ const currentRoute = useRoute()
 const planner = useGravelPlanner()
 const {
   pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
+  includeAssumed,
 } = planner
 
 // Høydeprofil for valgt rute: BRouter-høyder når geometrien har dem,
@@ -1444,6 +1445,21 @@ onUnmounted(() => {
           </div>
         </div>
         <div v-if="gpsState.error" class="mt-1.5 text-[11px] text-amber-300">{{ gpsState.error }}</div>
+        <!-- Antatt grus i ruteforslag (v12.1.19, default AV): track uten
+             registrert dekke kan i praksis være skiløype/turdrag — brukeren
+             velger selv om ruteren får bruke dem. Gjelder kun rutingen;
+             overlay-tegningen styres av Kartlag-panelet. -->
+        <label class="flex items-start gap-2.5 mt-2.5 px-1 cursor-pointer select-none"
+               :class="routeInvite ? 'opacity-40 pointer-events-none' : ''">
+          <input type="checkbox" v-model="includeAssumed" :disabled="!!routeInvite"
+                 class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
+          <span class="text-[12px] text-white/75 leading-snug">
+            Inkluder antatt grusvei i ruteforslag
+            <span class="block text-[10px] text-white/45">
+              Skogsbilvei uten registrert dekke (stiplet i kartet) — kan være skiløype eller turdrag
+            </span>
+          </span>
+        </label>
         <button @click="onFindRoute" :disabled="!pointA || !pointB || routeState === 'routing'"
                 class="w-full mt-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold border transition
                        active:scale-[0.99] disabled:opacity-40

@@ -1,11 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   uploadProfile, ensureProfileId, fetchRoute, parseRoute, classifyWayTags,
   snapDistances, routesLookIdentical, decorateProposals, MAX_SNAP_DIST_M,
   snapHardLimitM, SNAP_HARD_MIN_M, fmtAvstandM, estimateMcTimeS, MC_SPEED_KMH,
-  ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE,
+  ProfileExpiredError, PROFILE_VERSION, BROUTER_BASE, applyProfileFlags,
 } from './brouterClient.js'
 import fixture from './brouterFixture.json'
+
+const profileText = (f) =>
+  readFileSync(fileURLToPath(new URL(`../../public/brouter/${f}`, import.meta.url)), 'utf8')
 
 const jsonResponse = (data, ok = true, status = 200) => ({
   ok, status,
@@ -32,6 +37,31 @@ describe('uploadProfile', () => {
   it('kaster når BRouter svarer 200 med error-felt (syntaksfeil i profilen)', async () => {
     const fetchFn = async () => jsonResponse({ profileid: 'custom_1', error: 'unknown expression: foo' })
     await expect(uploadProfile('x', { fetchFn })).rejects.toThrow('avviste profilen')
+  })
+})
+
+describe('applyProfileFlags + profil-filene (v7)', () => {
+  it('bytter inkluder_antatt_grus-flagget begge veier', () => {
+    const t = 'assign x = 1\nassign inkluder_antatt_grus = true\nassign y = 2'
+    expect(applyProfileFlags(t, { inkluderAntattGrus: false })).toContain('assign inkluder_antatt_grus = false')
+    expect(applyProfileFlags(applyProfileFlags(t, { inkluderAntattGrus: false }), { inkluderAntattGrus: true }))
+      .toContain('assign inkluder_antatt_grus = true')
+  })
+  it('kaster når markøren mangler (stille miss ville gitt feil regelverk)', () => {
+    expect(() => applyProfileFlags('assign x = 1', { inkluderAntattGrus: false })).toThrow('inkluder_antatt_grus')
+  })
+  it.each(['grusprofil.brf', 'grusprofil-balansert.brf'])('%s har flagg-markør + lysløype-sperre', (f) => {
+    const t = profileText(f)
+    // Templating-markøren applyProfileFlags leter etter.
+    expect(t).toMatch(/^assign inkluder_antatt_grus = true\b/m)
+    expect(applyProfileFlags(t, { inkluderAntattGrus: false })).toContain('assign inkluder_antatt_grus = false')
+    // Lysløype-sperren (piste:type=nordic med lys) er med i onlyroads.
+    expect(t).toContain('piste:type=nordic')
+    expect(t).toContain('switch islysloype false')
+    // Antatt grus-gaten i track-kostnaden.
+    expect(t).toContain('switch not inkluder_antatt_grus 100000')
+    // Versjons-kommentar i synk med PROFILE_VERSION.
+    expect(t).toContain(`versjon ${PROFILE_VERSION},`)
   })
 })
 

@@ -1,8 +1,8 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import {
   ensureProfileId, fetchRoute, parseRoute, clearProfileCache, haversineM,
   snapDistances, routesLookIdentical, decorateProposals, MAX_SNAP_DIST_M,
-  snapHardLimitM, fmtAvstandM, estimateMcTimeS,
+  snapHardLimitM, fmtAvstandM, estimateMcTimeS, applyProfileFlags,
   ProfileExpiredError, PROFILE_VERSION, BROUTER_TIMEOUT_MS,
 } from '../lib/brouterClient.js'
 import {
@@ -43,17 +43,31 @@ const DEFAULT_PROPOSAL = 'balansert'
 // bilrute merket «GRUSRUTE · Grus 4 %».
 const FALLBACK_PROFILE = 'car-fast'
 
-function loadProfileText(asset) {
+function loadProfileText(asset, { inkluderAntattGrus }) {
   return async () => {
     const res = await fetch(`${import.meta.env.BASE_URL}brouter/${asset}`)
     if (!res.ok) throw new Error(`Fikk ikke lastet grusprofilen (${res.status})`)
-    return res.text()
+    return applyProfileFlags(await res.text(), { inkluderAntattGrus })
   }
+}
+
+// «Inkluder antatt grusvei» (v12.1.19): styrer om RUTEFORSLAGENE får bruke
+// track uten registrert dekke. Default AV — antatt grus kan i praksis være
+// skiløype/turdrag (verifisert case: lysløype tagget highway=track), så
+// default-ruta holder seg til bekreftet grus + vanlige veier. Overlayen
+// (stiplet visning) er uavhengig av valget.
+const INKL_ANTATT_LS_KEY = 'svg-insights-ruteplanlegger-inkl-antatt'
+function loadInkluderAntatt() {
+  try { return localStorage.getItem(INKL_ANTATT_LS_KEY) === '1' } catch { return false }
 }
 
 export function useGravelPlanner() {
   const pointA = ref(null)          // { lat, lon, name } | null
   const pointB = ref(null)
+  const includeAssumed = ref(loadInkluderAntatt())
+  watch(includeAssumed, (v) => {
+    try { localStorage.setItem(INKL_ANTATT_LS_KEY, v ? '1' : '0') } catch { /* noop */ }
+  })
   const proposals = ref([])         // [{ id, label, badge, usedFallbackProfile, ...parseRoute }]
   const selectedId = ref(DEFAULT_PROPOSAL)
   const route = ref(null)           // valgt forslag + { waypoints, navn?, directM }
@@ -71,12 +85,16 @@ export function useGravelPlanner() {
       const geojson = await fetchRoute(waypoints, def.builtin, { signal })
       return { ...def, ...parseRoute(geojson), usedFallbackProfile: false, fallbackReason: null }
     }
-    const load = loadProfileText(def.asset)
+    // Egen cache-nøkkel pr flagg-variant — profilteksten er forskjellig, så
+    // en cachet profileid fra motsatt variant ville gitt feil regelverk.
+    const inkluderAntattGrus = includeAssumed.value
+    const cacheKey = `${def.profileKey}${inkluderAntattGrus ? '' : '-uten-antatt'}`
+    const load = loadProfileText(def.asset, { inkluderAntattGrus })
     let usedFallbackProfile = false
     let fallbackReason = null
     let profileId = null
     try {
-      profileId = await ensureProfileId(load, { key: def.profileKey })
+      profileId = await ensureProfileId(load, { key: cacheKey })
     } catch (e) {
       if (e?.name === 'AbortError') throw e
       console.warn(`[Ruteplanlegger] profil «${def.id}» kunne ikke lastes, bruker innebygd ${FALLBACK_PROFILE}:`, e?.message ?? e)
@@ -91,8 +109,8 @@ export function useGravelPlanner() {
         geojson = await fetchRoute(waypoints, profileId, { signal })
       } catch (e) {
         if (!(e instanceof ProfileExpiredError)) throw e
-        clearProfileCache(undefined, def.profileKey)
-        profileId = await ensureProfileId(load, { key: def.profileKey })
+        clearProfileCache(undefined, cacheKey)
+        profileId = await ensureProfileId(load, { key: cacheKey })
         geojson = await fetchRoute(waypoints, profileId, { signal })
       }
     }
@@ -284,6 +302,7 @@ export function useGravelPlanner() {
 
   return {
     pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
+    includeAssumed,
     computeRoute, selectProposal, clearRoute, saveCurrentRoute, openSaved,
     deleteSaved, deleteAllSaved, refreshSaved, exportGpx, exportSvg,
   }

@@ -13,7 +13,7 @@
 export const BROUTER_BASE = 'https://brouter.de/brouter'
 // Bumpes når grusprofil.brf endres → invaliderer cachet profileid så neste
 // rutekall laster opp ny profil.
-export const PROFILE_VERSION = 6
+export const PROFILE_VERSION = 7
 export const BROUTER_TIMEOUT_MS = 20000
 const PROFILE_CACHE_KEY = 'grus-brouter-profile'
 
@@ -53,6 +53,18 @@ export async function ensureProfileId(loadProfileText, { fetchFn = fetch, storag
 export function clearProfileCache(storage, key = 'grus') {
   const store = storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : null)
   try { store?.removeItem(`${PROFILE_CACHE_KEY}:${key}`) } catch { /* noop */ }
+}
+
+// Klient-side templating av profil-flagg (v7): .brf-filene sjekkes inn med
+// `assign inkluder_antatt_grus = true`; denne bytter verdien før opplasting
+// etter UI-sjekkboksen «Inkluder antatt grusvei». Kaster hvis markøren
+// mangler — en stille miss ville gitt ruteforslag med feil regelverk.
+export function applyProfileFlags(profileText, { inkluderAntattGrus = true } = {}) {
+  const re = /^assign inkluder_antatt_grus = (?:true|false)\b/m
+  if (!re.test(profileText)) {
+    throw new Error('Profilteksten mangler inkluder_antatt_grus-flagget')
+  }
+  return profileText.replace(re, `assign inkluder_antatt_grus = ${inkluderAntattGrus ? 'true' : 'false'}`)
 }
 
 // RELATIV snap-toleranse (v12.1.7 — var absolutt 200 m-grense): et forslag
