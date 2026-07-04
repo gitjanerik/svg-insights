@@ -39,6 +39,7 @@ import {
   needsRecull, computeCullDiff, parseBboxAttr,
 } from '../lib/viewportCull.js'
 import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
+import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -3300,6 +3301,23 @@ function onOpenStreetView() {
   const info = contextMenuInfo.value
   if (!info) return
   window.open(streetViewUrl(info.lat, info.lon), '_blank', 'noopener')
+}
+// Åpne punktet på UT.no sitt turkart (ut.no/kart#zoom/lat/lon). Zoom avledes
+// av gjeldende visnings bakkeoppløsning (SVG-viewBox-meter pr rendret px,
+// inkl. pinch-zoom via getBoundingClientRect) så UT.no åpner på omtrent samme
+// utsnitt som brukeren ser her.
+function onOpenUtNo() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  let zoom = UTNO_DEFAULT_ZOOM
+  try {
+    const svg = svgHostRef.value?.querySelector('svg')
+    const vb = svg?.viewBox?.baseVal
+    const rect = svg?.getBoundingClientRect()
+    if (vb?.width && rect?.width) zoom = utNoZoomForMPerPx(vb.width / rect.width, info.lat)
+  } catch { /* fall tilbake til default-zoom */ }
+  const url = buildUtNoUrl({ lat: info.lat, lon: info.lon, zoom })
+  if (url) window.open(url, '_blank', 'noopener')
 }
 function onPlaceAnnotationFromContext(symbolKey) {
   const p = contextMenuPoint.value
@@ -8525,6 +8543,16 @@ onUnmounted(() => {
                 <path d="M6 18 c2 -1.5 4 -2 6 -2 s4 0.5 6 2"/>
               </svg>
               <span>Street View</span>
+            </button>
+            <button @click="onOpenUtNo"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-white/5 border-white/10 text-white/80">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 19 L9 8 L13 14 L16 10 L21 19 Z"/>
+                <path d="M7.5 11 L9 12.5 L10.5 11"/>
+              </svg>
+              <span>UT.no-kart</span>
             </button>
             <button @click="toggleProximityPanel"
                     :aria-expanded="proximityPanelOpen"

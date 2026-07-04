@@ -27,6 +27,7 @@ import {
 } from './marineTopology.js'
 import { fetchDEM } from './demFetcher.js'
 import { polylineToPath, simplifyDP, isPointNearPolylines } from './pathUtils.js'
+import { thinParkering, PARKERING_MIN_SEP_M } from './parkingRules.js'
 import { bboxOfPoints, unionBbox, cellKeyFor, bboxAttr } from './spatialBucket.js'
 import { classifyBuildings, multiPolyToPath } from './buildingMass.js'
 import { computeCHM, sampleCHMInPolygon, classifyVegetationFromCHM } from './canopyHeight.js'
@@ -361,47 +362,10 @@ export function clusterHoldeplasser(nodes, minSepM = HOLDEPLASS_MIN_SEP_M) {
   return pts.filter(p => keep.has(p))
 }
 
-// Minste avstand (meter) mellom to vanlige parkerings-symboler (ISOM 534) før
-// vi anser dem som «samme P-plass» og skjuler den ene. Tett bebygde områder har
-// én OSM-node/-way pr p-flekk (gateparkering, kjøpesenter, boligfelt) — uten
-// uttynning blir kartet en uleselig vegg av blå P-skilt (se skjermbildet fra
-// Asker/Bondi). Utfartsparkering (534u) er UNNTATT og vises alltid uansett
-// nærhet — se thinParkering().
-export const PARKERING_MIN_SEP_M = 50
-
-/**
- * Tynner ut tett plasserte parkerings-symboler. Utfartsparkeringer
- * (`utfart === true`) beholdes ALLTID uansett naboer — de er det viktigste
- * utgangspunktet for marka-turer og skal aldri skjules. Vanlige P-plasser
- * beholdes greedy: en vanlig P beholdes bare hvis den ligger minst `minSepM`
- * meter fra alle allerede beholdte markører (inkludert utfartsparkeringene, som
- * legges inn først og dermed «vinner» når en vanlig P ligger tett inntil).
- *
- * Punktene er i SVG-meter-rom (project()-output), så `minSepM` er ekte meter.
- * O(n²) er trivielt her — antall parkeringer i et kart-utsnitt er lite.
- *
- * @param {Array} items  { p:{x,y} (meter), utfart:boolean, ... }
- * @param {number} minSepM  minste avstand i meter mellom to vanlige P-symboler
- * @returns {Array} delmengde av items i opprinnelig rekkefølge
- */
-export function thinParkering(items, minSepM = PARKERING_MIN_SEP_M) {
-  const list = (items || []).filter(
-    it => it && it.p && Number.isFinite(it.p.x) && Number.isFinite(it.p.y)
-  )
-  const occupied = []  // {x,y} for hver beholdt markør
-  const keep = new Set()
-  const tooClose = p => occupied.some(q => Math.hypot(q.x - p.x, q.y - p.y) < minSepM)
-  // Utfart først: alltid med, og de opptar plass som vanlige P må holde unna.
-  for (const it of list) {
-    if (it.utfart) { keep.add(it); occupied.push(it.p) }
-  }
-  // Vanlige P greedy i opprinnelig rekkefølge.
-  for (const it of list) {
-    if (it.utfart || tooClose(it.p)) continue
-    keep.add(it); occupied.push(it.p)
-  }
-  return list.filter(it => keep.has(it))
-}
+// Parkerings-uttynning (min-avstand + utfart-unntak) bor i parkingRules.js
+// (delt med Ruteplanleggeren, v12.1.16) — re-eksporteres her så eksisterende
+// imports/tester er uendret.
+export { thinParkering, PARKERING_MIN_SEP_M } from './parkingRules.js'
 
 // v9.1.7: 1 desimal i meter-rom = 0.1 m ≈ 0.01 mm @ 1:10 000 — langt under
 // sub-piksel, men sparer ~1 tegn pr koordinat (mindre SVG, raskere parse).
