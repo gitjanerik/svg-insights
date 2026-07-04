@@ -92,14 +92,30 @@ export function isMotorAccessible(tags = {}) {
 }
 
 /**
+ * Lysløype: langrennsløype MED belysning (piste:type inneholder nordic og
+ * lit finnes og ikke er no). I praksis stengt for motorisert ferdsel også
+ * snøfritt/sommerstid → hard sperre i både overlay og ruteprofil (v7).
+ * Skiløyper UTEN lys er ofte kjørbar skogsbilvei sommerstid og forblir
+ * «antatt grus».
+ */
+export function isLysloype(tags = {}) {
+  const piste = String(tags['piste:type'] ?? '')
+  if (!piste.split(';').some((v) => v.trim() === 'nordic')) return false
+  const lit = String(tags.lit ?? '').toLowerCase()
+  return lit !== '' && lit !== 'no'
+}
+
+/**
  * Klassifiser én way etter tags: 'surfaced' (bekreftet grus), 'assumed'
  * (antatt grus — track uten surface), eller null (ikke i overlayen).
  * `enrich(tags)` kan returnere 'surfaced' | 'paved' | null og vinner over
  * OSM-heuristikken (fase 2: NVDB dekketype). Access-filteret (motorisert
- * ferdsel) gjelder ALLTID — også når enrich sier 'surfaced'.
+ * ferdsel) og lysløype-sperren gjelder ALLTID — også når enrich sier
+ * 'surfaced'.
  */
 export function classifyGravelWay(tags = {}, { enrich } = {}) {
   if (!isMotorAccessible(tags)) return null
+  if (isLysloype(tags)) return null
   if (enrich) {
     const e = enrich(tags)
     if (e === 'surfaced') return 'surfaced'

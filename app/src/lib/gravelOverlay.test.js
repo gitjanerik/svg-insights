@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildGravelQuery, classifyGravelWay, extractGravelWays,
   classifyBarrierNode, extractBarrierNodes, extractParkingSpots,
-  bboxContains, padBbox, GRAVEL_SURFACES, isMotorAccessible,
+  bboxContains, padBbox, GRAVEL_SURFACES, isMotorAccessible, isLysloype,
   PARKING_STI_FETCH_RADIUS_M, UTFART_STI_MAXDIST_M,
 } from './gravelOverlay.js'
 
@@ -66,12 +66,40 @@ describe('classifyGravelWay', () => {
     expect(classifyGravelWay({ highway: 'track', motor_vehicle: 'agricultural;forestry' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', vehicle: 'no' }, { enrich: () => 'surfaced' })).toBe(null)
   })
+  it('lysløype (piste:type=nordic + lys) → null, også med bekreftet grus-dekke', () => {
+    expect(classifyGravelWay({ highway: 'track', 'piste:type': 'nordic', lit: 'yes' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', surface: 'gravel', 'piste:type': 'nordic', lit: 'yes' })).toBe(null)
+    expect(classifyGravelWay({ highway: 'track', 'piste:type': 'nordic;skitour', lit: '24/7' })).toBe(null)
+    // Sperren gjelder også når enrich sier 'surfaced'.
+    expect(classifyGravelWay({ highway: 'track', 'piste:type': 'nordic', lit: 'yes' }, { enrich: () => 'surfaced' })).toBe(null)
+  })
+  it('skiløype UTEN lys forblir antatt grus (ofte kjørbar sommerstid)', () => {
+    expect(classifyGravelWay({ highway: 'track', 'piste:type': 'nordic' })).toBe('assumed')
+    expect(classifyGravelWay({ highway: 'track', 'piste:type': 'nordic', lit: 'no' })).toBe('assumed')
+    expect(classifyGravelWay({ highway: 'track', surface: 'gravel', 'piste:type': 'nordic' })).toBe('surfaced')
+  })
   it('gang/sykkelvei-heuristikk: foot/bicycle=designated uten motor-access → null (alle veityper)', () => {
     expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', bicycle: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'unclassified', surface: 'gravel', bicycle: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'service', surface: 'compacted', foot: 'designated' })).toBe(null)
     expect(classifyGravelWay({ highway: 'track', surface: 'gravel', foot: 'designated', motor_vehicle: 'yes' })).toBe('surfaced')
+  })
+})
+
+describe('isLysloype', () => {
+  it('nordic + belysning (alle lit-varianter unntatt no) → true', () => {
+    expect(isLysloype({ 'piste:type': 'nordic', lit: 'yes' })).toBe(true)
+    expect(isLysloype({ 'piste:type': 'nordic', lit: '24/7' })).toBe(true)
+    expect(isLysloype({ 'piste:type': 'nordic', lit: 'sunset-sunrise' })).toBe(true)
+    expect(isLysloype({ 'piste:type': 'downhill;nordic', lit: 'yes' })).toBe(true)
+  })
+  it('uten lys, lit=no, eller annen piste-type → false', () => {
+    expect(isLysloype({ 'piste:type': 'nordic' })).toBe(false)
+    expect(isLysloype({ 'piste:type': 'nordic', lit: 'no' })).toBe(false)
+    expect(isLysloype({ 'piste:type': 'downhill', lit: 'yes' })).toBe(false)
+    expect(isLysloype({ lit: 'yes' })).toBe(false)
+    expect(isLysloype({})).toBe(false)
   })
 })
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-04 — v12.1.19: Ruteplanlegger — «Inkluder antatt grusvei»-valg (default av) + hard sperre på lysløyper
+
+Felttest avslørte et ruteforslag som fulgte en lysløype — korrekt grusvei i OSM (highway=track uten dekke), men i praksis stengt for motorisert ferdsel også sommerstid. To tiltak (profil v7, PROFILE_VERSION 6 → 7): **(1) Ny sjekkboks «Inkluder antatt grusvei i ruteforslag»** (default AV, persistert) i Planlegg grusrute-skjemaet: uten hake ekskluderer begge grusprofilene track uten registrert dekke (costfactor 100000) — ruteforslagene holder seg til bekreftet grus og vanlige veier. Klienten templater profil-teksten ved opplasting (`applyProfileFlags` i brouterClient, egen profil-cache-nøkkel pr variant) — .brf-filene sjekkes inn med flagget `assign inkluder_antatt_grus = true`. Gjelder kun rutingen; overlay-tegningen styres fortsatt av Kartlag-panelet. **(2) Lysløype-sperre:** `piste:type=nordic` med belysning (`lit` finnes og ≠ no — dekker yes/24/7/automatic/sunset-sunrise) er nå hard-blokkert både i ruteprofilene (`switch islysloype false` i onlyroads; begge tags verifisert i BRouters lookups.dat) og i grusvei-overlayen (`isLysloype` i gravelOverlay, enhetstestet — gjelder også med bekreftet grus-dekke og over enrich). Skiløyper UTEN lys forblir «antatt grus» — de er ofte kjørbar skogsbilvei sommerstid, og styres nå uansett av sjekkboksen.
+
+---
+
 ## 2026-07-04 — v12.1.18: Long-press-pinnen polert — viewport-clamping, «Åpne i»-label, kopier koordinater
 
 Mobil-tilbakemelding på pin-kortet i Ruteplanleggeren: (1) **Kortet klippes ikke lenger mot kantene** — posisjonen clampes horisontalt innenfor viewporten og kortet flipper under pinnen når det ikke er plass over; pilen skyves motsatt vei av clampingen så den fortsatt peker på pinnen. (2) **«Åpne i» gjentatt 4× er erstattet** med én liten uppercase-label over lenkelisten (samme mønster som turkartets «Punkt»-header), og lenketekstene er kortet ned — «Vegkart» i stedet for «Vegkart (Vegvesen.no)». (3) **Kopier koordinater-knapp** i kortets header ved siden av X (samme hake-feedback som turkartets ark). Turkartets ark-knapp heter fortsatt «Vegkart (Vegvesen.no)» — der er det god plass i grid-en.
