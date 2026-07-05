@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-05 — v12.1.22: Turkart — topper søkbare igjen + navnetvilling-unntak i navne-dedupen
+
+To fikser fra «Slottsberget»-felttesten. **(1) Søkebug (regresjon fra v12.0.7):** da topp-høyden ble flyttet inn som inline `<tspan data-label="peak-ele">` i navne-teksten, sluttet søkeindeksens topp-pass å finne høyden (selektoren matchet bare søsken-`<text>`) — navngitte topper ble droppet fra indeksen og var usøkbare på alle kart bygget etter v12.0.7. Ny `readPeakLabel` (enhetstestet) tolker begge formatene: leser høyden fra inline-tspan og navnet fra tekst-nodene alene (textContent konkatenerte navn+tall). Navngitte topper uten høyde indekseres nå også. **(2) Navne-dedup med tvilling-unntak:** `claimLabelName` («ett navn = én label per kart») er erstattet av `makeLabelNameClaimer` med to unntak: samme navn på ULIK label-type vises alltid (norske navnetvillinger er ekte: gården og fjellet, fjellet og dalføret, øya og fjellet, fjellmassivet og bygda), og samme navn på samme type vises når forekomstene ligger ≥1 km fra hverandre (to åser som deler navn — Dikemark/Vardåsen-tilfellet der 293-toppen mistet navnet sitt). Elv-/bekkelabels dedupes fortsatt ubetinget så gjentatte labels langs samme elv kollapser. Enhetstestet.
+
+---
+
+## 2026-07-05 — v12.1.21: Ruteplanlegger — «Les mer»-toggle på hvordan-hintet
+
+Ved standard skuffhøyde (45 dvh) dyttet den fire linjer lange tips-teksten «Inkluder antatt grusvei»-sjekkboksen under folden. Hintet er nå kollapset som default til én linje («Trykk i kartet for å sette start og mål.») med en tekstlig «Les mer»/«Les mindre»-toggle — full tekst med A/B-merker og UT.no-tips vises on demand. Åpen/lukket-tilstanden persisteres bevisst ikke (alltid lukket ved åpning). I tillegg er sjekkboksens hjelpetekst kortet ned til «Stiplet i kartet — kan være skiløype/turdrag».
+
+---
+
 ## 2026-07-04 — v12.1.20: Ruteplanlegger — én skuff om gangen, sticky handlingsknapper og sterkere rute-dedup
 
 Opprydning i Ruteplanleggerens skuffer etter mobil-felttest: **(1) Kun én skuff åpen om gangen** — «Mine ruter» skjuler planlegg-skuffen midlertidig (v-show, tilstanden består) i stedet for å legge seg oppå den. **(2) «Finn grusrute» er sticky** i en bunn-footer under scroll-regionen så den alltid er synlig — unntatt når skuffen er minimert (peek viser kun håndtak + header). **(3) Resultatvisningen ryddet:** SVG-plakat-eksporten er fjernet helt (knapp, `exportSvg`, `routeSvgExport.js` + test — begrenset nytte); Nullstill (venstre) og grønn «Lagre …» (høyre) står nå 50/50 i samme sticky footer, og navngivnings-steget skjer der; GPX/Del blir i scroll-innholdet. **(4) Sterkere dedup av ruteforslag:** `routesLookIdentical` sammenlikner nå symmetrisk geometri-overlapp (ny `routeOverlapShare` — 32 punkter jevnt langs ruta, punkt-til-segment ≤ 50 m, terskel 90 %, med lengde-hurtigsjekk) i stedet for lengde ±10 m + midtpunkt <30 m — forslag med nesten lik geometri og små omveier lukes nå bort («tilnærmet identiske ruter» i felttest). Enhetstestet.

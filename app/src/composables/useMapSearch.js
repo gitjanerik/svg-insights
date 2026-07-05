@@ -226,6 +226,52 @@ export function elementPosition(svgEl, el) {
   }
 }
 
+/**
+ * Tolk én topp-label (<text data-label="peak"> eller "peak-ele") til
+ * { name?, ele? }. Eksportert for test (duck-typet element — trenger kun
+ * getAttribute/textContent/childNodes/querySelector).
+ *
+ * Formater i omløp:
+ *  - v12.0.7+ («Stedsnavn-typografi»): høyden ligger som INLINE
+ *    <tspan data-label="peak-ele"> inni navne-teksten. textContent på ytter-
+ *    teksten konkatenerer navn+tall («Slottsberget293»), så navnet må leses
+ *    fra tekst-nodene alene. Denne varianten brakk søket i v12.0.7–v12.1.21:
+ *    tspan-en matchet ikke `text[data-label="peak-ele"]`, toppen fikk aldri
+ *    `ele` og ble droppet fra indeksen.
+ *  - Eldre kart: navn og høyde som to søsken-<text> (peak + peak-ele).
+ *  - Navnløs topp: peak-labelen ER høyde-tallet (fallback når navnet var
+ *    claimet av en annen label ved bygging).
+ */
+export function readPeakLabel(t) {
+  const lbl = t.getAttribute('data-label')
+  if (lbl === 'peak-ele') {
+    const n = parseFloat((t.textContent ?? '').trim())
+    return Number.isFinite(n) ? { ele: n } : {}
+  }
+  const out = {}
+  const inline = t.querySelector?.('[data-label="peak-ele"]')
+  if (inline) {
+    const n = parseFloat((inline.textContent ?? '').trim())
+    if (Number.isFinite(n)) out.ele = n
+  }
+  let name = (t.getAttribute('data-name-full') ?? '').trim()
+  if (!name) {
+    let own = ''
+    for (const node of t.childNodes ?? []) {
+      if (node.nodeType === 3) own += node.textContent ?? ''
+    }
+    name = own.trim()
+    if (!name && !inline) name = (t.textContent ?? '').trim()
+  }
+  if (NUMERIC_RE.test(name)) {
+    const n = parseFloat(name)
+    if (Number.isFinite(n) && out.ele == null) out.ele = n
+  } else if (name) {
+    out.name = name
+  }
+  return out
+}
+
 function pushRaw(out, name, kind, pos, el, extra = {}) {
   if (!name || !pos) return
   out.push({
@@ -437,13 +483,14 @@ export function buildSearchIndex(svgEl) {
     })
   }
 
-  // 4) Topper (data-label="peak" + søsken "peak-ele"). mapBuilder emitterer
-  //    hver topp som <g transform="translate(x,y)"> med et symbol og enten
-  //    navn+høyde (to <text>: peak + peak-ele) eller bare høyde (én numerisk
-  //    peak-label). Vi samler dem per gruppe så vi får BÅDE høyde og posisjon,
-  //    og indekserer hver topp med `ele` slik at «topp»-søket kan rangere
-  //    kartets høyeste punkter. Navnløse topper låner navnet til nærmeste
-  //    navngitte sted innenfor 50 m (jf. spesial-søk-spesifikasjonen).
+  // 4) Topper. mapBuilder emitterer hver topp som <g transform="translate(x,y)">
+  //    med et symbol og enten navn+høyde, bare navn eller bare høyde. Vi samler
+  //    dem per gruppe så vi får BÅDE høyde og posisjon, og indekserer hver topp
+  //    med `ele` slik at «topp»-søket kan rangere kartets høyeste punkter.
+  //    Navnløse topper låner navnet til nærmeste navngitte sted innenfor 50 m
+  //    (jf. spesial-søk-spesifikasjonen). Selve tolkningen av label-formatene
+  //    (inline-tspan fra v12.0.7, søsken-<text> fra eldre kart) ligger i
+  //    readPeakLabel.
   const peakRecs = new Map()   // <g> → { g, name, ele, nameEl }
   for (const t of svgEl.querySelectorAll('text[data-label="peak"], text[data-label="peak-ele"]')) {
     if (t.closest('#ghost-tiles')) continue   // spøkelses-topper ikke i søk
@@ -451,17 +498,10 @@ export function buildSearchIndex(svgEl) {
     if (!g) continue
     let rec = peakRecs.get(g)
     if (!rec) { rec = { g, name: null, ele: NaN, nameEl: null }; peakRecs.set(g, rec) }
-    const lbl = t.getAttribute('data-label')
-    const txt = (t.getAttribute('data-name-full') ?? t.textContent ?? '').trim()
-    if (lbl === 'peak-ele') {
-      const n = parseFloat(txt)
-      if (Number.isFinite(n)) rec.ele = n
-    } else if (NUMERIC_RE.test(txt)) {
-      // Navnløs topp: peak-labelen ER høyde-tallet.
-      const n = parseFloat(txt)
-      if (Number.isFinite(n)) rec.ele = n
-    } else if (txt) {
-      rec.name = txt
+    const info = readPeakLabel(t)
+    if (info.ele != null) rec.ele = info.ele
+    if (info.name) {
+      rec.name = info.name
       rec.nameEl = t
     }
   }
@@ -480,7 +520,9 @@ export function buildSearchIndex(svgEl) {
     return best ? best.name : null
   }
   for (const rec of peakRecs.values()) {
-    if (!Number.isFinite(rec.ele)) continue
+    // Navngitte topper indekseres også UTEN høyde (OSM-peaks mangler av og
+    // til ele-tag) — bare topper uten både navn og høyde hoppes over.
+    if (!rec.name && !Number.isFinite(rec.ele)) continue
     const own = parseTranslate(rec.g.getAttribute('transform')) ?? [0, 0]
     const [dx, dy] = ancestorTranslate(rec.g, svgEl)
     const x = own[0] + dx, y = own[1] + dy
@@ -489,7 +531,7 @@ export function buildSearchIndex(svgEl) {
     // kan vise den ved treff). Navnløse: ingen tekst å toggle → el = null.
     pushRaw(out, name, 'peak', { x, y }, rec.nameEl, {
       categories: ['topp'],
-      ele: rec.ele,
+      ele: Number.isFinite(rec.ele) ? rec.ele : null,
     })
   }
 

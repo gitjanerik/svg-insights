@@ -1610,7 +1610,7 @@ export function buildSvg(elements, bbox, options = {}) {
       // navnet («Stubdalskampen 604» som én lesbar enhet) istedenfor stablet
       // linje under. tspan-en beholder data-label="peak-ele" så den brune,
       // mindre høyde-stilen gjelder. Høyde-only-fallback uendret.
-      if (name && claimLabelName(rawName)) {
+      if (name && claimLabelName(rawName, 'topp', p.x, p.y)) {
         const ele = Number.isFinite(eleNum)
           ? `<tspan dx="1mm" data-label="peak-ele">${Math.round(eleNum)}</tspan>`
           : ''
@@ -1636,8 +1636,10 @@ export function buildSvg(elements, bbox, options = {}) {
     const byRank = { major: [], mid: [], minor: [] }
     for (const el of places) {
       if (!el.tags?.name) continue
-      if (!claimLabelName(el.tags.name)) continue   // global navn-dedup
       const p = project(el.lat, el.lon)
+      // Global navn-dedup: kun mot andre STEDSNAVN (kind 'sted') — gården/bygda
+      // som deler navn med fjellet/øya er en ekte navnetvilling og skal vises.
+      if (!claimLabelName(el.tags.name, 'sted', p.x, p.y)) continue
       const rank = placeRank(el.tags.place)
       byRank[rank].push(`    <text x="${fmt(p.x)}" y="${fmt(p.y)}" dy="-0.5mm" text-anchor="middle" data-label="stedsnavn" data-rank="${rank}" data-score="${labelScore('stedsnavn', { rank })}">${xmlEscape(el.tags.name)}</text>`)
     }
@@ -2542,14 +2544,9 @@ export function buildSvg(elements, bbox, options = {}) {
   // Krav-rekkefølge = evaluerings-rekkefølge under (hvem «vinner» navnet):
   // topp → vann → elv/bekk → område/hytte → stedsnavn-overlay. Viktigst
   // først, så et navngitt tjern ikke stjeler navnet fra toppen over det.
-  const _seenLabelNames = new Set()
-  const claimLabelName = (raw) => {
-    const key = (raw ?? '').trim().toLowerCase()
-    if (!key) return true                  // navnløst (kun symbol/tall) — alltid ok
-    if (_seenLabelNames.has(key)) return false
-    _seenLabelNames.add(key)
-    return true
-  }
+  // v12.1.22: dedupen har fått type- og avstands-unntak — se
+  // makeLabelNameClaimer for reglene.
+  const claimLabelName = makeLabelNameClaimer()
 
   const labelLayer = labelSvg()
 
@@ -2589,7 +2586,7 @@ export function buildSvg(elements, bbox, options = {}) {
         // Når bare ett finnes: plasser sentrert. dy i mm via SVG-attributt så
         // posisjonen er print-skalert (1 mm = 1 mm på papir, uavhengig av
         // viewBox-meter). dy × labelScale så gapet vokser i takt med fonten.
-        if (l.name && claimLabelName(l.name)) {
+        if (l.name && claimLabelName(l.name, 'vann', l.x, l.y)) {
           const dyMm = (l.elev != null ? -0.4 : 0.4) * labelScale
           lines.push(`    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="${fmt(dyMm)}mm" text-anchor="middle" data-label="vann-navn" data-score="${labelScore('vann-navn', { areaM2: l.areaM2 })}">${xmlEscape(l.name)}</text>`)
         }
@@ -2704,9 +2701,10 @@ export function buildSvg(elements, bbox, options = {}) {
     }
   }
   // filter før map: global navn-dedup kollapser de gjentatte ~2 km-labels
-  // (og multi-way-elver) til ett label per unikt elv-/bekkenavn.
+  // (og multi-way-elver) til ett label per unikt elv-/bekkenavn. Bevisst UTEN
+  // koordinater: samme elvenavn skal alltid kollapse, uansett avstand.
   const waterwayLabelRows = waterwayLabels
-    .filter(l => claimLabelName(l.name))
+    .filter(l => claimLabelName(l.name, 'elv'))
     .map(l =>
       `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" dy="-0.4mm" text-anchor="middle" transform="rotate(${fmt(l.deg)} ${fmt(l.x)} ${fmt(l.y)})" data-label="vann-navn" data-score="${labelScore('vann-navn', { isStream: l.isStream })}">${xmlEscape(l.name)}</text>`
     )
@@ -2829,7 +2827,7 @@ export function buildSvg(elements, bbox, options = {}) {
     seaNames.push({ x: p.x, y: p.y, name })
   }
   const seaNameRows = seaNames
-    .filter(l => claimLabelName(l.name))
+    .filter(l => claimLabelName(l.name, 'vann', l.x, l.y))
     .map(l =>
       `    <text x="${fmt(l.x)}" y="${fmt(l.y)}" text-anchor="middle" data-label="vann-navn">${xmlEscape(l.name)}</text>`
     )
@@ -2839,7 +2837,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // og navngitte arealer (myr, heath, grassland, locality-polygoner osv).
   // Toggle-bar via 'navn'-laget i MapView (default på).
   // filter før map: global navn-dedup (hytter/naturreservat/områder).
-  const omradenavnRows = omradenavnLabels.filter(l => claimLabelName(l.name))
+  const omradenavnRows = omradenavnLabels.filter(l => claimLabelName(l.name, 'omrade', l.x, l.y))
   const omradenavnLayer = omradenavnRows.length
     ? `  <g data-layer="navn">\n${omradenavnRows.map(l => {
         if (l.isBuilding) {
@@ -2931,6 +2929,36 @@ ${body}</svg>
   }
 
   return { svg, counts, meta, timings }
+}
+
+// Global navn-dedup for kart-labels (v12.1.22 — var ren «ett navn = én label»).
+// Norske navnetvillinger er vanlige og EKTE: gården og fjellet, fjellet og
+// dalføret, øya og fjellet, fjellmassivet og bygda deler ofte navn. Regler:
+//  - Samme navn på ULIK label-type (kind): alltid tillatt — to features som
+//    deler navn er ikke en duplikat-label.
+//  - Samme navn på SAMME type: tillatt kun når punktene ligger ≥1 km fra alle
+//    tidligere forekomster (to åser som deler navn). Uten koordinater dedupes
+//    samme type alltid — elv-/bekkelabels bruker dette bevisst, så de
+//    gjentatte ~2 km-labelene langs samme elv fortsatt kollapser til én.
+// Kinds i bruk: 'topp', 'vann' (innsjø + sjø/bukt), 'elv', 'omrade'
+// (hytte/naturreservat/areal), 'sted' (stedsnavn-overlay).
+export const LABEL_NAME_MIN_SEP_M = 1000
+export function makeLabelNameClaimer({ minSepM = LABEL_NAME_MIN_SEP_M } = {}) {
+  const claims = new Map()   // navn (lowercase) → [{ kind, x, y }]
+  return (raw, kind = '', x = null, y = null) => {
+    const key = (raw ?? '').trim().toLowerCase()
+    if (!key) return true                  // navnløst (kun symbol/tall) — alltid ok
+    const prev = claims.get(key)
+    if (!prev) { claims.set(key, [{ kind, x, y }]); return true }
+    const blocked = prev.some((p) => {
+      if (p.kind !== kind) return false
+      const farEnough = [p.x, p.y, x, y].every(Number.isFinite) &&
+        Math.hypot(x - p.x, y - p.y) >= minSepM
+      return !farEnough
+    })
+    if (!blocked) prev.push({ kind, x, y })
+    return !blocked
+  }
 }
 
 // Rangér et OSM place=* sted etter viktighet for label-LOD og skrift-størrelse.

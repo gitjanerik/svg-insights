@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterIndex, foldName, elementPosition, dedupeHeightPoints } from './useMapSearch.js'
+import { filterIndex, foldName, elementPosition, dedupeHeightPoints, readPeakLabel } from './useMapSearch.js'
 
 // Pure-funksjons-tester. buildSearchIndex tester vi ikke her — den krever
 // reell DOM (jsdom er ikke installert), og vi har hverken @napi-rs eller
@@ -399,5 +399,44 @@ describe('useMapSearch', () => {
       }
       expect(elementPosition(svgStub, el)).toBeNull()
     })
+  })
+})
+
+// Duck-typede element-stubs for readPeakLabel (ingen jsdom nødvendig —
+// funksjonen bruker kun getAttribute/textContent/childNodes/querySelector).
+function peakTextStub({ label = 'peak', nameFull = null, textNodes = [], inlineEle = null }) {
+  const inline = inlineEle != null ? { textContent: String(inlineEle) } : null
+  const children = textNodes.map((s) => ({ nodeType: 3, textContent: s }))
+  if (inline) children.push({ nodeType: 1, textContent: inline.textContent })
+  return {
+    getAttribute: (k) => (k === 'data-label' ? label : k === 'data-name-full' ? nameFull : null),
+    textContent: textNodes.join('') + (inline ? inline.textContent : ''),
+    childNodes: children,
+    querySelector: (sel) => (sel === '[data-label="peak-ele"]' ? inline : null),
+  }
+}
+
+describe('readPeakLabel', () => {
+  it('v12.0.7-format: navn + inline <tspan data-label="peak-ele"> — navnet leses uten tallet', () => {
+    const t = peakTextStub({ textNodes: ['Slottsberget'], inlineEle: 293 })
+    // textContent konkatenerer («Slottsberget293») — bug-scenarioet fra felttest.
+    expect(t.textContent).toBe('Slottsberget293')
+    expect(readPeakLabel(t)).toEqual({ name: 'Slottsberget', ele: 293 })
+  })
+  it('gammelt format: søsken-<text data-label="peak-ele"> gir høyde', () => {
+    const t = peakTextStub({ label: 'peak-ele', textNodes: ['604'] })
+    expect(readPeakLabel(t)).toEqual({ ele: 604 })
+  })
+  it('gammelt format: peak-tekst uten tspan gir bare navn', () => {
+    const t = peakTextStub({ textNodes: ['Stubdalskampen'] })
+    expect(readPeakLabel(t)).toEqual({ name: 'Stubdalskampen' })
+  })
+  it('navnløs topp: numerisk peak-label tolkes som høyde', () => {
+    const t = peakTextStub({ textNodes: ['540'] })
+    expect(readPeakLabel(t)).toEqual({ ele: 540 })
+  })
+  it('data-name-full vinner over tekst-nodene (flerspråklige navn)', () => {
+    const t = peakTextStub({ nameFull: 'Ráisduottarháldi - Raisduoddarhaldde', textNodes: ['Ráisduottarháldi'], inlineEle: 1361 })
+    expect(readPeakLabel(t)).toEqual({ name: 'Ráisduottarháldi - Raisduoddarhaldde', ele: 1361 })
   })
 })
