@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.24: Ruteplanlegger — skuffen forblir minimert ved hurtigknapp-beregning
+
+Oppfølging av v12.1.23: trykkes «Finn grusrute» fra hurtigknappen i den minimerte skuffen, forblir skuffen minimert etter beregning — brukeren har bevisst valgt maksimal kartflate, ruta rammes inn på (nesten) hele skjermen, og peek-headeren viser km + grusandel. Fra skjemaets sticky footer ekspanderes skuffen som før.
+
+---
+
 ## 2026-07-05 — v12.1.23: Ruteplanlegger — hurtigknapper i minimert skuff
 
 Kjentbruker-flyt: med skuffen minimert (størst mulig kartflate) kan man nå sette A og B rett i kartet og trykke en kompakt grønn «Finn grusrute»-knapp direkte i peek-headeren — uten å åpne skuffen. Ved siden av står en grå X-knapp («Nullstill») som tømmer punktene for et nytt forsøk. Knappene vises KUN i minimert tilstand (ellers gjelder sticky-footeren fra v12.1.20), er deaktivert til både A og B er satt, viser spinner under beregning, og stopper pointerdown så trykk ikke starter skuff-drag. Etter beregning ekspanderer skuffen som før med resultatet.
