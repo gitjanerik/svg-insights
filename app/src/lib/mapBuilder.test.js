@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSvg, bboxFromCenter, viewportAspect, autoMapAFormat, autoMapSquare, PRINT_ASPECT } from './mapBuilder.js'
+import { buildSvg, bboxFromCenter, viewportAspect, autoMapAFormat, autoMapSquare, PRINT_ASPECT, makeLabelNameClaimer } from './mapBuilder.js'
 import { syntheticDEM } from './dem.js'
 import { wgs84ToUtm32 } from './utm.js'
 
@@ -436,5 +436,43 @@ describe('navngitte vannveier (elv/bekk) får data-name for klikk-oppslag (v10.2
     const seg = svg.slice(svg.indexOf('data-iso="305"'))
     const end = seg.indexOf('</g>')
     expect(seg.slice(0, end)).not.toContain('data-name=')
+  })
+})
+
+describe('makeLabelNameClaimer — navn-dedup med type- og avstands-unntak (v12.1.22)', () => {
+  it('samme navn + samme type + nær → dedupes (kun første vinner)', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim('Slottsberget', 'topp', 0, 0)).toBe(true)
+    expect(claim('Slottsberget', 'topp', 400, 300)).toBe(false)
+  })
+  it('samme navn + samme type + ≥1 km → begge vises', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim('Slottsberget', 'topp', 0, 0)).toBe(true)
+    expect(claim('Slottsberget', 'topp', 1200, 0)).toBe(true)
+  })
+  it('navnetvilling på ULIK type vises alltid — også nær (gården og fjellet)', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim('Kolsås', 'topp', 0, 0)).toBe(true)
+    expect(claim('Kolsås', 'sted', 150, 100)).toBe(true)    // gården under fjellet
+    expect(claim('Kolsås', 'vann', 50, 50)).toBe(true)      // tjernet ved siden av
+  })
+  it('tredje forekomst må være ≥1 km fra ALLE tidligere av samme type', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim('Rundhøgda', 'topp', 0, 0)).toBe(true)
+    expect(claim('Rundhøgda', 'topp', 1500, 0)).toBe(true)
+    expect(claim('Rundhøgda', 'topp', 800, 0)).toBe(false)  // <1 km fra begge
+  })
+  it('uten koordinater kollapser samme type alltid (elv-labels hver ~2 km)', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim('Lurbekken', 'elv')).toBe(true)
+    expect(claim('Lurbekken', 'elv')).toBe(false)
+    expect(claim('Lurbekken', 'elv')).toBe(false)
+  })
+  it('case-insensitiv og trimmet nøkkel; navnløst er alltid ok', () => {
+    const claim = makeLabelNameClaimer()
+    expect(claim(' Slottsberget ', 'topp', 0, 0)).toBe(true)
+    expect(claim('SLOTTSBERGET', 'topp', 10, 10)).toBe(false)
+    expect(claim('', 'topp', 0, 0)).toBe(true)
+    expect(claim(null, 'topp', 0, 0)).toBe(true)
   })
 })
