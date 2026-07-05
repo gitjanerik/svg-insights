@@ -1351,17 +1351,42 @@ onUnmounted(() => {
                :style="{ opacity: drawer.handleOpacity.value }"></div>
         </div>
         <!-- Header i drag-sonen: synlig også minimert -->
-        <div class="px-4 pb-2 w-full max-w-[560px] mx-auto">
-          <template v-if="route && routeState !== 'routing'">
-            <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
-            <div class="flex items-baseline gap-2 mt-0.5">
-              <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
-              <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
-                · Grus {{ fmtGrus(route.gravelShare) }}</span>
-              <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
-            </div>
+        <div class="px-4 pb-2 w-full max-w-[560px] mx-auto flex items-center gap-2">
+          <div class="flex-1 min-w-0">
+            <template v-if="route && routeState !== 'routing'">
+              <div class="text-[10px] uppercase tracking-wide text-white/45">Grusrute</div>
+              <div class="flex items-baseline gap-2 mt-0.5">
+                <span class="text-[26px] leading-none font-bold text-white tabular-nums">{{ fmtKm(route.lengthM) }} km</span>
+                <span v-if="fmtGrus(route.gravelShare)" class="text-[14px] font-semibold text-[#e8802b]">
+                  · Grus {{ fmtGrus(route.gravelShare) }}</span>
+                <span v-else class="text-[12px] text-white/45">· Grusandel utilgjengelig</span>
+              </div>
+            </template>
+            <div v-else class="text-[14px] font-semibold text-white">Planlegg grusrute</div>
+          </div>
+          <!-- Snarveier (v12.1.23) — KUN i minimert tilstand. Kjentbruker-flyt:
+               minimer skuffen, sett A og B rett i kartet med størst mulig
+               kartflate, og trykk «Finn grusrute» uten å åpne skuffen; X
+               nullstiller punktene for et nytt forsøk. @pointerdown.stop så
+               knappe-trykk ikke starter skuff-drag (samme mønster som
+               lukkeknappen i «Mine ruter»). -->
+          <template v-if="drawer.isMinimized.value">
+            <button @pointerdown.stop @click.stop="onReset" aria-label="Nullstill"
+                    class="shrink-0 w-9 h-9 rounded-xl bg-white/5 border border-white/15 text-white/60
+                           flex items-center justify-center active:scale-95 transition">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            </button>
+            <button @pointerdown.stop @click.stop="onFindRoute"
+                    :disabled="!pointA || !pointB || routeState === 'routing'"
+                    class="shrink-0 h-9 px-3 rounded-xl text-[12px] font-semibold border transition
+                           active:scale-95 disabled:opacity-40 bg-emerald-500/20 border-emerald-400/50
+                           text-emerald-100 flex items-center gap-1.5">
+              <span v-if="routeState === 'routing'"
+                    class="w-3.5 h-3.5 border-2 border-emerald-200/30 border-t-emerald-100 rounded-full animate-spin"></span>
+              Finn grusrute
+            </button>
           </template>
-          <div v-else class="text-[14px] font-semibold text-white pt-1.5">Planlegg grusrute</div>
         </div>
       </div>
 
