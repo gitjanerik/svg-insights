@@ -3388,6 +3388,16 @@ function onOpenUtNo() {
   const url = buildUtNoUrl({ lat: info.lat, lon: info.lon, zoom: currentViewWebZoom(info.lat) })
   if (url) window.open(url, '_blank', 'noopener')
 }
+// Intern snarvei (v12.1.34): åpne Ruteplanleggeren sentrert på long-press-
+// punktet. In-app-navigasjon (ikke ekstern lenke) — GravelPlannerView leser
+// ?lat/lon/z og sentrerer kartet der istedenfor sist lagrede utsnitt.
+function onOpenRoutePlanner() {
+  const info = contextMenuInfo.value
+  if (!info) return
+  router.push({ name: 'ruteplanlegger', query: {
+    lat: info.lat.toFixed(6), lon: info.lon.toFixed(6), z: '12',
+  } })
+}
 // Åpne punktet i Vegvesenets Vegkart (UTM 33N-hash, se externalMapLinks.js).
 function onOpenVegkart() {
   const info = contextMenuInfo.value
@@ -8240,6 +8250,33 @@ onUnmounted(() => {
           <div v-show="!contextDrawer.isMinimized.value"
                class="flex-1 overflow-y-auto"
                :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
+
+          <!-- Intern snarvei øverst (v12.1.34): åpne Ruteplanleggeren på dette
+               punktet. Startside-ikonet + chevron (ikke ekstern-pil) signaliserer
+               at dette er en lenke INNE i SVG Insights, ikke ut av appen. -->
+          <div class="px-4 pt-3">
+            <button @click="onOpenRoutePlanner"
+                    class="w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2.5 transition
+                           bg-sky-500/[0.12] border-sky-400/35 text-sky-100">
+              <!-- Samme rute-ikon som Ruteplanlegger-kortet på startsiden -->
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 20 C4 14 9 14 12 12"/>
+                <path d="M12 12 C15 10 20 10 20 4" stroke-dasharray="2.4 2"/>
+                <circle cx="4" cy="20" r="2.2" fill="#10b981" stroke="none"/>
+                <circle cx="20" cy="4" r="2.2" fill="#f43f5e" stroke="none"/>
+              </svg>
+              <span class="flex-1 text-left">
+                <span class="font-medium">Åpne ruteplanlegger</span>
+                <span class="block text-[10px] text-sky-200/60">SVG Insights — sentrert på punktet</span>
+              </span>
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0 text-sky-200/60" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+          </div>
 
           <!-- Detalj-inset: roambart 500×500 m utsnitt (start 250 m) med alle
                detaljer (dybdetall, dybdekurver, sjø-POI) avslørt. Pan + zoom,

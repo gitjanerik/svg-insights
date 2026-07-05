@@ -23,6 +23,7 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { reverseNearestPlace } from '../lib/nominatimReverse.js'
 import { routeShareToken, parseRouteToken, MAX_SHARE_ROUTES } from '../lib/routeShare.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
+import { listMaps } from '../lib/mapStorage.js'
 import { useRouteElevation } from '../composables/useRouteElevation.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
@@ -80,7 +81,18 @@ function loadView() {
   // Default: Sør-Norge-oversikt.
   return { lat: 61.0, lon: 9.5, zoom: 6 }
 }
-const initial = loadView()
+// Intern snarvei INN (v12.1.34): ?lat=&lon=(&z=) fra turkartets long-press-ark
+// overstyrer sist lagrede utsnitt — planleggeren åpner sentrert på punktet.
+function parseCenterQuery() {
+  const q = currentRoute.query
+  if (q.r || q.alat) return null   // dele-lenke (parseRouteInvite) vinner
+  const lat = parseFloat(q.lat); const lon = parseFloat(q.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
+  const z = parseInt(q.z, 10)
+  return { lat, lon, zoom: Number.isFinite(z) ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) : 12 }
+}
+const centerQuery = parseCenterQuery()
+const initial = centerQuery ?? loadView()
 const center = ref({ lat: initial.lat, lon: initial.lon })
 const zoom = ref(initial.zoom)
 watch([center, zoom], () => {
@@ -556,12 +568,42 @@ const pinLinks = computed(() => {
   ].filter((l) => l.href)
 })
 
+// Intern snarvei (v12.1.34): «Åpne turkart» øverst i pin-kortet. Dekker et
+// lagret turkart punktet, åpnes DET kartet med rosa markering på punktet
+// (gjenbruker MapViews ?slat/slon-mekanikk fra «Del kart og sted»); ellers
+// åpnes kart-byggeren pre-sentrert (?clat/clon — uten dele-banner/lås).
+// Meta-listen er lett (uten svg/dem) og lastes én gang ved oppstart.
+const savedMapsMeta = ref([])
+function bboxContainsPoint(bbox, lat, lon) {
+  return !!bbox && Number.isFinite(bbox.south)
+    && lat >= bbox.south && lat <= bbox.north
+    && lon >= bbox.west && lon <= bbox.east
+}
+const pinTurkartMatch = computed(() => {
+  const p = utNoPin.value
+  if (!p) return null
+  return savedMapsMeta.value.find((m) => bboxContainsPoint(m.bbox, p.lat, p.lon)) ?? null
+})
+function openTurkartFromPin() {
+  const p = utNoPin.value
+  if (!p) return
+  const match = pinTurkartMatch.value
+  utNoPin.value = null
+  if (match) {
+    router.push({ name: 'kart-vis', params: { id: match.id },
+      query: { slat: p.lat.toFixed(6), slon: p.lon.toFixed(6) } })
+  } else {
+    router.push({ name: 'kart-nytt',
+      query: { clat: p.lat.toFixed(6), clon: p.lon.toFixed(6) } })
+  }
+}
+
 // Kort-plassering (v12.1.18): clamp horisontalt så kortet aldri klippes mot
 // viewport-kantene (mobil-skjermbilde: long-press nær høyre kant skar av
 // kortet), og flipp under pinnen når det ikke er plass over. Pilen skyves
 // motsatt vei av clampingen så den fortsatt peker på pinnen.
 const PIN_CARD_W = 212
-const PIN_CARD_EST_H = 215
+const PIN_CARD_EST_H = 262   // + turkart-snarveien (v12.1.34)
 const PIN_CARD_MARGIN = 8
 const pinCardPlacement = computed(() => {
   const px = utNoPinPx.value
@@ -1085,6 +1127,11 @@ function unlockBodyScroll() {
 
 onMounted(() => {
   lockBodyScroll()
+  // Snarvei-query er konsumert (utsnittet er satt) — rens URL-en så F5 /
+  // tilbake-navigasjon ikke hopper tilbake til punktet etter at brukeren
+  // har panorert videre. Samme mønster som dismissInvite i MapPickerView.
+  if (centerQuery) router.replace({ name: 'ruteplanlegger', query: {} })
+  listMaps().then((maps) => { savedMapsMeta.value = maps }).catch(() => { /* snarveien faller til kart-byggeren */ })
   nextTick(() => {
     measureMap()
     if (typeof ResizeObserver !== 'undefined' && mapRef.value) {
@@ -1287,6 +1334,30 @@ onUnmounted(() => {
                      stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
               </button>
             </div>
+            <!-- Intern snarvei øverst (v12.1.34): turkart-modulen i SVG Insights.
+                 Startside-ikonet + chevron (ikke ekstern-pil) viser at lenken er
+                 intern. Lagret kart som dekker punktet → åpnes med markering;
+                 ellers kart-byggeren sentrert her. -->
+            <button @click="openTurkartFromPin"
+                    class="mt-2 w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px]
+                           border bg-sky-500/[0.12] border-sky-400/35 text-sky-100
+                           active:scale-[0.98] transition">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
+                <path d="M9 4 V18 M15 6 V20"/>
+              </svg>
+              <span class="flex-1 min-w-0 text-left">
+                <span class="font-medium">Åpne turkart</span>
+                <span class="block text-[9px] text-sky-200/60 truncate">
+                  {{ pinTurkartMatch ? `«${pinTurkartMatch.navn}»` : 'SVG Insights — nytt kart her' }}
+                </span>
+              </span>
+              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0 text-sky-200/60" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
             <div class="mt-1.5 text-[9px] uppercase tracking-wide text-white/45">Åpne i</div>
             <div class="mt-1 space-y-1">
               <a v-for="l in pinLinks" :key="l.label" :href="l.href"

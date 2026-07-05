@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.34: Interne snarveier i long-press — hopp mellom turkart og ruteplanlegger
+
+Long-press-menyene i begge kart-modulene har fått en intern snarvei øverst, utformet med modul-ikonene fra startsiden + chevron (i kontrast til ekstern-pilen på UT.no/Vegkart-lenkene) så det er tydelig at lenken er inne i SVG Insights. Fra turkartets punkt-ark: «Åpne ruteplanlegger» åpner ruteplanleggeren sentrert på long-press-punktet (nytt `?lat/lon/z`-mottak i GravelPlannerView, query renses etter bruk). Fra ruteplanleggerens pin-kort: «Åpne turkart» åpner et lagret turkart som dekker punktet med rosa markering der (gjenbruker `?slat/slon`-mekanikken), eller kart-byggeren pre-sentrert på punktet (`?clat/clon` i MapPickerView — uten dele-banner og lås) når ingen lagrede kart dekker det; underteksten på knappen viser hvilket kart som åpnes.
+
+---
+
 ## 2026-07-05 — v12.1.33: Stifinner ruter ikke lenger over vann — og ruter på tvers av mosaikken
 
 Rotårsak funnet for Gjende-rapporten (ruter tvers over innsjøen): Stifinner bygde rutegrafen fra ALLE `[data-iso]`-grupper i kart-SVG-en, inkludert spøkelses-/utvidelsesflisene i `#ghost-tiles`. Disse ligger som nestede `<svg x y>` med flis-LOKALE path-koordinater, men grafen leste `d`-koordinatene rått — så hele stinettet fra naboflisene ble limt inn forskjøvet med flis-bredder oppå aktiv flis. Feilplasserte kopier av ekte strandstier landet midt ute i Gjende, ble snappet sammen med det ekte nettet, og Dijkstra foreslo «kortest»-ruter over vannet. Fiksen løfter ghost-paths til aktiv-flisas koordinatrom via kumulert nested-svg-offset (`nestedSvgOffset` i `useStifinner.js`) — det fjerner fantomkryssingene OG gjør at Stifinner nå ruter korrekt på tvers av flisegrensene i mosaikken. Nye tester med fake-DOM dekker både mosaikk-rutingen og regresjonen.
