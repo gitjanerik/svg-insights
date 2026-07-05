@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.30: Søke-sentrering løst for godt + blå del-knapp i tittelraden + eksakt stjernefilter
+
+**(1) Feilsentreringen ved søkevalg (v12.1.29-forsøket virket ikke):** gaten på `document.activeElement` slo aldri inn — på Android blurres søkefeltet allerede av selve tappet på resultatknappen, før click-handleren kjører, så panorering skjedde likevel mot den tastatur-krympede viewporten. Ny `panToSettled` er timing-uavhengig: panorér straks, og RE-panorér til samme mål når wrapper-størrelsen faktisk endrer seg (ResizeObserver = tastaturet lukkes), debounced til ro, avbrutt ved brukergest, auto-stopp etter 1,5 s. Verifisert med Playwright-emulering av tastatur-syklusen (krymp viewport → velg treff → voks viewport): treffet lander eksakt i midten. **(2) «Del mine ruter …» flyttet opp i tittelraden** i «Mine ruter» — kompakt (ikke full bredde) og blå (`sky`) som selekteringsfargen i velg-modus; velg-modus-handlingene (Del (N)/Avbryt) tar verktøyradens plass mens sortering skjules. **(3) Stjernefilteret matcher nå EKSAKT antall stjerner** (★ 1–5, ikke «X eller flere») — hva brukeren legger i vurderingen sin er deres eget.
+
+---
+
 ## 2026-07-05 — v12.1.29: Turkart-søk: «Vardåsen349»-navn og feilsentrering fikset
 
 To regresjoner fra felttest av søket. **(1) «navn+høyde» i søket:** `applyNameLanguage` (flerspråklig navnetoggle i MapView) leste `textContent` fra topp-labels — som konkatenerer navnet og det inline høyde-tspan-tallet — inn i `data-name-full` («Vardåsen349» i søkelista), og tilbakeskrivingen med `textContent` SLETTET samtidig høyde-tspanen fra kartet. Nå leses/skrives kun tekst-nodene når labelen har inline `peak-ele`-tspan, allerede forurenset `data-name-full` repareres på neste last, og `readPeakLabel` stripper defensivt et høyde-suffiks (enhetstestet). **(2) Feilsentrering ved søkevalg:** etter viewport-metaen i v12.1.25 (`interactive-widget=resizes-content`) er layout-viewporten krympet mens søke-tastaturet står oppe — `panTo` regnet sentrum mot den lave flaten, så treffet havnet nederst i utsnittet når tastaturet lukket seg. Ny `panToAfterKeyboard` blurer input, venter til wrapper-høyden har vokst og stabilisert seg (maks 700 ms) og panner deretter; desktop/uten input-fokus panner umiddelbart som før.
