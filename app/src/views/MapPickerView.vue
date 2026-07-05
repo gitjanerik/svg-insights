@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
+import { reverseNearestPlace } from '../lib/nominatimReverse.js'
 import { bboxFromCenter, viewportAspect, PRINT_ASPECT } from '../lib/mapBuilder.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
@@ -454,13 +455,28 @@ function onPreviewWheel(e) {
 // Intern snarvei (v12.1.34): ?clat=&clon= fra ruteplanleggerens long-press-pin
 // pre-sentrerer utsnittet på punktet — UTEN dele-banner og lås (i motsetning
 // til ?lat/lon-deleflyten): brukeren skal fritt justere og bygge sitt eget
-// kart her. Query renses etterpå så F5 ikke re-sentrerer.
+// kart her, i standard størrelse (halvKm 2.0, kvadrat, 20 m) som ved vanlig
+// stedssøk. Kartnavnet settes til «<nærmeste sted> <dato>» via ikke-blokkerende
+// reverse-geokoding, så den bygde flisa aldri ender som «Uten navn». Query
+// renses etterpå så F5 ikke re-sentrerer.
 function parseCenterShortcut() {
   const q = route.query
   const lat = parseFloat(q.clat)
   const lon = parseFloat(q.clon)
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false
   center.value = { lat, lon, name: '' }
+  const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
+  // Umiddelbar dato-fallback så navnet aldri er tomt om brukeren bygger med én
+  // gang; oppgraderes til stedsnavnet når reverse-oppslaget svarer — men bare
+  // hvis feltet ikke er redigert i mellomtiden.
+  const fallbackName = `Turkart ${stamp}`
+  customName.value = fallbackName
+  reverseNearestPlace(lat, lon).then((name) => {
+    if (name && customName.value === fallbackName) {
+      customName.value = `${name} ${stamp}`
+      center.value = { ...center.value, name }
+    }
+  }).catch(() => { /* behold dato-fallback */ })
   router.replace({ name: 'kart-nytt', query: {} })
   return true
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.35: Ruteplanlegger → turkart navngir nytt kart «<sted> <dato>»
+
+Når «Åpne turkart» i ruteplanleggeren ikke finner et lagret kart som dekker punktet, åpnes kart-byggeren nå pre-sentrert på punktet i standard størrelse (halvKm 2.0, kvadrat, 20 m — som ved et vanlig stedssøk). Kartnavnet forhåndsutfylles med «<nærmeste sted> <dato>» via ikke-blokkerende reverse-geokoding (Nominatim, samme som grusrute-navneforslaget), så den bygde flisa ikke lenger ender som «Uten navn». Umiddelbar dato-fallback («Turkart <dato>») settes med én gang i tilfelle brukeren bygger før oppslaget svarer, og oppgraderes til stedsnavnet så lenge feltet ikke er redigert i mellomtiden.
+
+---
+
 ## 2026-07-05 — v12.1.34: Interne snarveier i long-press — hopp mellom turkart og ruteplanlegger
 
 Long-press-menyene i begge kart-modulene har fått en intern snarvei øverst, utformet med modul-ikonene fra startsiden + chevron (i kontrast til ekstern-pilen på UT.no/Vegkart-lenkene) så det er tydelig at lenken er inne i SVG Insights. Fra turkartets punkt-ark: «Åpne ruteplanlegger» åpner ruteplanleggeren sentrert på long-press-punktet (nytt `?lat/lon/z`-mottak i GravelPlannerView, query renses etter bruk). Fra ruteplanleggerens pin-kort: «Åpne turkart» åpner et lagret turkart som dekker punktet med rosa markering der (gjenbruker `?slat/slon`-mekanikken), eller kart-byggeren pre-sentrert på punktet (`?clat/clon` i MapPickerView — uten dele-banner og lås) når ingen lagrede kart dekker det; underteksten på knappen viser hvilket kart som åpnes.
