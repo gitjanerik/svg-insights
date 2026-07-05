@@ -2,7 +2,7 @@
 
 ## 2026-07-05 — v12.1.31: Delings-banner klinsjer ikke lenger med zoom-knapper og maksimert skuff
 
-To lag-fikser i Ruteplanleggeren: **(1)** Delings-banneret har fått lavere z-index enn skuffen (z-15 vs z-20) — en maksimert skuff dekker nå banneret i stedet for å klinsje med det. **(2)** Zoom-kontrollene (+/− og nivå-badgen) flyttes dynamisk: default øverst til høyre, men når delings-banneret vises legger de seg rett UNDER det — bannerhøyden observeres live (ResizeObserver), så både kollapset og utvidet størrelse (og høydeendringer som install-info) håndteres automatisk, med myk transition. Verifisert med Playwright: zoom-knappen er klikkbar under utvidet banner, glir opp ved kollaps, tilbake til toppen når banneret lukkes, og maksimert skuff ligger over banneret.
+To lag-fikser i Ruteplanleggeren: **(1)** Delings-banneret har fått lavere z-index enn skuffen (z-15 vs z-20) — en maksimert skuff dekker nå banneret i stedet for å klinsje med det. **(2)** Zoom-kontrollene (+/− og nivå-badgen) flyttes dynamisk: default øverst til høyre, men når delings-banneret vises legger de seg rett UNDER det — bannerhøyden observeres live (ResizeObserver), så både kollapset og utvidet størrelse (og høydeendringer som install-info) håndteres automatisk, med myk transition. Kollapset banner viser i tillegg en mini-utgave av det sirkulære delingsikonet (negativ margin — radhøyden er uendret 36 px). Verifisert med Playwright: zoom-knappen er klikkbar under utvidet banner, glir opp ved kollaps, tilbake til toppen når banneret lukkes, og maksimert skuff ligger over banneret.
 
 ---
 

@@ -1358,6 +1358,17 @@ onUnmounted(() => {
           <button v-if="inviteCollapsed" @click="inviteCollapsed = false"
                   aria-label="Utvid delings-panelet" :aria-expanded="false"
                   class="w-full flex items-center gap-2 text-left active:opacity-70 transition">
+            <!-- Mini-utgave av delingsikonet (w-5 = radhøyden, øker ikke
+                 kollapset høyde) -->
+            <span class="shrink-0 w-5 h-5 -my-1 rounded-full bg-sky-400/20 border border-sky-300/40
+                         flex items-center justify-center text-sky-200">
+              <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </span>
             <span class="flex-1 truncate text-[12px] font-semibold text-sky-100">
               Noen har delt {{ inviteRoutes.length > 1 ? `${inviteRoutes.length} grusruter` : 'en grusrute' }} med deg!
             </span>
