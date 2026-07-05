@@ -451,24 +451,9 @@ function onPreviewWheel(e) {
   halfKm.value = Math.max(0.5, Math.min(4, next))
 }
 
-// Intern snarvei (v12.1.34): ?clat=&clon= fra ruteplanleggerens long-press-pin
-// pre-sentrerer utsnittet på punktet — UTEN dele-banner og lås (i motsetning
-// til ?lat/lon-deleflyten): brukeren skal fritt justere og bygge sitt eget
-// kart her. Query renses etterpå så F5 ikke re-sentrerer.
-function parseCenterShortcut() {
-  const q = route.query
-  const lat = parseFloat(q.clat)
-  const lon = parseFloat(q.clon)
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false
-  center.value = { lat, lon, name: '' }
-  router.replace({ name: 'kart-nytt', query: {} })
-  return true
-}
-
 onMounted(() => {
   challenge.value = parseShareQuery()
   if (!challenge.value) shareInvite.value = parseShareInvite()
-  if (!challenge.value && !shareInvite.value) parseCenterShortcut()
   nextTick(() => measurePreview())
   window.addEventListener('resize', measurePreview)
 })
