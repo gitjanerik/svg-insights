@@ -2,7 +2,13 @@
 <html lang="no">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content (Chrome/Android 108+): virtuelt
+         tastatur krymper LAYOUT-viewporten, ikke bare den visuelle. Uten denne
+         forblir 100dvh/bottom-0 i full høyde bak tastaturet, så bunn-ankrede
+         knapper (f.eks. «Lagre rute»/«Avbryt» i Ruteplanleggerens skuff-footer)
+         var usynlige mens tastaturet var åpent. Eldre Chrome og iOS Safari
+         ignorerer nøkkelordet (iOS beholder overlay-oppførselen sin). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0e1116" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -19,7 +25,7 @@
     <link rel="apple-touch-icon" href="/svg-insights/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-title" content="SVG Insights" />
     <title>SVG Insights</title>
-    <script type="module" src="/svg-insights/assets/index-DF5hKFwN.js"></script>
+    <script type="module" src="/svg-insights/assets/index-CScy1P8d.js"></script>
     <link rel="modulepreload" href="/svg-insights/assets/_plugin-vue_export-helper-B67ILkmu.js">
     <link rel="modulepreload" href="/svg-insights/assets/preload-helper-BXEp62a0.js">
     <link rel="modulepreload" href="/svg-insights/assets/vue-router-DaOa0VBU.js">
