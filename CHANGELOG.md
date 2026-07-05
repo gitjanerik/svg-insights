@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.31: Delings-banner klinsjer ikke lenger med zoom-knapper og maksimert skuff
+
+To lag-fikser i Ruteplanleggeren: **(1)** Delings-banneret har fått lavere z-index enn skuffen (z-15 vs z-20) — en maksimert skuff dekker nå banneret i stedet for å klinsje med det. **(2)** Zoom-kontrollene (+/− og nivå-badgen) flyttes dynamisk: default øverst til høyre, men når delings-banneret vises legger de seg rett UNDER det — bannerhøyden observeres live (ResizeObserver), så både kollapset og utvidet størrelse (og høydeendringer som install-info) håndteres automatisk, med myk transition. Verifisert med Playwright: zoom-knappen er klikkbar under utvidet banner, glir opp ved kollaps, tilbake til toppen når banneret lukkes, og maksimert skuff ligger over banneret.
+
+---
+
 ## 2026-07-05 — v12.1.30: Søke-sentrering løst for godt + blå del-knapp i tittelraden + eksakt stjernefilter
 
 **(1) Feilsentreringen ved søkevalg (v12.1.29-forsøket virket ikke):** gaten på `document.activeElement` slo aldri inn — på Android blurres søkefeltet allerede av selve tappet på resultatknappen, før click-handleren kjører, så panorering skjedde likevel mot den tastatur-krympede viewporten. Ny `panToSettled` er timing-uavhengig: panorér straks, og RE-panorér til samme mål når wrapper-størrelsen faktisk endrer seg (ResizeObserver = tastaturet lukkes), debounced til ro, avbrutt ved brukergest, auto-stopp etter 1,5 s. Verifisert med Playwright-emulering av tastatur-syklusen (krymp viewport → velg treff → voks viewport): treffet lander eksakt i midten. **(2) «Del mine ruter …» flyttet opp i tittelraden** i «Mine ruter» — kompakt (ikke full bredde) og blå (`sky`) som selekteringsfargen i velg-modus; velg-modus-handlingene (Del (N)/Avbryt) tar verktøyradens plass mens sortering skjules. **(3) Stjernefilteret matcher nå EKSAKT antall stjerner** (★ 1–5, ikke «X eller flere») — hva brukeren legger i vurderingen sin er deres eget.

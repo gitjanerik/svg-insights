@@ -775,6 +775,34 @@ function inviteTopObstructPx() {
   return b && m ? Math.max(0, b.bottom - m.top + 8) : 0
 }
 
+// Reaktiv banner-underkant (v12.1.31): zoom-kontrollene (+/−/nivå) flyttes
+// under banneret så de aldri skjules — banneret har to størrelser (kollapset/
+// utvidet) og kan endre høyde (install-info, rutevalg), så høyden observeres
+// live med ResizeObserver i stedet for å utledes av tilstander.
+const inviteBannerBottomPx = ref(0)
+const zoomCtrlTopPx = computed(() =>
+  inviteBannerBottomPx.value > 0 ? inviteBannerBottomPx.value + 10 : 12)
+let inviteBannerObs = null
+watch(routeInvite, (inv) => {
+  inviteBannerObs?.disconnect()
+  inviteBannerObs = null
+  if (!inv) { inviteBannerBottomPx.value = 0; return }
+  nextTick(() => {
+    const el = inviteBannerRef.value
+    if (!el) return
+    const update = () => {
+      const b = el.getBoundingClientRect()
+      const m = mapRef.value?.getBoundingClientRect()
+      inviteBannerBottomPx.value = b && m ? Math.max(0, b.bottom - m.top) : 0
+    }
+    update()
+    if (typeof ResizeObserver !== 'undefined') {
+      inviteBannerObs = new ResizeObserver(update)
+      inviteBannerObs.observe(el)
+    }
+  })
+}, { immediate: true })
+
 // Velg en delt rute fra banner-lista (flerdelings-mottak): prefyller A/B og
 // nullstiller ev. forrige beregning så «Finn grusrute» gjelder valget.
 function pickInviteRoute(i) {
@@ -1082,6 +1110,7 @@ onMounted(() => {
 onUnmounted(() => {
   unlockBodyScroll()
   mapResizeObs?.disconnect()
+  inviteBannerObs?.disconnect()
   window.removeEventListener('resize', measureMap)
   window.removeEventListener('online', onlineHandler)
   window.removeEventListener('offline', offlineHandler)
@@ -1277,8 +1306,12 @@ onUnmounted(() => {
       </template>
 
       <!-- Zoom-knapper + nivå-badge. mousedown/touchstart stoppes så knappe-
-           trykk ikke tolkes som kart-tap (tap-to-set for A/B). -->
-      <div class="absolute right-3 top-3 z-10 flex flex-col items-center gap-1.5"
+           trykk ikke tolkes som kart-tap (tap-to-set for A/B). Toppen følger
+           delings-banneret dynamisk (v12.1.31): default topp-høyre, men under
+           banneret når det vises — både kollapset og utvidet størrelse måles
+           live (ResizeObserver), så +/−/nivå alltid er synlige. -->
+      <div class="absolute right-3 z-10 flex flex-col items-center gap-1.5 transition-[top] duration-200"
+           :style="{ top: zoomCtrlTopPx + 'px' }"
            @mousedown.stop @touchstart.stop>
         <button @click.stop="stepZoom(1)" aria-label="Zoom inn"
                 class="w-9 h-9 rounded-lg bg-zinc-950/90 border border-white/15 text-white text-lg font-medium
@@ -1311,7 +1344,10 @@ onUnmounted(() => {
            før i flyten og dyttet kartet ned). Delingsmodus låser resten av
            UI-et (toppbar-knapper, modus-pille, Fra/Til) til CTA eller X —
            men kart-pan/zoom og skuff-drag er fortsatt fritt. -->
-      <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-30 flex justify-center"
+      <!-- z-[15] (v12.1.31, var z-30): banneret skal ligge over kartet men
+           UNDER skuffen (z-20), så en maksimert skuff dekker det i stedet for
+           å klinsje. -->
+      <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-[15] flex justify-center"
            @mousedown.stop @touchstart.stop @wheel.stop>
         <div ref="inviteBannerRef"
              class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
