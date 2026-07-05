@@ -4,8 +4,11 @@
 // som skilletegn fordi komma er vanlig i navn («Punkt 59.2, 9.3»); pipe i
 // navn erstattes med «/» ved bygging. Mottaker-parsing er tolerant: ugyldige
 // tokens gir null og filtreres bort.
+//
+// Maks 5 pr lenke (v12.1.27, var 10): mottaker-banneret skal være kompakt,
+// og rutene beregnes uansett én og én hos mottakeren.
 
-export const MAX_SHARE_ROUTES = 10
+export const MAX_SHARE_ROUTES = 5
 export const SHARE_NAME_MAX = 60
 
 /** Lagret rute-record → token, eller null når waypoints mangler. */

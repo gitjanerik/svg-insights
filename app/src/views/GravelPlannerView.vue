@@ -680,7 +680,7 @@ function recTidS(rec) {
 
 // ── «Vis hele ruten»-FAB: nullstill zoom/senter så hele ruta (inkl. A/B)
 // rammes inn med margin — mye utzooming på lange ruter. ────────────────────
-function fitPointsView(lonLatPts) {
+function fitPointsView(lonLatPts, { topObstructPx = 0 } = {}) {
   if (!lonLatPts?.length || !mapSize.value.w) return
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const [lon, lat] of lonLatPts) {
@@ -692,10 +692,12 @@ function fitPointsView(lonLatPts) {
   }
   const spanX = Math.max(maxX - minX, 1e-9)
   const spanY = Math.max(maxY - minY, 1e-9)
-  // Skuffen flyter over kartets nedre del — sikt innrammingen på den synlige
-  // flaten over skuffen, og skyv senteret slik at innholdet sentreres der.
+  // Skuffen flyter over kartets nedre del (og delings-banneret ev. over den
+  // øvre, v12.1.27) — sikt innrammingen på den synlige flaten mellom dem, og
+  // skyv senteret slik at innholdet sentreres der.
   const obstructPx = Math.min(drawer.visibleHeightPx.value, mapSize.value.h * 0.7)
-  const effH = Math.max(80, mapSize.value.h - obstructPx)
+  const topPx = Math.min(Math.max(0, topObstructPx), mapSize.value.h * 0.5)
+  const effH = Math.max(80, mapSize.value.h - obstructPx - topPx)
   // Største heltalls-zoom der world-px-spennet (zoom 0 × 2^z) får 15 % margin.
   const margin = 0.85
   const zFit = Math.floor(Math.min(
@@ -706,7 +708,7 @@ function fitPointsView(lonLatPts) {
   const scale = Math.pow(2, zoom.value)
   const c = worldPxToLonLat(
     ((minX + maxX) / 2) * scale,
-    ((minY + maxY) / 2) * scale + obstructPx / 2,
+    ((minY + maxY) / 2) * scale + obstructPx / 2 - topPx / 2,
     zoom.value,
   )
   center.value = { lat: c.lat, lon: c.lon }
@@ -715,7 +717,7 @@ function fitPointsView(lonLatPts) {
 function fitRouteView() {
   const pts = [...(route.value?.points?.map((p) => [p[0], p[1]]) ?? [])]
   for (const m of [pointA.value, pointB.value]) if (m) pts.push([m.lon, m.lat])
-  fitPointsView(pts)
+  fitPointsView(pts, { topObstructPx: routeInvite.value ? inviteTopObstructPx() : 0 })
 }
 
 async function onFindRoute() {
@@ -760,6 +762,16 @@ let shareResetTimer = null
 const inviteRoutes = computed(() => routeInvite.value?.routes ?? [])
 const inviteActive = computed(() => inviteRoutes.value[invitePicked.value] ?? null)
 
+// Banneret flyter oppå kartets øvre del — mål den reelle høyden så
+// innrammingen av valgt rute havner i den SYNLIGE flaten under banneret
+// (v12.1.27: A/B lå gjemt bak banneret).
+const inviteBannerRef = ref(null)
+function inviteTopObstructPx() {
+  const b = inviteBannerRef.value?.getBoundingClientRect()
+  const m = mapRef.value?.getBoundingClientRect()
+  return b && m ? Math.max(0, b.bottom - m.top + 8) : 0
+}
+
 // Velg en delt rute fra banner-lista (flerdelings-mottak): prefyller A/B og
 // nullstiller ev. forrige beregning så «Finn grusrute» gjelder valget.
 function pickInviteRoute(i) {
@@ -771,7 +783,8 @@ function pickInviteRoute(i) {
   setPoint('B', r.b)
   nextTick(() => {
     measureMap()
-    fitPointsView([[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]])
+    fitPointsView([[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]],
+      { topObstructPx: inviteTopObstructPx() })
   })
 }
 
@@ -1010,7 +1023,8 @@ onMounted(() => {
       setPoint('B', first.b)
       nextTick(() => {
         measureMap()
-        fitPointsView(invite.routes.flatMap((r) => [[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]]))
+        fitPointsView(invite.routes.flatMap((r) => [[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]]),
+          { topObstructPx: inviteTopObstructPx() })
       })
     }
   })
@@ -1253,7 +1267,8 @@ onUnmounted(() => {
            men kart-pan/zoom og skuff-drag er fortsatt fritt. -->
       <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-30 flex justify-center"
            @mousedown.stop @touchstart.stop @wheel.stop>
-        <div class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
+        <div ref="inviteBannerRef"
+             class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
                     backdrop-blur px-4 py-3 shadow-2xl">
           <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
                   class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
@@ -1283,8 +1298,10 @@ onUnmounted(() => {
               </div>
             </div>
           </div>
-          <!-- Flerdeling: velg rute fra lista — én beregnes om gangen. -->
-          <div v-if="inviteRoutes.length > 1" class="mt-2.5 space-y-1 max-h-[26dvh] overflow-y-auto">
+          <!-- Flerdeling: velg rute fra lista — én beregnes om gangen. Maks
+               ~3 rader synlige (v12.1.27), resten scroller — banneret skal
+               ikke spise kartflaten der den valgte ruta rammes inn. -->
+          <div v-if="inviteRoutes.length > 1" class="mt-2.5 space-y-1 max-h-[6.75rem] overflow-y-auto">
             <button v-for="(r, i) in inviteRoutes" :key="i" @click="pickInviteRoute(i)"
                     class="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left
                            text-[12px] font-medium active:scale-[0.99] transition"
@@ -1876,9 +1893,15 @@ onUnmounted(() => {
                 Trykk på rutene du vil dele (inntil {{ MAX_SHARE_ROUTES }}) — mottakeren får alle i én lenke.
               </div>
             </div>
+            <!-- I velg-modus toggler HELE kortet (v12.1.27 — kun navnefeltet
+                 var klikkbart, mens sjekkboks-siden var død: kontraintuitivt).
+                 Navne-knappen gjør ingenting selv i velg-modus; klikket bobler
+                 til kort-diven. -->
             <div v-for="rec in savedRoutes" :key="rec.id"
                  class="rounded-lg bg-white/5 px-3 py-2.5 mb-2"
-                 :class="shareSelectMode && shareSelected.includes(rec.id) ? 'ring-1 ring-sky-400/70 bg-sky-500/[0.08]' : ''">
+                 :class="[shareSelectMode ? 'cursor-pointer active:opacity-80 transition' : '',
+                          shareSelectMode && shareSelected.includes(rec.id) ? 'ring-1 ring-sky-400/70 bg-sky-500/[0.08]' : '']"
+                 @click="shareSelectMode && toggleShareSelect(rec.id)">
               <div class="flex items-center gap-3">
                 <div class="shrink-0 w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center
                             justify-center text-white/60">
@@ -1887,7 +1910,7 @@ onUnmounted(() => {
                     <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/>
                     <circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg>
                 </div>
-                <button @click="shareSelectMode ? toggleShareSelect(rec.id) : onOpenSaved(rec)"
+                <button @click="shareSelectMode || onOpenSaved(rec)"
                         class="flex-1 min-w-0 text-left active:opacity-70 transition">
                   <div class="text-[13px] text-white font-medium truncate">{{ rec.navn }}</div>
                   <div class="text-[11px] text-white/50 tabular-nums">

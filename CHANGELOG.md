@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.27: Deling-polish — hel-korts toggle, kompakt mottaker-banner, maks 5 ruter
+
+Tre justeringer etter felttest av v12.1.26: **(1)** I velg-modus («Del mine ruter») toggler nå HELE rutekortet — før var kun navnefeltet klikkbart mens sjekkboks-siden var død (kontraintuitivt). **(2)** Mottaker-banneret er kompaktere: rutelista viser maks ~3 rader før den scroller internt, og kart-innrammingen av valgt rute tar nå hensyn til bannerhøyden (`fitPointsView` fikk `topObstructPx` — A/B lå før gjemt bak banneret). Gjelder også innramming etter beregning mens banneret står. **(3)** Maks 5 ruter pr delings-lenke (var 10) — enklere og holder banneret kort; eldre lenker med flere ruter kappes til 5.
+
+---
+
 ## 2026-07-05 — v12.1.26: Ruteplanlegger — «Del mine ruter», stjernemerking, stedsnavn-forslag og renere delingstekst
 
 Fire forbedringer rundt lagring og deling: **(1) «Del mine ruter»:** velg inntil 10 lagrede ruter i «Mine ruter» (velg-modus med sjekkbokser) og del dem som ÉN lenke — nytt URL-format `?r=alat|alon|blat|blon|profil|navn` pr rute (`lib/routeShare.js`, enhetstestet; legacy enkelt-rute-lenker støttes fortsatt). Mottakeren får banner med rutelista, velger rute og beregner én om gangen (fair use mot brouter.de); banneret består til alle er prøvd eller lukkes. **(2) Stjernemerking:** 1–5 stjerner på hver lagret rute (trykk samme stjerne igjen for å fjerne), lagres i IndexedDB (`updateGravelRoute`) og stjernemerkede sorteres øverst. **(3) Navneforslag:** «Punkt 59.92, 9.88 – Punkt …» erstattes med «Fra ‹sted› til ‹sted›» — punktets eget navn brukes når det finnes, ellers hentes nærmeste stedsnavn via Nominatim reverse (`lib/nominatimReverse.js`, zoom 14 ≈ grend/bygd, sekvensielle kall, overskriver aldri noe brukeren har begynt å skrive). **(4) Delingstekst uten «Grusrute:»-prefiks** — kun navn + URL.
