@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.33: Stifinner ruter ikke lenger over vann — og ruter på tvers av mosaikken
+
+Rotårsak funnet for Gjende-rapporten (ruter tvers over innsjøen): Stifinner bygde rutegrafen fra ALLE `[data-iso]`-grupper i kart-SVG-en, inkludert spøkelses-/utvidelsesflisene i `#ghost-tiles`. Disse ligger som nestede `<svg x y>` med flis-LOKALE path-koordinater, men grafen leste `d`-koordinatene rått — så hele stinettet fra naboflisene ble limt inn forskjøvet med flis-bredder oppå aktiv flis. Feilplasserte kopier av ekte strandstier landet midt ute i Gjende, ble snappet sammen med det ekte nettet, og Dijkstra foreslo «kortest»-ruter over vannet. Fiksen løfter ghost-paths til aktiv-flisas koordinatrom via kumulert nested-svg-offset (`nestedSvgOffset` i `useStifinner.js`) — det fjerner fantomkryssingene OG gjør at Stifinner nå ruter korrekt på tvers av flisegrensene i mosaikken. Nye tester med fake-DOM dekker både mosaikk-rutingen og regresjonen.
+
+---
+
 ## 2026-07-05 — v12.1.32: «Ingen»-valg i stjernefilteret
 
 Stjernefilteret i «Mine ruter» har fått et «Ingen»-valg øverst som viser rutene som ennå ikke er vurdert (null stjerner) — praktisk for å finne ruter som venter på vurdering. Tom-tilstanden sier «Alle rutene er vurdert — ingen uten stjerner.»
