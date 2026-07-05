@@ -2,7 +2,13 @@
 <html lang="no">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content (Chrome/Android 108+): virtuelt
+         tastatur krymper LAYOUT-viewporten, ikke bare den visuelle. Uten denne
+         forblir 100dvh/bottom-0 i full høyde bak tastaturet, så bunn-ankrede
+         knapper (f.eks. «Lagre rute»/«Avbryt» i Ruteplanleggerens skuff-footer)
+         var usynlige mens tastaturet var åpent. Eldre Chrome og iOS Safari
+         ignorerer nøkkelordet (iOS beholder overlay-oppførselen sin). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0e1116" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

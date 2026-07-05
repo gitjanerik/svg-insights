@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.25: Android-tastatur skjulte bunn-knapper — viewport-fiks
+
+Chrome/Android (108+) krymper by default bare den VISUELLE viewporten når det virtuelle tastaturet åpnes — layout-viewporten (100dvh / bottom-0) forblir i full høyde bak tastaturet. Derfor var «Lagre rute»/«Avbryt» i Ruteplanleggerens sticky skuff-footer usynlige første gang man trykket «Lagre …» (felttest på Samsung/Chrome). Fiks: `interactive-widget=resizes-content` i viewport-metaen, som ber Chrome krympe selve layout-viewporten — skuffen (og alle andre bunn-ankrede elementer) følger nå tastaturkanten automatisk, også for søkefeltene. Ren CSS kan ikke lese tastaturhøyden uten VirtualKeyboard-API-opt-in (`env(keyboard-inset-height)`, kun Chromium) — metaen er den deklarative løsningen. Eldre Chrome hadde denne oppførselen som default; iOS Safari ignorerer nøkkelordet.
+
+---
+
 ## 2026-07-05 — v12.1.24: Ruteplanlegger — skuffen forblir minimert ved hurtigknapp-beregning
 
 Oppfølging av v12.1.23: trykkes «Finn grusrute» fra hurtigknappen i den minimerte skuffen, forblir skuffen minimert etter beregning — brukeren har bevisst valgt maksimal kartflate, ruta rammes inn på (nesten) hele skjermen, og peek-headeren viser km + grusandel. Fra skjemaets sticky footer ekspanderes skuffen som før.
