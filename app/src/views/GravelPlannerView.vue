@@ -775,6 +775,34 @@ function inviteTopObstructPx() {
   return b && m ? Math.max(0, b.bottom - m.top + 8) : 0
 }
 
+// Reaktiv banner-underkant (v12.1.31): zoom-kontrollene (+/−/nivå) flyttes
+// under banneret så de aldri skjules — banneret har to størrelser (kollapset/
+// utvidet) og kan endre høyde (install-info, rutevalg), så høyden observeres
+// live med ResizeObserver i stedet for å utledes av tilstander.
+const inviteBannerBottomPx = ref(0)
+const zoomCtrlTopPx = computed(() =>
+  inviteBannerBottomPx.value > 0 ? inviteBannerBottomPx.value + 10 : 12)
+let inviteBannerObs = null
+watch(routeInvite, (inv) => {
+  inviteBannerObs?.disconnect()
+  inviteBannerObs = null
+  if (!inv) { inviteBannerBottomPx.value = 0; return }
+  nextTick(() => {
+    const el = inviteBannerRef.value
+    if (!el) return
+    const update = () => {
+      const b = el.getBoundingClientRect()
+      const m = mapRef.value?.getBoundingClientRect()
+      inviteBannerBottomPx.value = b && m ? Math.max(0, b.bottom - m.top) : 0
+    }
+    update()
+    if (typeof ResizeObserver !== 'undefined') {
+      inviteBannerObs = new ResizeObserver(update)
+      inviteBannerObs.observe(el)
+    }
+  })
+}, { immediate: true })
+
 // Velg en delt rute fra banner-lista (flerdelings-mottak): prefyller A/B og
 // nullstiller ev. forrige beregning så «Finn grusrute» gjelder valget.
 function pickInviteRoute(i) {
@@ -1082,6 +1110,7 @@ onMounted(() => {
 onUnmounted(() => {
   unlockBodyScroll()
   mapResizeObs?.disconnect()
+  inviteBannerObs?.disconnect()
   window.removeEventListener('resize', measureMap)
   window.removeEventListener('online', onlineHandler)
   window.removeEventListener('offline', offlineHandler)
@@ -1277,8 +1306,12 @@ onUnmounted(() => {
       </template>
 
       <!-- Zoom-knapper + nivå-badge. mousedown/touchstart stoppes så knappe-
-           trykk ikke tolkes som kart-tap (tap-to-set for A/B). -->
-      <div class="absolute right-3 top-3 z-10 flex flex-col items-center gap-1.5"
+           trykk ikke tolkes som kart-tap (tap-to-set for A/B). Toppen følger
+           delings-banneret dynamisk (v12.1.31): default topp-høyre, men under
+           banneret når det vises — både kollapset og utvidet størrelse måles
+           live (ResizeObserver), så +/−/nivå alltid er synlige. -->
+      <div class="absolute right-3 z-10 flex flex-col items-center gap-1.5 transition-[top] duration-200"
+           :style="{ top: zoomCtrlTopPx + 'px' }"
            @mousedown.stop @touchstart.stop>
         <button @click.stop="stepZoom(1)" aria-label="Zoom inn"
                 class="w-9 h-9 rounded-lg bg-zinc-950/90 border border-white/15 text-white text-lg font-medium
@@ -1311,7 +1344,10 @@ onUnmounted(() => {
            før i flyten og dyttet kartet ned). Delingsmodus låser resten av
            UI-et (toppbar-knapper, modus-pille, Fra/Til) til CTA eller X —
            men kart-pan/zoom og skuff-drag er fortsatt fritt. -->
-      <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-30 flex justify-center"
+      <!-- z-[15] (v12.1.31, var z-30): banneret skal ligge over kartet men
+           UNDER skuffen (z-20), så en maksimert skuff dekker det i stedet for
+           å klinsje. -->
+      <div v-if="routeInvite" class="absolute top-3 left-3 right-3 z-[15] flex justify-center"
            @mousedown.stop @touchstart.stop @wheel.stop>
         <div ref="inviteBannerRef"
              class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
@@ -1322,6 +1358,17 @@ onUnmounted(() => {
           <button v-if="inviteCollapsed" @click="inviteCollapsed = false"
                   aria-label="Utvid delings-panelet" :aria-expanded="false"
                   class="w-full flex items-center gap-2 text-left active:opacity-70 transition">
+            <!-- Mini-utgave av delingsikonet (w-5 = radhøyden, øker ikke
+                 kollapset høyde) -->
+            <span class="shrink-0 w-5 h-5 -my-1 rounded-full bg-sky-400/20 border border-sky-300/40
+                         flex items-center justify-center text-sky-200">
+              <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </span>
             <span class="flex-1 truncate text-[12px] font-semibold text-sky-100">
               Noen har delt {{ inviteRoutes.length > 1 ? `${inviteRoutes.length} grusruter` : 'en grusrute' }} med deg!
             </span>
