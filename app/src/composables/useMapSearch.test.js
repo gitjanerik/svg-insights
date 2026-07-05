@@ -439,4 +439,8 @@ describe('readPeakLabel', () => {
     const t = peakTextStub({ nameFull: 'Ráisduottarháldi - Raisduoddarhaldde', textNodes: ['Ráisduottarháldi'], inlineEle: 1361 })
     expect(readPeakLabel(t)).toEqual({ name: 'Ráisduottarháldi - Raisduoddarhaldde', ele: 1361 })
   })
+  it('høyde-forurenset data-name-full («Vardåsen349», ≤ v12.1.28) strippes', () => {
+    const t = peakTextStub({ nameFull: 'Vardåsen349', textNodes: ['Vardåsen'], inlineEle: 349 })
+    expect(readPeakLabel(t)).toEqual({ name: 'Vardåsen', ele: 349 })
+  })
 })

@@ -929,14 +929,43 @@ function applyNameLanguage() {
   if (!root) return
   for (const t of root.querySelectorAll('text[data-label]')) {
     if (!NAME_LABEL_KINDS.has(t.getAttribute('data-label'))) continue
+    // Topp-labels (v12.0.7+) har høyden som inline <tspan data-label=
+    // "peak-ele"> INNI navne-teksten. textContent-basert lesing/skriving
+    // (v12.1.28 og eldre) (1) forurenset data-name-full med tallet
+    // («Vardåsen349» i søket) og (2) SLETTET tspan-en ved tilbakeskriving,
+    // så høyde-tallet forsvant fra kartet. Les/skriv derfor kun tekst-nodene
+    // når en inline høyde-tspan finnes.
+    const inline = t.querySelector('[data-label="peak-ele"]')
+    let current
+    if (inline) {
+      let own = ''
+      for (const n of t.childNodes) if (n.nodeType === 3) own += n.textContent
+      current = own.trim()
+    } else {
+      current = (t.textContent || '').trim()
+    }
     let full = t.getAttribute('data-name-full')
     if (full == null) {
-      full = (t.textContent || '').trim()
-      if (!full) continue
+      if (!current) continue
+      full = current
       t.setAttribute('data-name-full', full)
+    } else if (inline) {
+      // Reparér data-name-full som en tidligere versjon rakk å forurense
+      // med høyde-tallet («Vardåsen349» → «Vardåsen»).
+      const eleText = (inline.textContent ?? '').trim()
+      if (eleText && full !== eleText && full.endsWith(eleText)) {
+        full = full.slice(0, -eleText.length).trim()
+        t.setAttribute('data-name-full', full)
+      }
     }
     const next = showFullNames.value ? full : norwegianName(full)
-    if (t.textContent !== next) t.textContent = next
+    if (current === next) continue
+    if (inline) {
+      for (const n of [...t.childNodes]) if (n.nodeType === 3) t.removeChild(n)
+      t.insertBefore(document.createTextNode(next), t.firstChild)
+    } else {
+      t.textContent = next
+    }
   }
 }
 
@@ -1616,6 +1645,35 @@ function clearHighlight() {
   highlightedFeature.value = null
   renderHighlight()
 }
+// panTo når layout-viewporten har SATT seg (v12.1.29): med viewport-metaen
+// interactive-widget=resizes-content (v12.1.25) er viewporten KRYMPET så
+// lenge det virtuelle tastaturet er åpent. Søkevalg kjørte panTo mens søke-
+// tastaturet fortsatt sto oppe → sentrum ble regnet mot den lave flaten, og
+// treffet havnet nederst i utsnittet idet tastaturet lukket seg. Blur input
+// først, vent til wrapper-høyden har vokst og stabilisert seg (tastaturet
+// lukket, maks 700 ms), og panTo deretter. Uten input-fokus eller på enheter
+// med fin peker (desktop, intet virtuelt tastatur) pannes umiddelbart.
+function panToAfterKeyboard(x, y, opts) {
+  const active = document.activeElement
+  const hadInputFocus = active && /^(INPUT|TEXTAREA)$/.test(active.tagName)
+  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches
+  if (!hadInputFocus || !coarse) { panTo(x, y, opts); return }
+  const el = wrapperRef.value
+  const h0 = el?.getBoundingClientRect().height ?? 0
+  active.blur()
+  const t0 = performance.now()
+  let lastH = h0
+  let grownStable = 0
+  const tick = () => {
+    const h = el?.getBoundingClientRect().height ?? 0
+    grownStable = (h > h0 + 1 && Math.abs(h - lastH) < 0.5) ? grownStable + 1 : 0
+    lastH = h
+    if (grownStable >= 2 || performance.now() - t0 > 700) panTo(x, y, opts)
+    else requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+}
+
 function selectSearchResult(r) {
   highlightedFeature.value = { name: r.name, x: r.x, y: r.y, kind: r.kind }
   // Et navn som velges i søk skal alltid være synlig, selv om navn-LOD-en
@@ -1629,7 +1687,7 @@ function selectSearchResult(r) {
     r.el.classList.remove('vp-cull')
   }
   if (meta.value) {
-    panTo(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
+    panToAfterKeyboard(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
   }
   searchOpen.value = false
   mapSearch.clear()

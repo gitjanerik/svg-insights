@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-05 — v12.1.29: Turkart-søk: «Vardåsen349»-navn og feilsentrering fikset
+
+To regresjoner fra felttest av søket. **(1) «navn+høyde» i søket:** `applyNameLanguage` (flerspråklig navnetoggle i MapView) leste `textContent` fra topp-labels — som konkatenerer navnet og det inline høyde-tspan-tallet — inn i `data-name-full` («Vardåsen349» i søkelista), og tilbakeskrivingen med `textContent` SLETTET samtidig høyde-tspanen fra kartet. Nå leses/skrives kun tekst-nodene når labelen har inline `peak-ele`-tspan, allerede forurenset `data-name-full` repareres på neste last, og `readPeakLabel` stripper defensivt et høyde-suffiks (enhetstestet). **(2) Feilsentrering ved søkevalg:** etter viewport-metaen i v12.1.25 (`interactive-widget=resizes-content`) er layout-viewporten krympet mens søke-tastaturet står oppe — `panTo` regnet sentrum mot den lave flaten, så treffet havnet nederst i utsnittet når tastaturet lukket seg. Ny `panToAfterKeyboard` blurer input, venter til wrapper-høyden har vokst og stabilisert seg (maks 700 ms) og panner deretter; desktop/uten input-fokus panner umiddelbart som før.
+
+---
+
+## 2026-07-05 — v12.1.28: Minifiserbart delings-banner + sortering/stjernefilter i «Mine ruter»
+
+**(1) Delings-banneret hos mottaker kan minifiseres:** pil opp øverst til høyre kollapser til én linje («Noen har delt …» + pil ned for å utvide) så kartet får plassen; X-en (lukk helt) er flyttet ned i en footer sammen med infoteksten «Velg en rute og trykk …». **(2) «Mine ruter»-verktøylinje i headeren** (forblir synlig ved scroll): «Del mine ruter …» er flyttet opp fra lista, pluss ny sortering — dato, lengde, km grusvei (grusandel × totallengde), % grus eller stjerner, med stigende/synkende-toggle, persistert i localStorage — og et stjernefilter (Alle / 5 / 4–5 / 3+ / 2+ / 1+; teller viser «N av M ruter»). Grunn-sorteringen i composablen er tilbake til nyeste-først; all visnings-sortering skjer i view-en.
+
+---
+
 ## 2026-07-05 — v12.1.27: Deling-polish — hel-korts toggle, kompakt mottaker-banner, maks 5 ruter
 
 Tre justeringer etter felttest av v12.1.26: **(1)** I velg-modus («Del mine ruter») toggler nå HELE rutekortet — før var kun navnefeltet klikkbart mens sjekkboks-siden var død (kontraintuitivt). **(2)** Mottaker-banneret er kompaktere: rutelista viser maks ~3 rader før den scroller internt, og kart-innrammingen av valgt rute tar nå hensyn til bannerhøyden (`fitPointsView` fikk `topObstructPx` — A/B lå før gjemt bak banneret). Gjelder også innramming etter beregning mens banneret står. **(3)** Maks 5 ruter pr delings-lenke (var 10) — enklere og holder banneret kort; eldre lenker med flere ruter kappes til 5.
