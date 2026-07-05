@@ -169,6 +169,24 @@ export async function loadGravelRoute(id) {
   return (await asPromise(t.objectStore(GRAVEL_STORE).get(id))) ?? null
 }
 
+// Delvis oppdatering av en lagret rute (v12.1.26 — stjernemerking). Leser og
+// skriver i SAMME readwrite-transaksjon så to raske patch-kall ikke kan
+// overskrive hverandre.
+export async function updateGravelRoute(id, patch) {
+  const t = await tx('readwrite', GRAVEL_STORE)
+  const store = t.objectStore(GRAVEL_STORE)
+  const rec = await asPromise(store.get(id))
+  if (!rec) return null
+  const next = { ...rec, ...patch }
+  store.put(next)
+  await new Promise((resolve, reject) => {
+    t.oncomplete = resolve
+    t.onerror = () => reject(t.error)
+    t.onabort = () => reject(t.error)
+  })
+  return next
+}
+
 export async function deleteGravelRoute(id) {
   const t = await tx('readwrite', GRAVEL_STORE)
   t.objectStore(GRAVEL_STORE).delete(id)

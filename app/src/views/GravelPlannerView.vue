@@ -20,6 +20,8 @@ import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
 import { useNominatim } from '../composables/useNominatim.js'
+import { reverseNearestPlace } from '../lib/nominatimReverse.js'
+import { routeShareToken, parseRouteToken, MAX_SHARE_ROUTES } from '../lib/routeShare.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
 import { useRouteElevation } from '../composables/useRouteElevation.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
@@ -643,6 +645,9 @@ watch(showSaved, (open) => {
   if (open) {
     savedDrawer.reset()
     void planner.refreshSaved()
+  } else {
+    shareSelectMode.value = false
+    shareSelected.value = []
   }
 })
 const saveName = ref('')
@@ -727,10 +732,15 @@ async function onFindRoute() {
   }
   await planner.computeRoute()
   if (route.value) {
-    if (routeInvite.value?.proposalId) planner.selectProposal(routeInvite.value.proposalId)
-    // Delingsmodus er fullført når ruta er beregnet — fjern banneret og
-    // lås opp UI-et (mottakeren står nå med en vanlig rute).
-    if (routeInvite.value) dismissRouteInvite()
+    const inv = inviteActive.value
+    if (inv?.proposalId) planner.selectProposal(inv.proposalId)
+    // Delt navn følger med den beregnede ruta (vises i header + foreslås ved
+    // lagring) — selectProposal bygde route.value på nytt, så sett etterpå.
+    if (inv?.navn) route.value = { ...route.value, navn: inv.navn }
+    // Enkelt-deling er fullført når ruta er beregnet — fjern banneret og lås
+    // opp UI-et. Ved FLER-deling består banneret så mottakeren kan velge og
+    // beregne neste rute; X lukker når som helst.
+    if (routeInvite.value && inviteRoutes.value.length === 1) dismissRouteInvite()
     if (!wasMinimized) drawer.reset()
     nextTick(() => { measureMap(); fitRouteView() })
   }
@@ -742,9 +752,28 @@ async function onFindRoute() {
 const { canInstall, isStandalone, promptInstall } = usePwaInstall()
 const installRequested = ref(false)
 const showInstallInfo = ref(false)
-const routeInvite = ref(null)     // { navn, proposalId } | null
+const routeInvite = ref(null)     // { routes: [{ a, b, navn, proposalId }] } | null
+const invitePicked = ref(0)       // indeks i routes som er prefylt som A/B
 const shareState = ref('idle')    // 'idle' | 'copied' | 'error'
 let shareResetTimer = null
+
+const inviteRoutes = computed(() => routeInvite.value?.routes ?? [])
+const inviteActive = computed(() => inviteRoutes.value[invitePicked.value] ?? null)
+
+// Velg en delt rute fra banner-lista (flerdelings-mottak): prefyller A/B og
+// nullstiller ev. forrige beregning så «Finn grusrute» gjelder valget.
+function pickInviteRoute(i) {
+  const r = inviteRoutes.value[i]
+  if (!r) return
+  invitePicked.value = i
+  if (route.value) planner.clearRoute()
+  setPoint('A', r.a)
+  setPoint('B', r.b)
+  nextTick(() => {
+    measureMap()
+    fitPointsView([[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]])
+  })
+}
 
 function buildRouteShareUrl({ a, b, navn, proposalId }) {
   if (!a || !b) return null
@@ -785,14 +814,15 @@ async function performShare(url, title, text) {
   shareResetTimer = setTimeout(() => { shareState.value = 'idle' }, 2200)
 }
 
+// Delingstekst = kun navnet (v12.1.26) — «Grusrute:»-ledeteksten var støy;
+// navn + URL er alt mottakeren trenger.
 function onShareRoute() {
   const r = route.value
   if (!r) return
   const navn = r.navn ?? `${labelFor(pointA.value)} → ${labelFor(pointB.value)}`
   void performShare(
     buildRouteShareUrl({ a: pointA.value, b: pointB.value, navn, proposalId: r.id }),
-    'SVG Insights — grusrute',
-    `Grusrute: ${navn}`,
+    navn, navn,
   )
 }
 
@@ -801,39 +831,110 @@ function onShareSaved(rec) {
   const b = rec.waypoints?.at(-1)
   void performShare(
     buildRouteShareUrl({ a, b, navn: rec.navn, proposalId: rec.proposalId }),
-    'SVG Insights — grusrute',
-    `Grusrute: ${rec.navn}`,
+    rec.navn, rec.navn,
   )
 }
 
-// Mottaker: ?alat/alon/blat/blon(+an/bn/rn/p) → prefill A/B, vis banner.
-// Ruta beregnes først når mottakeren trykker «Finn grusrute» (ett BRouter-kall
-// per brukerhandling — samme fair-use-holdning som ellers).
+// ── «Del mine ruter» (v12.1.26): velg inntil 10 lagrede ruter og del som ÉN
+// URL (?r=<token>&r=<token>…, se lib/routeShare.js). ────────────────────────
+const shareSelectMode = ref(false)
+const shareSelected = ref([])          // rute-id-er i valgt rekkefølge
+
+function startShareSelect() {
+  shareSelectMode.value = true
+  shareSelected.value = []
+}
+function cancelShareSelect() {
+  shareSelectMode.value = false
+  shareSelected.value = []
+}
+function toggleShareSelect(id) {
+  const cur = shareSelected.value
+  if (cur.includes(id)) shareSelected.value = cur.filter((x) => x !== id)
+  else if (cur.length < MAX_SHARE_ROUTES) shareSelected.value = [...cur, id]
+}
+function onShareSelectedRoutes() {
+  const recs = shareSelected.value
+    .map((id) => savedRoutes.value.find((r) => r.id === id))
+    .filter(Boolean)
+  const tokens = recs.map(routeShareToken).filter(Boolean)
+  if (!tokens.length) return
+  const base = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
+  const url = `${base}/ruteplanlegger?${tokens.map((t) => 'r=' + encodeURIComponent(t)).join('&')}`
+  const navn = recs.map((r) => r.navn).filter(Boolean)
+  const tekst = tokens.length === 1
+    ? (navn[0] ?? 'Grusrute')
+    : `${tokens.length} grusruter: ${navn.slice(0, 3).join(', ')}${navn.length > 3 ? ' …' : ''}`
+  void performShare(url, tekst, tekst)
+}
+
+// Mottaker: enten fler-rute-format ?r=<token>&r=<token>… (v12.1.26, se
+// lib/routeShare.js) eller legacy enkelt-rute ?alat/alon/blat/blon(+an/bn/
+// rn/p). Begge gir { routes: [...] } — første rute prefylles som A/B, og ved
+// flere ruter velger mottakeren fra banner-lista. Rutene beregnes én og én
+// når mottakeren trykker «Finn grusrute» (ett BRouter-kall per bruker-
+// handling — samme fair-use-holdning som ellers).
 function parseRouteInvite() {
   const q = currentRoute.query
+  const rRaw = q.r == null ? [] : (Array.isArray(q.r) ? q.r : [q.r])
+  const routes = rRaw.map(parseRouteToken).filter(Boolean).slice(0, MAX_SHARE_ROUTES)
+  if (routes.length) return { routes }
   const alat = parseFloat(q.alat); const alon = parseFloat(q.alon)
   const blat = parseFloat(q.blat); const blon = parseFloat(q.blon)
   if (![alat, alon, blat, blon].every(Number.isFinite)) return null
   return {
-    a: { lat: alat, lon: alon, name: q.an ? String(q.an).slice(0, 60) : 'Delt start' },
-    b: { lat: blat, lon: blon, name: q.bn ? String(q.bn).slice(0, 60) : 'Delt mål' },
-    navn: q.rn ? String(q.rn).slice(0, 60) : null,
-    proposalId: q.p ? String(q.p) : null,
+    routes: [{
+      a: { lat: alat, lon: alon, name: q.an ? String(q.an).slice(0, 60) : 'Delt start' },
+      b: { lat: blat, lon: blon, name: q.bn ? String(q.bn).slice(0, 60) : 'Delt mål' },
+      navn: q.rn ? String(q.rn).slice(0, 60) : null,
+      proposalId: q.p ? String(q.p) : null,
+    }],
   }
 }
 
 function dismissRouteInvite() {
   routeInvite.value = null
+  invitePicked.value = 0
   installRequested.value = false
   router.replace({ query: {} })
 }
 
 const saveNameInput = ref(null)
+
+// Navneforslag (v12.1.26): «Punkt 59.92, 9.88 – Punkt …» er ubrukelig å holde
+// oversikt over. Foreslå «Fra <sted> til <sted>»: bruk punktets eget navn når
+// det finnes (stedssøk/GPS), ellers nærmeste stedsnavn via Nominatim reverse.
+// Kjøres i bakgrunnen etter at input-en er åpnet med fallback-navnet — og
+// overskriver KUN hvis brukeren ikke har rukket å redigere.
+const COORD_POINT_RE = /^(Punkt|Delt)\s/
+function shortPointName(p) {
+  const n = (p?.name ?? '').trim()
+  if (!n || COORD_POINT_RE.test(n)) return null
+  return n.split(',')[0].trim() || null
+}
+async function suggestSaveName(fallback) {
+  const a = pointA.value
+  const b = pointB.value
+  if (!a || !b) return
+  let na = shortPointName(a)
+  let nb = shortPointName(b)
+  try {
+    // Sekvensielt, ikke parallelt — Nominatims fair-use er ~1 kall/s.
+    if (!na) na = await reverseNearestPlace(a.lat, a.lon)
+    if (!nb) nb = await reverseNearestPlace(b.lat, b.lon)
+  } catch { return }
+  if (!na || !nb) return
+  if (savingName.value && saveName.value === fallback) {
+    saveName.value = `Fra ${na} til ${nb}`
+  }
+}
 function startSave() {
-  saveName.value = route.value?.navn ??
+  const fallback = route.value?.navn ??
     `${pointA.value?.name ?? 'A'} – ${pointB.value?.name ?? 'B'}`
+  saveName.value = fallback
   savingName.value = true
   nextTick(() => saveNameInput.value?.focus())
+  if (!route.value?.navn) void suggestSaveName(fallback)
 }
 async function confirmSave() {
   const rec = await planner.saveCurrentRoute(saveName.value.trim())
@@ -898,15 +999,18 @@ onMounted(() => {
       mapResizeObs = new ResizeObserver(measureMap)
       mapResizeObs.observe(mapRef.value)
     }
-    // Delt rute i URL-en: prefill A/B og ram inn punktene.
+    // Delt(e) rute(r) i URL-en: prefill første som A/B og ram inn ALLE
+    // punktene så mottakeren ser hele omfanget av det som er delt.
     const invite = parseRouteInvite()
     if (invite) {
       routeInvite.value = invite
-      setPoint('A', invite.a)
-      setPoint('B', invite.b)
+      invitePicked.value = 0
+      const first = invite.routes[0]
+      setPoint('A', first.a)
+      setPoint('B', first.b)
       nextTick(() => {
         measureMap()
-        fitPointsView([[invite.a.lon, invite.a.lat], [invite.b.lon, invite.b.lat]])
+        fitPointsView(invite.routes.flatMap((r) => [[r.a.lon, r.a.lat], [r.b.lon, r.b.lat]]))
       })
     }
   })
@@ -1170,14 +1274,36 @@ onUnmounted(() => {
               </svg>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="text-[13px] font-semibold text-sky-100">Noen har delt en grusrute med deg!</div>
-              <div v-if="routeInvite.navn" class="text-[11px] text-sky-100/75 truncate">
-                Rute: {{ routeInvite.navn }}
+              <div class="text-[13px] font-semibold text-sky-100">
+                Noen har delt {{ inviteRoutes.length > 1 ? `${inviteRoutes.length} grusruter` : 'en grusrute' }} med deg!
+              </div>
+              <div v-if="inviteRoutes.length === 1 && inviteActive?.navn"
+                   class="text-[11px] text-sky-100/75 truncate">
+                Rute: {{ inviteActive.navn }}
               </div>
             </div>
           </div>
+          <!-- Flerdeling: velg rute fra lista — én beregnes om gangen. -->
+          <div v-if="inviteRoutes.length > 1" class="mt-2.5 space-y-1 max-h-[26dvh] overflow-y-auto">
+            <button v-for="(r, i) in inviteRoutes" :key="i" @click="pickInviteRoute(i)"
+                    class="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left
+                           text-[12px] font-medium active:scale-[0.99] transition"
+                    :class="invitePicked === i
+                            ? 'bg-sky-400/20 border-sky-300/50 text-sky-100'
+                            : 'bg-white/[0.05] border-white/15 text-white/75'">
+              <span class="flex-1 truncate">{{ r.navn ?? `Rute ${i + 1}` }}</span>
+              <svg v-if="invitePicked === i" viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0"
+                   fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                   stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
           <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-            Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
+            <template v-if="inviteRoutes.length > 1">
+              Velg en rute og trykk «Finn grusrute» — rutene beregnes én om gangen. God tur!
+            </template>
+            <template v-else>
+              Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
+            </template>
           </div>
           <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
             <label class="flex items-start gap-2.5 cursor-pointer">
@@ -1722,45 +1848,103 @@ onUnmounted(() => {
             <div v-if="!savedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
               Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
             </div>
-            <div v-for="rec in savedRoutes" :key="rec.id"
-                 class="rounded-lg bg-white/5 px-3 py-2.5 mb-2 flex items-center gap-3">
-              <div class="shrink-0 w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center
-                          justify-center text-white/60">
-                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8"
-                     stroke-linecap="round"><path d="M5 19 C5 13 10 13 12 11 C14 9 19 9 19 5"/>
-                  <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/>
-                  <circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg>
+            <!-- «Del mine ruter» (v12.1.26): velg-modus med inntil 10 ruter →
+                 ÉN delings-URL. Kort-trykk toggler valg i velg-modus. -->
+            <div v-if="savedRoutes.length > 1" class="mb-2">
+              <div class="flex gap-1.5">
+                <template v-if="!shareSelectMode">
+                  <button @click="startShareSelect"
+                          class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5
+                                 border-white/15 text-white/80 active:scale-95 transition">
+                    Del mine ruter …
+                  </button>
+                </template>
+                <template v-else>
+                  <button @click="onShareSelectedRoutes" :disabled="!shareSelected.length"
+                          class="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold border transition
+                                 active:scale-95 disabled:opacity-40 bg-emerald-500/20
+                                 border-emerald-400/50 text-emerald-100">
+                    {{ shareState === 'copied' ? 'Lenke kopiert!'
+                       : `Del ${shareSelected.length ? `(${shareSelected.length})` : ''} ruter` }}
+                  </button>
+                  <button @click="cancelShareSelect"
+                          class="px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5
+                                 border-white/15 text-white/60 active:scale-95 transition">Avbryt</button>
+                </template>
               </div>
-              <button @click="onOpenSaved(rec)" class="flex-1 min-w-0 text-left active:opacity-70 transition">
-                <div class="text-[13px] text-white font-medium truncate">{{ rec.navn }}</div>
-                <div class="text-[11px] text-white/50 tabular-nums">
-                  {{ fmtKm(rec.lengthM) }} km<template v-if="rec.gravelShare != null"> · Grus {{ Math.round(rec.gravelShare * 100) }} %</template><template v-if="fmtTid(recTidS(rec))"> · {{ fmtTid(recTidS(rec)) }}</template>
-                </div>
-                <div class="text-[10px] text-white/35 tabular-nums">
-                  {{ new Date(rec.opprettet).toLocaleDateString('no-NO') }} ·
-                  {{ new Date(rec.opprettet).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' }) }}
-                </div>
-              </button>
-              <button @click="onShareSaved(rec)" aria-label="Del rute"
-                      class="shrink-0 w-9 h-9 rounded-lg border bg-white/5 border-white/10 text-white/60
-                             flex items-center justify-center active:scale-95 transition">
-                <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
-                </svg>
-              </button>
-              <button @click="onDeleteSaved(rec.id)"
-                      :aria-label="confirmDeleteId === rec.id ? 'Bekreft sletting' : 'Slett rute'"
-                      class="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border active:scale-95 transition"
-                      :class="confirmDeleteId === rec.id
-                              ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
-                              : 'bg-white/5 border-white/10 text-white/50'">
-                {{ confirmDeleteId === rec.id ? 'Sikker?' : 'Slett' }}
-              </button>
+              <div v-if="shareSelectMode" class="mt-1.5 text-[10px] text-white/45">
+                Trykk på rutene du vil dele (inntil {{ MAX_SHARE_ROUTES }}) — mottakeren får alle i én lenke.
+              </div>
             </div>
-            <button v-if="savedRoutes.length > 1" @click="onDeleteAll"
+            <div v-for="rec in savedRoutes" :key="rec.id"
+                 class="rounded-lg bg-white/5 px-3 py-2.5 mb-2"
+                 :class="shareSelectMode && shareSelected.includes(rec.id) ? 'ring-1 ring-sky-400/70 bg-sky-500/[0.08]' : ''">
+              <div class="flex items-center gap-3">
+                <div class="shrink-0 w-9 h-9 rounded-lg bg-white/5 border border-white/10 flex items-center
+                            justify-center text-white/60">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8"
+                       stroke-linecap="round"><path d="M5 19 C5 13 10 13 12 11 C14 9 19 9 19 5"/>
+                    <circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+                    <circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg>
+                </div>
+                <button @click="shareSelectMode ? toggleShareSelect(rec.id) : onOpenSaved(rec)"
+                        class="flex-1 min-w-0 text-left active:opacity-70 transition">
+                  <div class="text-[13px] text-white font-medium truncate">{{ rec.navn }}</div>
+                  <div class="text-[11px] text-white/50 tabular-nums">
+                    {{ fmtKm(rec.lengthM) }} km<template v-if="rec.gravelShare != null"> · Grus {{ Math.round(rec.gravelShare * 100) }} %</template><template v-if="fmtTid(recTidS(rec))"> · {{ fmtTid(recTidS(rec)) }}</template>
+                  </div>
+                  <div class="text-[10px] text-white/35 tabular-nums">
+                    {{ new Date(rec.opprettet).toLocaleDateString('no-NO') }} ·
+                    {{ new Date(rec.opprettet).toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' }) }}
+                  </div>
+                </button>
+                <!-- Velg-modus: sjekkboks-visual i stedet for del/slett -->
+                <div v-if="shareSelectMode"
+                     class="shrink-0 w-6 h-6 rounded-md border flex items-center justify-center transition"
+                     :class="shareSelected.includes(rec.id) ? 'bg-sky-500 border-sky-400' : 'border-white/30'">
+                  <svg v-if="shareSelected.includes(rec.id)" viewBox="0 0 24 24" class="w-4 h-4 text-white"
+                       fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+                       stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+                <template v-else>
+                  <button @click="onShareSaved(rec)" aria-label="Del rute"
+                          class="shrink-0 w-9 h-9 rounded-lg border bg-white/5 border-white/10 text-white/60
+                                 flex items-center justify-center active:scale-95 transition">
+                    <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                    </svg>
+                  </button>
+                  <button @click="onDeleteSaved(rec.id)"
+                          :aria-label="confirmDeleteId === rec.id ? 'Bekreft sletting' : 'Slett rute'"
+                          class="shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border active:scale-95 transition"
+                          :class="confirmDeleteId === rec.id
+                                  ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                                  : 'bg-white/5 border-white/10 text-white/50'">
+                    {{ confirmDeleteId === rec.id ? 'Sikker?' : 'Slett' }}
+                  </button>
+                </template>
+              </div>
+              <!-- Stjernemerking 1–5 (v12.1.26): samme stjerne igjen = fjern.
+                   Stjernemerkede sorteres øverst i lista. -->
+              <div v-if="!shareSelectMode" class="mt-1 flex items-center gap-0.5 pl-12">
+                <button v-for="s in 5" :key="s"
+                        @click="planner.setSavedStars(rec.id, (rec.stjerner ?? 0) === s ? 0 : s)"
+                        :aria-label="`Gi ${s} ${s === 1 ? 'stjerne' : 'stjerner'}`"
+                        :aria-pressed="(rec.stjerner ?? 0) >= s"
+                        class="w-7 h-7 -my-0.5 flex items-center justify-center active:scale-90 transition"
+                        :class="(rec.stjerner ?? 0) >= s ? 'text-amber-400' : 'text-white/25'">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4"
+                       :fill="(rec.stjerner ?? 0) >= s ? 'currentColor' : 'none'"
+                       stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <button v-if="savedRoutes.length > 1 && !shareSelectMode" @click="onDeleteAll"
                     class="w-full mt-1 px-3 py-2.5 rounded-xl text-[13px] font-medium border transition
                            active:scale-[0.99]"
                     :class="confirmDeleteAll

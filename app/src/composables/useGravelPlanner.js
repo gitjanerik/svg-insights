@@ -6,7 +6,8 @@ import {
   ProfileExpiredError, PROFILE_VERSION, BROUTER_TIMEOUT_MS,
 } from '../lib/brouterClient.js'
 import {
-  saveGravelRoute, listGravelRoutes, deleteGravelRoute, generateGravelRouteId,
+  saveGravelRoute, listGravelRoutes, deleteGravelRoute, updateGravelRoute,
+  generateGravelRouteId,
 } from '../lib/mapStorage.js'
 import { downloadRouteGpx } from '../lib/gpxExport.js'
 import { simplifyDP } from '../lib/pathUtils.js'
@@ -214,7 +215,20 @@ export function useGravelPlanner() {
   }
 
   async function refreshSaved() {
-    try { savedRoutes.value = await listGravelRoutes() } catch { savedRoutes.value = [] }
+    // Stjernemerkede ruter først (flest stjerner øverst), ellers nyeste først
+    // — stjernene er nettopp for å holde favorittene lett tilgjengelige.
+    try {
+      const all = await listGravelRoutes()
+      savedRoutes.value = all.sort((a, b) =>
+        ((b.stjerner ?? 0) - (a.stjerner ?? 0)) || (b.opprettet - a.opprettet))
+    } catch { savedRoutes.value = [] }
+  }
+
+  // 1–5 stjerner på en lagret rute (v12.1.26); samme verdi igjen = fjern.
+  async function setSavedStars(id, stjerner) {
+    const n = Math.max(0, Math.min(5, Math.round(stjerner ?? 0)))
+    await updateGravelRoute(id, { stjerner: n || null })
+    await refreshSaved()
   }
 
   async function saveCurrentRoute(navn) {
@@ -294,6 +308,6 @@ export function useGravelPlanner() {
     pointA, pointB, route, proposals, selectedId, routeState, routeError, savedRoutes,
     includeAssumed,
     computeRoute, selectProposal, clearRoute, saveCurrentRoute, openSaved,
-    deleteSaved, deleteAllSaved, refreshSaved, exportGpx,
+    deleteSaved, deleteAllSaved, refreshSaved, setSavedStars, exportGpx,
   }
 }
