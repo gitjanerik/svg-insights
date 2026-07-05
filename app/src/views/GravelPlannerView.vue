@@ -919,7 +919,7 @@ const savedSort = ref(loadSort())
 watch(savedSort, (v) => {
   try { localStorage.setItem(SORT_LS_KEY, JSON.stringify(v)) } catch { /* noop */ }
 }, { deep: true })
-const starFilter = ref(0)              // 0 = alle, ellers EKSAKT antall stjerner
+const starFilter = ref(0)              // 0 = alle, -1 = uvurderte, ellers EKSAKT antall stjerner
 
 const SORT_VALUE = {
   opprettet: (r) => r.opprettet ?? 0,
@@ -933,8 +933,13 @@ const visibleSavedRoutes = computed(() => {
   const dir = savedSort.value.dir === 'asc' ? 1 : -1
   // Eksakt stjerne-match (v12.1.30, var «X eller flere»): hva brukeren legger
   // i tre vs fire stjerner er deres egen vurdering — filteret skal ikke tolke.
+  // «Ingen» (v12.1.32, verdi -1) viser rutene som ennå ikke er vurdert.
   return savedRoutes.value
-    .filter((r) => !starFilter.value || (r.stjerner ?? 0) === starFilter.value)
+    .filter((r) => {
+      if (!starFilter.value) return true
+      const s = r.stjerner ?? 0
+      return starFilter.value === -1 ? s === 0 : s === starFilter.value
+    })
     .slice()
     .sort((a, b) => dir * (val(a) - val(b)) || (b.opprettet - a.opprettet))
 })
@@ -2028,6 +2033,7 @@ onUnmounted(() => {
                         class="shrink-0 w-[5.5rem] px-2 py-1.5 rounded-lg text-[11px] bg-zinc-800 border
                                border-white/15 focus:outline-none"
                         :class="starFilter ? 'text-amber-300 border-amber-400/40' : 'text-white/80'">
+                  <option :value="-1">Ingen</option>
                   <option :value="0">★ Alle</option>
                   <option :value="5">★ 5</option>
                   <option :value="4">★ 4</option>
@@ -2052,7 +2058,8 @@ onUnmounted(() => {
               Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
             </div>
             <div v-else-if="!visibleSavedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
-              Ingen ruter med {{ starFilter }} {{ starFilter === 1 ? 'stjerne' : 'stjerner' }} ennå.
+              <template v-if="starFilter === -1">Alle rutene er vurdert — ingen uten stjerner.</template>
+              <template v-else>Ingen ruter med {{ starFilter }} {{ starFilter === 1 ? 'stjerne' : 'stjerner' }} ennå.</template>
             </div>
             <!-- I velg-modus toggler HELE kortet (v12.1.27 — kun navnefeltet
                  var klikkbart, mens sjekkboks-siden var død: kontraintuitivt).
