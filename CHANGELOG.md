@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.23: Ruteplanlegger — hurtigknapper i minimert skuff
+
+Kjentbruker-flyt: med skuffen minimert (størst mulig kartflate) kan man nå sette A og B rett i kartet og trykke en kompakt grønn «Finn grusrute»-knapp direkte i peek-headeren — uten å åpne skuffen. Ved siden av står en grå X-knapp («Nullstill») som tømmer punktene for et nytt forsøk. Knappene vises KUN i minimert tilstand (ellers gjelder sticky-footeren fra v12.1.20), er deaktivert til både A og B er satt, viser spinner under beregning, og stopper pointerdown så trykk ikke starter skuff-drag. Etter beregning ekspanderer skuffen som før med resultatet.
+
+---
+
 ## 2026-07-05 — v12.1.22: Turkart — topper søkbare igjen + navnetvilling-unntak i navne-dedupen
 
 To fikser fra «Slottsberget»-felttesten. **(1) Søkebug (regresjon fra v12.0.7):** da topp-høyden ble flyttet inn som inline `<tspan data-label="peak-ele">` i navne-teksten, sluttet søkeindeksens topp-pass å finne høyden (selektoren matchet bare søsken-`<text>`) — navngitte topper ble droppet fra indeksen og var usøkbare på alle kart bygget etter v12.0.7. Ny `readPeakLabel` (enhetstestet) tolker begge formatene: leser høyden fra inline-tspan og navnet fra tekst-nodene alene (textContent konkatenerte navn+tall). Navngitte topper uten høyde indekseres nå også. **(2) Navne-dedup med tvilling-unntak:** `claimLabelName` («ett navn = én label per kart») er erstattet av `makeLabelNameClaimer` med to unntak: samme navn på ULIK label-type vises alltid (norske navnetvillinger er ekte: gården og fjellet, fjellet og dalføret, øya og fjellet, fjellmassivet og bygda), og samme navn på samme type vises når forekomstene ligger ≥1 km fra hverandre (to åser som deler navn — Dikemark/Vardåsen-tilfellet der 293-toppen mistet navnet sitt). Elv-/bekkelabels dedupes fortsatt ubetinget så gjentatte labels langs samme elv kollapser. Enhetstestet.
