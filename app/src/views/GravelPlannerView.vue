@@ -582,32 +582,56 @@ function squareDims() {
 }
 const buildingTurkart = ref(false)
 const buildTurkartProgress = ref('')
+// AbortController for den pågående byggingen — Avbryt-knappen i loaderen kaller
+// .abort(), som får buildMapFromCenter (og fetch-ene den orkestrerer) til å
+// kaste AbortError. `finally` er gated på identitet så en avbrutt bygg ikke
+// nullstiller loaderen for en påfølgende ny bygg (race ved rask re-start).
+let turkartAbort = null
 async function openTurkartFromPin() {
   const p = utNoPin.value
   if (!p || buildingTurkart.value) return
   utNoPin.value = null
   buildingTurkart.value = true
   buildTurkartProgress.value = 'Finner stedsnavn …'
+  const ac = new AbortController()
+  turkartAbort = ac
   const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
-  let name = null
-  try { name = await reverseNearestPlace(p.lat, p.lon) } catch { /* dato-fallback */ }
   try {
+    let name = null
+    // reverseNearestPlace har egen intern timeout og tar ikke signal; sjekk
+    // aborted etterpå så et avbrudd under navneoppslaget hopper over byggingen.
+    try { name = await reverseNearestPlace(p.lat, p.lon) } catch { /* dato-fallback */ }
+    if (ac.signal.aborted) throw new DOMException('Avbrutt', 'AbortError')
     const { id } = await buildMapFromCenter({
       center: { lat: p.lat, lon: p.lon, name: name ?? '' },
       ...squareDims(),   // standard kvadratisk utsnitt (brukerens kart-preferanse)
       equidistanceM: equidistanceForWidthKm(mapSizeKm.value),
       navn: name ? `${name} ${stamp}` : `Turkart ${stamp}`,
       terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
+      signal: ac.signal,
       onProgress: (msg) => { buildTurkartProgress.value = msg },
     })
     router.push({ name: 'kart-vis', params: { id },
       query: { slat: p.lat.toFixed(6), slon: p.lon.toFixed(6) } })
   } catch (e) {
-    console.error('Turkart-bygging fra ruteplanlegger feilet:', e)
-    buildingTurkart.value = false
-    buildTurkartProgress.value = ''
-    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+    if (e?.name !== 'AbortError') {
+      console.error('Turkart-bygging fra ruteplanlegger feilet:', e)
+      alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
+    }
+  } finally {
+    if (turkartAbort === ac) {
+      turkartAbort = null
+      buildingTurkart.value = false
+      buildTurkartProgress.value = ''
+    }
   }
+}
+// Avbryt en pågående turkart-bygging: skjul loaderen straks og signaliser
+// abort til pipelinen (best-effort — som resten av appens abort-håndtering).
+function cancelTurkart() {
+  turkartAbort?.abort()
+  buildingTurkart.value = false
+  buildTurkartProgress.value = ''
 }
 
 // Kort-plassering (v12.1.18): clamp horisontalt så kortet aldri klippes mot
@@ -2245,6 +2269,12 @@ onUnmounted(() => {
                     min-h-[18px] leading-snug">
           {{ buildTurkartProgress }}
         </div>
+        <button @click="cancelTurkart"
+                class="mt-6 px-5 py-2.5 rounded-xl text-[13px] font-medium border
+                       bg-white/5 border-white/15 text-white/80
+                       active:bg-white/10 active:scale-[0.98] transition">
+          Avbryt
+        </button>
       </div>
     </Transition>
   </div>

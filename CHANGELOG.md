@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.37: Avbryt-knapp i turkart-loaderen
+
+Full-skjerm-loaderen som vises mens «Åpne turkart» bygger et nytt kart har fått en Avbryt-knapp. Den skjuler loaderen straks og signaliserer abort til bygge-pipelinen via en `AbortController` (`buildMapFromCenter` og fetch-ene den orkestrerer kaster da `AbortError`) — best-effort, som resten av appens abort-håndtering. Avbrudd under navneoppslaget hopper over byggingen, og `finally`-opprydningen er identitets-gated så en avbrutt bygg ikke nullstiller loaderen for en påfølgende ny bygg.
+
+---
+
 ## 2026-07-05 — v12.1.36: «Åpne turkart» bygger alltid et nytt kart automatisk
 
 «Åpne turkart» i ruteplanleggerens pin-kort bygger nå ALLTID et nytt turkart direkte — ingen oppslag mot lagrede kart og ingen mellomside i byggeren. Ett trykk henter nærmeste stedsnavn (reverse-geokoding), bygger et standard kvadratisk kart i brukerens valgte kartstørrelse (samme som «søk et sted»-flyten på Turkart-forsiden) sentrert på punktet, og åpner det ferdige kartet med rosa markør på punktet (?slat/slon). En full-skjerm-loader viser pipeline-fremdriften mens Overpass/N50/Sjøkart/DEM/buildSvg kjører. Kartnavnet blir «<nærmeste sted> <dato>», med dato-fallback («Turkart <dato>») om navneoppslaget svikter. Erstatter v12.1.34/35-oppførselen (lagret-kart-snarvei + pre-sentrert bygger via ?clat/clon), som nå er fjernet.
