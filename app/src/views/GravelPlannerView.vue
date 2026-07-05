@@ -23,7 +23,8 @@ import { useNominatim } from '../composables/useNominatim.js'
 import { reverseNearestPlace } from '../lib/nominatimReverse.js'
 import { routeShareToken, parseRouteToken, MAX_SHARE_ROUTES } from '../lib/routeShare.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
-import { listMaps } from '../lib/mapStorage.js'
+import { buildMapFromCenter } from '../lib/createMapFlow.js'
+import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims } from '../composables/useMapSizePreference.js'
 import { useRouteElevation } from '../composables/useRouteElevation.js'
 import { useDraggableDrawer } from '../composables/useDraggableDrawer.js'
 import { usePwaInstall } from '../composables/usePwaInstall.js'
@@ -568,33 +569,44 @@ const pinLinks = computed(() => {
   ].filter((l) => l.href)
 })
 
-// Intern snarvei (v12.1.34): «Åpne turkart» øverst i pin-kortet. Dekker et
-// lagret turkart punktet, åpnes DET kartet med rosa markering på punktet
-// (gjenbruker MapViews ?slat/slon-mekanikk fra «Del kart og sted»); ellers
-// åpnes kart-byggeren pre-sentrert (?clat/clon — uten dele-banner/lås).
-// Meta-listen er lett (uten svg/dem) og lastes én gang ved oppstart.
-const savedMapsMeta = ref([])
-function bboxContainsPoint(bbox, lat, lon) {
-  return !!bbox && Number.isFinite(bbox.south)
-    && lat >= bbox.south && lat <= bbox.north
-    && lon >= bbox.west && lon <= bbox.east
+// Intern snarvei (v12.1.36): «Åpne turkart» øverst i pin-kortet bygger ALLTID
+// et nytt turkart sentrert på punktet og åpner det direkte — ingen mellomside
+// i byggeren. Standard størrelse fra brukerens kart-preferanse (samme som
+// «søk et sted»-flyten på Turkart-forsiden), navn «<nærmeste sted> <dato>» via
+// reverse-geokoding (dato-fallback om oppslaget svikter), og ?slat/slon så
+// punktet markeres i det ferdige kartet. Full-skjerm-loader mens pipelinen
+// kjører (Overpass, N50, Sjøkart, DEM, buildSvg, saveMap).
+const { mapSizeKm } = useMapSizePreference()
+function squareDims() {
+  return mapSizeKm.value ? { halfKm: mapSizeKm.value / 2, aspect: 1 } : defaultMapDims()
 }
-const pinTurkartMatch = computed(() => {
+const buildingTurkart = ref(false)
+const buildTurkartProgress = ref('')
+async function openTurkartFromPin() {
   const p = utNoPin.value
-  if (!p) return null
-  return savedMapsMeta.value.find((m) => bboxContainsPoint(m.bbox, p.lat, p.lon)) ?? null
-})
-function openTurkartFromPin() {
-  const p = utNoPin.value
-  if (!p) return
-  const match = pinTurkartMatch.value
+  if (!p || buildingTurkart.value) return
   utNoPin.value = null
-  if (match) {
-    router.push({ name: 'kart-vis', params: { id: match.id },
+  buildingTurkart.value = true
+  buildTurkartProgress.value = 'Finner stedsnavn …'
+  const stamp = new Date().toLocaleDateString('no-NO', { day: '2-digit', month: 'short' })
+  let name = null
+  try { name = await reverseNearestPlace(p.lat, p.lon) } catch { /* dato-fallback */ }
+  try {
+    const { id } = await buildMapFromCenter({
+      center: { lat: p.lat, lon: p.lon, name: name ?? '' },
+      ...squareDims(),   // standard kvadratisk utsnitt (brukerens kart-preferanse)
+      equidistanceM: equidistanceForWidthKm(mapSizeKm.value),
+      navn: name ? `${name} ${stamp}` : `Turkart ${stamp}`,
+      terrainFirst: true,   // vis terreng straks, fyll inn OSM i bakgrunnen
+      onProgress: (msg) => { buildTurkartProgress.value = msg },
+    })
+    router.push({ name: 'kart-vis', params: { id },
       query: { slat: p.lat.toFixed(6), slon: p.lon.toFixed(6) } })
-  } else {
-    router.push({ name: 'kart-nytt',
-      query: { clat: p.lat.toFixed(6), clon: p.lon.toFixed(6) } })
+  } catch (e) {
+    console.error('Turkart-bygging fra ruteplanlegger feilet:', e)
+    buildingTurkart.value = false
+    buildTurkartProgress.value = ''
+    alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
   }
 }
 
@@ -1131,7 +1143,6 @@ onMounted(() => {
   // tilbake-navigasjon ikke hopper tilbake til punktet etter at brukeren
   // har panorert videre. Samme mønster som dismissInvite i MapPickerView.
   if (centerQuery) router.replace({ name: 'ruteplanlegger', query: {} })
-  listMaps().then((maps) => { savedMapsMeta.value = maps }).catch(() => { /* snarveien faller til kart-byggeren */ })
   nextTick(() => {
     measureMap()
     if (typeof ResizeObserver !== 'undefined' && mapRef.value) {
@@ -1334,14 +1345,13 @@ onUnmounted(() => {
                      stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
               </button>
             </div>
-            <!-- Intern snarvei øverst (v12.1.34): turkart-modulen i SVG Insights.
-                 Startside-ikonet + chevron (ikke ekstern-pil) viser at lenken er
-                 intern. Lagret kart som dekker punktet → åpnes med markering;
-                 ellers kart-byggeren sentrert her. -->
-            <button @click="openTurkartFromPin"
+            <!-- Intern snarvei øverst (v12.1.34/36): bygger ALLTID et nytt turkart
+                 sentrert på punktet og åpner det. Startside-ikonet + chevron (ikke
+                 ekstern-pil) viser at lenken er intern i SVG Insights. -->
+            <button @click="openTurkartFromPin" :disabled="buildingTurkart"
                     class="mt-2 w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px]
                            border bg-sky-500/[0.12] border-sky-400/35 text-sky-100
-                           active:scale-[0.98] transition">
+                           active:scale-[0.98] transition disabled:opacity-60">
               <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
                    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6 L9 4 L15 6 L21 4 L21 18 L15 20 L9 18 L3 20 Z"/>
@@ -1349,9 +1359,7 @@ onUnmounted(() => {
               </svg>
               <span class="flex-1 min-w-0 text-left">
                 <span class="font-medium">Åpne turkart</span>
-                <span class="block text-[9px] text-sky-200/60 truncate">
-                  {{ pinTurkartMatch ? `«${pinTurkartMatch.navn}»` : 'SVG Insights — nytt kart her' }}
-                </span>
+                <span class="block text-[9px] text-sky-200/60 truncate">SVG Insights — nytt kart her</span>
               </span>
               <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 shrink-0 text-sky-200/60" fill="none"
                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2215,6 +2223,27 @@ onUnmounted(() => {
               {{ confirmDeleteAll ? `Bekreft: slett alle ${savedRoutes.length} rutene` : `Slett alle (${savedRoutes.length}) ruter` }}
             </button>
           </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Full-skjerm-loader mens et nytt turkart bygges fra pin-punktet
+         (v12.1.36). Samme mønster som Turkart-forsidens on-the-fly-bygging. -->
+    <Transition name="overlay-fade">
+      <div v-if="buildingTurkart"
+           class="fixed inset-0 z-[60] bg-zinc-950/92 backdrop-blur-sm
+                  flex flex-col items-center justify-center text-white">
+        <div class="w-16 h-16 mb-4">
+          <svg viewBox="0 0 50 50" class="w-full h-full animate-spin"
+               fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+            <circle cx="25" cy="25" r="20" stroke-opacity="0.18"/>
+            <path d="M25 5 a20 20 0 0 1 20 20"/>
+          </svg>
+        </div>
+        <div class="text-[16px] font-semibold mb-1">Oppretter turkart</div>
+        <div class="text-[12px] text-white/65 px-6 text-center max-w-[280px]
+                    min-h-[18px] leading-snug">
+          {{ buildTurkartProgress }}
         </div>
       </div>
     </Transition>
