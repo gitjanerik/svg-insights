@@ -1645,33 +1645,43 @@ function clearHighlight() {
   highlightedFeature.value = null
   renderHighlight()
 }
-// panTo når layout-viewporten har SATT seg (v12.1.29): med viewport-metaen
-// interactive-widget=resizes-content (v12.1.25) er viewporten KRYMPET så
-// lenge det virtuelle tastaturet er åpent. Søkevalg kjørte panTo mens søke-
-// tastaturet fortsatt sto oppe → sentrum ble regnet mot den lave flaten, og
-// treffet havnet nederst i utsnittet idet tastaturet lukket seg. Blur input
-// først, vent til wrapper-høyden har vokst og stabilisert seg (tastaturet
-// lukket, maks 700 ms), og panTo deretter. Uten input-fokus eller på enheter
-// med fin peker (desktop, intet virtuelt tastatur) pannes umiddelbart.
-function panToAfterKeyboard(x, y, opts) {
-  const active = document.activeElement
-  const hadInputFocus = active && /^(INPUT|TEXTAREA)$/.test(active.tagName)
-  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches
-  if (!hadInputFocus || !coarse) { panTo(x, y, opts); return }
+// Sentrer et søketreff robust mot tastatur-resize (v12.1.30). Med viewport-
+// metaen interactive-widget=resizes-content (v12.1.25) er layout-viewporten
+// KRYMPET mens søke-tastaturet står oppe — panTo som måler wrapperen da,
+// legger treffet nederst i utsnittet idet tastaturet lukkes. Forrige forsøk
+// (v12.1.29) gatet på document.activeElement, men på Android blurres søke-
+// feltet allerede av TAP-et på resultatknappen (før click-handleren kjører),
+// så gaten slo aldri inn. Nå timing-uavhengig: pan straks (responsivt), og
+// RE-pan til samme mål hver gang wrapper-størrelsen faktisk endrer seg
+// (ResizeObserver = tastaturet lukkes), debounced til ro. Avbrytes hvis
+// brukeren gestikulerer; auto-stopp etter 1,5 s. Uten tastatur skjer ingen
+// resize → ingen ekstra pan.
+let settleObserver = null
+let settleTimer = null
+let settleStopTimer = null
+function stopPanSettle() {
+  settleObserver?.disconnect()
+  settleObserver = null
+  if (settleTimer) { clearTimeout(settleTimer); settleTimer = null }
+  if (settleStopTimer) { clearTimeout(settleStopTimer); settleStopTimer = null }
+}
+function panToSettled(x, y, opts) {
+  stopPanSettle()
+  panTo(x, y, opts)
   const el = wrapperRef.value
-  const h0 = el?.getBoundingClientRect().height ?? 0
-  active.blur()
-  const t0 = performance.now()
-  let lastH = h0
-  let grownStable = 0
-  const tick = () => {
-    const h = el?.getBoundingClientRect().height ?? 0
-    grownStable = (h > h0 + 1 && Math.abs(h - lastH) < 0.5) ? grownStable + 1 : 0
+  if (!el || typeof ResizeObserver === 'undefined') return
+  let lastH = el.getBoundingClientRect().height
+  settleObserver = new ResizeObserver(() => {
+    const h = el.getBoundingClientRect().height
+    if (Math.abs(h - lastH) < 1) return      // initial-notify / uendret
     lastH = h
-    if (grownStable >= 2 || performance.now() - t0 > 700) panTo(x, y, opts)
-    else requestAnimationFrame(tick)
-  }
-  requestAnimationFrame(tick)
+    if (settleTimer) clearTimeout(settleTimer)
+    settleTimer = setTimeout(() => {
+      if (!isGesturing.value) panTo(x, y, opts)
+    }, 120)
+  })
+  settleObserver.observe(el)
+  settleStopTimer = setTimeout(stopPanSettle, 1500)
 }
 
 function selectSearchResult(r) {
@@ -1687,7 +1697,7 @@ function selectSearchResult(r) {
     r.el.classList.remove('vp-cull')
   }
   if (meta.value) {
-    panToAfterKeyboard(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
+    panToSettled(r.x, r.y, { vbWidth: meta.value.widthM, vbHeight: meta.value.heightM, targetScale: Math.max(scale.value, zoomNearThreshold.value) })
   }
   searchOpen.value = false
   mapSearch.clear()
@@ -6212,6 +6222,7 @@ onUnmounted(() => {
   unlockBodyScroll()
   stopGpsTick()
   screenWake.stop()
+  stopPanSettle()
   tabResizeObs?.disconnect()
   wrapperResizeObs?.disconnect()
   componentAlive = false

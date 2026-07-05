@@ -891,7 +891,7 @@ const savedSort = ref(loadSort())
 watch(savedSort, (v) => {
   try { localStorage.setItem(SORT_LS_KEY, JSON.stringify(v)) } catch { /* noop */ }
 }, { deep: true })
-const starFilter = ref(0)              // 0 = alle, ellers minimum antall stjerner
+const starFilter = ref(0)              // 0 = alle, ellers EKSAKT antall stjerner
 
 const SORT_VALUE = {
   opprettet: (r) => r.opprettet ?? 0,
@@ -903,8 +903,10 @@ const SORT_VALUE = {
 const visibleSavedRoutes = computed(() => {
   const val = SORT_VALUE[savedSort.value.key] ?? SORT_VALUE.opprettet
   const dir = savedSort.value.dir === 'asc' ? 1 : -1
+  // Eksakt stjerne-match (v12.1.30, var «X eller flere»): hva brukeren legger
+  // i tre vs fire stjerner er deres egen vurdering — filteret skal ikke tolke.
   return savedRoutes.value
-    .filter((r) => !starFilter.value || (r.stjerner ?? 0) >= starFilter.value)
+    .filter((r) => !starFilter.value || (r.stjerner ?? 0) === starFilter.value)
     .slice()
     .sort((a, b) => dir * (val(a) - val(b)) || (b.opprettet - a.opprettet))
 })
@@ -1911,11 +1913,19 @@ onUnmounted(() => {
               <div class="w-12 h-1.5 rounded-full bg-white/40"
                    :style="{ opacity: savedDrawer.handleOpacity.value }"></div>
             </div>
-            <div class="px-4 pb-2.5 flex items-center justify-between gap-3">
-              <div class="text-white text-[14px] font-semibold">Mine ruter
+            <div class="px-4 pb-2.5 flex items-center gap-2">
+              <div class="flex-1 min-w-0 text-white text-[14px] font-semibold truncate">Mine ruter
                 <span v-if="savedRoutes.length" class="text-white/45 font-normal text-[12px]">·
                   {{ starFilter ? `${visibleSavedRoutes.length} av ${savedRoutes.length}` : savedRoutes.length }} ruter</span>
               </div>
+              <!-- Kompakt del-knapp i tittelraden (v12.1.30) — blå som
+                   selekteringsfargen i velg-modus, så den «topper». -->
+              <button v-if="savedRoutes.length > 1 && !shareSelectMode"
+                      @pointerdown.stop @click.stop="startShareSelect"
+                      class="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold border
+                             bg-sky-500/25 border-sky-400/60 text-sky-100 active:scale-95 transition">
+                Del mine ruter …
+              </button>
               <button @pointerdown.stop @click.stop="showSaved = false" aria-label="Lukk"
                       class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center bg-white/5
                              border border-white/10 text-white/60 active:scale-90 transition">
@@ -1924,19 +1934,12 @@ onUnmounted(() => {
               </button>
             </div>
             <!-- Verktøylinje i headeren (v12.1.28) — forblir synlig ved scroll:
-                 «Del mine ruter …» (velg-modus) + sortering (persistert i
+                 velg-modus-handlinger ELLER sortering (persistert i
                  localStorage) + stjernefilter. -->
             <div v-if="savedRoutes.length > 1" class="px-4 pb-2.5 space-y-1.5"
                  @pointerdown.stop>
-              <div class="flex gap-1.5">
-                <template v-if="!shareSelectMode">
-                  <button @click="startShareSelect"
-                          class="flex-1 px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5
-                                 border-white/15 text-white/80 active:scale-95 transition">
-                    Del mine ruter …
-                  </button>
-                </template>
-                <template v-else>
+              <template v-if="shareSelectMode">
+                <div class="flex gap-1.5">
                   <button @click="onShareSelectedRoutes" :disabled="!shareSelected.length"
                           class="flex-1 px-3 py-2 rounded-lg text-[12px] font-semibold border transition
                                  active:scale-95 disabled:opacity-40 bg-emerald-500/20
@@ -1947,11 +1950,11 @@ onUnmounted(() => {
                   <button @click="cancelShareSelect"
                           class="px-3 py-2 rounded-lg text-[12px] font-medium border bg-white/5
                                  border-white/15 text-white/60 active:scale-95 transition">Avbryt</button>
-                </template>
-              </div>
-              <div v-if="shareSelectMode" class="text-[10px] text-white/45">
-                Trykk på rutene du vil dele (inntil {{ MAX_SHARE_ROUTES }}) — mottakeren får alle i én lenke.
-              </div>
+                </div>
+                <div class="text-[10px] text-white/45">
+                  Trykk på rutene du vil dele (inntil {{ MAX_SHARE_ROUTES }}) — mottakeren får alle i én lenke.
+                </div>
+              </template>
               <div v-else class="flex gap-1.5 items-center">
                 <label class="sr-only" for="rute-sortering">Sorter etter</label>
                 <select id="rute-sortering" v-model="savedSort.key"
@@ -1980,10 +1983,10 @@ onUnmounted(() => {
                         :class="starFilter ? 'text-amber-300 border-amber-400/40' : 'text-white/80'">
                   <option :value="0">★ Alle</option>
                   <option :value="5">★ 5</option>
-                  <option :value="4">★ 4–5</option>
-                  <option :value="3">★ 3+</option>
-                  <option :value="2">★ 2+</option>
-                  <option :value="1">★ 1+</option>
+                  <option :value="4">★ 4</option>
+                  <option :value="3">★ 3</option>
+                  <option :value="2">★ 2</option>
+                  <option :value="1">★ 1</option>
                 </select>
               </div>
             </div>
@@ -2002,7 +2005,7 @@ onUnmounted(() => {
               Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
             </div>
             <div v-else-if="!visibleSavedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
-              Ingen ruter med {{ starFilter }}{{ starFilter < 5 ? '+' : '' }} stjerner ennå.
+              Ingen ruter med {{ starFilter }} {{ starFilter === 1 ? 'stjerne' : 'stjerner' }} ennå.
             </div>
             <!-- I velg-modus toggler HELE kortet (v12.1.27 — kun navnefeltet
                  var klikkbart, mens sjekkboks-siden var død: kontraintuitivt).
