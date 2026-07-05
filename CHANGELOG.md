@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.26: Ruteplanlegger — «Del mine ruter», stjernemerking, stedsnavn-forslag og renere delingstekst
+
+Fire forbedringer rundt lagring og deling: **(1) «Del mine ruter»:** velg inntil 10 lagrede ruter i «Mine ruter» (velg-modus med sjekkbokser) og del dem som ÉN lenke — nytt URL-format `?r=alat|alon|blat|blon|profil|navn` pr rute (`lib/routeShare.js`, enhetstestet; legacy enkelt-rute-lenker støttes fortsatt). Mottakeren får banner med rutelista, velger rute og beregner én om gangen (fair use mot brouter.de); banneret består til alle er prøvd eller lukkes. **(2) Stjernemerking:** 1–5 stjerner på hver lagret rute (trykk samme stjerne igjen for å fjerne), lagres i IndexedDB (`updateGravelRoute`) og stjernemerkede sorteres øverst. **(3) Navneforslag:** «Punkt 59.92, 9.88 – Punkt …» erstattes med «Fra ‹sted› til ‹sted›» — punktets eget navn brukes når det finnes, ellers hentes nærmeste stedsnavn via Nominatim reverse (`lib/nominatimReverse.js`, zoom 14 ≈ grend/bygd, sekvensielle kall, overskriver aldri noe brukeren har begynt å skrive). **(4) Delingstekst uten «Grusrute:»-prefiks** — kun navn + URL.
+
+---
+
 ## 2026-07-05 — v12.1.25: Android-tastatur skjulte bunn-knapper — viewport-fiks
 
 Chrome/Android (108+) krymper by default bare den VISUELLE viewporten når det virtuelle tastaturet åpnes — layout-viewporten (100dvh / bottom-0) forblir i full høyde bak tastaturet. Derfor var «Lagre rute»/«Avbryt» i Ruteplanleggerens sticky skuff-footer usynlige første gang man trykket «Lagre …» (felttest på Samsung/Chrome). Fiks: `interactive-widget=resizes-content` i viewport-metaen, som ber Chrome krympe selve layout-viewporten — skuffen (og alle andre bunn-ankrede elementer) følger nå tastaturkanten automatisk, også for søkefeltene. Ren CSS kan ikke lese tastaturhøyden uten VirtualKeyboard-API-opt-in (`env(keyboard-inset-height)`, kun Chromium) — metaen er den deklarative løsningen. Eldre Chrome hadde denne oppførselen som default; iOS Safari ignorerer nøkkelordet.
