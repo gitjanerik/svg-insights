@@ -715,6 +715,11 @@ function fitRouteView() {
 
 async function onFindRoute() {
   activeSearch.value = null
+  // Snarvei-flyten (v12.1.24): trykkes «Finn grusrute» fra den MINIMERTE
+  // skuffen (hurtigknappen i peek-headeren), skal skuffen FORBLI minimert —
+  // brukeren har bevisst valgt maksimal kartflate, og peek-headeren viser
+  // uansett km + grusandel. Fra skjemaets sticky footer ekspanderes som før.
+  const wasMinimized = drawer.isMinimized.value
   // Mottaker av delt rute kan ha huket av «Installer appen» i banneret —
   // trigg install-prompten først (best-effort, samme mønster som kartvelgeren).
   if (installRequested.value && canInstall.value) {
@@ -726,7 +731,7 @@ async function onFindRoute() {
     // Delingsmodus er fullført når ruta er beregnet — fjern banneret og
     // lås opp UI-et (mottakeren står nå med en vanlig rute).
     if (routeInvite.value) dismissRouteInvite()
-    drawer.reset()
+    if (!wasMinimized) drawer.reset()
     nextTick(() => { measureMap(); fitRouteView() })
   }
 }
