@@ -69,19 +69,43 @@ export function useStifinner() {
     destSnap.value = null
   }
 
-  // Les routbare sti-/vei-paths fra SVG-en og bygg features til grafen.
+  // Spøkelses-/utvidelsesfliser ligger som nestede <svg x y> i aktiv-flisas
+  // meterrom (buildGhostSvg i MapView), og path-d-ene deres er FLIS-LOKALE.
+  // Uten dette offsetet ble naboflisenes stinett limt inn feilplassert oppå
+  // aktiv flis — forskjøvet med flis-bredder — og Stifinner foreslo ruter
+  // tvers over innsjøer langs de feilplasserte kopiene (Gjende-tilfellet).
+  // Nestede fliser er gitter-kompatible (samme størrelse, scale 1), så
+  // kumulert x/y er hele transformasjonen.
+  function nestedSvgOffset(el, rootSvg) {
+    let dx = 0, dy = 0
+    for (let n = el; n && n !== rootSvg; n = n.parentNode) {
+      if (String(n.tagName).toLowerCase() === 'svg') {
+        dx += parseFloat(n.getAttribute('x')) || 0
+        dy += parseFloat(n.getAttribute('y')) || 0
+      }
+    }
+    return { dx, dy }
+  }
+
+  // Les routbare sti-/vei-paths fra SVG-en (aktiv flis + spøkelsesfliser,
+  // løftet til aktiv-flisas koordinatrom) og bygg features til grafen.
   function featuresFromSvg(svgElement) {
     const features = []
     const groups = svgElement.querySelectorAll('[data-iso]')
     for (const g of groups) {
       const code = g.getAttribute('data-iso')
       if (!ROUTABLE_CODES.has(code)) continue
+      const { dx, dy } = nestedSvgOffset(g, svgElement)
       const paths = g.tagName.toLowerCase() === 'path' ? [g] : g.querySelectorAll('path')
       for (const p of paths) {
         const d = p.getAttribute('d')
         if (!d) continue
         for (const sub of parsePathSubpaths(d)) {
-          if (sub.length >= 2) features.push({ coordinates: sub, isomCode: code })
+          if (sub.length < 2) continue
+          features.push({
+            coordinates: (dx || dy) ? sub.map(([x, y]) => [x + dx, y + dy]) : sub,
+            isomCode: code,
+          })
         }
       }
     }
