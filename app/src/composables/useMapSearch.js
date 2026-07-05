@@ -263,6 +263,15 @@ export function readPeakLabel(t) {
     name = own.trim()
     if (!name && !inline) name = (t.textContent ?? '').trim()
   }
+  // Defensivt: eldre applyNameLanguage (≤ v12.1.28) rakk å forurense
+  // data-name-full med det inline høyde-tallet («Vardåsen349») — strip et
+  // navne-suffiks som er identisk med tspan-høyden.
+  if (inline && name) {
+    const eleText = (inline.textContent ?? '').trim()
+    if (eleText && name !== eleText && name.endsWith(eleText)) {
+      name = name.slice(0, -eleText.length).trim()
+    }
+  }
   if (NUMERIC_RE.test(name)) {
     const n = parseFloat(name)
     if (Number.isFinite(n) && out.ele == null) out.ele = n
