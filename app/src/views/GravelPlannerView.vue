@@ -626,6 +626,10 @@ const snapWarning = computed(() => {
   return `Ruta ${parts.join(' og ')} — nærmeste kjørbare vei ligger et stykke fra punktet ditt (stiplet linje i kartet).`
 })
 
+// «Les mer»-toggle for hvordan-hintet i skjemaet (v12.1.21): default lukket
+// hver gang view-et åpnes — bevisst IKKE persistert.
+const hintOpen = ref(false)
+
 // ── Rute-kort, forslag + lagring ────────────────────────────────────────────
 const showSaved = ref(false)
 // Flytende kart-elementer (FAB, lag-knapp, attribusjon, feilbanner) ankres til
@@ -1369,19 +1373,31 @@ onUnmounted(() => {
       <div class="max-w-[560px] mx-auto">
         <!-- Hvordan-hint: to trykk i kartet setter A og B; grusvei-overlayen
              vises direkte i kartet ved innzooming. Skjules i delingsmodus
-             (der er punktene låst og banneret forklarer flyten). -->
+             (der er punktene låst og banneret forklarer flyten).
+             Kollapset som default (v12.1.21) med «Les mer»-toggle — full tekst
+             dyttet sjekkboksen under folden ved standard skuffhøyde (45 dvh).
+             Åpen/lukket persisteres bevisst IKKE. -->
         <div v-if="!routeInvite"
              class="mb-2.5 px-3 py-2 rounded-lg bg-sky-500/[0.07] border border-sky-400/15
                     text-[11px] text-white/60 leading-snug">
-          Trykk i kartet for å sette start
-          <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500
-                       text-white text-[9px] font-bold align-middle">A</span>
-          og trykk en gang til for mål
-          <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500
-                       text-white text-[9px] font-bold align-middle">B</span>
-          — eller bruk søk/GPS. Tips: zoom inn, så viser kartet hvor det er grus
-          (heltrukket) og mulig grus (stiplet). Hold inne et punkt i kartet for å
-          åpne det i UT.no, Vegkart eller Google Maps.
+          <template v-if="hintOpen">
+            Trykk i kartet for å sette start
+            <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500
+                         text-white text-[9px] font-bold align-middle">A</span>
+            og trykk en gang til for mål
+            <span class="inline-flex items-center justify-center w-4 h-4 rounded-full bg-rose-500
+                         text-white text-[9px] font-bold align-middle">B</span>
+            — eller bruk søk/GPS. Tips: zoom inn, så viser kartet hvor det er grus
+            (heltrukket) og mulig grus (stiplet). Hold inne et punkt i kartet for å
+            åpne det i UT.no, Vegkart eller Google Maps.
+          </template>
+          <template v-else>
+            Trykk i kartet for å sette start og mål.
+          </template>
+          <button type="button" @click="hintOpen = !hintOpen" :aria-expanded="hintOpen"
+                  class="text-sky-300 font-medium underline underline-offset-2 active:opacity-60 transition">
+            {{ hintOpen ? 'Les mindre' : 'Les mer' }}
+          </button>
         </div>
         <div v-for="field in ['A', 'B']" :key="field" class="relative">
           <div v-if="field === 'B'" class="flex justify-center -my-1 relative z-10">
@@ -1465,7 +1481,7 @@ onUnmounted(() => {
           <span class="text-[12px] text-white/75 leading-snug">
             Inkluder antatt grusvei i ruteforslag
             <span class="block text-[10px] text-white/45">
-              Skogsbilvei uten registrert dekke (stiplet i kartet) — kan være skiløype eller turdrag
+              Stiplet i kartet — kan være skiløype/turdrag
             </span>
           </span>
         </label>
