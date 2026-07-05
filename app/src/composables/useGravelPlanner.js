@@ -215,13 +215,9 @@ export function useGravelPlanner() {
   }
 
   async function refreshSaved() {
-    // Stjernemerkede ruter først (flest stjerner øverst), ellers nyeste først
-    // — stjernene er nettopp for å holde favorittene lett tilgjengelige.
-    try {
-      const all = await listGravelRoutes()
-      savedRoutes.value = all.sort((a, b) =>
-        ((b.stjerner ?? 0) - (a.stjerner ?? 0)) || (b.opprettet - a.opprettet))
-    } catch { savedRoutes.value = [] }
+    // Nyeste først som grunn-rekkefølge — visnings-sortering (dato/lengde/
+    // grus/stjerner, v12.1.28) gjøres i GravelPlannerView.visibleSavedRoutes.
+    try { savedRoutes.value = await listGravelRoutes() } catch { savedRoutes.value = [] }
   }
 
   // 1–5 stjerner på en lagret rute (v12.1.26); samme verdi igjen = fjern.

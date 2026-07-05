@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-05 — v12.1.28: Minifiserbart delings-banner + sortering/stjernefilter i «Mine ruter»
+
+**(1) Delings-banneret hos mottaker kan minifiseres:** pil opp øverst til høyre kollapser til én linje («Noen har delt …» + pil ned for å utvide) så kartet får plassen; X-en (lukk helt) er flyttet ned i en footer sammen med infoteksten «Velg en rute og trykk …». **(2) «Mine ruter»-verktøylinje i headeren** (forblir synlig ved scroll): «Del mine ruter …» er flyttet opp fra lista, pluss ny sortering — dato, lengde, km grusvei (grusandel × totallengde), % grus eller stjerner, med stigende/synkende-toggle, persistert i localStorage — og et stjernefilter (Alle / 5 / 4–5 / 3+ / 2+ / 1+; teller viser «N av M ruter»). Grunn-sorteringen i composablen er tilbake til nyeste-først; all visnings-sortering skjer i view-en.
+
+---
+
 ## 2026-07-05 — v12.1.27: Deling-polish — hel-korts toggle, kompakt mottaker-banner, maks 5 ruter
 
 Tre justeringer etter felttest av v12.1.26: **(1)** I velg-modus («Del mine ruter») toggler nå HELE rutekortet — før var kun navnefeltet klikkbart mens sjekkboks-siden var død (kontraintuitivt). **(2)** Mottaker-banneret er kompaktere: rutelista viser maks ~3 rader før den scroller internt, og kart-innrammingen av valgt rute tar nå hensyn til bannerhøyden (`fitPointsView` fikk `topObstructPx` — A/B lå før gjemt bak banneret). Gjelder også innramming etter beregning mens banneret står. **(3)** Maks 5 ruter pr delings-lenke (var 10) — enklere og holder banneret kort; eldre lenker med flere ruter kappes til 5.

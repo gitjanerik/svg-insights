@@ -761,6 +761,9 @@ let shareResetTimer = null
 
 const inviteRoutes = computed(() => routeInvite.value?.routes ?? [])
 const inviteActive = computed(() => inviteRoutes.value[invitePicked.value] ?? null)
+// Banneret kan minifiseres til én linje (v12.1.28) — X-en (lukk helt) bor i
+// footeren; pil opp/ned toggler. Ikke persistert, nytt invite starter utvidet.
+const inviteCollapsed = ref(false)
 
 // Banneret flyter oppå kartets øvre del — mål den reelle høyden så
 // innrammingen av valgt rute havner i den SYNLIGE flaten under banneret
@@ -866,6 +869,46 @@ function toggleShareSelect(id) {
   if (cur.includes(id)) shareSelected.value = cur.filter((x) => x !== id)
   else if (cur.length < MAX_SHARE_ROUTES) shareSelected.value = [...cur, id]
 }
+// ── Sortering + stjernefilter for «Mine ruter» (v12.1.28). Sorteringen
+// persisteres i localStorage; filteret er økt-lokalt. «Km grusvei» beregnes
+// fra grusandel × totallengde (samme tall som gravelM i rutevisningen). ────
+const SORT_LS_KEY = 'svg-insights-ruteplanlegger-sortering'
+const SORT_FIELDS = [
+  { key: 'opprettet', label: 'Dato' },
+  { key: 'lengde', label: 'Lengde' },
+  { key: 'grus-km', label: 'Km grus' },
+  { key: 'grus', label: '% grus' },
+  { key: 'stjerner', label: 'Stjerner' },
+]
+function loadSort() {
+  try {
+    const v = JSON.parse(localStorage.getItem(SORT_LS_KEY) ?? 'null')
+    if (v && SORT_FIELDS.some((f) => f.key === v.key) && ['asc', 'desc'].includes(v.dir)) return v
+  } catch { /* noop */ }
+  return { key: 'opprettet', dir: 'desc' }
+}
+const savedSort = ref(loadSort())
+watch(savedSort, (v) => {
+  try { localStorage.setItem(SORT_LS_KEY, JSON.stringify(v)) } catch { /* noop */ }
+}, { deep: true })
+const starFilter = ref(0)              // 0 = alle, ellers minimum antall stjerner
+
+const SORT_VALUE = {
+  opprettet: (r) => r.opprettet ?? 0,
+  lengde: (r) => r.lengthM ?? 0,
+  'grus-km': (r) => (r.gravelShare ?? 0) * (r.lengthM ?? 0),
+  grus: (r) => r.gravelShare ?? -1,
+  stjerner: (r) => r.stjerner ?? 0,
+}
+const visibleSavedRoutes = computed(() => {
+  const val = SORT_VALUE[savedSort.value.key] ?? SORT_VALUE.opprettet
+  const dir = savedSort.value.dir === 'asc' ? 1 : -1
+  return savedRoutes.value
+    .filter((r) => !starFilter.value || (r.stjerner ?? 0) >= starFilter.value)
+    .slice()
+    .sort((a, b) => dir * (val(a) - val(b)) || (b.opprettet - a.opprettet))
+})
+
 function onShareSelectedRoutes() {
   const recs = shareSelected.value
     .map((id) => savedRoutes.value.find((r) => r.id === id))
@@ -908,6 +951,7 @@ function parseRouteInvite() {
 function dismissRouteInvite() {
   routeInvite.value = null
   invitePicked.value = 0
+  inviteCollapsed.value = false
   installRequested.value = false
   router.replace({ query: {} })
 }
@@ -1269,14 +1313,28 @@ onUnmounted(() => {
            @mousedown.stop @touchstart.stop @wheel.stop>
         <div ref="inviteBannerRef"
              class="relative w-full max-w-[560px] rounded-xl border border-sky-300/40 bg-zinc-950/92
-                    backdrop-blur px-4 py-3 shadow-2xl">
-          <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
+                    backdrop-blur shadow-2xl"
+             :class="inviteCollapsed ? 'px-3 py-2' : 'px-4 py-3'">
+          <!-- Minifisert (v12.1.28): én linje + pil ned — trykk for å utvide.
+               Frigjør kartflaten mens man studerer den valgte ruta. -->
+          <button v-if="inviteCollapsed" @click="inviteCollapsed = false"
+                  aria-label="Utvid delings-panelet" :aria-expanded="false"
+                  class="w-full flex items-center gap-2 text-left active:opacity-70 transition">
+            <span class="flex-1 truncate text-[12px] font-semibold text-sky-100">
+              Noen har delt {{ inviteRoutes.length > 1 ? `${inviteRoutes.length} grusruter` : 'en grusrute' }} med deg!
+            </span>
+            <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0 text-sky-200/80" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                 stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <template v-else>
+          <!-- Minimer-pil øverst til høyre (X-en bor i footeren, v12.1.28) -->
+          <button @click="inviteCollapsed = true" aria-label="Minimer delings-panelet"
+                  :aria-expanded="true"
                   class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
                          text-sky-200/70 hover:text-sky-100 hover:bg-sky-400/15 active:scale-95 transition">
             <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
+                 stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
           </button>
           <div class="flex items-center gap-3 pr-8">
             <div class="shrink-0 w-10 h-10 rounded-full bg-sky-400/20 border border-sky-300/40
@@ -1314,15 +1372,27 @@ onUnmounted(() => {
                    stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
           </div>
-          <div class="mt-2 text-[11px] text-white/70 leading-relaxed">
-            <template v-if="inviteRoutes.length > 1">
-              Velg en rute og trykk «Finn grusrute» — rutene beregnes én om gangen. God tur!
-            </template>
-            <template v-else>
-              Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
-            </template>
+          <!-- Footer: infotekst + Lukk (X) — samlet nederst (v12.1.28) -->
+          <div class="mt-2 flex items-center gap-2">
+            <div class="flex-1 text-[11px] text-white/70 leading-relaxed">
+              <template v-if="inviteRoutes.length > 1">
+                Velg en rute og trykk «Finn grusrute» — rutene beregnes én om gangen. God tur!
+              </template>
+              <template v-else>
+                Start og mål er fylt inn. Trykk «Finn grusrute», så beregnes den samme grusruta for deg. God tur!
+              </template>
+            </div>
+            <button @click="dismissRouteInvite" aria-label="Avbryt delt rute"
+                    class="shrink-0 w-8 h-8 rounded-full border border-white/15 bg-white/5
+                           flex items-center justify-center text-sky-200/70 hover:text-sky-100
+                           active:scale-95 transition">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
-          <div v-if="!isStandalone" class="mt-3 pt-3 border-t border-sky-300/15">
+          <div v-if="!isStandalone" class="mt-2.5 pt-2.5 border-t border-sky-300/15">
             <label class="flex items-start gap-2.5 cursor-pointer">
               <input type="checkbox" v-model="installRequested"
                      class="mt-0.5 w-4 h-4 shrink-0 accent-sky-400 cursor-pointer" />
@@ -1345,6 +1415,7 @@ onUnmounted(() => {
               </div>
             </Transition>
           </div>
+          </template>
         </div>
       </div>
 
@@ -1842,7 +1913,8 @@ onUnmounted(() => {
             </div>
             <div class="px-4 pb-2.5 flex items-center justify-between gap-3">
               <div class="text-white text-[14px] font-semibold">Mine ruter
-                <span v-if="savedRoutes.length" class="text-white/45 font-normal text-[12px]">· {{ savedRoutes.length }} ruter</span>
+                <span v-if="savedRoutes.length" class="text-white/45 font-normal text-[12px]">·
+                  {{ starFilter ? `${visibleSavedRoutes.length} av ${savedRoutes.length}` : savedRoutes.length }} ruter</span>
               </div>
               <button @pointerdown.stop @click.stop="showSaved = false" aria-label="Lukk"
                       class="w-8 h-8 shrink-0 rounded-full flex items-center justify-center bg-white/5
@@ -1851,23 +1923,11 @@ onUnmounted(() => {
                      stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
               </button>
             </div>
-          </div>
-          <div class="flex-1 overflow-y-auto px-4 pb-3 border-t border-white/8 pt-3">
-            <!-- Vises kun med mange lagrede ruter. Handler om ryddighet og at
-                 veinettet endrer seg (ruter kan trenge re-beregning), ikke MB
-                 — samme varseltype som i lagrede turkart. -->
-            <div v-if="savedRoutes.length > 9"
-                 class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
-                        text-amber-200/80 text-[11px] leading-snug">
-              Du har mange og potensielt utdaterte ruter. Veinettet endrer seg over tid — slett
-              ruter du ikke trenger lenger, og beregn viktige ruter på nytt før tur.
-            </div>
-            <div v-if="!savedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
-              Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
-            </div>
-            <!-- «Del mine ruter» (v12.1.26): velg-modus med inntil 10 ruter →
-                 ÉN delings-URL. Kort-trykk toggler valg i velg-modus. -->
-            <div v-if="savedRoutes.length > 1" class="mb-2">
+            <!-- Verktøylinje i headeren (v12.1.28) — forblir synlig ved scroll:
+                 «Del mine ruter …» (velg-modus) + sortering (persistert i
+                 localStorage) + stjernefilter. -->
+            <div v-if="savedRoutes.length > 1" class="px-4 pb-2.5 space-y-1.5"
+                 @pointerdown.stop>
               <div class="flex gap-1.5">
                 <template v-if="!shareSelectMode">
                   <button @click="startShareSelect"
@@ -1889,15 +1949,66 @@ onUnmounted(() => {
                                  border-white/15 text-white/60 active:scale-95 transition">Avbryt</button>
                 </template>
               </div>
-              <div v-if="shareSelectMode" class="mt-1.5 text-[10px] text-white/45">
+              <div v-if="shareSelectMode" class="text-[10px] text-white/45">
                 Trykk på rutene du vil dele (inntil {{ MAX_SHARE_ROUTES }}) — mottakeren får alle i én lenke.
               </div>
+              <div v-else class="flex gap-1.5 items-center">
+                <label class="sr-only" for="rute-sortering">Sorter etter</label>
+                <select id="rute-sortering" v-model="savedSort.key"
+                        class="flex-1 min-w-0 px-2 py-1.5 rounded-lg text-[11px] bg-zinc-800 border
+                               border-white/15 text-white/80 focus:outline-none">
+                  <option v-for="f in SORT_FIELDS" :key="f.key" :value="f.key">{{ f.label }}</option>
+                </select>
+                <button @click="savedSort.dir = savedSort.dir === 'desc' ? 'asc' : 'desc'"
+                        :aria-label="savedSort.dir === 'desc' ? 'Synkende — bytt til stigende' : 'Stigende — bytt til synkende'"
+                        class="shrink-0 w-8 h-8 rounded-lg border bg-white/5 border-white/15 text-white/70
+                               flex items-center justify-center active:scale-95 transition">
+                  <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="none" stroke="currentColor"
+                       stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <template v-if="savedSort.dir === 'desc'">
+                      <line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+                    </template>
+                    <template v-else>
+                      <line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+                    </template>
+                  </svg>
+                </button>
+                <label class="sr-only" for="rute-stjernefilter">Stjernefilter</label>
+                <select id="rute-stjernefilter" v-model.number="starFilter"
+                        class="shrink-0 w-[5.5rem] px-2 py-1.5 rounded-lg text-[11px] bg-zinc-800 border
+                               border-white/15 focus:outline-none"
+                        :class="starFilter ? 'text-amber-300 border-amber-400/40' : 'text-white/80'">
+                  <option :value="0">★ Alle</option>
+                  <option :value="5">★ 5</option>
+                  <option :value="4">★ 4–5</option>
+                  <option :value="3">★ 3+</option>
+                  <option :value="2">★ 2+</option>
+                  <option :value="1">★ 1+</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 overflow-y-auto px-4 pb-3 border-t border-white/8 pt-3">
+            <!-- Vises kun med mange lagrede ruter. Handler om ryddighet og at
+                 veinettet endrer seg (ruter kan trenge re-beregning), ikke MB
+                 — samme varseltype som i lagrede turkart. -->
+            <div v-if="savedRoutes.length > 9"
+                 class="mb-2 px-3 py-2 rounded-lg bg-amber-500/[0.08] border border-amber-400/20
+                        text-amber-200/80 text-[11px] leading-snug">
+              Du har mange og potensielt utdaterte ruter. Veinettet endrer seg over tid — slett
+              ruter du ikke trenger lenger, og beregn viktige ruter på nytt før tur.
+            </div>
+            <div v-if="!savedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
+              Ingen lagrede ruter ennå. Beregn en rute og trykk «Lagre».
+            </div>
+            <div v-else-if="!visibleSavedRoutes.length" class="text-[13px] text-white/50 text-center py-6">
+              Ingen ruter med {{ starFilter }}{{ starFilter < 5 ? '+' : '' }} stjerner ennå.
             </div>
             <!-- I velg-modus toggler HELE kortet (v12.1.27 — kun navnefeltet
                  var klikkbart, mens sjekkboks-siden var død: kontraintuitivt).
                  Navne-knappen gjør ingenting selv i velg-modus; klikket bobler
                  til kort-diven. -->
-            <div v-for="rec in savedRoutes" :key="rec.id"
+            <div v-for="rec in visibleSavedRoutes" :key="rec.id"
                  class="rounded-lg bg-white/5 px-3 py-2.5 mb-2"
                  :class="[shareSelectMode ? 'cursor-pointer active:opacity-80 transition' : '',
                           shareSelectMode && shareSelected.includes(rec.id) ? 'ring-1 ring-sky-400/70 bg-sky-500/[0.08]' : '']"
