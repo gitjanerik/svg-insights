@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.39: Antall-teller på «Kulturminner»-laget
+
+«Kulturminner»-toggelen i Lag-fanen viser nå antall kulturminne-ikoner i det innlastede kartet, f.eks. «Kulturminner (17)». Tallet telles fra kart-SVG-en når den lastes (`setupHostSvg`), og «(0)» gjør det tydelig om laget er tomt fordi kartet ble bygget før v12.1.38 (ingen data bakt inn — bygg et nytt kart) eller fordi området faktisk ikke har brukerregistrerte funn, i motsetning til en rendering-feil. Merk at Kulturminnesøks «brukerminner» kun er brukerregistrerte kulturminner — offisielt registrerte minner (Askeladden) er ikke inkludert i denne tjenesten.
+
+---
+
 ## 2026-07-06 — v12.1.38: Kulturminne-overlegg i turkartet
 
 Turkartet kan nå vise kulturminner fra Kulturminnesøks åpne «brukerminner»-tjeneste (Riksantikvaren, `api.ra.no`) som klikkbare ikoner i kartutsnittet. Funnene hentes rent klient-side (CORS-verifisert) parallelt med de øvrige datakildene i `createMapFlow`, klassifiseres på type utledet fra tittelen (fangstminne, gravminne, stein/bergkunst, bygning/anlegg, annet) og fargelegges med et eget fasade-symbol i en heritage-palett adskilt fra ISOM-fargene. Laget «Kulturminner» ligger i Lag-fanen og er AV som standard — dataene bakes alltid inn ved bygging, så av/på er øyeblikkelig uten ombygging. Et tapp på et ikon åpner en detalj-skuff som viser tittel og kategori straks (fra SVG-en), henter beskrivelse/kommune/fylke/bilde lazy via `…/items/{id}` (cachet), viser CC-BY-attribusjon, og har en knapp «Åpne på kulturminnesok.no». Kart-SVG-en holdes liten ved kun å bake inn id/kategori/tittel pr ikon; tette punkter klynges (30 m), og resultatet er tak-begrenset (logges når taket nås). Datakilden er lagt til under Om-siden («Datakilder»); dataene er på NLOD (data.norge.no/nlod), bilder er CC BY per opphavsperson, og detalj-skuffen viser attribusjonen.
