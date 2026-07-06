@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.46: «Fredede kulturminner» som ekte vektor (Geonorge WFS) + teller
+
+Laget «Fredede kulturminner» er skrevet om fra WMS-raster til **ekte vektor** via Geonorge WFS (`wfs.geonorge.no/skwms1/wfs.kulturminner`, deegree, CORS `*`, bbox-filter, GML 3.2). Lokalitetene hentes live når laget slås på, klynges (45 m), og tegnes som egne diamant-ikoner INNE i kart-SVG-en — så de roterer, zoomer og printes skarpt sammen med resten (i motsetning til rasteret). Ikonene fargelegges etter vernetype (automatisk fredet / vedtaksfredet / listeført / annet; SOSI-kodene AUT/VED/LIST/… oversettes til lesbar tekst). Laget har nå en **teller** som brukerminne-laget — antallet hentes billig via WFS `resultType=hits` (f.eks. Håøya: 244). Klikk på et ikon åpner detalj-skuffen (navn, vernestatus, `informasjon`, kommune) + «Åpne på kulturminnesok.no». Ny `lib/kulturminneWfs.js` (URL-bygger + GML-parser + klynging, 9 tester); det midlertidige WMS-forsøket (`kulturminneWms.js`) er fjernet. Data på NLOD.
+
+---
+
 ## 2026-07-06 — v12.1.45: Mer robust kulturminne-henting ved bygging (mobil)
 
 Kulturminne-hentingen (brukerminner) ved kart-bygging tålte ikke et enkelt nett-/timeout-glipp: da ble 0 funn bakt inn i kartet — observert som «Kulturminner (0)» på mobil mens samme område ga «(8)» på desktop (mobilnett er flakete). `safeFetchJson` prøver nå ett ekstra gang ved transient feil, og timeout er hevet fra 9 til 12 s. Genuint tomme områder dobbel-henter ikke (retry trigger kun ved feil, ikke tomt svar). Eldre kart som allerede har 0 bakt inn må bygges på nytt for å få med funnene.

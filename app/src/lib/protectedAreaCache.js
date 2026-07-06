@@ -130,3 +130,9 @@ export function kulturminneBboxKey(bbox) {
 export function kulturminneIdKey(id) {
   return `kulturminne:id:${id}`
 }
+
+/** Nøkkel for fredede kulturminner (WFS-lokaliteter) pr kvantisert bbox. */
+export function fredetKulturminneBboxKey(bbox) {
+  const q = (v) => Number(v).toFixed(3)
+  return `fredet:bbox:${q(bbox.south)},${q(bbox.west)},${q(bbox.north)},${q(bbox.east)}`
+}
