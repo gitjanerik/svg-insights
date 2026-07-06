@@ -705,6 +705,10 @@ const KULTURMINNE_DRAWER_PEEK_PX = 76
 const kulturminneDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: KULTURMINNE_DRAWER_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
 const kulturminneOpen = ref(false)
 const kulturminneLoading = ref(false)
+// Antall kulturminne-ikoner i det innlastede kartet (settes i setupHostSvg).
+// Vises på «Kulturminner»-toggelen så «(0)» skiller et gammelt kart (bygget før
+// v12.1.38 → ingen data bakt inn) og et område uten funn fra en rendering-feil.
+const kulturminneCount = ref(0)
 const kulturminneDetail = ref(null)     // { id, kategori, tittel, beskrivelse, kommune, fylke, opprettetAv, link, bilder }
 let kulturminneReqId = 0
 const KULTURMINNE_KAT_LABEL = {
@@ -5529,6 +5533,9 @@ function setupHostSvg(sourceRoot, { staged = true } = {}) {
     detachedDetailLayers.push(g)
     g.remove()
   }
+  // Tell kulturminne-ikoner (til toggel-badgen). Gjøres her siden SVG-en nå er
+  // fullt populert; gamle kart uten laget gir 0.
+  kulturminneCount.value = svg.querySelectorAll('[data-kulturminne-id]').length
   const userLayer = document.createElementNS(ns, 'g')
   userLayer.setAttribute('id', 'user-layer')
   // v8.5.2: GPS-laget skal aldri sluke pinch-to-zoom-gester når brukerens
@@ -7255,6 +7262,9 @@ onUnmounted(() => {
                               ? 'bg-slate-400/25 border-slate-300/50 text-white'
                               : 'bg-white/5 border-white/10 text-white/45'">
                 <span class="text-[12px]">{{ lay.label }}</span>
+                <span v-if="lay.key === 'kulturminne'"
+                      class="ml-1 text-[10px] tabular-nums"
+                      :class="kulturminneCount ? 'text-emerald-300/80' : 'text-white/30'">({{ kulturminneCount }})</span>
               </button>
             </div>
             <!-- Gruppert seksjon: Sjø & padling -->
