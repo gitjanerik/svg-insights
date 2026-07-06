@@ -44,6 +44,21 @@ export function kulturminneKategori(tittel) {
   return 'annet'
 }
 
+// Rydd i beskrivelse-teksten fra API-et. Kulturminnesøk serialiserer et
+// felt-mal-oppsett inn i `beskrivelse`, og tomme underfelt havner som den
+// LITERALE strengen «null» — f.eks. «Beskrivelse: null» øverst når kort-
+// beskrivelsen mangler. Vi fjerner slike «<etikett>: null»-linjer (kun når
+// verdien er nøyaktig «null»), men lar ekte tekst stå urørt.
+export function cleanBeskrivelse(raw) {
+  if (raw == null) return ''
+  return String(raw)
+    .split('\n')
+    .filter((line) => !/^\s*[^\n:]{1,40}:\s*null\s*$/i.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function coordsToLatLon(geometry) {
   const c = geometry?.coordinates
   if (!Array.isArray(c) || c.length < 2) return null
@@ -82,7 +97,7 @@ function mapFeatureFull(f) {
     : []
   return {
     ...light,
-    beskrivelse: p.beskrivelse ?? '',
+    beskrivelse: cleanBeskrivelse(p.beskrivelse),
     fylke: p.fylke ?? null,
     kommune: p.kommune ?? null,
     opprettet: p.opprettet ?? null,

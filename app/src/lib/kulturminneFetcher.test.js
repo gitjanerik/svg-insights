@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { kulturminneKategori, fetchKulturminner, fetchKulturminneById } from './kulturminneFetcher.js'
+import { kulturminneKategori, fetchKulturminner, fetchKulturminneById, cleanBeskrivelse } from './kulturminneFetcher.js'
 
 function jsonResponse(body, ok = true) {
   return Promise.resolve({ ok, json: () => Promise.resolve(body) })
@@ -39,6 +39,28 @@ describe('kulturminneKategori — tittel → kategori', () => {
     expect(kulturminneKategori('Noe rart')).toBe('annet')
     expect(kulturminneKategori('')).toBe('annet')
     expect(kulturminneKategori(null)).toBe('annet')
+  })
+})
+
+describe('cleanBeskrivelse — fjern «<etikett>: null»-artefakter', () => {
+  it('fjerner en ledende «Beskrivelse: null» men beholder resten', () => {
+    const raw = 'Beskrivelse: null\n\nBygningen ble brukt til krutt.\n\nDatering: 1900-tallet'
+    expect(cleanBeskrivelse(raw)).toBe('Bygningen ble brukt til krutt.\n\nDatering: 1900-tallet')
+  })
+
+  it('beholder ekte innhold (aldri linjer med reell verdi)', () => {
+    const raw = 'Datering: 1900-tallet\nKilder: Forvaltningsplan Nordre Håøya'
+    expect(cleanBeskrivelse(raw)).toBe(raw)
+  })
+
+  it('rører ikke prosa som tilfeldigvis nevner null', () => {
+    const raw = 'Bygningen har null vinduer igjen.'
+    expect(cleanBeskrivelse(raw)).toBe(raw)
+  })
+
+  it('håndterer null/tom input', () => {
+    expect(cleanBeskrivelse(null)).toBe('')
+    expect(cleanBeskrivelse('')).toBe('')
   })
 })
 
