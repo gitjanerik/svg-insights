@@ -42,6 +42,7 @@ import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
 import { gmapsUrl, streetViewUrl, buildVegkartUrl, buildKulturminnesokUrl } from '../lib/externalMapLinks.js'
 import { fetchKulturminneById } from '../lib/kulturminneFetcher.js'
+import { buildWmsGetMapUrl, buildWmsGetFeatureInfoUrl, parseWmsFeatureInfo, summarizeKulturminne } from '../lib/kulturminneWms.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -393,6 +394,9 @@ const LAYERS = [
   // Default PÅ (v12.1.42): dataene bakes alltid inn ved bygging. Klikk →
   // detalj-skuff + lenke.
   { key: 'kulturminne', label: 'Kulturminner' },
+  // Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag
+  // (ingen offentlig vektor-API — se kulturminneWms.js). Default AV; opt-in.
+  { key: 'fredet-kulturminne', label: 'Fredede kulturminner' },
   // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
   // Stedsnavn delt i tre viktighets-nivåer (v9.1.20) — egne lag så de kan
@@ -436,7 +440,7 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
 // grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
 // leser som kontekst uten å konkurrere med veier/stier.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
+const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'fredet-kulturminne'])
 // Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
@@ -455,6 +459,7 @@ const _turExclude = new Set([
   'lysloype', 'heistrase', 'slalombakke', // vinter-ting
   'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
   'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
+  'fredet-kulturminne',                   // raster-overlegg — kun i «Detaljert»
 ])
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
 const LAYER_PRESETS = [
@@ -768,6 +773,36 @@ function onOpenKulturminnesok() {
   if (url) window.open(url, '_blank', 'noopener')
 }
 
+// Klikk på fredet-kulturminne WMS-laget → GetFeatureInfo (text/plain) på samme
+// rutenett som bildet ble bygd med. Gjenbruker kulturminne-detalj-skuffen.
+async function openFredetKulturminneDetail(localX, localY) {
+  const g = fredetWmsGrid
+  const m = meta.value
+  if (!g || !m) return
+  const i = Math.round((localX / m.widthM) * g.widthPx)
+  const j = Math.round((localY / m.heightM) * g.heightPx)
+  if (i < 0 || j < 0 || i > g.widthPx || j > g.heightPx) return
+  const reqId = ++kulturminneReqId
+  try {
+    const res = await fetch(buildWmsGetFeatureInfoUrl({ ...g, i, j, buffer: 18, featureCount: 6 }))
+    if (!res.ok || reqId !== kulturminneReqId) return
+    const feats = parseWmsFeatureInfo(await res.text())
+    if (reqId !== kulturminneReqId || !feats.length) return  // ingen treff → ikke åpne
+    const s = summarizeKulturminne(feats[0])
+    kulturminneDetail.value = {
+      id: null, kategori: 'annet',
+      tittel: s.navn || s.art || 'Kulturminne',
+      subtittel: [s.art, s.vernetype].filter(Boolean).join(' · ') || 'Fredet kulturminne',
+      beskrivelse: s.informasjon || '',
+      kommune: s.kommune, fylke: null, opprettetAv: null,
+      link: s.link, bilder: [],
+    }
+    kulturminneLoading.value = false
+    kulturminneOpen.value = true
+    kulturminneDrawer.reset()
+  } catch { /* nett/CORS — ignorer stille */ }
+}
+
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
 // container-font-size. Erstatter behovet for browser-pinch-zoom (som ikke kan
@@ -958,6 +993,54 @@ function toggleDepth() {
   applyDepthLayer()
 }
 
+// Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag.
+// Bildet legges INNE i kart-SVG-en i UTM32-rom (EPSG:25832 = viewBox-metrene),
+// så det roterer/zoomer/panner sammen med vektorene (ingen flytende-overlegg-
+// alignment). crossorigin=anonymous + CORS * → print/eksport tainter ikke canvas.
+// Ett bilde dekker hele kartets bbox (ingen re-fetch ved pan/zoom); dyp innzoom
+// gir pikselering (akseptert — ingen offentlig vektor-kilde, se kulturminneWms.js).
+const FREDET_WMS_MAX_PX = 2048
+// Rutenettet bildet ble bygd med — gjenbrukes av GetFeatureInfo ved klikk.
+let fredetWmsGrid = null
+function applyFredetKulturminneLayer() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!svg) return
+  const existing = svg.querySelector('#fredet-km-layer')
+  const m = meta.value
+  if (!visibleLayers.value.has('fredet-kulturminne') || !m) {
+    existing?.remove()
+    fredetWmsGrid = null
+    return
+  }
+  const { minE, minN, maxE, maxN, widthM, heightM } = m
+  // Oppløsning: lang side = FREDET_WMS_MAX_PX, kort side proporsjonalt.
+  const long = Math.max(widthM, heightM)
+  const widthPx = Math.round(FREDET_WMS_MAX_PX * (widthM / long))
+  const heightPx = Math.round(FREDET_WMS_MAX_PX * (heightM / long))
+  fredetWmsGrid = { minE, minN, maxE, maxN, widthPx, heightPx }
+  const url = buildWmsGetMapUrl(fredetWmsGrid)
+  const ns = 'http://www.w3.org/2000/svg'
+  let img = existing
+  if (!img) {
+    img = document.createElementNS(ns, 'image')
+    img.setAttribute('id', 'fredet-km-layer')
+    img.setAttribute('data-layer', 'fredet-kulturminne')
+    img.setAttribute('preserveAspectRatio', 'none')
+    img.setAttribute('pointer-events', 'none')
+    img.setAttribute('crossorigin', 'anonymous')
+    img.setAttribute('decoding', 'async')
+    img.setAttribute('x', '0'); img.setAttribute('y', '0')
+    img.setAttribute('width', String(widthM))
+    img.setAttribute('height', String(heightM))
+  }
+  // Over kart-innhold, under navne-labels (så tekst ikke skjules).
+  const before = svg.querySelector('[data-label]')
+  if (before) svg.insertBefore(img, before)
+  else svg.appendChild(img)
+  img.setAttribute('href', url)
+  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
+}
+
 function applyLayerVisibility() {
   const root = svgHostRef.value?.querySelector('svg')
   if (!root) return
@@ -989,6 +1072,8 @@ function applyLayerVisibility() {
   // Hold dybde-hovedlaget i synk med lag-tilstanden (presets/nullstill kan ha
   // endret 'dybde'); re-injiserer/fjerner #depth-main-layer etter behov.
   applyDepthLayer()
+  // Samme for fredet-kulturminne WMS-laget (injiser/fjern <image>).
+  applyFredetKulturminneLayer()
 }
 
 // Navne-labels som kan være flerspråklige (norsk - samisk - finsk). Tall-labels
@@ -3905,6 +3990,12 @@ function onMapClick(e) {
   if (measureMode.value) {
     if (measureClosed.value) return  // ingen flere vertices etter lukking
     measureVertices.value = [...measureVertices.value, { x: local.x, y: local.y }]
+    return
+  }
+  // Fredet-kulturminne WMS-lag på + ikke i annoteringsmodus → klikk henter
+  // GetFeatureInfo for punktet (åpner skuff kun ved treff). Fire-and-forget.
+  if (visibleLayers.value.has('fredet-kulturminne') && !annot.isAnnotateMode.value) {
+    openFredetKulturminneDetail(local.x, local.y)
     return
   }
   if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
@@ -8286,7 +8377,7 @@ onUnmounted(() => {
             <div class="min-w-0 flex items-start gap-2.5">
               <span class="mt-0.5 w-3.5 h-3.5 shrink-0 rounded-sm" :style="{ background: kulturminneKatColor }"></span>
               <div class="min-w-0">
-                <div class="text-[10px] uppercase tracking-wide text-white/45">{{ kulturminneKatLabel }}</div>
+                <div class="text-[10px] uppercase tracking-wide text-white/45">{{ kulturminneDetail.subtittel || kulturminneKatLabel }}</div>
                 <div class="text-white text-[15px] font-medium leading-snug break-words">{{ kulturminneDetail.tittel }}</div>
               </div>
             </div>
