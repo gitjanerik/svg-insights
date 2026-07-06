@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.41: Større kulturminne-ikoner + fiks font-nedtrekk på desktop
+
+To fikser. (1) Kulturminne-ikonene var for små til å se på utzoomede kart (2,4 mm ≈ få piksler ved oversikts-zoom). De er nå 3,6 mm og har fått en tynn mørk kontur så de leser tydelig mot både land, skog og vann. Som alle kart-symboler skalerer de fortsatt med zoom — zoom inn på området for å se dem større. (2) Nedtrekkslista «Skrift på kart-navn» (Tema-fanen) hadde hvit tekst også på de åpne valgene, som ga hvit-på-hvit og usynlige alternativer på desktop. Alternativene får nå mørk tekst på hvit bakgrunn (`[&>option]:text-zinc-900`).
+
+---
+
 ## 2026-07-06 — v12.1.40: Veinummer skalerer ikke med tekst-slideren + «Skrift på kart-navn» flyttet til Tema
 
 To justeringer i turkart-UI-et: (1) Veinummer-skiltene (E-vei / fylkesvei) følger ikke lenger «Skrift»-slideren på desktop. Skiltet er en fast-dimensjonert boks bygget ved kart-tid, så når teksten skalerte med `--label-scale` sprengte den ut av boksen. Font-en settes nå med kartstørrelse-skalaen (`mm()`) i stedet for tekst-slideren (`fs()`), så tall og boks holder seg proporsjonale uansett slider-posisjon. (2) Valget «Skrift på kart-navn» (font-par for stedsnavn) er flyttet fra Innstillinger-fanen til Tema-fanen, der det hører tematisk hjemme sammen med tema-valget.
