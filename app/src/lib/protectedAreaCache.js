@@ -15,6 +15,7 @@ export const TTL = {
   naturtype: 30 * 24 * 60 * 60 * 1000,
   species: 24 * 60 * 60 * 1000,
   wiki: 7 * 24 * 60 * 60 * 1000,
+  kulturminne: 30 * 24 * 60 * 60 * 1000,
 }
 
 // Session-minne foran IndexedDB — unngår en async DB-tur når punktet allerede
@@ -117,4 +118,15 @@ export function naturtypePointKey(lat, lon) {
  *  v3-navnerom: gamle treff mangler `source` og prøvde aldri SNL. */
 export function placePointKey(lat, lon) {
   return `wikiplace3:pt:${lat.toFixed(3)},${lon.toFixed(3)}`
+}
+
+/** Nøkkel for kulturminne-bbox-henting (kvantisert til ~3 desimaler ≈ 100 m). */
+export function kulturminneBboxKey(bbox) {
+  const q = (v) => Number(v).toFixed(3)
+  return `kulturminne:bbox:${q(bbox.south)},${q(bbox.west)},${q(bbox.north)},${q(bbox.east)}`
+}
+
+/** Nøkkel for kulturminne-detalj pr UUID (til detalj-skuffens lazy-henting). */
+export function kulturminneIdKey(id) {
+  return `kulturminne:id:${id}`
 }

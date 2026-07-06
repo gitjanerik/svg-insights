@@ -40,7 +40,8 @@ import {
 } from '../lib/viewportCull.js'
 import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
-import { gmapsUrl, streetViewUrl, buildVegkartUrl } from '../lib/externalMapLinks.js'
+import { gmapsUrl, streetViewUrl, buildVegkartUrl, buildKulturminnesokUrl } from '../lib/externalMapLinks.js'
+import { fetchKulturminneById } from '../lib/kulturminneFetcher.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -53,7 +54,7 @@ import { groupSpecies } from '../lib/speciesGroups.js'
 import { fetchWikiSummary, titleMatches } from '../lib/wikiSummary.js'
 import { fetchNearestWikiPlace, placeNameMatches } from '../lib/wikiPlace.js'
 import { fetchSnlSummary } from '../lib/snlFetcher.js'
-import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, TTL } from '../lib/protectedAreaCache.js'
+import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, kulturminneIdKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace, pointToPolylineDist,
@@ -388,6 +389,10 @@ const LAYERS = [
   { key: 'tog',        label: 'Jernbane' },
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'trig',       label: 'Trigpunkter' },
+  // Kulturminne-overlegg (Kulturminnesøk brukerminner) — klikkbare tema-ikoner.
+  // Default AV (se DEFAULT_OFF_LAYERS): dataene bakes alltid inn ved bygging, men
+  // vises først når brukeren slår laget på. Klikk → detalj-skuff + lenke.
+  { key: 'kulturminne', label: 'Kulturminner' },
   // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
   // Stedsnavn delt i tre viktighets-nivåer (v9.1.20) — egne lag så de kan
@@ -431,7 +436,7 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
 // grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
 // leser som kontekst uten å konkurrere med veier/stier.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
+const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'kulturminne'])
 // Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
@@ -450,6 +455,7 @@ const _turExclude = new Set([
   'lysloype', 'heistrase', 'slalombakke', // vinter-ting
   'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
   'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
+  'kulturminne',                          // tema-overlegg — kun i «Detaljert»
 ])
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
 const LAYER_PRESETS = [
@@ -690,6 +696,74 @@ const KNOB_PANEL_PEEK_PX = 76
 // skuffen — 45 dvh standard, dra i håndtaket for å maksimere/minimere. Minimert
 // lar brukeren lynraskt justere → minimere → se på kartet → maksimere igjen.
 const knobDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: KNOB_PANEL_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
+
+// Kulturminne-detalj-skuff (Kulturminnesøk brukerminner). Åpnes ved tapp på et
+// kulturminne-ikon i kartet. Tittel/kategori er allerede i SVG-en (data-*), mens
+// beskrivelse/sted/bilde hentes lazy via fetchKulturminneById (cachet) og fylles
+// inn når svaret kommer.
+const KULTURMINNE_DRAWER_PEEK_PX = 76
+const kulturminneDrawer = useDraggableDrawer({ expandedHeight: 0.45, minimizedPeek: KULTURMINNE_DRAWER_PEEK_PX, maxTopGapPx: MAX_DRAWER_TOP_GAP_PX, allowMinimize: true })
+const kulturminneOpen = ref(false)
+const kulturminneLoading = ref(false)
+const kulturminneDetail = ref(null)     // { id, kategori, tittel, beskrivelse, kommune, fylke, opprettetAv, link, bilder }
+let kulturminneReqId = 0
+const KULTURMINNE_KAT_LABEL = {
+  fangst: 'Fangstminne',
+  gravminne: 'Gravminne',
+  stein: 'Stein / bergkunst',
+  bygning: 'Bygning / anlegg',
+  annet: 'Kulturminne',
+}
+const kulturminneKatLabel = computed(() =>
+  KULTURMINNE_KAT_LABEL[kulturminneDetail.value?.kategori] ?? 'Kulturminne')
+// Samme farger som kart-ikonene (buildIsomCss g[data-kat]).
+const KULTURMINNE_KAT_COLOR = {
+  fangst: '#b8730f', gravminne: '#7d3c98', stein: '#5d6d7e', bygning: '#b03a2e', annet: '#6d4c41',
+}
+const kulturminneKatColor = computed(() =>
+  KULTURMINNE_KAT_COLOR[kulturminneDetail.value?.kategori] ?? KULTURMINNE_KAT_COLOR.annet)
+const kulturminneBilde = computed(() => kulturminneDetail.value?.bilder?.[0] ?? null)
+const kulturminneLink = computed(() => {
+  const d = kulturminneDetail.value
+  if (!d) return null
+  return d.link || buildKulturminnesokUrl(d.id)
+})
+
+async function openKulturminneDetail(el) {
+  const id = el?.getAttribute('data-kulturminne-id')
+  if (!id) return
+  const kategori = el.getAttribute('data-kat') || 'annet'
+  const tittel = el.getAttribute('data-tittel') || 'Kulturminne'
+  // Vis tittel/kategori straks fra SVG-attributtene; hent resten.
+  kulturminneDetail.value = { id, kategori, tittel, beskrivelse: '', kommune: null, fylke: null, opprettetAv: null, link: null, bilder: [] }
+  kulturminneOpen.value = true
+  kulturminneDrawer.reset()
+  const reqId = ++kulturminneReqId
+  kulturminneLoading.value = true
+  try {
+    const key = kulturminneIdKey(id)
+    let full = await cacheGet(key)
+    if (!full) {
+      full = await fetchKulturminneById(id)
+      if (full) cacheSet(key, full, TTL.kulturminne)
+    }
+    if (reqId !== kulturminneReqId) return  // et nyere klikk vant
+    if (full) kulturminneDetail.value = { ...kulturminneDetail.value, ...full, tittel: full.tittel || tittel, kategori }
+  } finally {
+    if (reqId === kulturminneReqId) kulturminneLoading.value = false
+  }
+}
+
+function closeKulturminneDetail() {
+  kulturminneOpen.value = false
+  kulturminneReqId++          // kanseller evt. pågående henting
+  kulturminneLoading.value = false
+}
+
+function onOpenKulturminnesok() {
+  const url = kulturminneLink.value
+  if (url) window.open(url, '_blank', 'noopener')
+}
 
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
@@ -3805,6 +3879,12 @@ function onMapClick(e) {
   // on-the-fly — pan/zoom/rotasjon er fri, men symbol-plassering venter til
   // kartet er ferdig (unngår plassering på et halvbygd / snart-erstattet kart).
   if (fillingInDetails.value || buildingOnTheFly.value) return
+  // Kulturminne-ikon tappet → åpne detalj-skuff (uavhengig av verktøy, men ikke
+  // mens et aktivt plasserings-/måle-/stifinner-verktøy eier tappet).
+  if (!measureMode.value && !annot.isAnnotateMode.value && !sti.active.value) {
+    const kmHit = e.target?.closest?.('[data-kulturminne-id]')
+    if (kmHit) { openKulturminneDetail(kmHit); return }
+  }
   // Stifinner eier tap-eventet mens den er aktiv: startpunkt velges via det
   // faste midt-siktet (bekreft-knapp), og rute-tapp håndteres av egne DOM-
   // listenere på rute-linjene. Generelle kart-tapp gjør ingenting her.
@@ -8172,6 +8252,90 @@ onUnmounted(() => {
            = lukk). Standard/minimert lar kartet stå synlig og interaktivt bak
            arket (pointer-events-none) så man kan panorere/zoome hovedkartet for
            kontekst, uavhengig av mini-kartets eget zoom-nivå i arket. -->
+      <!-- Kulturminne-detalj-skuff (Kulturminnesøk brukerminner). Tittel/kategori
+           vises straks fra kart-ikonets data-*, beskrivelse/sted/bilde hentes lazy. -->
+      <div v-if="kulturminneOpen && kulturminneDetail"
+           class="absolute inset-0 z-40 flex items-end justify-center transition-colors duration-200"
+           :class="kulturminneDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
+           @click.self="closeKulturminneDetail">
+        <div class="w-full bg-zinc-900 border-t border-white/10 rounded-t-2xl flex flex-col pointer-events-auto"
+             :style="kulturminneDrawer.drawerHeightStyle.value">
+          <div class="shrink-0 touch-none cursor-grab active:cursor-grabbing pt-3.5 pb-3 flex justify-center"
+               @pointerdown="kulturminneDrawer.onPointerDown($event)"
+               @pointermove="kulturminneDrawer.onPointerMove($event)"
+               @pointerup="kulturminneDrawer.onPointerUp($event)"
+               @pointercancel="kulturminneDrawer.onPointerUp($event)">
+            <div class="w-12 h-1.5 rounded-full bg-white/40"
+                 :style="{ opacity: kulturminneDrawer.handleOpacity.value }"></div>
+          </div>
+          <!-- Header: kategori-merke + tittel + lukk -->
+          <div class="shrink-0 px-4 pb-2.5 bg-zinc-900/95 border-b border-white/8 flex items-start justify-between gap-3">
+            <div class="min-w-0 flex items-start gap-2.5">
+              <span class="mt-0.5 w-3.5 h-3.5 shrink-0 rounded-sm" :style="{ background: kulturminneKatColor }"></span>
+              <div class="min-w-0">
+                <div class="text-[10px] uppercase tracking-wide text-white/45">{{ kulturminneKatLabel }}</div>
+                <div class="text-white text-[15px] font-medium leading-snug break-words">{{ kulturminneDetail.tittel }}</div>
+              </div>
+            </div>
+            <button @click="closeKulturminneDetail"
+                    aria-label="Lukk"
+                    class="w-8 h-8 -mr-1 -mt-0.5 shrink-0 rounded-full flex items-center justify-center
+                           bg-white/5 border border-white/10 text-white/70 active:scale-90">
+              <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor"
+                   stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+          </div>
+          <!-- Kropp: beskrivelse/sted/bilde + lenke -->
+          <div v-show="!kulturminneDrawer.isMinimized.value"
+               class="flex-1 overflow-y-auto px-4 pt-3"
+               :style="{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }">
+            <div v-if="kulturminneLoading && !kulturminneDetail.beskrivelse"
+                 class="text-[12px] text-white/50 py-3">Henter detaljer …</div>
+
+            <p v-if="kulturminneDetail.beskrivelse"
+               class="text-[13px] text-white/85 leading-relaxed whitespace-pre-line break-words">{{ kulturminneDetail.beskrivelse }}</p>
+
+            <div v-if="kulturminneDetail.kommune || kulturminneDetail.fylke"
+                 class="mt-2.5 text-[12px] text-white/55">
+              {{ [kulturminneDetail.kommune, kulturminneDetail.fylke].filter(Boolean).join(' · ') }}
+            </div>
+            <div v-if="kulturminneDetail.opprettetAv" class="mt-0.5 text-[11px] text-white/40">
+              Registrert av {{ kulturminneDetail.opprettetAv }}
+            </div>
+
+            <figure v-if="kulturminneBilde" class="mt-3">
+              <img :src="kulturminneBilde.url" :alt="kulturminneDetail.tittel"
+                   loading="lazy" referrerpolicy="no-referrer"
+                   class="w-full rounded-lg border border-white/10 bg-black/20" />
+              <figcaption class="mt-1 text-[10px] text-white/40">
+                © Kulturminnesøk{{ kulturminneBilde.fotograf ? ' / ' + kulturminneBilde.fotograf : '' }}{{ kulturminneBilde.lisens ? ', ' + kulturminneBilde.lisens : ', CC BY' }}
+              </figcaption>
+            </figure>
+
+            <button @click="onOpenKulturminnesok"
+                    :disabled="!kulturminneLink"
+                    class="mt-4 w-full px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2.5 transition
+                           bg-amber-500/[0.12] border-amber-400/35 text-amber-100
+                           disabled:opacity-40 disabled:active:scale-100">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              <span class="flex-1 text-left font-medium">Åpne på kulturminnesok.no</span>
+            </button>
+
+            <p class="mt-3 text-[10px] text-white/35 leading-relaxed">
+              Data: Kulturminnesøk (Riksantikvaren) ·
+              <a href="https://data.norge.no/nlod" target="_blank" rel="noopener" class="underline">NLOD</a>
+            </p>
+          </div>
+        </div>
+      </div>
+
       <div v-if="contextMenuOpen && contextMenuInfo"
            class="absolute inset-0 z-40 flex items-end justify-center transition-colors duration-200"
            :class="contextDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"

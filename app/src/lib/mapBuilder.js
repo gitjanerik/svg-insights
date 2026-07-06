@@ -708,6 +708,7 @@ export function buildSvg(elements, bbox, options = {}) {
                                    // saltvann). Brukes av MapView til å være ærlig om at
                                    // ~0 m over en innlands-vannflate er en DEM-artefakt.
     sjokartStatus = null,          // utfall av Sjøkart-WFS-hentingen (summarizeSjokartStatus)
+    kulturminner = [],             // Kulturminnesøk brukerminner (hentet i createMapFlow)
   } = options
 
   // «Fjern routes generelt» (v10.2.43): rute-relasjoner og rute-taggede
@@ -2304,6 +2305,27 @@ export function buildSvg(elements, bbox, options = {}) {
     return `    <g data-upright="1" data-iso="${code}"${flag} transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${sid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(sz)}mm" height="${fmt(sz)}mm"/></g>`
   }).filter(Boolean).join('\n')
 
+  // Kulturminner (Kulturminnesøk brukerminner — IKKE ISOM). Klikkbare ikoner med
+  // felles fasade-symbol, farget pr kategori via CSS på data-kat. Tette punkter
+  // klynges (30 m) med gjenbruk av clusterHoldeplasser. Kun id/kat/tittel bakes i
+  // SVG-en (data-*) — full detalj hentes lazy ved klikk (MapView → fetchKulturminneById),
+  // så kart-filen holdes liten. `data-upright` holder ikonet rett ved kart-rotasjon.
+  const KULTURMINNE_SIZE_MM = 2.4
+  const kulturminneNodes = (Array.isArray(kulturminner) ? kulturminner : [])
+    .filter(k => k && Number.isFinite(k.lat) && Number.isFinite(k.lon) && k.id != null)
+    .map(k => ({ ...k, type: 'node' }))
+  const kulturminneSid = symbolIds.get('kulturminne')
+  const kulturminneSvg = kulturminneSid
+    ? clusterHoldeplasser(kulturminneNodes, 30).map(k => {
+        const p = project(k.lat, k.lon)
+        const half = KULTURMINNE_SIZE_MM / 2
+        const kat = xmlEscape(k.kategori || 'annet')
+        const tittel = xmlEscape(k.tittel || '')
+        const id = xmlEscape(String(k.id))
+        return `    <g data-kulturminne-id="${id}" data-kat="${kat}" data-tittel="${tittel}" data-upright="1" transform="translate(${fmt(p.x)},${fmt(p.y)})"><use href="#${kulturminneSid}" x="-${fmt(half)}mm" y="-${fmt(half)}mm" width="${fmt(KULTURMINNE_SIZE_MM)}mm" height="${fmt(KULTURMINNE_SIZE_MM)}mm"/></g>`
+      }).join('\n')
+    : ''
+
   // Bro (ISOM 512-derivert): to parallelle parapet-linjer langs HELE
   // bro-veiens lengde. Tidligere ble broen tegnet som ETT fast 1.8 mm symbol
   // på midtpunktet → en liten firkant midt i vannet uansett brolengde. Nå
@@ -2623,6 +2645,8 @@ export function buildSvg(elements, bbox, options = {}) {
     ? `  <g data-layer="bom" data-iso="526">\n${bomSvg}\n  </g>\n` : ''
   const marineLayerSvg = marinePointSvg
     ? `  <g data-layer="sjo-poi">\n${marinePointSvg}\n  </g>\n` : ''
+  const kulturminneLayerSvg = kulturminneSvg
+    ? `  <g data-layer="kulturminne">\n${kulturminneSvg}\n  </g>\n` : ''
 
   // ── Skjulte detalj-lag (kun synlig i long-press-inset-en) ────────────
   // Dybdepunkt-soundings og dybdekurver ble «for voldsomt» på hovedkartet,
@@ -2890,7 +2914,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // begge så feilplassert terreng/vann-overlapp dekkes. Planimetri som hører
   // til OVER vann (vann-labels, verneområde, veier/broer, bygg, marine-POI,
   // tekst) males etter vannet, som før.
-  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${summitLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${detailLayerSvg}${placeholderLayers}${roadRefLayer}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
+  const body = `${groundLayers}${urbanMassLayerSvg}${landOverlayLayers}${strandLayers}${contourLayerSvg}${summitLayerSvg}${knauserLayerSvg}${cliffsLayerSvg}${demSeaLayerSvg}${waterLayers}${lakeLabelLayer}${waterwayLabelLayer}${protectedLayers}${roadLayers}${broLayerSvg}${bomLayerSvg}${upperLayers}${huleLayerSvg}${gruveLayerSvg}${trigLayerSvg}${kirkeLayerSvg}${parkeringLayerSvg}${holdeplassLayerSvg}${marineLayerSvg}${kulturminneLayerSvg}${detailLayerSvg}${placeholderLayers}${roadRefLayer}${labelLayer}${seaNamesLayer}${omradenavnLayer}${stedsnavnLayer}`
 
   const usedCodes = new Set()
   for (const m of body.matchAll(/data-iso="([^"]+)"/g)) usedCodes.add(m[1])
