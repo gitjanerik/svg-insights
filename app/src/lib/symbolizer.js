@@ -741,7 +741,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   // v12.0.15 — Veinummer-skilt (E-vei grønt skilt / fylkesvei hvit boks).
   // Skilt-rect-en ER haloen, så tekst-halo slås av. Trafikkskiltfarger er
   // konstante på tvers av temaer (som ekte skilt) — ingen CSS-var-hooks.
-  rules.push(`${root} [data-label="veinummer"] { font-size: ${fs(2.8)}; font-weight: 700; stroke: none; text-anchor: middle; }`)
+  // v12.1.40: font settes med mm() (kartstørrelse-skala), IKKE fs() — skiltet
+  // er en fast-dimensjonert rect bygget ved kart-tid, så tekst-slideren
+  // (--label-scale) ville sprengt teksten ut av boksen. Veinummer skal derfor
+  // ikke følge «Skrift»-slideren.
+  rules.push(`${root} [data-label="veinummer"] { font-size: ${mm(2.8)}; font-weight: 700; stroke: none; text-anchor: middle; }`)
   rules.push(`${root} [data-label="veinummer"][data-rank="e"] { fill: #fff; }`)
   rules.push(`${root} [data-label="veinummer"][data-rank="fylke"] { fill: #161616; }`)
   // v8.10.9: områdenavn (myr, heath, locality-polygoner osv) og hytte-navn.
