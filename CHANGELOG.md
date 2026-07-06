@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.43: Tydeligere NLOD-lenke på Om-siden
+
+NLOD-henvisningene i «Datakilder» på Om-siden var allerede lenker til data.norge.no/nlod, men var stylet dempet (samme farge som brødteksten, kun understrek på hover) så de leste som vanlig tekst. De bruker nå appens synlige lenke-stil (lysere tekst + understrek), så det er tydelig at NLOD er klikkbart. Rettet også en utdatert «default av» → «default på» for kulturminne-laget i samme avsnitt.
+
+---
+
 ## 2026-07-06 — v12.1.42: Kulturminner default PÅ + rydd «Beskrivelse: null»
 
 To justeringer på kulturminne-laget. (1) Laget «Kulturminner» er nå PÅ som standard på nye kart (også i Tur/Print-forhåndsvalgene), så funnene vises uten at man må slå dem på. (2) Detalj-skuffen viste av og til en ledende «Beskrivelse: null»-linje: Kulturminnesøk serialiserer et felt-mal-oppsett inn i beskrivelsen, og tomme underfelt havner som den literale strengen «null». `cleanBeskrivelse` fjerner nå slike «<etikett>: null»-linjer (kun når verdien er nøyaktig «null») og lar all ekte tekst stå. Gjelder umiddelbart siden detaljene hentes live ved klikk.

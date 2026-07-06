@@ -186,7 +186,7 @@ const TABS = [
           ren SVG med mm-baserte streker — ingen kart-engine.
         </p>
 
-        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (CC BY 4.0 / ODbL / <a href="https://data.norge.no/nlod" target="_blank" rel="noopener" class="underline hover:text-white/70">NLOD</a>; Wikipedia &amp; SNL CC BY-SA)</h4>
+        <h4 class="text-xs font-semibold text-white/65 mt-4 mb-2">Datakilder (CC BY 4.0 / ODbL / <a href="https://data.norge.no/nlod" target="_blank" rel="noopener" class="text-white/80 underline decoration-white/40 underline-offset-2 hover:text-white">NLOD</a>; Wikipedia &amp; SNL CC BY-SA)</h4>
         <ul class="text-xs text-white/50 space-y-1.5 list-disc list-inside leading-relaxed">
           <li><strong class="text-white/75">OpenStreetMap</strong> via Overpass API — stier, veier, vann, bygninger, stedsnavn, øy-overlay</li>
           <li><strong class="text-white/75">Kartverket N50 Kartdata</strong> via WFS — autoritativ Havflate, Innsjø og ElvBekk</li>
@@ -200,7 +200,7 @@ const TABS = [
           <li><strong class="text-white/75">NiN naturtyper (Miljødirektoratet)</strong> via ArcGIS REST — kartlagte naturtyper ved long-press</li>
           <li><strong class="text-white/75">Store norske leksikon</strong> via snl.no API — foretrukket ingress om verneområder og navngitte steder ved long-press</li>
           <li><strong class="text-white/75">Wikipedia</strong> via REST-summary + Action API geosearch — nærmeste geotaggede sted (innsjø, topp, grend, elv) og fallback-ingress ved long-press</li>
-          <li><strong class="text-white/75">Kulturminnesøk (Riksantikvaren)</strong> via api.ra.no «brukerminner» (OGC API Features) — brukerregistrerte kulturminner som klikkbare, klassifiserte ikoner i kartutsnittet (lag «Kulturminner», default av). Data på <a href="https://data.norge.no/nlod" target="_blank" rel="noopener" class="underline hover:text-white/70">NLOD</a>; bilder CC BY per opphavsperson</li>
+          <li><strong class="text-white/75">Kulturminnesøk (Riksantikvaren)</strong> via api.ra.no «brukerminner» (OGC API Features) — brukerregistrerte kulturminner som klikkbare, klassifiserte ikoner i kartutsnittet (lag «Kulturminner», default på). Data på <a href="https://data.norge.no/nlod" target="_blank" rel="noopener" class="text-white/80 underline decoration-white/40 underline-offset-2 hover:text-white">NLOD</a>; bilder CC BY per opphavsperson</li>
           <li><strong class="text-white/75">Nominatim</strong> via OSM — stedssøk i kart-velgeren</li>
         </ul>
 
