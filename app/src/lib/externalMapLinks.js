@@ -32,3 +32,13 @@ export function buildVegkartUrl({ lat, lon, zoom = VEGKART_DEFAULT_ZOOM }) {
   const { e, n } = wgs84ToUtm33(lat, lon)
   return `https://vegkart.atlas.vegvesen.no/#kartlag:geodata/@${Math.round(e)},${Math.round(n)},${z}`
 }
+
+/**
+ * Bygg dyplenke til Kulturminnesøk for et kulturminne (UUID). Brukes som fallback
+ * når API-ets eget `linkkulturminnesok`-felt mangler.
+ * @param {string} id  UUID
+ * @returns {string|null}
+ */
+export function buildKulturminnesokUrl(id) {
+  return id ? `https://www.kulturminnesok.no/kart/?id=${encodeURIComponent(id)}` : null
+}

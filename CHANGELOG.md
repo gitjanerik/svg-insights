@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.38: Kulturminne-overlegg i turkartet
+
+Turkartet kan nå vise kulturminner fra Kulturminnesøks åpne «brukerminner»-tjeneste (Riksantikvaren, `api.ra.no`) som klikkbare ikoner i kartutsnittet. Funnene hentes rent klient-side (CORS-verifisert) parallelt med de øvrige datakildene i `createMapFlow`, klassifiseres på type utledet fra tittelen (fangstminne, gravminne, stein/bergkunst, bygning/anlegg, annet) og fargelegges med et eget fasade-symbol i en heritage-palett adskilt fra ISOM-fargene. Laget «Kulturminner» ligger i Lag-fanen og er AV som standard — dataene bakes alltid inn ved bygging, så av/på er øyeblikkelig uten ombygging. Et tapp på et ikon åpner en detalj-skuff som viser tittel og kategori straks (fra SVG-en), henter beskrivelse/kommune/fylke/bilde lazy via `…/items/{id}` (cachet), viser CC-BY-attribusjon, og har en knapp «Åpne på kulturminnesok.no». Kart-SVG-en holdes liten ved kun å bake inn id/kategori/tittel pr ikon; tette punkter klynges (30 m), og resultatet er tak-begrenset (logges når taket nås). Datakilden er lagt til under Om-siden («Datakilder»); dataene er på NLOD (data.norge.no/nlod), bilder er CC BY per opphavsperson, og detalj-skuffen viser attribusjonen.
+
+---
+
 ## 2026-07-05 — v12.1.37: Avbryt-knapp i turkart-loaderen
 
 Full-skjerm-loaderen som vises mens «Åpne turkart» bygger et nytt kart har fått en Avbryt-knapp. Den skjuler loaderen straks og signaliserer abort til bygge-pipelinen via en `AbortController` (`buildMapFromCenter` og fetch-ene den orkestrerer kaster da `AbortError`) — best-effort, som resten av appens abort-håndtering. Avbrudd under navneoppslaget hopper over byggingen, og `finally`-opprydningen er identitets-gated så en avbrutt bygg ikke nullstiller loaderen for en påfølgende ny bygg.

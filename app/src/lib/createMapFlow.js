@@ -19,6 +19,7 @@ import { fetchOverpass, probeCoastline, bboxFromCenter, viewportAspect } from '.
 import { buildSvgClient } from './buildSvgClient.js'
 import { fetchN50Water } from './n50Fetcher.js'
 import { fetchNveLakePolygons } from './nveLakeFetcher.js'
+import { fetchKulturminner } from './kulturminneFetcher.js'
 import { fetchSjokart, sjokartToElements, sjokartTimeoutForBbox, summarizeSjokartStatus } from './sjokartFetcher.js'
 import { isOsmWaterSalty, isFlowingWaterArea } from './symbolizer.js'
 import { pointInRing } from './marineTopology.js'
@@ -29,6 +30,7 @@ import { utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
 import { saveMap, generateMapId } from './mapStorage.js'
 import { snapUtmBboxToGrid, fetchDEMWithCache } from './demTileCache.js'
 import { logPerf } from './perfLog.js'
+import { cacheGet, cacheSet, TTL, kulturminneBboxKey } from './protectedAreaCache.js'
 
 // DEM-flis-cache. Når PÅ snappes kart-bbox til res-rutenettet og DEM hentes
 // flis-vis med gjenbruk mellom overlappende kart; AV = byte-identisk med før
@@ -378,6 +380,17 @@ export async function buildMapFromCenter({
     console.warn('NVE-innsjø ikke tilgjengelig:', e?.message ?? e)
     return []
   }))
+  // Kulturminner (Kulturminnesøk brukerminner) — klikkbare tema-ikoner. Hentes
+  // alltid ved bygging (default-AV lag i MapView → skjult til brukeren slår det
+  // på, uten ombygging). Cachet pr kvantisert bbox (30 d). Feiler aldri hardt → [].
+  const kulturminneP = timeAsync('kulturminne', (async () => {
+    const key = kulturminneBboxKey(bbox)
+    const cached = await cacheGet(key)
+    if (Array.isArray(cached)) return cached
+    const data = await fetchKulturminner(bbox, { signal }).catch(() => [])
+    if (data.length) cacheSet(key, data, TTL.kulturminne)
+    return data
+  })())
 
   // ── Kyst-deteksjon: DEM-havflate OG ekte saltvann i OSM ───────────────
   // DEM-en alene kan ikke skille sjø fra en innlands-vannflate (begge ~0 m).
@@ -517,7 +530,7 @@ export async function buildMapFromCenter({
 
   // Full bygging: vent på alle kilder, slå sammen, bygg full SVG (worker).
   const assembleAndBuildFull = async () => {
-    const [osmData, n50Water, nveLakes, dem, sjokart] = await Promise.all([overpassP, n50P, nveLakesP, demPromise, sjokartPromise])
+    const [osmData, n50Water, nveLakes, dem, sjokart, kulturminner] = await Promise.all([overpassP, n50P, nveLakesP, demPromise, sjokartPromise, kulturminneP])
     const sjokartElements = sjokartToElements(sjokart)
 
     const n50HasFreshwater = n50Water.some(el =>
@@ -580,6 +593,7 @@ export async function buildMapFromCenter({
       // Sjøkart-utfall → meta.sjokartStatus (Utvikler-fanen): gjør den stille
       // WFS-fallbacken synlig — hvorfor dybdetall/kai mangler.
       sjokartStatus: summarizeSjokartStatus(sjokart, sjokartElements.length),
+      kulturminner,
     }, { signal }))
 
     const ti = timings ?? {}
