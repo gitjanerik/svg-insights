@@ -42,7 +42,7 @@ import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
 import { gmapsUrl, streetViewUrl, buildVegkartUrl, buildKulturminnesokUrl } from '../lib/externalMapLinks.js'
 import { fetchKulturminneById } from '../lib/kulturminneFetcher.js'
-import { buildWmsGetMapUrl, buildWmsGetFeatureInfoUrl, parseWmsFeatureInfo, summarizeKulturminne } from '../lib/kulturminneWms.js'
+import { fetchFredaKulturminner, fetchFredaCount, clusterByMinMeters } from '../lib/kulturminneWfs.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
 import { fetchLakeData } from '../lib/nveLakeFetcher.js'
@@ -55,7 +55,7 @@ import { groupSpecies } from '../lib/speciesGroups.js'
 import { fetchWikiSummary, titleMatches } from '../lib/wikiSummary.js'
 import { fetchNearestWikiPlace, placeNameMatches } from '../lib/wikiPlace.js'
 import { fetchSnlSummary } from '../lib/snlFetcher.js'
-import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, kulturminneIdKey, TTL } from '../lib/protectedAreaCache.js'
+import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, kulturminneIdKey, fredetKulturminneBboxKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace, pointToPolylineDist,
@@ -395,7 +395,7 @@ const LAYERS = [
   // detalj-skuff + lenke.
   { key: 'kulturminne', label: 'Kulturminner' },
   // Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag
-  // (ingen offentlig vektor-API — se kulturminneWms.js). Default AV; opt-in.
+  // (Geonorge WFS-vektor — se kulturminneWfs.js). Default AV; opt-in.
   { key: 'fredet-kulturminne', label: 'Fredede kulturminner' },
   // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
@@ -773,35 +773,6 @@ function onOpenKulturminnesok() {
   if (url) window.open(url, '_blank', 'noopener')
 }
 
-// Klikk på fredet-kulturminne WMS-laget → GetFeatureInfo (text/plain) på samme
-// rutenett som bildet ble bygd med. Gjenbruker kulturminne-detalj-skuffen.
-async function openFredetKulturminneDetail(localX, localY) {
-  const g = fredetWmsGrid
-  const m = meta.value
-  if (!g || !m) return
-  const i = Math.round((localX / m.widthM) * g.widthPx)
-  const j = Math.round((localY / m.heightM) * g.heightPx)
-  if (i < 0 || j < 0 || i > g.widthPx || j > g.heightPx) return
-  const reqId = ++kulturminneReqId
-  try {
-    const res = await fetch(buildWmsGetFeatureInfoUrl({ ...g, i, j, buffer: 18, featureCount: 6 }))
-    if (!res.ok || reqId !== kulturminneReqId) return
-    const feats = parseWmsFeatureInfo(await res.text())
-    if (reqId !== kulturminneReqId || !feats.length) return  // ingen treff → ikke åpne
-    const s = summarizeKulturminne(feats[0])
-    kulturminneDetail.value = {
-      id: null, kategori: 'annet',
-      tittel: s.navn || s.art || 'Kulturminne',
-      subtittel: [s.art, s.vernetype].filter(Boolean).join(' · ') || 'Fredet kulturminne',
-      beskrivelse: s.informasjon || '',
-      kommune: s.kommune, fylke: null, opprettetAv: null,
-      link: s.link, bilder: [],
-    }
-    kulturminneLoading.value = false
-    kulturminneOpen.value = true
-    kulturminneDrawer.reset()
-  } catch { /* nett/CORS — ignorer stille */ }
-}
 
 // Tekststørrelse i appen (drawer + info-ark). CSS `zoom` skalerer hele blokken
 // — nødvendig fordi UI bruker faste Tailwind-px-størrelser som ikke arver
@@ -993,53 +964,135 @@ function toggleDepth() {
   applyDepthLayer()
 }
 
-// Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag.
-// Bildet legges INNE i kart-SVG-en i UTM32-rom (EPSG:25832 = viewBox-metrene),
-// så det roterer/zoomer/panner sammen med vektorene (ingen flytende-overlegg-
-// alignment). crossorigin=anonymous + CORS * → print/eksport tainter ikke canvas.
-// Ett bilde dekker hele kartets bbox (ingen re-fetch ved pan/zoom); dyp innzoom
-// gir pikselering (akseptert — ingen offentlig vektor-kilde, se kulturminneWms.js).
-const FREDET_WMS_MAX_PX = 2048
-// Rutenettet bildet ble bygd med — gjenbrukes av GetFeatureInfo ved klikk.
-let fredetWmsGrid = null
-function applyFredetKulturminneLayer() {
+// Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som EKTE VEKTOR
+// via Geonorge WFS (se kulturminneWfs.js — erstattet et tidligere WMS-raster-
+// forsøk). Lokalitetene hentes live når laget slås på, klynges, og tegnes som
+// egne diamant-ikoner INNE i kart-SVG-en (data-upright → roterer/zoomer/print-
+// trygt). Farge pr vernetype. Klikk → detalj-skuff fra data-attributter + lenke.
+const FREDET_SIZE_MM = 3.2
+const FREDET_KAT_COLOR = {
+  automatisk: '#8e44ad', forskrift: '#c0392b', vedtak: '#d35400',
+  listefort: '#138d75', annet: '#7f8c8d',
+}
+const fredetCount = ref(null)     // antall lokaliteter i bbox (WFS) — badge
+const fredetLoading = ref(false)
+let fredetReqId = 0
+
+// WGS84-bbox fra kartets fire hjørner (SVG-meter → WGS84) til WFS-spørring.
+function fredetBboxFromMeta(m) {
+  const cs = [
+    svgToWgs84(0, 0, m), svgToWgs84(m.widthM, 0, m),
+    svgToWgs84(0, m.heightM, m), svgToWgs84(m.widthM, m.heightM, m),
+  ]
+  let south = Infinity, west = Infinity, north = -Infinity, east = -Infinity
+  for (const c of cs) {
+    if (c.lat < south) south = c.lat
+    if (c.lat > north) north = c.lat
+    if (c.lon < west) west = c.lon
+    if (c.lon > east) east = c.lon
+  }
+  return { south, west, north, east }
+}
+
+function ensureFredetDefs(svg) {
+  const ns = 'http://www.w3.org/2000/svg'
+  if (svg.querySelector('#fredet-km-sym')) return
+  let defs = svg.querySelector('defs')
+  if (!defs) { defs = document.createElementNS(ns, 'defs'); svg.insertBefore(defs, svg.firstChild) }
+  const sym = document.createElementNS(ns, 'symbol')
+  sym.setAttribute('id', 'fredet-km-sym'); sym.setAttribute('viewBox', '-1 -1 2 2')
+  const path = document.createElementNS(ns, 'path')
+  path.setAttribute('d', 'M0,-0.85 L0.85,0 L0,0.85 L-0.85,0 Z')
+  path.setAttribute('fill', 'currentColor'); path.setAttribute('stroke', '#2b2b2b'); path.setAttribute('stroke-width', '0.12')
+  const dot = document.createElementNS(ns, 'circle')
+  dot.setAttribute('cx', '0'); dot.setAttribute('cy', '0'); dot.setAttribute('r', '0.24'); dot.setAttribute('fill', '#fff')
+  sym.appendChild(path); sym.appendChild(dot); defs.appendChild(sym)
+}
+
+async function applyFredetKulturminneLayer() {
   const svg = svgHostRef.value?.querySelector('svg')
   if (!svg) return
-  const existing = svg.querySelector('#fredet-km-layer')
+  const layer = svg.querySelector('#fredet-km-layer')
+  const on = visibleLayers.value.has('fredet-kulturminne')
+  if (!on) { if (layer) layer.style.display = 'none'; return }
+  if (layer) { layer.style.display = ''; return }   // allerede bygd
   const m = meta.value
-  if (!visibleLayers.value.has('fredet-kulturminne') || !m) {
-    existing?.remove()
-    fredetWmsGrid = null
-    return
+  if (!m) return
+  const reqId = ++fredetReqId
+  fredetLoading.value = true
+  try {
+    const bbox = fredetBboxFromMeta(m)
+    const key = fredetKulturminneBboxKey(bbox)
+    let data = await cacheGet(key)
+    if (!Array.isArray(data)) {
+      data = await fetchFredaKulturminner(bbox)
+      if (data.length) cacheSet(key, data, TTL.kulturminne)
+    }
+    // Bruker kan ha skrudd av / byttet kart mens vi lastet.
+    if (reqId !== fredetReqId || !visibleLayers.value.has('fredet-kulturminne')) return
+    if (!svgHostRef.value?.querySelector('svg')?.isSameNode(svg)) return
+    fredetCount.value = data.length
+    const ns = 'http://www.w3.org/2000/svg'
+    ensureFredetDefs(svg)
+    const g = document.createElementNS(ns, 'g')
+    g.setAttribute('id', 'fredet-km-layer'); g.setAttribute('data-layer', 'fredet-kulturminne')
+    const half = FREDET_SIZE_MM / 2
+    for (const it of clusterByMinMeters(data, 45)) {
+      const p = wgs84ToSvg(it.lat, it.lon, m)
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+      const mk = document.createElementNS(ns, 'g')
+      mk.setAttribute('data-fredet-id', it.id || '')
+      mk.setAttribute('data-kat', it.kategori || 'annet')
+      mk.setAttribute('data-upright', '1')
+      if (it.navn) mk.setAttribute('data-navn', it.navn)
+      if (it.vernetype) mk.setAttribute('data-vernetype', it.vernetype)
+      if (it.informasjon) mk.setAttribute('data-informasjon', it.informasjon)
+      if (it.kommune) mk.setAttribute('data-kommune', it.kommune)
+      if (it.link) mk.setAttribute('data-link', it.link)
+      mk.setAttribute('transform', `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`)
+      mk.style.color = FREDET_KAT_COLOR[it.kategori] || FREDET_KAT_COLOR.annet
+      mk.style.cursor = 'pointer'
+      const use = document.createElementNS(ns, 'use')
+      use.setAttribute('href', '#fredet-km-sym')
+      use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#fredet-km-sym')
+      use.setAttribute('x', `-${half}mm`); use.setAttribute('y', `-${half}mm`)
+      use.setAttribute('width', `${FREDET_SIZE_MM}mm`); use.setAttribute('height', `${FREDET_SIZE_MM}mm`)
+      mk.appendChild(use); g.appendChild(mk)
+    }
+    const before = svg.querySelector('[data-label]')
+    if (before) svg.insertBefore(g, before); else svg.appendChild(g)
+    applyUprightLabels()   // orienter de nye data-upright-markørene til kart-rotasjonen
+  } finally {
+    if (reqId === fredetReqId) fredetLoading.value = false
   }
-  const { minE, minN, maxE, maxN, widthM, heightM } = m
-  // Oppløsning: lang side = FREDET_WMS_MAX_PX, kort side proporsjonalt.
-  const long = Math.max(widthM, heightM)
-  const widthPx = Math.round(FREDET_WMS_MAX_PX * (widthM / long))
-  const heightPx = Math.round(FREDET_WMS_MAX_PX * (heightM / long))
-  fredetWmsGrid = { minE, minN, maxE, maxN, widthPx, heightPx }
-  const url = buildWmsGetMapUrl(fredetWmsGrid)
-  const ns = 'http://www.w3.org/2000/svg'
-  let img = existing
-  if (!img) {
-    img = document.createElementNS(ns, 'image')
-    img.setAttribute('id', 'fredet-km-layer')
-    img.setAttribute('data-layer', 'fredet-kulturminne')
-    img.setAttribute('preserveAspectRatio', 'none')
-    img.setAttribute('pointer-events', 'none')
-    img.setAttribute('crossorigin', 'anonymous')
-    img.setAttribute('decoding', 'async')
-    img.setAttribute('x', '0'); img.setAttribute('y', '0')
-    img.setAttribute('width', String(widthM))
-    img.setAttribute('height', String(heightM))
-  }
-  // Over kart-innhold, under navne-labels (så tekst ikke skjules).
-  const before = svg.querySelector('[data-label]')
-  if (before) svg.insertBefore(img, before)
-  else svg.appendChild(img)
-  img.setAttribute('href', url)
-  img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', url)
 }
+
+// Detalj-skuff for et fredet-kulturminne (leser data-attributter fra ikonet).
+function openFredetDetailFromEl(el) {
+  const link = el.getAttribute('data-link') || null
+  kulturminneDetail.value = {
+    id: null, kategori: 'annet',
+    tittel: el.getAttribute('data-navn') || 'Fredet kulturminne',
+    subtittel: el.getAttribute('data-vernetype') || 'Fredet kulturminne',
+    beskrivelse: el.getAttribute('data-informasjon') || '',
+    kommune: el.getAttribute('data-kommune'), fylke: null, opprettetAv: null,
+    link, bilder: [],
+  }
+  kulturminneLoading.value = false
+  kulturminneOpen.value = true
+  kulturminneDrawer.reset()
+}
+
+// Rask antall-teller (WFS hits) for badgen — kalles når kartet er lastet.
+async function refreshFredetCount(m) {
+  if (!m) return
+  try {
+    const n = await fetchFredaCount(fredetBboxFromMeta(m))
+    if (meta.value === m && n != null) fredetCount.value = n
+  } catch { /* ignorer */ }
+}
+// Nytt kart lastet → nullstill og hent antall for badgen (liten WFS hits-spørring).
+watch(meta, (m) => { fredetCount.value = null; refreshFredetCount(m) })
 
 function applyLayerVisibility() {
   const root = svgHostRef.value?.querySelector('svg')
@@ -3972,6 +4025,8 @@ function onMapClick(e) {
   if (!measureMode.value && !annot.isAnnotateMode.value && !sti.active.value) {
     const kmHit = e.target?.closest?.('[data-kulturminne-id]')
     if (kmHit) { openKulturminneDetail(kmHit); return }
+    const fmHit = e.target?.closest?.('[data-fredet-id]')
+    if (fmHit) { openFredetDetailFromEl(fmHit); return }
   }
   // Stifinner eier tap-eventet mens den er aktiv: startpunkt velges via det
   // faste midt-siktet (bekreft-knapp), og rute-tapp håndteres av egne DOM-
@@ -3990,12 +4045,6 @@ function onMapClick(e) {
   if (measureMode.value) {
     if (measureClosed.value) return  // ingen flere vertices etter lukking
     measureVertices.value = [...measureVertices.value, { x: local.x, y: local.y }]
-    return
-  }
-  // Fredet-kulturminne WMS-lag på + ikke i annoteringsmodus → klikk henter
-  // GetFeatureInfo for punktet (åpner skuff kun ved treff). Fire-and-forget.
-  if (visibleLayers.value.has('fredet-kulturminne') && !annot.isAnnotateMode.value) {
-    openFredetKulturminneDetail(local.x, local.y)
     return
   }
   if (!annot.isAnnotateMode.value || !annot.selectedSymbol.value) return
@@ -7355,6 +7404,9 @@ onUnmounted(() => {
                 <span v-if="lay.key === 'kulturminne'"
                       class="ml-1 text-[10px] tabular-nums"
                       :class="kulturminneCount ? 'text-emerald-300/80' : 'text-white/30'">({{ kulturminneCount }})</span>
+                <span v-else-if="lay.key === 'fredet-kulturminne' && (fredetLoading || fredetCount != null)"
+                      class="ml-1 text-[10px] tabular-nums"
+                      :class="fredetCount ? 'text-emerald-300/80' : 'text-white/30'">{{ fredetLoading ? '…' : '(' + fredetCount + ')' }}</span>
               </button>
             </div>
             <!-- Gruppert seksjon: Sjø & padling -->
