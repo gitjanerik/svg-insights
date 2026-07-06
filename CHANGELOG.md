@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.45: Mer robust kulturminne-henting ved bygging (mobil)
+
+Kulturminne-hentingen (brukerminner) ved kart-bygging tålte ikke et enkelt nett-/timeout-glipp: da ble 0 funn bakt inn i kartet — observert som «Kulturminner (0)» på mobil mens samme område ga «(8)» på desktop (mobilnett er flakete). `safeFetchJson` prøver nå ett ekstra gang ved transient feil, og timeout er hevet fra 9 til 12 s. Genuint tomme områder dobbel-henter ikke (retry trigger kun ved feil, ikke tomt svar). Eldre kart som allerede har 0 bakt inn må bygges på nytt for å få med funnene.
+
+---
+
 ## 2026-07-06 — v12.1.44: Nytt lag «Fredede kulturminner» (Riksantikvaren WMS)
 
 Turkartet kan nå vise de offisielle, fredede kulturminnene fra Riksantikvaren (Askeladden) — R-lokaliteter, krigsminner osv. — i tillegg til de brukerregistrerte. Det finnes ingen offentlig vektor-API med geometri for disse (kun WMS raster + bulk-nedlasting), så laget hentes fra WMS-en `kart.ra.no/wms/kulturminner2` og legges som et `<image>` INNE i kart-SVG-ens UTM32-koordinatrom (EPSG:25832 = viewBox-metrene). Dermed roterer/zoomer/panner rasteret sammen med vektorene — ingen flytende-overlegg-feiljustering. `crossorigin="anonymous"` (+ CORS `*`) holder print/eksport fri for canvas-tainting. Klikk på et funn gjør et GetFeatureInfo-oppslag (text/plain) og åpner detalj-skuffen med navn/art/datering/vernestatus/beskrivelse + «Åpne på kulturminnesok.no». Laget «Fredede kulturminner» ligger i Lag-fanen og er AV som standard (opt-in) — det er et raster, så det pikselerer noe ved dyp innzoom. Data på NLOD. Ny `lib/kulturminneWms.js` (URL-byggere + text/plain-parser, 7 tester).

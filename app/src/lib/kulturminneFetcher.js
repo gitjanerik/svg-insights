@@ -124,28 +124,31 @@ function nextLink(json) {
   return n?.href ?? null
 }
 
-// Felles abort+timeout-wrapper (samme mønster som verneFetcher). Returnerer
-// `fallback` ved feil/abort/timeout — kaster aldri.
-async function safeFetchJson(url, { signal, timeoutMs }, fallback) {
-  const ctrl = new AbortController()
-  const onAbort = () => ctrl.abort()
-  if (signal) {
-    if (signal.aborted) return fallback
-    signal.addEventListener('abort', onAbort, { once: true })
-  }
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/geo+json' } })
-    if (!res.ok) return fallback
-    return await res.json()
-  } catch (e) {
+// Felles abort+timeout-wrapper (samme mønster som verneFetcher), med retry.
+// Returnerer `fallback` ved feil/abort/timeout — kaster aldri. `retries` gir
+// ett ekstra forsøk ved transient nett-/timeout-feil (mobilnett er flakete —
+// et enkelt timeout ved bygging bakte ellers 0 kulturminner inn i kartet).
+async function safeFetchJson(url, { signal, timeoutMs, retries = 1 }, fallback) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
     if (signal?.aborted) return fallback
-    console.warn(`[Kulturminne] Henting feilet: ${e?.message ?? e}`)
-    return fallback
-  } finally {
-    clearTimeout(timer)
-    if (signal) signal.removeEventListener('abort', onAbort)
+    const ctrl = new AbortController()
+    const onAbort = () => ctrl.abort()
+    if (signal) signal.addEventListener('abort', onAbort, { once: true })
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/geo+json' } })
+      if (res.ok) return await res.json()
+      // ikke-ok (evt. transient 5xx) → prøv igjen
+    } catch (e) {
+      if (signal?.aborted) return fallback
+      if (attempt === retries) console.warn(`[Kulturminne] Henting feilet (${retries + 1} forsøk): ${e?.message ?? e}`)
+    } finally {
+      clearTimeout(timer)
+      if (signal) signal.removeEventListener('abort', onAbort)
+    }
+    if (attempt < retries && !signal?.aborted) await new Promise((r) => setTimeout(r, 600))
   }
+  return fallback
 }
 
 /**
@@ -156,7 +159,7 @@ async function safeFetchJson(url, { signal, timeoutMs }, fallback) {
  */
 export async function fetchKulturminner(bbox, opts = {}) {
   if (!bbox || ![bbox.south, bbox.west, bbox.north, bbox.east].every(Number.isFinite)) return []
-  const { signal, timeoutMs = 9000, limit = 250, maxTotal = 500 } = opts
+  const { signal, timeoutMs = 12000, limit = 250, maxTotal = 500 } = opts
 
   const out = []
   let url = buildBboxUrl(bbox, limit)
