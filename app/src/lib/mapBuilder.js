@@ -2310,7 +2310,7 @@ export function buildSvg(elements, bbox, options = {}) {
   // klynges (30 m) med gjenbruk av clusterHoldeplasser. Kun id/kat/tittel bakes i
   // SVG-en (data-*) — full detalj hentes lazy ved klikk (MapView → fetchKulturminneById),
   // så kart-filen holdes liten. `data-upright` holder ikonet rett ved kart-rotasjon.
-  const KULTURMINNE_SIZE_MM = 2.4
+  const KULTURMINNE_SIZE_MM = 3.6
   const kulturminneNodes = (Array.isArray(kulturminner) ? kulturminner : [])
     .filter(k => k && Number.isFinite(k.lat) && Number.isFinite(k.lon) && k.id != null)
     .map(k => ({ ...k, type: 'node' }))

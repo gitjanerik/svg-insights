@@ -7343,7 +7343,8 @@ onUnmounted(() => {
               <div class="text-[13px] text-white font-medium mb-2">Skrift på kart-navn</div>
               <select v-model="fontPairId" aria-label="Font-par for kart-navn"
                       class="w-full rounded-md bg-white/10 text-white text-[12px] px-2 py-1.5
-                             border border-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-400">
+                             border border-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-400
+                             [&>option]:text-zinc-900 [&>option]:bg-white">
                 <option v-for="p in FONT_PAIRS" :key="p.id" :value="p.id">{{ p.id }}</option>
               </select>
               <div class="mt-2 flex items-baseline gap-2" aria-hidden="true">
