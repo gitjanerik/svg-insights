@@ -7334,6 +7334,27 @@ onUnmounted(() => {
                         text-red-200 text-[11px] text-center">
               {{ cbDemError }}
             </div>
+
+            <!-- Font-par for kart-navn (Stedsnavn-typografi). Land = sans
+                 (bebyggelse/topp/område), vann = kursiv serif. Byttes live.
+                 Flyttet hit fra Innstillinger-fanen (v12.1.40) — hører tematisk
+                 sammen med tema-valget. -->
+            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
+              <div class="text-[13px] text-white font-medium mb-2">Skrift på kart-navn</div>
+              <select v-model="fontPairId" aria-label="Font-par for kart-navn"
+                      class="w-full rounded-md bg-white/10 text-white text-[12px] px-2 py-1.5
+                             border border-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-400">
+                <option v-for="p in FONT_PAIRS" :key="p.id" :value="p.id">{{ p.id }}</option>
+              </select>
+              <div class="mt-2 flex items-baseline gap-2" aria-hidden="true">
+                <span class="text-white/85 text-[14px]" :style="{ fontFamily: landFont }">Stubdalskampen</span>
+                <span class="text-sky-300 text-[14px] italic" :style="{ fontFamily: waterFont }">Damtjern</span>
+              </div>
+              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
+                Bebyggelse, topp og område settes i sans; vann-navn i kursiv serif.
+                Gjelder kart bygd etter denne oppdateringen — eldre kart må regenereres.
+              </div>
+            </div>
           </div>
 
           <!-- ── Tab: Annotering (kun bruker-kart) ───────────────── -->
@@ -7885,24 +7906,6 @@ onUnmounted(() => {
               <div class="text-[11px] text-white/55 leading-snug mt-1.5">
                 Skarp = tone-bånd som vektor: liten fil, knivskarpt ved zoom og print.
                 Mjuk = myk gradient (foto-relieff), men gir et tungt bilde i kart-fila.
-              </div>
-            </div>
-            <!-- Font-par for kart-navn (Stedsnavn-typografi). Land = sans
-                 (bebyggelse/topp/område), vann = kursiv serif. Byttes live. -->
-            <div class="rounded-lg bg-white/5 px-3 py-2.5 mb-3">
-              <div class="text-[13px] text-white font-medium mb-2">Skrift på kart-navn</div>
-              <select v-model="fontPairId" aria-label="Font-par for kart-navn"
-                      class="w-full rounded-md bg-white/10 text-white text-[12px] px-2 py-1.5
-                             border border-white/10 focus:outline-none focus:ring-1 focus:ring-emerald-400">
-                <option v-for="p in FONT_PAIRS" :key="p.id" :value="p.id">{{ p.id }}</option>
-              </select>
-              <div class="mt-2 flex items-baseline gap-2" aria-hidden="true">
-                <span class="text-white/85 text-[14px]" :style="{ fontFamily: landFont }">Stubdalskampen</span>
-                <span class="text-sky-300 text-[14px] italic" :style="{ fontFamily: waterFont }">Damtjern</span>
-              </div>
-              <div class="text-[11px] text-white/55 leading-snug mt-1.5">
-                Bebyggelse, topp og område settes i sans; vann-navn i kursiv serif.
-                Gjelder kart bygd etter denne oppdateringen — eldre kart må regenereres.
               </div>
             </div>
             <!-- Navnetetthet: rutenett-kvoten i tetthets-budsjettet. Lavere =

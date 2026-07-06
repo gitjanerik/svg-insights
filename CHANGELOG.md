@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.40: Veinummer skalerer ikke med tekst-slideren + «Skrift på kart-navn» flyttet til Tema
+
+To justeringer i turkart-UI-et: (1) Veinummer-skiltene (E-vei / fylkesvei) følger ikke lenger «Skrift»-slideren på desktop. Skiltet er en fast-dimensjonert boks bygget ved kart-tid, så når teksten skalerte med `--label-scale` sprengte den ut av boksen. Font-en settes nå med kartstørrelse-skalaen (`mm()`) i stedet for tekst-slideren (`fs()`), så tall og boks holder seg proporsjonale uansett slider-posisjon. (2) Valget «Skrift på kart-navn» (font-par for stedsnavn) er flyttet fra Innstillinger-fanen til Tema-fanen, der det hører tematisk hjemme sammen med tema-valget.
+
+---
+
 ## 2026-07-06 — v12.1.39: Antall-teller på «Kulturminner»-laget
 
 «Kulturminner»-toggelen i Lag-fanen viser nå antall kulturminne-ikoner i det innlastede kartet, f.eks. «Kulturminner (17)». Tallet telles fra kart-SVG-en når den lastes (`setupHostSvg`), og «(0)» gjør det tydelig om laget er tomt fordi kartet ble bygget før v12.1.38 (ingen data bakt inn — bygg et nytt kart) eller fordi området faktisk ikke har brukerregistrerte funn, i motsetning til en rendering-feil. Merk at Kulturminnesøks «brukerminner» kun er brukerregistrerte kulturminner — offisielt registrerte minner (Askeladden) er ikke inkludert i denne tjenesten.
