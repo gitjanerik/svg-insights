@@ -390,8 +390,8 @@ const LAYERS = [
   { key: 'linje',      label: 'Gjerde / kraft' },
   { key: 'trig',       label: 'Trigpunkter' },
   // Kulturminne-overlegg (Kulturminnesøk brukerminner) — klikkbare tema-ikoner.
-  // Default AV (se DEFAULT_OFF_LAYERS): dataene bakes alltid inn ved bygging, men
-  // vises først når brukeren slår laget på. Klikk → detalj-skuff + lenke.
+  // Default PÅ (v12.1.42): dataene bakes alltid inn ved bygging. Klikk →
+  // detalj-skuff + lenke.
   { key: 'kulturminne', label: 'Kulturminner' },
   // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
@@ -436,7 +436,7 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
 // grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
 // leser som kontekst uten å konkurrere med veier/stier.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'kulturminne'])
+const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
 // Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
@@ -455,7 +455,6 @@ const _turExclude = new Set([
   'lysloype', 'heistrase', 'slalombakke', // vinter-ting
   'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
   'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
-  'kulturminne',                          // tema-overlegg — kun i «Detaljert»
 ])
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
 const LAYER_PRESETS = [

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.42: Kulturminner default PÅ + rydd «Beskrivelse: null»
+
+To justeringer på kulturminne-laget. (1) Laget «Kulturminner» er nå PÅ som standard på nye kart (også i Tur/Print-forhåndsvalgene), så funnene vises uten at man må slå dem på. (2) Detalj-skuffen viste av og til en ledende «Beskrivelse: null»-linje: Kulturminnesøk serialiserer et felt-mal-oppsett inn i beskrivelsen, og tomme underfelt havner som den literale strengen «null». `cleanBeskrivelse` fjerner nå slike «<etikett>: null»-linjer (kun når verdien er nøyaktig «null») og lar all ekte tekst stå. Gjelder umiddelbart siden detaljene hentes live ved klikk.
+
+---
+
 ## 2026-07-06 — v12.1.41: Større kulturminne-ikoner + fiks font-nedtrekk på desktop
 
 To fikser. (1) Kulturminne-ikonene var for små til å se på utzoomede kart (2,4 mm ≈ få piksler ved oversikts-zoom). De er nå 3,6 mm og har fått en tynn mørk kontur så de leser tydelig mot både land, skog og vann. Som alle kart-symboler skalerer de fortsatt med zoom — zoom inn på området for å se dem større. (2) Nedtrekkslista «Skrift på kart-navn» (Tema-fanen) hadde hvit tekst også på de åpne valgene, som ga hvit-på-hvit og usynlige alternativer på desktop. Alternativene får nå mørk tekst på hvit bakgrunn (`[&>option]:text-zinc-900`).
