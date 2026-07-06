@@ -1059,8 +1059,11 @@ async function applyFredetKulturminneLayer() {
       use.setAttribute('width', `${FREDET_SIZE_MM}mm`); use.setAttribute('height', `${FREDET_SIZE_MM}mm`)
       mk.appendChild(use); g.appendChild(mk)
     }
-    const before = svg.querySelector('[data-label]')
-    if (before) svg.insertBefore(g, before); else svg.appendChild(g)
+    // Legg laget øverst. (Tidligere insertBefore(svg.querySelector('[data-label]'))
+    // KRÆSJET: første [data-label] er en NESTet node (f.eks. kontur-tall inne i
+    // data-layer=kontur), ikke et direkte svg-barn → insertBefore kaster
+    // NotFoundError og laget ble aldri satt inn. appendChild er robust.)
+    svg.appendChild(g)
     applyUprightLabels()   // orienter de nye data-upright-markørene til kart-rotasjonen
   } finally {
     if (reqId === fredetReqId) fredetLoading.value = false

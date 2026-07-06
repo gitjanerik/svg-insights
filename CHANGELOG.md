@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.47: Fiks — «Fredede kulturminner»-ikonene ble aldri satt inn
+
+Vektor-laget fra v12.1.46 hentet, parset og bygde markørene riktig, men selve innsettingen krasjet: `svg.insertBefore(g, svg.querySelector('[data-label]'))` — referanse-noden (første `[data-label]`) er en NESTet node (f.eks. et kontur-tall inne i `data-layer="kontur"`), ikke et direkte svg-barn, så `insertBefore` kastet `NotFoundError` og laget ble aldri lagt til DOM-en (symbolet var injisert, men ingen ikoner). Verifisert i nettleser mot et ekte Håøya-kart. Byttet til `svg.appendChild(g)` (robust — legger laget øverst). Nå vises de fargede diamant-ikonene når laget slås på.
+
+---
+
 ## 2026-07-06 — v12.1.46: «Fredede kulturminner» som ekte vektor (Geonorge WFS) + teller
 
 Laget «Fredede kulturminner» er skrevet om fra WMS-raster til **ekte vektor** via Geonorge WFS (`wfs.geonorge.no/skwms1/wfs.kulturminner`, deegree, CORS `*`, bbox-filter, GML 3.2). Lokalitetene hentes live når laget slås på, klynges (45 m), og tegnes som egne diamant-ikoner INNE i kart-SVG-en — så de roterer, zoomer og printes skarpt sammen med resten (i motsetning til rasteret). Ikonene fargelegges etter vernetype (automatisk fredet / vedtaksfredet / listeført / annet; SOSI-kodene AUT/VED/LIST/… oversettes til lesbar tekst). Laget har nå en **teller** som brukerminne-laget — antallet hentes billig via WFS `resultType=hits` (f.eks. Håøya: 244). Klikk på et ikon åpner detalj-skuffen (navn, vernestatus, `informasjon`, kommune) + «Åpne på kulturminnesok.no». Ny `lib/kulturminneWfs.js` (URL-bygger + GML-parser + klynging, 9 tester); det midlertidige WMS-forsøket (`kulturminneWms.js`) er fjernet. Data på NLOD.
