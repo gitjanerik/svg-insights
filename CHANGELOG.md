@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.44: Nytt lag «Fredede kulturminner» (Riksantikvaren WMS)
+
+Turkartet kan nå vise de offisielle, fredede kulturminnene fra Riksantikvaren (Askeladden) — R-lokaliteter, krigsminner osv. — i tillegg til de brukerregistrerte. Det finnes ingen offentlig vektor-API med geometri for disse (kun WMS raster + bulk-nedlasting), så laget hentes fra WMS-en `kart.ra.no/wms/kulturminner2` og legges som et `<image>` INNE i kart-SVG-ens UTM32-koordinatrom (EPSG:25832 = viewBox-metrene). Dermed roterer/zoomer/panner rasteret sammen med vektorene — ingen flytende-overlegg-feiljustering. `crossorigin="anonymous"` (+ CORS `*`) holder print/eksport fri for canvas-tainting. Klikk på et funn gjør et GetFeatureInfo-oppslag (text/plain) og åpner detalj-skuffen med navn/art/datering/vernestatus/beskrivelse + «Åpne på kulturminnesok.no». Laget «Fredede kulturminner» ligger i Lag-fanen og er AV som standard (opt-in) — det er et raster, så det pikselerer noe ved dyp innzoom. Data på NLOD. Ny `lib/kulturminneWms.js` (URL-byggere + text/plain-parser, 7 tester).
+
+---
+
 ## 2026-07-06 — v12.1.43: Tydeligere NLOD-lenke på Om-siden
 
 NLOD-henvisningene i «Datakilder» på Om-siden var allerede lenker til data.norge.no/nlod, men var stylet dempet (samme farge som brødteksten, kun understrek på hover) så de leste som vanlig tekst. De bruker nå appens synlige lenke-stil (lysere tekst + understrek), så det er tydelig at NLOD er klikkbart. Rettet også en utdatert «default av» → «default på» for kulturminne-laget i samme avsnitt.
