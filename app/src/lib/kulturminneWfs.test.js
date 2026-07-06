@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildWfsUrl, centroidFromPosList, vernInfo, parseWfsLokaliteter,
+  buildWfsUrl, centroidFromPosList, vernInfo, parseWfsKulturminner,
 } from './kulturminneWfs.js'
 
 const bbox = { south: 59.66, west: 10.53, north: 59.71, east: 10.62 }
@@ -9,7 +9,7 @@ describe('buildWfsUrl', () => {
   it('bygger WFS 2.0.0 GetFeature med lat,lon-bbox i EPSG:4258', () => {
     const q = new URL(buildWfsUrl(bbox)).searchParams
     expect(q.get('version')).toBe('2.0.0')
-    expect(q.get('typeNames')).toBe('app:Lokalitet')
+    expect(q.get('typeNames')).toBe('app:Enkeltminne')
     expect(q.get('bbox')).toBe('59.66,10.53,59.71,10.62,urn:ogc:def:crs:EPSG::4258')
     expect(q.get('count')).toBe('400')
     expect(q.get('resultType')).toBeNull()
@@ -50,7 +50,7 @@ describe('vernInfo', () => {
 const GML = `<?xml version="1.0"?>
 <wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs/2.0" numberMatched="2" numberReturned="2">
  <wfs:member>
-  <app:Lokalitet xmlns:app="ns" xmlns:gml="g" gml:id="lokalitet.140269">
+  <app:Enkeltminne xmlns:app="ns" xmlns:gml="g" gml:id="lokalitet.140269">
     <app:informasjon>Gravfelt.</app:informasjon>
     <app:område>
       <gml:Polygon srsName="urn:ogc:def:crs:EPSG::4258">
@@ -64,21 +64,21 @@ const GML = `<?xml version="1.0"?>
     <app:kommune>Frogn</app:kommune>
     <app:vernetype>AUT</app:vernetype>
     <app:linkKulturminnesøk>https://kulturminnesok.no/ra/lokalitet/140269</app:linkKulturminnesøk>
-  </app:Lokalitet>
+  </app:Enkeltminne>
  </wfs:member>
  <wfs:member>
-  <app:Lokalitet xmlns:app="ns" xmlns:gml="g" gml:id="lokalitet.99">
+  <app:Enkeltminne xmlns:app="ns" xmlns:gml="g" gml:id="lokalitet.99">
     <app:område><gml:Point srsName="x"><gml:pos>59.68 10.55</gml:pos></gml:Point></app:område>
     <app:navn>Oscarsborg</app:navn>
     <app:vernetype>VED</app:vernetype>
     <app:kommune>Frogn</app:kommune>
-  </app:Lokalitet>
+  </app:Enkeltminne>
  </wfs:member>
 </wfs:FeatureCollection>`
 
-describe('parseWfsLokaliteter', () => {
+describe('parseWfsKulturminner', () => {
   it('parser polygon-sentroide + felt fra GML', () => {
-    const feats = parseWfsLokaliteter(GML)
+    const feats = parseWfsKulturminner(GML)
     expect(feats).toHaveLength(2)
     const g = feats[0]
     expect(g.navn).toBe('Gravfelt Håøya')
@@ -92,7 +92,7 @@ describe('parseWfsLokaliteter', () => {
   })
 
   it('takler Point-geometri (gml:pos) og manglende lenke', () => {
-    const o = parseWfsLokaliteter(GML)[1]
+    const o = parseWfsKulturminner(GML)[1]
     expect(o.navn).toBe('Oscarsborg')
     expect(o.lat).toBeCloseTo(59.68, 5)
     expect(o.lon).toBeCloseTo(10.55, 5)
@@ -101,7 +101,7 @@ describe('parseWfsLokaliteter', () => {
   })
 
   it('returnerer [] for tomt/ugyldig', () => {
-    expect(parseWfsLokaliteter('')).toEqual([])
-    expect(parseWfsLokaliteter(null)).toEqual([])
+    expect(parseWfsKulturminner('')).toEqual([])
+    expect(parseWfsKulturminner(null)).toEqual([])
   })
 })

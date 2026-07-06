@@ -395,7 +395,7 @@ const LAYERS = [
   // detalj-skuff + lenke.
   { key: 'kulturminne', label: 'Kulturminner' },
   // Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag
-  // (Geonorge WFS-vektor — se kulturminneWfs.js). Default AV; opt-in.
+  // (Geonorge WFS-vektor, enkeltminne-nivå — se kulturminneWfs.js). Default PÅ.
   { key: 'fredet-kulturminne', label: 'Fredede kulturminner' },
   // Navn — samlet mot slutten.
   { key: 'navn',       label: 'Navn' },
@@ -440,7 +440,7 @@ const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 // 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
 // grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
 // leser som kontekst uten å konkurrere med veier/stier.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype', 'fredet-kulturminne'])
+const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
 // Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
 // til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
 const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
@@ -459,7 +459,6 @@ const _turExclude = new Set([
   'lysloype', 'heistrase', 'slalombakke', // vinter-ting
   'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
   'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
-  'fredet-kulturminne',                   // raster-overlegg — kun i «Detaljert»
 ])
 const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
 const LAYER_PRESETS = [
@@ -1037,7 +1036,7 @@ async function applyFredetKulturminneLayer() {
     const g = document.createElementNS(ns, 'g')
     g.setAttribute('id', 'fredet-km-layer'); g.setAttribute('data-layer', 'fredet-kulturminne')
     const half = FREDET_SIZE_MM / 2
-    for (const it of clusterByMinMeters(data, 45)) {
+    for (const it of clusterByMinMeters(data, 25)) {
       const p = wgs84ToSvg(it.lat, it.lon, m)
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
       const mk = document.createElementNS(ns, 'g')
