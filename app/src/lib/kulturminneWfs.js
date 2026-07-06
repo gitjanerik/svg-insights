@@ -16,7 +16,10 @@ const WFS_BASE =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_KULTURMINNE_WFS_URL) ||
   'https://wfs.geonorge.no/skwms1/wfs.kulturminner'
 const APP_NS = 'http://skjema.geonorge.no/SOSI/produktspesifikasjon/LokaliteterEnkeltminnerOgSikringssoner/20210217'
-const TYPE = 'app:Lokalitet'
+// Enkeltminne (ikke Lokalitet): gir detalj PR KOORDINAT — hvert enkeltminne har
+// eget navn (f.eks. «Kasernen», «Ammunisjonsarbeidshus», bunker/stilling) og egen
+// `informasjon`. Lokalitet-nivå ga samme tekst for hele f.eks. «Oscarsborg festning».
+const TYPE = 'app:Enkeltminne'
 const CRS = 'urn:ogc:def:crs:EPSG::4258'
 
 function bboxParam(bbox) {
@@ -80,9 +83,9 @@ export async function fetchFredaCount(bbox, opts = {}) {
  */
 export async function fetchFredaKulturminner(bbox, opts = {}) {
   if (!bbox || ![bbox.south, bbox.west, bbox.north, bbox.east].every(Number.isFinite)) return []
-  const txt = await safeFetchText(buildWfsUrl(bbox, { count: opts.maxTotal ?? 400 }), opts)
+  const txt = await safeFetchText(buildWfsUrl(bbox, { count: opts.maxTotal ?? 600 }), opts)
   if (!txt) return []
-  return parseWfsLokaliteter(txt)
+  return parseWfsKulturminner(txt)
 }
 
 // Enkel klynging: dropp punkter som ligger nærmere enn `minM` meter fra et
@@ -149,13 +152,14 @@ export function vernInfo(code) {
 }
 
 /**
- * Parse GML 3.2 fra WFS til lokalitet-objekter. Ett pr <app:Lokalitet>.
+ * Parse GML 3.2 fra WFS til enkeltminne-objekter. Ett pr <app:Enkeltminne>.
+ * Hvert enkeltminne har eget navn + informasjon → detalj pr koordinat.
  * @param {string} gml
  */
-export function parseWfsLokaliteter(gml) {
+export function parseWfsKulturminner(gml) {
   if (!gml || typeof gml !== 'string') return []
   const out = []
-  const blockRe = /<app:Lokalitet\b[\s\S]*?<\/app:Lokalitet>/g
+  const blockRe = /<app:Enkeltminne\b[\s\S]*?<\/app:Enkeltminne>/g
   let m
   while ((m = blockRe.exec(gml))) {
     const block = m[0]

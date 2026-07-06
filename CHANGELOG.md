@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.48: Fredede kulturminner default PÅ + detalj pr koordinat (enkeltminne-nivå)
+
+To forbedringer på «Fredede kulturminner»: (1) Laget er nå PÅ som standard. (2) Datagrunnlaget er byttet fra lokalitet- til **enkeltminne-nivå** i WFS-en, så hvert ikon er ett konkret kulturminne med eget navn og egen beskrivelse — detalj pr koordinat. Tidligere viste alle punktene i f.eks. «Oscarsborg festning» (én lokalitet spredt over Håøya og Nordre Kaholmen) samme tekst; nå får du «Kasernen», «Ammunisjonsarbeidshus», bunkere/stillinger osv. hver for seg med egen `informasjon`. Klynge-avstanden er strammet inn (45 → 25 m) så tett-liggende, men distinkte enkeltminner ikke slås sammen. Håøya har 363 enkeltminner (mot 244 lokaliteter). `enkeltminneart` er dessverre en tallkode i WFS-en (ikke lesbar), så navn + `informasjon` + vernestatus + kulturminnesok-lenke er det vi viser.
+
+---
+
 ## 2026-07-06 — v12.1.47: Fiks — «Fredede kulturminner»-ikonene ble aldri satt inn
 
 Vektor-laget fra v12.1.46 hentet, parset og bygde markørene riktig, men selve innsettingen krasjet: `svg.insertBefore(g, svg.querySelector('[data-label]'))` — referanse-noden (første `[data-label]`) er en NESTet node (f.eks. et kontur-tall inne i `data-layer="kontur"`), ikke et direkte svg-barn, så `insertBefore` kastet `NotFoundError` og laget ble aldri lagt til DOM-en (symbolet var injisert, men ingen ikoner). Verifisert i nettleser mot et ekte Håøya-kart. Byttet til `svg.appendChild(g)` (robust — legger laget øverst). Nå vises de fargede diamant-ikonene når laget slås på.
