@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "svg-insights": {
+      "command": "node",
+      "args": ["app/mcp/server.js"]
+    }
+  }
+}
