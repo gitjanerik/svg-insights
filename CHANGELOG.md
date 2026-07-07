@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-07 — v12.1.51: Tastaturnavigasjon i søk (desktop)
+
+På desktop med tastatur kan man nå navigere søketreff med piltastene: **pil ned / pil opp** flytter markeringen, **Enter** velger det markerte treffet, og **Escape** nullstiller søkefeltet. Gjelder alle tre søkefeltene — turkart-søk (MapPickerView), søk inne i et valgt turkart (MapView) og fra/til-stedssøk i ruteplanleggeren (GravelPlannerView). Det markerte treffet får tydelig uthevet bakgrunn og scroller automatisk inn i visning i lange lister. Delt logikk ligger i en ny composable `useSearchKeyboard.js` (combobox-mønster: fokus blir værende i input-feltet, markeringen spores via `aria-activedescendant` i stedet for å flytte DOM-fokus — det er nettopp derfor Escape fortsatt treffer input-en og nullstiller søket, som var kravet). Musepekeren over et treff synkroniserer markeringen. Berører kun tastatur-/pekeroppførsel; museklikk og mobil-touch er uendret.
+
+---
+
 ## 2026-07-06 — v12.1.50: Fiks — fredede kulturminner viste samme tekst overalt (stale cache)
 
 Alle fredede-markører viste samme navn/tekst (f.eks. «Oscarsborg festning» på hele Håøya) selv etter byttet til enkeltminne-nivå (v12.1.48). Årsak: cache-nøkkelen (`fredet:bbox:…`, 30 dagers TTL) skilte ikke lokalitet- fra enkeltminne-data. Klienter som hadde cachet LOKALITET-data (fra v12.1.46/47) fortsatte å servere den etter oppgraderingen — så hvert punkt fikk lokalitetens felles navn + tekst i stedet for sitt eget. Verifisert i nettleser: den cachede dataen var lokalitet-objekter, og en tømt cache ga straks 69 unike navn (Kontorbygning, Patroneringshus, Engene gård – Uthus, Blücher-vraket …). Fikset ved å bumpe cache-navnerommet til `fredet:enk:bbox:…`, så gammel lokalitet-cache forbigås og enkeltminne-data hentes friskt. Framtidige schema-endringer bør bumpe navnerommet tilsvarende.
