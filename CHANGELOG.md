@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.50: Fiks — fredede kulturminner viste samme tekst overalt (stale cache)
+
+Alle fredede-markører viste samme navn/tekst (f.eks. «Oscarsborg festning» på hele Håøya) selv etter byttet til enkeltminne-nivå (v12.1.48). Årsak: cache-nøkkelen (`fredet:bbox:…`, 30 dagers TTL) skilte ikke lokalitet- fra enkeltminne-data. Klienter som hadde cachet LOKALITET-data (fra v12.1.46/47) fortsatte å servere den etter oppgraderingen — så hvert punkt fikk lokalitetens felles navn + tekst i stedet for sitt eget. Verifisert i nettleser: den cachede dataen var lokalitet-objekter, og en tømt cache ga straks 69 unike navn (Kontorbygning, Patroneringshus, Engene gård – Uthus, Blücher-vraket …). Fikset ved å bumpe cache-navnerommet til `fredet:enk:bbox:…`, så gammel lokalitet-cache forbigås og enkeltminne-data hentes friskt. Framtidige schema-endringer bør bumpe navnerommet tilsvarende.
+
+---
+
 ## 2026-07-06 — v12.1.49: Brukerminne-fallback på mobil + tydeligere enkeltminne-detalj
 
 To ting. (1) **Brukerminner på mobil:** api.ra.no/brukerminner er tidvis nede (verifisert 502 under testing), så bygge-tids-hentingen bakte av og til 0 funn inn i kartet — sett som «Kulturminner (0)» på mobil mens desktop fikk 8 (samme område, ulikt tidspunkt). Nå: hvis et kart mangler innbakte brukerminne-ikoner men laget er på, hentes de LIVE i visningen (samme robuste vektor-injeksjon som fredet-laget) — et nytt forsøk når API-et er oppe igjen, uten å bygge kartet på nytt. Hente-forsøkene er også økt fra 2 til 3. (2) **Detalj pr koordinat:** enkeltminnenes `informasjon` er ofte delt i «Beskrivelse fra lokalitet:» (felles for hele gruppen, f.eks. Oscarsborg festning) + «Beskrivelse fra Enkeltminne:» (unik pr punkt). Detalj-skuffen viser nå den unike enkeltminne-teksten øverst og lokalitet-teksten som egen «Om lokaliteten»-seksjon under, så hvert punkt leser tydelig forskjellig.
