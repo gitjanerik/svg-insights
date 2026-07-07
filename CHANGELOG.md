@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-07 — v12.1.55: MCP case-studie + PoC-server for kart og ruteplanlegging
+
+Ny case-studie (`docs/MCP_CASE_STUDY.md`) vurderer kost/nytte av MCP-integrasjon i tre scenarier — lokal stdio-server, fjern-MCP for mobil, og assistent i appen — med anbefalt faseplan. Med følger en fungerende PoC: `app/mcp/server.js` eksponerer fire verktøy (`bygg_kart`, `planlegg_rute`, `hoydeprofil`, `eksporter_gpx`) over stdio ved å gjenbruke den headless-kjørbare pipelinen (`buildSvg`, `routing.js`, `elevationProfile.js`, `gpxExport.js`). `.mcp.json` i repo-rota registrerer serveren for Claude Code; Claude Desktop kan peke på samme script. Appen selv er uendret — serveren er ikke del av Vite-bundelen, og gh-pages-deployen påvirkes ikke. Nye devDependencies: `@modelcontextprotocol/sdk`, `linkedom` (DOMParser-shim som også gir Sjøkart-GML-parsing i Node).
+
+---
+
 ## 2026-07-07 — v12.1.54: Stifinner-tidsestimat tar høyde for høydemeter (Naismith)
 
 Tidsestimatet i Stifinner var ren distanse ved 4 km/t, så 1,5 km rett opp Ulriken (443 stigningsmeter) ble estimert til urealistiske 22 min. Estimatet bruker nå Naismith-regelen: flat basis 4 km/t pluss 1 min per 10 m stigning og et mildt tillegg på 1 min per 30 m nedstigning — Ulriken-ruta estimeres nå til ~67 min opp / ~37 min ned. Høydeprofilen samples per rute fra DEM (samme `sampleProfile` som «Valgt rute»-linja, med 5-punkts glatting mot DEM-støy), så hvert rutealternativ i lista får sitt eget høydejusterte estimat. På kart uten DEM faller estimatet tilbake til ren distanse som før.

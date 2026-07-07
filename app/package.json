@@ -1,7 +1,7 @@
 {
   "name": "app",
   "private": true,
-  "version": "12.1.54",
+  "version": "12.1.55",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:fonts": "node tests/font-quality/runTests.js",
-    "build:redlist": "node scripts/build-redlist.js"
+    "build:redlist": "node scripts/build-redlist.js",
+    "mcp": "node mcp/server.js"
   },
   "dependencies": {
     "@fontsource-variable/figtree": "^5.2.10",
@@ -32,9 +33,11 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@napi-rs/canvas": "^0.1.60",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-vue": "^6.0.5",
+    "linkedom": "^0.18.13",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.4",
     "vitest": "^4.1.3"
