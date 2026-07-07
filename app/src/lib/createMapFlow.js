@@ -458,16 +458,27 @@ export async function buildMapFromCenter({
     if (!coastal) {
       return probeDem
     }
-    onProgress(`Kystnært kart — henter DEM i ${coastalTargetResM} m for skarpere kystlinje …`)
-    try {
-      const fine = await fetchDemFor(coastalTargetResM)
-      if (fine && !fine.source?.startsWith('synthetic')) return fine
-      console.warn(`[DEM] ${coastalTargetResM} m-oppgradering ga syntetisk DEM — beholder probe-oppløsning`)
-      return probeDem
-    } catch (e) {
-      console.warn(`[DEM] ${coastalTargetResM} m-oppgradering feilet (${e?.message ?? e}) — beholder ${resolutionM} m`)
-      return probeDem
+    // v12.1.53: prøv nest-fineste trinn (10 m) som reserve når 5 m feiler.
+    // Mobil-WCS er flaky (kjent issue), og en feilet oppgradering betyr at
+    // kartet blir stående på 20 m — som gir ~1–2 cellers land-dilasjon langs
+    // kysten (Kirkenes-forskyvningen). 10 m-forespørselen er 4× mindre og
+    // kan lykkes der 5 m timet ut; begge trinn caches i flis-cachen så en
+    // vellykket henting gjør senere ombygginger raske.
+    const upgradeSteps = coastalTargetResM === COASTAL_DEM_RES_M && COASTAL_DEM_MID_RES_M < resolutionM
+      ? [COASTAL_DEM_RES_M, COASTAL_DEM_MID_RES_M]
+      : [coastalTargetResM]
+    for (const res of upgradeSteps) {
+      onProgress(`Kystnært kart — henter DEM i ${res} m for skarpere kystlinje …`)
+      try {
+        const fine = await fetchDemFor(res)
+        if (fine && !fine.source?.startsWith('synthetic')) return fine
+        console.warn(`[DEM] ${res} m-oppgradering ga syntetisk DEM`)
+      } catch (e) {
+        console.warn(`[DEM] ${res} m-oppgradering feilet (${e?.message ?? e})`)
+      }
     }
+    console.warn(`[DEM] kyst-oppgradering feilet — beholder ${resolutionM} m`)
+    return probeDem
   }))
   const demPromise = demCorePromise.then(maybeFillFromTerrarium)
   // Sjøkart gates på samme kyst-signal (DEM-havflate + OSM-saltvann). For

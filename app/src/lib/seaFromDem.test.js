@@ -49,6 +49,32 @@ describe('buildSeaFromDem', () => {
     expect(polygons.length).toBeGreaterThan(0)
   })
 
+  it('legger sjø/land-kanten MIDT i celle-gapet, ikke inntil sjø-cella (v12.1.53)', () => {
+    // Sjø (0 m) i kolonne 0–4, bratt land (5 m) i kolonne 5–9, 20 m celler.
+    // Celle-sentre: siste sjø @ 90 m, første land @ 110 m. Uklippet felt la
+    // krysningen ved 92 m (10 % ut i gapet — land åt nesten hele gapet);
+    // klippet felt skal legge den ved midtpunktet 100 m.
+    const dem = makeDem({ cols: 10, rows: 10, pixelM: 20, fill: (x) => (x <= 4 ? 0 : 5) })
+    const { polygons } = buildSeaFromDem(dem, { simplifyM: 0, minAreaM2: 0 })
+    expect(polygons.length).toBeGreaterThan(0)
+    let maxX = -Infinity
+    for (const rings of polygons) for (const [x] of rings[0]) if (x > maxX) maxX = x
+    expect(maxX).toBeGreaterThan(98)
+    expect(maxX).toBeLessThan(102)
+  })
+
+  it('celler mellom terskel og 2×terskel beholder proporsjonal kant-plassering', () => {
+    // Land på 0.8 m (under 2×terskel = 1.0): krysning 0→0.8 ved 0.5 → t=0.625
+    // → x = 90 + 0.625·20 = 102.5 m. Klippingen skal IKKE flytte denne.
+    const dem = makeDem({ cols: 10, rows: 10, pixelM: 20, fill: (x) => (x <= 4 ? 0 : 0.8) })
+    const { polygons } = buildSeaFromDem(dem, { simplifyM: 0, minAreaM2: 0 })
+    expect(polygons.length).toBeGreaterThan(0)
+    let maxX = -Infinity
+    for (const rings of polygons) for (const [x] of rings[0]) if (x > maxX) maxX = x
+    expect(maxX).toBeGreaterThan(101)
+    expect(maxX).toBeLessThan(104)
+  })
+
   it('behandler noData som land (ikke sjø)', () => {
     // Hele bbox er noData → skal ikke generere sjø
     const dem = makeDem({ cols: 20, rows: 20, fill: () => -9999 })
