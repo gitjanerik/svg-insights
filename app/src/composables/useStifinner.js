@@ -1,17 +1,19 @@
 // Stifinner — rutenavigasjon på kartets sti-/vei-lag.
 //
 // Brukeren velger et mål (B) fra info-arket («Naviger hit»), så et startpunkt
-// (A) via et midt-kikkertsikte i kartet. Vi leser sti-geometrien tilbake fra
-// den rendrede kart-SVG-en (kun `<path d>` er tilgjengelig på view-tid),
-// bygger en routing-graf og foreslår 1–3 alternative ruter A→B.
+// (A) via et midt-kikkertsikte i kartet. Når ruten vises kan hun legge til
+// inntil 3 valgfrie via-punkter (samme sikte, gult) — ruten reberegnes A →
+// via… → B. Vi leser sti-geometrien tilbake fra den rendrede kart-SVG-en (kun
+// `<path d>` er tilgjengelig på view-tid), bygger en routing-graf og foreslår
+// 1–3 alternative ruter.
 //
-// Modus-maskin:  idle → pickingStart → showing  (X-knapp → idle)
+// Modus-maskin:  idle → pickingStart → showing ⇄ pickingVia  (X-knapp → idle)
 //
-// All DOM-tilgang skjer i computeRoutes(svgElement); parsing/graf/k-ruter er
+// All DOM-tilgang skjer i featuresFromSvg(svgElement); parsing/graf/k-ruter er
 // ren, testet lib (routing.js + pathUtils.parsePathSubpaths).
 
 import { ref, computed } from 'vue'
-import { buildRoutingGraph, planRoutes } from '../lib/routing.js'
+import { buildRoutingGraph, planRoutesThrough } from '../lib/routing.js'
 import { parsePathSubpaths } from '../lib/pathUtils.js'
 
 // ISOM-koder som er routbare (vei/sti/bro). Må matche ISOM_COST i routing.js.
@@ -20,6 +22,9 @@ const ROUTABLE_CODES = new Set(['501', '502', '503', '504', '505', '506', '507',
 // Maks snap-avstand fra valgt punkt til nærmeste sti-node (meter). Lenger unna
 // → vi antar «ingen sti i nærheten».
 const MAX_SNAP_M = 150
+
+// Maks antall via-punkter (A + inntil 3 via + B = 5 punkter totalt).
+const MAX_VIA = 3
 
 // Antatt ganghastighet for estimert tid (m/min ≈ 4 km/t).
 const WALK_M_PER_MIN = 4000 / 60
@@ -30,17 +35,29 @@ const ASCENT_M_PER_MIN = 10
 const DESCENT_M_PER_MIN = 30
 
 export function useStifinner() {
-  const mode = ref('idle')          // 'idle' | 'pickingStart' | 'showing'
+  const mode = ref('idle')          // 'idle' | 'pickingStart' | 'showing' | 'pickingVia'
   const destination = ref(null)     // { svgX, svgY } — B
   const start = ref(null)           // { svgX, svgY } — A
+  const via = ref([])               // [{ svgX, svgY }] — 0–3 via-punkter, i rekkefølge
   const routes = ref([])            // [{ coordinates, lengthM, costM }]
   const selectedRouteIdx = ref(0)
   const error = ref('')             // brukervendt feilmelding
   // Snappede graf-noder (for connector-strek fra valgt punkt til stien).
   const startSnap = ref(null)       // { x, y } i SVG-rom
   const destSnap = ref(null)
+  const viaSnaps = ref([])          // [{ x, y }] parallelt til via
+
+  // Cache av routing-grafen for sist brukte SVG-element, så gjentatte via-
+  // redigeringer ikke bygger grafen på nytt hver gang.
+  let cachedRg = null
+  let cachedSvg = null
+  // Sist brukte SVG-element, så recompute() kan reberegne når via endres.
+  let lastSvg = null
 
   const active = computed(() => mode.value !== 'idle')
+  const canAddVia = computed(() =>
+    (mode.value === 'showing' || mode.value === 'pickingVia') &&
+    !!start.value && via.value.length < MAX_VIA)
 
   // Luftlinje (rett strek) A→B i meter. SVG-rommet er i meter (viewBox), så
   // dette er ekte avstand. Tilgjengelig så snart både start og mål er satt —
@@ -55,11 +72,13 @@ export function useStifinner() {
   function begin(dest) {
     destination.value = { svgX: dest.svgX, svgY: dest.svgY }
     start.value = null
+    via.value = []
     routes.value = []
     selectedRouteIdx.value = 0
     error.value = ''
     startSnap.value = null
     destSnap.value = null
+    viaSnaps.value = []
     mode.value = 'pickingStart'
   }
 
@@ -67,11 +86,16 @@ export function useStifinner() {
     mode.value = 'idle'
     destination.value = null
     start.value = null
+    via.value = []
     routes.value = []
     selectedRouteIdx.value = 0
     error.value = ''
     startSnap.value = null
     destSnap.value = null
+    viaSnaps.value = []
+    cachedRg = null
+    cachedSvg = null
+    lastSvg = null
   }
 
   // Spøkelses-/utvidelsesfliser ligger som nestede <svg x y> i aktiv-flisas
@@ -117,10 +141,68 @@ export function useStifinner() {
     return features
   }
 
+  // Bygg (eller gjenbruk cachet) routing-graf for et SVG-element.
+  // componentBridgeM=6→80: se lib/routing.js — kobler frakoblede sti-/vei-
+  // fragmenter til hovednettet så et startpunkt ved en stasjon/P-plass ikke
+  // ender i en isolert stump.
+  function graphFor(svgElement) {
+    if (cachedRg && cachedSvg === svgElement) return cachedRg
+    const features = featuresFromSvg(svgElement)
+    if (!features.length) return null
+    cachedRg = buildRoutingGraph(features, { snapM: 6, componentBridgeM: 80 })
+    cachedSvg = svgElement
+    return cachedRg
+  }
+
+  // Reberegn ruter gjennom [start, ...via, mål] mot cachet graf. Setter routes/
+  // snaps/error. Kalles av confirmStart og alle via-endringer.
+  function recompute() {
+    error.value = ''
+    routes.value = []
+    selectedRouteIdx.value = 0
+    startSnap.value = null
+    destSnap.value = null
+    viaSnaps.value = []
+
+    if (!lastSvg || !start.value || !destination.value) {
+      error.value = 'Mangler kartdata'
+      return
+    }
+    const rg = graphFor(lastSvg)
+    if (!rg) {
+      error.value = 'Fant ingen sti eller vei på kartet'
+      return
+    }
+
+    const pts = [start.value, ...via.value, destination.value]
+    const snapped = pts.map(p => rg.nearestNode([p.svgX, p.svgY]))
+    for (let i = 0; i < snapped.length; i++) {
+      const n = snapped[i]
+      if (!n || n.distM > MAX_SNAP_M) {
+        error.value = i === 0 ? 'Ingen sti eller vei i nærheten av startpunktet'
+          : i === snapped.length - 1 ? 'Ingen sti eller vei i nærheten av målet'
+            : `Ingen sti eller vei i nærheten av via-punkt ${i}`
+        return
+      }
+    }
+
+    startSnap.value = { x: snapped[0].pos[0], y: snapped[0].pos[1] }
+    destSnap.value = { x: snapped[snapped.length - 1].pos[0], y: snapped[snapped.length - 1].pos[1] }
+    viaSnaps.value = snapped.slice(1, -1).map(n => ({ x: n.pos[0], y: n.pos[1] }))
+
+    const found = planRoutesThrough(rg, snapped.map(n => n.id), { k: 3 })
+    if (!found.length) {
+      error.value = 'Fant ingen rute mellom punktene'
+      return
+    }
+    routes.value = found
+  }
+
   /**
-   * Beregn ruter fra start (A) til destination (B) basert på sti-laget i
-   * `svgElement`. Setter routes/error og går til 'showing'.
+   * Bekreft startpunkt (A) og beregn ruter A→B. Går til 'showing'.
+   * @param {{x:number,y:number}} svgPoint
    * @param {SVGElement} svgElement
+   * @param {{startOnWater?:boolean}} opts
    */
   function confirmStart(svgPoint, svgElement, opts = {}) {
     error.value = ''
@@ -128,6 +210,8 @@ export function useStifinner() {
     selectedRouteIdx.value = 0
     startSnap.value = null
     destSnap.value = null
+    viaSnaps.value = []
+    via.value = []
     mode.value = 'showing'
 
     // Startpunkt i vann → ingen rute, og ikke sett start (så ingen villedende
@@ -139,52 +223,41 @@ export function useStifinner() {
     }
 
     start.value = { svgX: svgPoint.x, svgY: svgPoint.y }
+    lastSvg = svgElement
 
     if (!svgElement || !destination.value) {
       error.value = 'Mangler kartdata'
       return
     }
+    recompute()
+  }
 
-    const features = featuresFromSvg(svgElement)
-    if (!features.length) {
-      error.value = 'Fant ingen sti eller vei på kartet'
-      return
-    }
+  // Gå til via-plukk-modus (crosshair). Kalles av «+ Via»-knappen.
+  function beginAddVia() {
+    if (!canAddVia.value) return
+    mode.value = 'pickingVia'
+  }
 
-    // snapM=6: routbare lag dekker vei + skogsbilvei + sti (ROUTABLE_CODES),
-    // men der en adkomstvei møter en sti er endepunktene ofte nudget noen
-    // meter fra hverandre etter rendering/DP-forenkling. 6 m slår sammen
-    // slike kryss så en tur som går vei → skogsbilvei → sti henger sammen
-    // i grafen (var 3 m, som lot road- og sti-nettet falle i hver sin
-    // frakoblede komponent → «fant ingen rute» når man startet på en P-plass
-    // ved en vei).
-    // componentBridgeM=80: kobler frakoblede sti-/vei-fragmenter (adkomst-
-    // stumper, T-kryss lengre unna enn dangle-broen) til hovednettet, så et
-    // startpunkt ved f.eks. en stasjon/P-plass ikke ender i en isolert stump
-    // og gir «fant ingen rute». 80 m < bro/kulvert-gapet vi bevisst IKKE broer.
-    const rg = buildRoutingGraph(features, { snapM: 6, componentBridgeM: 80 })
-    const aPos = [start.value.svgX, start.value.svgY]
-    const bPos = [destination.value.svgX, destination.value.svgY]
-    const aNode = rg.nearestNode(aPos)
-    const bNode = rg.nearestNode(bPos)
+  // Bekreft et via-punkt (skjermsenteret). Legges til i rekkefølge og ruten
+  // reberegnes. Går tilbake til 'showing'.
+  function confirmVia(svgPoint, svgElement) {
+    mode.value = 'showing'
+    if (via.value.length >= MAX_VIA) return
+    if (svgElement) lastSvg = svgElement
+    via.value = [...via.value, { svgX: svgPoint.x, svgY: svgPoint.y }]
+    recompute()
+  }
 
-    if (!aNode || aNode.distM > MAX_SNAP_M) {
-      error.value = 'Ingen sti eller vei i nærheten av startpunktet'
-      return
-    }
-    if (!bNode || bNode.distM > MAX_SNAP_M) {
-      error.value = 'Ingen sti eller vei i nærheten av målet'
-      return
-    }
-    startSnap.value = { x: aNode.pos[0], y: aNode.pos[1] }
-    destSnap.value = { x: bNode.pos[0], y: bNode.pos[1] }
+  function removeVia(index) {
+    if (index < 0 || index >= via.value.length) return
+    via.value = via.value.filter((_, i) => i !== index)
+    recompute()
+  }
 
-    const found = planRoutes(rg, aNode.id, bNode.id, { k: 3 })
-    if (!found.length) {
-      error.value = 'Fant ingen rute mellom punktene'
-      return
-    }
-    routes.value = found
+  function clearVia() {
+    if (!via.value.length) return
+    via.value = []
+    recompute()
   }
 
   function selectRoute(idx) {
@@ -205,8 +278,9 @@ export function useStifinner() {
   }
 
   return {
-    mode, active, destination, start, routes, selectedRouteIdx, error,
-    startSnap, destSnap, directDistanceM,
-    begin, cancel, confirmStart, selectRoute, estWalkMinutes,
+    mode, active, destination, start, via, routes, selectedRouteIdx, error,
+    startSnap, destSnap, viaSnaps, directDistanceM, canAddVia, MAX_VIA,
+    begin, cancel, confirmStart, beginAddVia, confirmVia, removeVia, clearVia,
+    selectRoute, estWalkMinutes,
   }
 }

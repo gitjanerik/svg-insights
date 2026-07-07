@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { buildMapHeadless, routableFeaturesFromSvg } from './headless.js'
-import { buildRoutingGraph, planRoutes } from '../src/lib/routing.js'
+import { buildRoutingGraph, planRoutes, planRoutesThrough } from '../src/lib/routing.js'
 import { wgs84ToSvg, svgToWgs84 } from '../src/lib/utm.js'
 import { sampleProfile } from '../src/lib/elevationProfile.js'
 import { sampleElevation } from '../src/lib/demSampling.js'
@@ -75,6 +75,27 @@ function planBetween(start, maal) {
   const found = planRoutes(rg, aNode.id, bNode.id)
   if (!found.length) throw new Error('Fant ingen rute mellom punktene (frakoblede sti-nett?).')
   return { found, meta, a, b, aNode, bNode }
+}
+
+// Rute gjennom en liste punkter [start, ...via, maal] (WGS84). Leddene før det
+// siste rutes som korteste vei (fast prefiks som må innom hvert via-punkt);
+// siste ledd gir 1–3 alternativer (planRoutes), så hvert forslag deler samme
+// vei innom via-punktene men kan variere på siste strekk. Uten via-punkter
+// oppfører den seg identisk med planBetween. Koordinater er i SVG-meter.
+function planThrough(points) {
+  const rg = ensureRoutingGraph()
+  const meta = svgMeta()
+  const snaps = points.map((ll, i) => {
+    const p = wgs84ToSvg(ll.lat, ll.lon, meta)
+    if (!insideMap(p)) throw new Error(`Punkt ${i + 1} ligger utenfor kartet — bygg et større kart eller flytt punktet.`)
+    const node = rg.nearestNode([p.x, p.y])
+    if (!node || node.distM > MAX_SNAP_M) throw new Error(`Ingen sti/vei nær punkt ${i + 1} (>150 m).`)
+    return { p, node }
+  })
+
+  const found = planRoutesThrough(rg, snaps.map(s => s.node.id))
+  if (!found.length) throw new Error('Fant ingen gjennomgående rute (frakoblet sti-nett eller via-punkt uten stiforbindelse?).')
+  return { found, meta, snaps }
 }
 
 function insideMap(p) {
@@ -324,14 +345,19 @@ server.registerTool(
   {
     title: 'Tegn rute inn i kart-SVG',
     description:
-      'Planlegger en fotrute mellom to punkter på sist bygde kart og tegner stiforslaget ' +
-      'inn i kart-SVG-en i samme stil som appens Stifinner (hvit halo + farget linje, ' +
-      'grønn start / rød mål, stiplet connector til nærmeste sti). Skriver en ny SVG-fil ' +
-      'og returnerer stien. Ett kall = ferdig kart med rute.',
+      'Planlegger en fotrute mellom to punkter (valgfritt innom via-punkter) på sist bygde ' +
+      'kart og tegner stiforslaget inn i kart-SVG-en i samme stil som appens Stifinner ' +
+      '(hvit halo + semitransparent farget linje, grønn start / gule via / rød mål, stiplet ' +
+      'connector til nærmeste sti). Skriver en ny SVG-fil og returnerer stien. Ett kall = ' +
+      'ferdig kart med rute.',
     inputSchema: {
       start: z.object({ lat: z.number(), lon: z.number() }).describe('Startpunkt'),
       maal: z.object({ lat: z.number(), lon: z.number() }).describe('Målpunkt'),
-      visAlle: z.boolean().default(false).describe('Tegn alle alternative ruter (ellers kun den valgte)'),
+      via: z.array(z.object({
+        lat: z.number(), lon: z.number(),
+        navn: z.string().optional(),
+      })).optional().describe('Via-punkter ruten må innom (f.eks. en hytte/topp), i rekkefølge'),
+      visAlle: z.boolean().default(true).describe('Tegn alle alternative ruter (ellers kun den valgte)'),
       ruteIndeks: z.number().int().min(0).default(0).describe('Hvilken rute som markeres/velges'),
       startNavn: z.string().optional().describe('Etikett ved startpunktet'),
       maalNavn: z.string().optional().describe('Etikett ved målpunktet'),
@@ -339,22 +365,32 @@ server.registerTool(
       filsti: z.string().optional().describe('Hvor SVG-en skrives (default: tmp)'),
     },
   },
-  async ({ start, maal, visAlle, ruteIndeks, startNavn, maalNavn, navn, filsti }) => {
+  async ({ start, maal, via, visAlle, ruteIndeks, startNavn, maalNavn, navn, filsti }) => {
     requireMap()
-    const { found, meta, a, b, aNode, bNode } = planBetween(start, maal)
+    const viaPts = via ?? []
+    const points = [start, ...viaPts, maal]
+    const { found, meta, snaps } = planThrough(points)
     state.routes = found
 
     const sel = Math.min(ruteIndeks, found.length - 1)
     const routes = visAlle ? found : [found[sel]]
     const selectedIndex = visAlle ? sel : 0
 
+    const startSnap = snaps[0], maalSnap = snaps[snaps.length - 1]
+    const a = startSnap.p, b = maalSnap.p
+
     // Connector-streker: valgt punkt → snappet sti-node (som i Stifinner).
     const connectors = [
-      { from: [a.x, a.y], to: aNode.pos },
-      { from: [b.x, b.y], to: bNode.pos },
+      { from: [a.x, a.y], to: startSnap.node.pos },
+      { from: [b.x, b.y], to: maalSnap.node.pos },
     ]
     const markers = []
     if (startNavn) markers.push({ x: a.x, y: a.y, color: '#16a34a', label: startNavn, anchor: 'start' })
+    // Via-punkter: gul markør med etikett (Wentzelhytta osv.).
+    viaPts.forEach((v, i) => {
+      const s = snaps[i + 1]
+      markers.push({ x: s.p.x, y: s.p.y, color: '#f59e0b', label: v.navn, anchor: 'start' })
+    })
     if (maalNavn) markers.push({ x: b.x, y: b.y, color: '#dc2626', label: maalNavn, anchor: 'end' })
 
     const overlay = buildRouteOverlaySvg({
@@ -387,7 +423,7 @@ server.registerTool(
         fallM: climb?.descent ?? null,
         estimertGangtidMin: estWalkMinutes(valgt.lengthM, climb?.ascent, climb?.descent),
       },
-      snappingM: { start: Math.round(aNode.distM), maal: Math.round(bNode.distM) },
+      snappingM: { start: Math.round(startSnap.node.distM), maal: Math.round(maalSnap.node.distM) },
     })
   },
 )

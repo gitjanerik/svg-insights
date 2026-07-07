@@ -3619,6 +3619,23 @@ function onSelectRoute(idx) {
   sti.selectRoute(idx)
   renderRoutes()
 }
+// «+ Via» → gå til via-plukk (gult sikte). Bekreft via = skjermsenteret.
+function onBeginAddVia() {
+  sti.beginAddVia()
+}
+function onConfirmVia() {
+  const c = visibleCenterSvg()
+  const svg = svgHostRef.value?.querySelector('svg')
+  if (!c || !svg) return
+  sti.confirmVia(c, svg)
+  renderRoutes()
+}
+function onRemoveVia(i) {
+  sti.removeVia(i)
+  renderRoutes()
+}
+// Farge på sikte/bekreft-knapp: gul i via-modus, grønn ved startvalg.
+const stiPickColor = computed(() => (sti.mode.value === 'pickingVia' ? '#f59e0b' : '#16a34a'))
 
 // Høydemeter A→B: ren høydeforskjell mellom start- og målpunktet (DEM-sampla
 // i samme svg-meter-rom som rutene). Rute-uavhengig — som luftlinja — så den
@@ -4228,7 +4245,9 @@ function renderRoutes() {
     svg.appendChild(layer)
   }
   layer.replaceChildren()
-  if (sti.mode.value !== 'showing' || curveball.active.value) return
+  // Tegn i både 'showing' og 'pickingVia' (behold ruten synlig mens brukeren
+  // sikter et nytt via-punkt).
+  if ((sti.mode.value !== 'showing' && sti.mode.value !== 'pickingVia') || curveball.active.value) return
 
   const s = scale.value || 1
   const mk = (d, stroke, width, opts = {}) => {
@@ -4250,6 +4269,11 @@ function renderRoutes() {
   const aSnap = sti.startSnap.value, bSnap = sti.destSnap.value
   if (a && aSnap) layer.appendChild(mk(`M${a.svgX},${a.svgY}L${aSnap.x},${aSnap.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
   if (b && bSnap) layer.appendChild(mk(`M${b.svgX},${b.svgY}L${bSnap.x},${bSnap.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
+  const viaPts = sti.via.value, viaSnapArr = sti.viaSnaps.value
+  for (let i = 0; i < viaPts.length; i++) {
+    const v = viaPts[i], vs = viaSnapArr[i]
+    if (v && vs) layer.appendChild(mk(`M${v.svgX},${v.svgY}L${vs.x},${vs.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
+  }
 
   // Tegn ikke-valgte ruter først (under), valgt rute øverst.
   const order = sti.routes.value.map((_, i) => i)
@@ -4282,9 +4306,11 @@ function renderRoutes() {
     return c
   }
   if (a) layer.appendChild(dot(a.svgX, a.svgY, '#16a34a'))
+  for (const v of viaPts) if (v) layer.appendChild(dot(v.svgX, v.svgY, '#f59e0b'))
   if (b) layer.appendChild(dot(b.svgX, b.svgY, '#dc2626'))
 }
-watch([() => sti.routes.value, () => sti.selectedRouteIdx.value, () => sti.mode.value, scale],
+watch([() => sti.routes.value, () => sti.selectedRouteIdx.value, () => sti.mode.value,
+       () => sti.via.value, scale],
   () => renderRoutes(), { deep: true })
 
 // Sørg for at annoterings-symbolenes <symbol id="iso-sym-X"> finnes i kart-
@@ -6895,14 +6921,14 @@ onUnmounted(() => {
          panorerer kartet til siktet står på ønsket start, så «Bekreft». Ligger
          over kartet (pointer-events none) sentrert i kart-flaten (samme right-
          offset som wrapperen så det treffer visibleCenterSvg). -->
-    <div v-if="sti.mode.value === 'pickingStart' && !curveball.active.value"
+    <div v-if="(sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia') && !curveball.active.value"
          class="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
          :style="{ right: panelOffsetPx + 'px' }">
       <svg viewBox="0 0 80 80" class="w-20 h-20 drop-shadow"
-           fill="none" stroke="#16a34a" stroke-width="2.5">
+           fill="none" :stroke="stiPickColor" stroke-width="2.5">
         <circle cx="40" cy="40" r="22" stroke="rgba(255,255,255,0.9)" stroke-width="5"/>
         <circle cx="40" cy="40" r="22"/>
-        <circle cx="40" cy="40" r="2.5" fill="#16a34a" stroke="none"/>
+        <circle cx="40" cy="40" r="2.5" :fill="stiPickColor" stroke="none"/>
         <line x1="40" y1="6" x2="40" y2="22" stroke="rgba(255,255,255,0.9)" stroke-width="5"/>
         <line x1="40" y1="6" x2="40" y2="22"/>
         <line x1="40" y1="58" x2="40" y2="74" stroke="rgba(255,255,255,0.9)" stroke-width="5"/>
@@ -6913,18 +6939,19 @@ onUnmounted(() => {
         <line x1="58" y1="40" x2="74" y2="40"/>
       </svg>
     </div>
-    <!-- «Bekreft startpunkt»-knapp (kun i pickingStart). -->
-    <div v-if="sti.mode.value === 'pickingStart' && !curveball.active.value"
+    <!-- «Bekreft»-knapp (start- eller via-plukk). -->
+    <div v-if="(sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia') && !curveball.active.value"
          class="absolute left-1/2 -translate-x-1/2 z-30 transition-[left] duration-200"
          :style="[mapCenterStyle, { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }]">
-      <button @click="onConfirmStart"
-              class="px-5 py-3 rounded-full bg-emerald-600 text-white text-[14px] font-semibold
-                     shadow-lg active:scale-95 flex items-center gap-2">
+      <button @click="sti.mode.value === 'pickingVia' ? onConfirmVia() : onConfirmStart()"
+              class="px-5 py-3 rounded-full text-white text-[14px] font-semibold
+                     shadow-lg active:scale-95 flex items-center gap-2"
+              :class="sti.mode.value === 'pickingVia' ? 'bg-amber-500' : 'bg-emerald-600'">
         <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor"
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 6 L9 17 L4 12"/>
         </svg>
-        Bekreft startpunkt
+        {{ sti.mode.value === 'pickingVia' ? 'Bekreft via-punkt' : 'Bekreft startpunkt' }}
       </button>
     </div>
 
@@ -7060,6 +7087,10 @@ onUnmounted(() => {
           <div class="text-[12px] font-semibold">Velg startpunkt</div>
           <div class="text-[10px] text-emerald-100/90">Sikt med krysset, trykk Bekreft</div>
         </template>
+        <template v-else-if="sti.mode.value === 'pickingVia'">
+          <div class="text-[12px] font-semibold">Via-punkt {{ sti.via.value.length + 1 }} av {{ sti.MAX_VIA }}</div>
+          <div class="text-[10px] text-emerald-100/90">Sikt med krysset, trykk Bekreft</div>
+        </template>
         <template v-else>
           <template v-if="sti.error.value">
             <div class="text-[12px] font-semibold">{{ sti.error.value }}</div>
@@ -7088,6 +7119,30 @@ onUnmounted(() => {
                       class="text-[8px] uppercase tracking-wide bg-white/25 rounded px-1 py-px shrink-0">
                   Kortest
                 </span>
+              </button>
+            </div>
+            <!-- Via-punkter (0–3): chips med fjern-knapp + «+ Via». -->
+            <div class="flex flex-wrap items-center gap-1 mt-1.5">
+              <span v-for="(v, i) in sti.via.value" :key="'via' + i"
+                    class="flex items-center gap-1 bg-amber-500/30 rounded pl-1.5 pr-0.5 py-0.5 text-[10px]">
+                <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                Via {{ i + 1 }}
+                <button @click="onRemoveVia(i)" aria-label="Fjern via-punkt"
+                        class="w-4 h-4 flex items-center justify-center rounded active:bg-white/20">
+                  <svg viewBox="0 0 24 24" class="w-2.5 h-2.5" fill="none" stroke="currentColor"
+                       stroke-width="3" stroke-linecap="round">
+                    <line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>
+                  </svg>
+                </button>
+              </span>
+              <button v-if="sti.canAddVia.value" @click="onBeginAddVia"
+                      class="flex items-center gap-1 bg-white/15 rounded px-1.5 py-0.5 text-[10px]
+                             font-medium active:scale-95">
+                <svg viewBox="0 0 24 24" class="w-3 h-3" fill="none" stroke="currentColor"
+                     stroke-width="2.6" stroke-linecap="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Via
               </button>
             </div>
             <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/80 mt-1 tabular-nums">

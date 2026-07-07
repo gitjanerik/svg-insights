@@ -123,3 +123,73 @@ describe('useStifinner – mosaikk (spøkelsesfliser)', () => {
     expect(sti.destSnap.value).toEqual({ x: 800, y: 500 })
   })
 })
+
+// Enkel sti-linje for via-testene: (0,0)→(1000,0), tett med noder.
+function lineSvg() {
+  const pts = []
+  for (let x = 0; x <= 1000; x += 50) pts.push(`${x === 0 ? 'M' : 'L'}${x},0`)
+  const sti = fakeEl('g', { 'data-iso': '505' }, [fakeEl('path', { d: pts.join('') })])
+  return fakeEl('svg', {}, [sti])
+}
+
+describe('useStifinner – via-punkter', () => {
+  it('starter uten via og tilbyr å legge til', () => {
+    const sti = useStifinner()
+    sti.begin({ svgX: 1000, svgY: 0 })
+    sti.confirmStart({ x: 0, y: 0 }, lineSvg(), {})
+    expect(sti.error.value).toBe('')
+    expect(sti.via.value).toEqual([])
+    expect(sti.canAddVia.value).toBe(true)
+  })
+
+  it('beginAddVia → pickingVia, confirmVia legger til punkt og reberegner', () => {
+    const sti = useStifinner()
+    sti.begin({ svgX: 1000, svgY: 0 })
+    sti.confirmStart({ x: 0, y: 0 }, lineSvg(), {})
+
+    sti.beginAddVia()
+    expect(sti.mode.value).toBe('pickingVia')
+    sti.confirmVia({ x: 500, y: 0 }, lineSvg())
+
+    expect(sti.mode.value).toBe('showing')
+    expect(sti.via.value).toEqual([{ svgX: 500, svgY: 0 }])
+    expect(sti.viaSnaps.value).toEqual([{ x: 500, y: 0 }])
+    expect(sti.routes.value.length).toBeGreaterThan(0)
+    expect(sti.routes.value[0].lengthM).toBeCloseTo(1000, 0) // A→via→B på samme linje
+  })
+
+  it('håndhever maks 3 via-punkter', () => {
+    const sti = useStifinner()
+    sti.begin({ svgX: 1000, svgY: 0 })
+    sti.confirmStart({ x: 0, y: 0 }, lineSvg(), {})
+    for (const x of [200, 400, 600]) sti.confirmVia({ x, y: 0 }, lineSvg())
+    expect(sti.via.value.length).toBe(3)
+    expect(sti.canAddVia.value).toBe(false)
+    sti.beginAddVia()
+    expect(sti.mode.value).toBe('showing') // ikke pickingVia — grensen nådd
+    sti.confirmVia({ x: 800, y: 0 }, lineSvg())
+    expect(sti.via.value.length).toBe(3)   // ekstra ignorert
+  })
+
+  it('removeVia fjerner et punkt og reberegner', () => {
+    const sti = useStifinner()
+    sti.begin({ svgX: 1000, svgY: 0 })
+    sti.confirmStart({ x: 0, y: 0 }, lineSvg(), {})
+    sti.confirmVia({ x: 300, y: 0 }, lineSvg())
+    sti.confirmVia({ x: 700, y: 0 }, lineSvg())
+    expect(sti.via.value.length).toBe(2)
+    sti.removeVia(0)
+    expect(sti.via.value).toEqual([{ svgX: 700, svgY: 0 }])
+    expect(sti.routes.value.length).toBeGreaterThan(0)
+  })
+
+  it('cancel nullstiller via', () => {
+    const sti = useStifinner()
+    sti.begin({ svgX: 1000, svgY: 0 })
+    sti.confirmStart({ x: 0, y: 0 }, lineSvg(), {})
+    sti.confirmVia({ x: 500, y: 0 }, lineSvg())
+    sti.cancel()
+    expect(sti.via.value).toEqual([])
+    expect(sti.mode.value).toBe('idle')
+  })
+})

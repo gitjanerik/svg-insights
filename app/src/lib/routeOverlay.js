@@ -11,8 +11,16 @@ export const ROUTE_COLORS = ['#dc2626', '#7c3aed', '#0891b2']
 
 // Standard strekbredder i SVG-meter (kartet er ~5 km bredt → disse leses greit
 // på full utstrekning). Overstyrbart via `style` for større/mindre kart.
+//
+// Både valgt og alternativ er semitransparente — den valgte skiller seg kun med
+// litt mer bredde/opasitet, ikke ved å være en tykk, opak blokk (tidligere lå
+// den valgte på 13/26 px @ opasitet 1 og druknet resten).
 export const DEFAULT_OVERLAY_STYLE = {
-  line: 13, halo: 26, connector: 8, connectorDash: 24,
+  lineSelected: 9, lineOther: 8,
+  haloSelected: 18, haloOther: 16,
+  routeOpacitySelected: 0.72, routeOpacityOther: 0.55,
+  haloOpacitySelected: 0.6, haloOpacityOther: 0.5,
+  connector: 8, connectorDash: 24,
   dot: 34, dotStroke: 10, fontSize: 86, labelStroke: 16,
 }
 
@@ -61,15 +69,19 @@ export function buildRouteOverlaySvg(opts = {}) {
     const d = polylineToPath(r.coordinates, false)
     const selected = i === selectedIndex
     const color = ROUTE_COLORS[i % ROUTE_COLORS.length]
+    const halo = selected ? s.haloSelected : s.haloOther
+    const line = selected ? s.lineSelected : s.lineOther
+    const haloOp = selected ? s.haloOpacitySelected : s.haloOpacityOther
+    const lineOp = selected ? s.routeOpacitySelected : s.routeOpacityOther
     parts.push(
       `<path d="${d}" fill="none" stroke="rgba(255,255,255,0.95)" ` +
-      `stroke-width="${selected ? s.halo : s.halo * 0.7}" stroke-linecap="round" ` +
-      `stroke-linejoin="round" opacity="${selected ? 1 : 0.6}"/>`
+      `stroke-width="${halo}" stroke-linecap="round" ` +
+      `stroke-linejoin="round" opacity="${haloOp}"/>`
     )
     parts.push(
       `<path d="${d}" fill="none" stroke="${color}" ` +
-      `stroke-width="${selected ? s.line : s.line * 0.65}" stroke-linecap="round" ` +
-      `stroke-linejoin="round" opacity="${selected ? 1 : 0.55}"/>`
+      `stroke-width="${line}" stroke-linecap="round" ` +
+      `stroke-linejoin="round" opacity="${lineOp}"/>`
     )
   }
 

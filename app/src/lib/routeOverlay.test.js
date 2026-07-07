@@ -32,14 +32,17 @@ describe('buildRouteOverlaySvg', () => {
     expect(g).toContain('A &amp; B')
   })
 
-  it('gir valgt rute tykkere strek enn ikke-valgt', () => {
+  it('gir valgt rute litt tykkere strek enn ikke-valgt, begge semitransparente', () => {
     const g = buildRouteOverlaySvg({
       routes: [route([[0, 0], [10, 0]]), route([[0, 5], [10, 5]])],
       selectedIndex: 0,
     })
-    // Valgt halo = 26, ikke-valgt = 26*0.7 = 18.2
-    expect(g).toContain('stroke-width="26"')
-    expect(g).toContain('stroke-width="18.2"')
+    // Valgt halo = 18, ikke-valgt = 16 (ingen 100 %-opak, tykk blokk lenger)
+    expect(g).toContain('stroke-width="18"')
+    expect(g).toContain('stroke-width="16"')
+    // Ingen strek er 100 % opak — alle rute-streker er semitransparente.
+    expect(g).not.toMatch(/stroke="#dc2626"[^/]*opacity="1"/)
+    expect(g).toContain('opacity="0.72"') // valgt rute-opasitet
   })
 
   it('tåler tom input', () => {

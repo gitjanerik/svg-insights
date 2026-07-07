@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRoutingGraph, kShortestRoutes, planRoutes, projectPointOnSegment } from './routing.js'
+import { buildRoutingGraph, kShortestRoutes, planRoutes, planRoutesThrough, projectPointOnSegment } from './routing.js'
 
 // Lite rutenett i SVG-meter-rom (coordinates allerede projisert).
 // Et 2x2-grid med ekstra diagonal-snarvei, alt som ISOM 505 (sti):
@@ -271,6 +271,45 @@ describe('planRoutes', () => {
     expect(shortest.lengthM).toBeGreaterThan(200) // tok sti-omveien, ikke motorvei
     // Ingen offert rute er ~200 m (= motorvei-ruta).
     expect(routes.every(r => r.lengthM > 200)).toBe(true)
+  })
+})
+
+describe('planRoutesThrough (via-punkter)', () => {
+  it('uten via-punkter er identisk med planRoutes', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const a = rg.nodeAt([0, 0]), c = rg.nodeAt([200, 0])
+    const via = planRoutesThrough(rg, [a, c])
+    const direct = planRoutes(rg, a, c)
+    expect(via[0].lengthM).toBeCloseTo(direct[0].lengthM, 1)
+  })
+
+  it('tvinger ruten innom via-punktet', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const a = rg.nodeAt([0, 0]), e = rg.nodeAt([100, 100]), c = rg.nodeAt([200, 0])
+    const routes = planRoutesThrough(rg, [a, e, c])
+    expect(routes.length).toBeGreaterThanOrEqual(1)
+    // Lengre enn direkte 200 (opp til E(100,100) og ned igjen) og passerer E.
+    expect(routes[0].lengthM).toBeGreaterThan(200)
+    expect(routes[0].coordinates.some(([x, y]) => x === 100 && y === 100)).toBe(true)
+  })
+
+  it('støtter flere via-punkter i rekkefølge', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const a = rg.nodeAt([0, 0]), d = rg.nodeAt([0, 100]), f = rg.nodeAt([200, 100]), c = rg.nodeAt([200, 0])
+    const routes = planRoutesThrough(rg, [a, d, f, c])
+    expect(routes.length).toBeGreaterThanOrEqual(1)
+    const coords = routes[0].coordinates
+    expect(coords.some(([x, y]) => x === 0 && y === 100)).toBe(true)   // via D
+    expect(coords.some(([x, y]) => x === 200 && y === 100)).toBe(true) // via F
+  })
+
+  it('returnerer tom liste når et via-ledd er frakoblet', () => {
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0]], isomCode: '505' },
+      { coordinates: [[500, 500], [600, 500]], isomCode: '505' }, // isolert
+    ], { snapM: 2 })
+    const a = rg.nodeAt([0, 0]), iso = rg.nodeAt([600, 500]), b = rg.nodeAt([100, 0])
+    expect(planRoutesThrough(rg, [a, iso, b])).toEqual([])
   })
 })
 

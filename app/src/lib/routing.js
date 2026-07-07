@@ -465,3 +465,42 @@ export function planRoutes(rg, fromId, toId, opts = {}) {
   out.sort((a, b) => a.lengthM - b.lengthM)
   return out
 }
+
+/**
+ * Rute gjennom en ordnet liste noder [start, ...via, maal] (≥2). Leddene FØR
+ * det siste rutes som korteste vei (fast prefiks som må innom hvert via-punkt);
+ * det siste leddet gir 1–k alternativer via planRoutes, så hvert forslag deler
+ * samme vei innom via-punktene men kan variere på siste strekk. Uten via-punkter
+ * (nodeIds.length === 2) er resultatet identisk med planRoutes.
+ *
+ * Delt av MCP-serverens tegn_rute_svg og appens Stifinner (useStifinner).
+ *
+ * @param {ReturnType<typeof buildRoutingGraph>} rg
+ * @param {string[]} nodeIds  [startNode, ...viaNodes, maalNode]
+ * @param {object} opts        videresendes til planRoutes for siste ledd
+ * @returns {Array<{coordinates:Array<[number,number]>, lengthM:number, costM:number, shortest?:boolean}>}
+ */
+export function planRoutesThrough(rg, nodeIds, opts = {}) {
+  if (!Array.isArray(nodeIds) || nodeIds.length < 2) return []
+  const { route } = rg
+
+  let prefix = []
+  let prefixLen = 0
+  for (let i = 0; i < nodeIds.length - 2; i++) {
+    const leg = route(nodeIds[i], nodeIds[i + 1], 'lengthNoMw')
+    if (!leg) return []   // et via-ledd er ikke naabart → ingen gjennomgående rute
+    prefix = prefix.concat(i === 0 ? leg.coordinates : leg.coordinates.slice(1))
+    prefixLen += leg.lengthM
+  }
+
+  const last = planRoutes(rg, nodeIds[nodeIds.length - 2], nodeIds[nodeIds.length - 1], opts)
+  if (!prefix.length) return last
+
+  return last.map(r => ({
+    coordinates: prefix.concat(r.coordinates.slice(1)),
+    lengthM: prefixLen + r.lengthM,
+    costM: r.costM,
+    shortest: r.shortest,
+    nodeIds: r.nodeIds,
+  }))
+}
