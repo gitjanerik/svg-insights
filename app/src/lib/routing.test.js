@@ -327,6 +327,48 @@ describe('broing av dangler / T-kryss', () => {
     expect(bridged.route(bridged.nearestNode([0, 0]).id, bridged.nearestNode([200, 0]).id)).not.toBeNull()
   })
 
+  it('kobler et frakoblet fragment til hovednettet med componentBridgeM (Bondivann-tilfellet)', () => {
+    // Hovednett [0,0]→[200,0] og en isolert stump [265,0]→[300,0] som ligger
+    // 65 m fra hovednettets endepunkt — for langt for dangle-broen (12 m), men
+    // innen componentBridgeM. Et startpunkt på stumpen skal nå nå hovednettet.
+    const features = [
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '505' },
+      { coordinates: [[265, 0], [300, 0]], isomCode: '505' },
+    ]
+    const without = buildRoutingGraph(features, { snapM: 2 })
+    expect(without.route(without.nearestNode([300, 0]).id, without.nearestNode([0, 0]).id)).toBeNull()
+
+    const bridged = buildRoutingGraph(features, { snapM: 2, componentBridgeM: 80 })
+    const r = bridged.route(bridged.nearestNode([300, 0]).id, bridged.nearestNode([0, 0]).id)
+    expect(r).not.toBeNull()
+    expect(r.coordinates[0]).toEqual([300, 0])
+    expect(r.coordinates.at(-1)).toEqual([0, 0])
+  })
+
+  it('componentBridgeM broer IKKE komponenter som ligger lenger unna enn toleransen', () => {
+    // Samme oppsett, men stumpen ligger 120 m unna (> 80 m tol) → forblir
+    // frakoblet. Sikrer at vi ikke syr sammen nett over store gap.
+    const features = [
+      { coordinates: [[0, 0], [200, 0]], isomCode: '505' },
+      { coordinates: [[320, 0], [400, 0]], isomCode: '505' },
+    ]
+    const rg = buildRoutingGraph(features, { snapM: 2, componentBridgeM: 80 })
+    expect(rg.route(rg.nearestNode([400, 0]).id, rg.nearestNode([0, 0]).id)).toBeNull()
+  })
+
+  it('componentBridgeM lager ikke intern snarvei i en allerede sammenhengende komponent', () => {
+    // U-formet sti der de to endene ligger 20 m fra hverandre men er koblet
+    // gjennom bunnen. componentBridgeM skal IKKE snarveie over åpningen (samme
+    // komponent) — ruten må fortsatt gå rundt.
+    const features = [
+      { coordinates: [[0, 0], [0, 100], [100, 100], [100, 0]], isomCode: '505' },
+    ]
+    const rg = buildRoutingGraph(features, { snapM: 2, componentBridgeM: 80 })
+    const r = rg.route(rg.nearestNode([0, 0]).id, rg.nearestNode([100, 0]).id)
+    expect(r).not.toBeNull()
+    expect(r.lengthM).toBeCloseTo(300, 0) // hele veien rundt, ingen 20 m-snarvei
+  })
+
   it('lager ikke falskt kryss der to gjennomgående stier krysser uten node (bro/kulvert)', () => {
     // Sti A går vannrett, sti B loddrett; de krysser ved (100,0) midt på begge
     // segmentene, men ingen av dem har en node der, og ingen dangle er i

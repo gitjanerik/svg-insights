@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-07 — v12.1.56: Rutenett-tilkobling + geokoding + rute-til-SVG (delt kjerne app/MCP)
+
+Tre forbedringer som løfter logikk ut i delte, testede libs så både appen og MCP-serveren bruker samme kjerne. (1) **Komponent-broing i `lib/routing.js`** (`componentBridgeM`, default av): etter dangle-broingen kobles adskilte sti-/vei-fragmenter til hovednettet langs deres korteste innbyrdes gap (Kruskal/MST-skog, kun mellom ULIKE komponenter, opp til toleransen). Fikser en reell Stifinner-bug — et startpunkt ved f.eks. en stasjon/P-plass snappet før til en isolert stump og ga «fant ingen rute» selv om hovednettet lå ~65 m unna (Bondivann-tilfellet: 1 av 272 fragmenter på et 5 km-kart). Aktivert med 80 m i både `useStifinner` og MCP-serveren; toleransen ligger bevisst under bro/kulvert-kryssgapet vi IKKE broer. (2) **`lib/geocode.js`** — Nominatim-søket løftet ut av `useNominatim` til en ren funksjon (fetch injiseres), delt med nytt MCP-verktøy `sok_sted` og en `sted`-param på `bygg_kart` (bygg kart fra stedsnavn i stedet for koordinater). (3) **`lib/routeOverlay.js`** — tegner et stiforslag som SVG-markup i Stifinner-stil (hvit halo + farget linje, stiplet connector, grønn start / rød mål), brukt av nytt MCP-verktøy `tegn_rute_svg` som baker ruten inn i kart-SVG-en i ett kall. Nye enhetstester for alle tre (routing komponent-broing, geocode, routeOverlay). Appens views er uendret; UI-knapp for rute-eksport er en liten senere oppfølging.
+
+---
+
 ## 2026-07-07 — v12.1.55: MCP case-studie + PoC-server for kart og ruteplanlegging
 
 Ny case-studie (`docs/MCP_CASE_STUDY.md`) vurderer kost/nytte av MCP-integrasjon i tre scenarier — lokal stdio-server, fjern-MCP for mobil, og assistent i appen — med anbefalt faseplan. Med følger en fungerende PoC: `app/mcp/server.js` eksponerer fire verktøy (`bygg_kart`, `planlegg_rute`, `hoydeprofil`, `eksporter_gpx`) over stdio ved å gjenbruke den headless-kjørbare pipelinen (`buildSvg`, `routing.js`, `elevationProfile.js`, `gpxExport.js`). `.mcp.json` i repo-rota registrerer serveren for Claude Code; Claude Desktop kan peke på samme script. Appen selv er uendret — serveren er ikke del av Vite-bundelen, og gh-pages-deployen påvirkes ikke. Nye devDependencies: `@modelcontextprotocol/sdk`, `linkedom` (DOMParser-shim som også gir Sjøkart-GML-parsing i Node).

@@ -158,7 +158,11 @@ export function useStifinner() {
     // i grafen (var 3 m, som lot road- og sti-nettet falle i hver sin
     // frakoblede komponent → «fant ingen rute» når man startet på en P-plass
     // ved en vei).
-    const rg = buildRoutingGraph(features, { snapM: 6 })
+    // componentBridgeM=80: kobler frakoblede sti-/vei-fragmenter (adkomst-
+    // stumper, T-kryss lengre unna enn dangle-broen) til hovednettet, så et
+    // startpunkt ved f.eks. en stasjon/P-plass ikke ender i en isolert stump
+    // og gir «fant ingen rute». 80 m < bro/kulvert-gapet vi bevisst IKKE broer.
+    const rg = buildRoutingGraph(features, { snapM: 6, componentBridgeM: 80 })
     const aPos = [start.value.svgX, start.value.svgY]
     const bPos = [destination.value.svgX, destination.value.svgY]
     const aNode = rg.nearestNode(aPos)

@@ -44,14 +44,16 @@ Browser-avhengighetene i pipeline-koden er få og godt inngjerdet: IndexedDB (`m
 
 ## 4. Scenario A — Lokal stdio-MCP-server (dev + desktop)
 
-**Dette er PoC-en i denne PR-en.** Claude Code (denne repoen har `.mcp.json`) og Claude Desktop starter `node app/mcp/server.js` lokalt og får fire verktøy:
+**Dette er PoC-en i denne PR-en.** Claude Code (denne repoen har `.mcp.json`) og Claude Desktop starter `node app/mcp/server.js` lokalt og får seks verktøy:
 
 | Verktøy | Gjør | Gjenbruker |
 |---|---|---|
-| `bygg_kart` | Bygger ISOM-turkart for et senterpunkt, skriver SVG til fil, returnerer meta (DEM-kilde, høydespenn, feature-antall) | Hele CI-løypa: `fetchOverpass` + `fetchN50Water` + `fetchDEM`/`fetchDOM` + `buildSvg` |
+| `bygg_kart` | Bygger ISOM-turkart for et senterpunkt (lat/lon eller stedsnavn), skriver SVG til fil, returnerer meta (DEM-kilde, høydespenn, feature-antall) | Hele CI-løypa: `fetchOverpass` + `fetchN50Water` + `fetchDEM`/`fetchDOM` + `buildSvg` + `geocode` |
 | `planlegg_rute` | 1–3 fotruter A→B langs stier/veier med distanse, stigning og Naismith-gangtid | `routing.js` (`buildRoutingGraph`, `planRoutes`), `elevationProfile.sampleProfile` |
 | `hoydeprofil` | Terrengprofil langs vilkårlig linje | `sampleProfile` mot in-memory DEM |
 | `eksporter_gpx` | GPX 1.1 `<rte>` med `<ele>`, klar for Garmin/Strava/OsmAnd | `gpxExport.buildRouteGpx` |
+| `sok_sted` | Geokoder et fritekst-stedsnavn til koordinater (Nominatim, Norge) | `geocode.geocodePlace` (delt med `useNominatim`) |
+| `tegn_rute_svg` | Planlegger en rute og tegner stiforslaget inn i kart-SVG-en i Stifinner-stil, i ett kall | `routing.js` + `routeOverlay.buildRouteOverlaySvg` (delt med MapView-stilen) |
 
 **Nytteverdi:**
 

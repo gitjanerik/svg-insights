@@ -43,6 +43,11 @@ const ISOM_COST = {
 // kartavstand). Brukes til «kortest mulig»-ruta, som ikke skal gå på motorvei.
 const MOTORWAY_BLOCK = 1e9
 
+// Kostnadsfaktor for en komponent-bro (se bridgeComponents). Litt over småveg
+// (1.3) så ruteren foretrekker ekte sti/vei når den finnes, men broen brukes
+// villig når den er eneste forbindelse til et fragment.
+const BRIDGE_COST = 1.4
+
 /**
  * Projiser punkt p ned på linjestykket a→b. Returnerer fotpunktet (klemt til
  * segmentet), parameteren t∈[0,1] og avstanden. Ren geometri-hjelper for
@@ -149,6 +154,76 @@ export function buildRoutingGraph(features, opts = {}) {
   // falske kryss der en sti faktisk går i bro/kulvert over en annen.
   const bridgeM = opts.bridgeM ?? snapM * 2
   if (bridgeM > 0) bridgeDangles(bridgeM)
+
+  // Komponent-broing: etter dangle-broingen kan kartet fortsatt ha mange små,
+  // frakoblede fragmenter (rendering/DP-drift, adkomst-stumper, T-kryss lengre
+  // unna enn bridgeM). Et start-/målpunkt som snapper til et slikt fragment gir
+  // «fant ingen rute» selv om hovednettet ligger noen titalls meter unna
+  // (Bondivann-tilfellet: en 4-node-stump 65 m fra marka-nettet, ett av 272
+  // fragmenter på et 5 km-kart). Vi kobler adskilte komponenter langs deres
+  // korteste innbyrdes gap — men KUN opp til `componentBridgeM` og KUN mellom
+  // ULIKE komponenter (Kruskal/MST-skog): en allerede sammenhengende komponent
+  // får aldri en intern snarvei, og vann har ingen rutbare noder så vi bygger
+  // sjelden falske vann-kryssinger. Default av (0) — reine lib-tester og gamle
+  // kall er byte-identiske; Stifinner og MCP-serveren slår den på.
+  const componentBridgeM = opts.componentBridgeM ?? 0
+  if (componentBridgeM > 0) bridgeComponents(componentBridgeM)
+
+  // Merk hver node med sin sammenhengende komponent (DFS).
+  function labelComponents() {
+    const compOf = new Map()
+    let cid = 0
+    g.forEachNode((n) => {
+      if (compOf.has(n)) return
+      const id = cid++
+      const stack = [n]
+      compOf.set(n, id)
+      while (stack.length) {
+        const u = stack.pop()
+        g.forEachNeighbor(u, (v) => { if (!compOf.has(v)) { compOf.set(v, id); stack.push(v) } })
+      }
+    })
+    return { compOf, count: cid }
+  }
+
+  function bridgeComponents(tol) {
+    const { compOf, count } = labelComponents()
+    if (count < 2) return
+
+    // Kandidat-broer: for hver node, nærmeste node(r) i en ANNEN komponent
+    // innen tol. rbush-vindu holder dette billig selv på tette kart.
+    const cands = []
+    g.forEachNode((n, attr) => {
+      const p = attr.pos
+      const hits = nodeIndex.search({
+        minX: p[0] - tol, minY: p[1] - tol, maxX: p[0] + tol, maxY: p[1] + tol,
+      })
+      const myComp = compOf.get(n)
+      for (const h of hits) {
+        if (h.id === n || compOf.get(h.id) === myComp) continue
+        const d = Math.hypot(h.pos[0] - p[0], h.pos[1] - p[1])
+        if (d <= tol) cands.push({ a: n, b: h.id, d })
+      }
+    })
+    cands.sort((x, y) => x.d - y.d)
+
+    // Union-find over komponent-id'er: legg en bro kun når den forener to ennå
+    // adskilte komponenter (korteste par først → minste-utspennende bro-skog).
+    const parent = new Array(count)
+    for (let i = 0; i < count; i++) parent[i] = i
+    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x] } return x }
+    for (const c of cands) {
+      const ra = find(compOf.get(c.a)), rb = find(compOf.get(c.b))
+      if (ra === rb) continue
+      if (addBridgeEdge(c.a, c.b, c.d)) parent[ra] = rb
+    }
+  }
+
+  function addBridgeEdge(u, v, length) {
+    if (u === v || length === 0 || g.hasEdge(u, v)) return false
+    g.addEdge(u, v, { length, cost: length * BRIDGE_COST, isomCode: 'bridge', lengthNoMw: length })
+    return true
+  }
 
   function bridgeDangles(tol) {
     const segs = []
