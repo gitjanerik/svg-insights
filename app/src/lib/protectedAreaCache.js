@@ -131,8 +131,13 @@ export function kulturminneIdKey(id) {
   return `kulturminne:id:${id}`
 }
 
-/** Nøkkel for fredede kulturminner (WFS-lokaliteter) pr kvantisert bbox. */
+/** Nøkkel for fredede kulturminner pr kvantisert bbox.
+ *  `enk`-navnerommet (v12.1.50): datagrunnlaget ble byttet fra lokalitet- til
+ *  ENKELTMINNE-nivå (v12.1.48). Uten et nytt navnerom serverte cachen (30 d TTL)
+ *  gammel lokalitet-data etter oppgraderingen → samme navn/tekst på alle
+ *  markører (f.eks. «Oscarsborg festning» overalt). Bump navnerommet ved
+ *  framtidige schema-endringer. */
 export function fredetKulturminneBboxKey(bbox) {
   const q = (v) => Number(v).toFixed(3)
-  return `fredet:bbox:${q(bbox.south)},${q(bbox.west)},${q(bbox.north)},${q(bbox.east)}`
+  return `fredet:enk:bbox:${q(bbox.south)},${q(bbox.west)},${q(bbox.north)},${q(bbox.east)}`
 }
