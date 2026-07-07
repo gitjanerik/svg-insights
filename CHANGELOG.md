@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-07 — v12.1.54: Stifinner-tidsestimat tar høyde for høydemeter (Naismith)
+
+Tidsestimatet i Stifinner var ren distanse ved 4 km/t, så 1,5 km rett opp Ulriken (443 stigningsmeter) ble estimert til urealistiske 22 min. Estimatet bruker nå Naismith-regelen: flat basis 4 km/t pluss 1 min per 10 m stigning og et mildt tillegg på 1 min per 30 m nedstigning — Ulriken-ruta estimeres nå til ~67 min opp / ~37 min ned. Høydeprofilen samples per rute fra DEM (samme `sampleProfile` som «Valgt rute»-linja, med 5-punkts glatting mot DEM-støy), så hvert rutealternativ i lista får sitt eget høydejusterte estimat. På kart uten DEM faller estimatet tilbake til ren distanse som før.
+
+---
+
 ## 2026-07-07 — v12.1.53: Kystlinje-presisjon — midtpunkt-kant, 10 m-reserve, oppløsning i attribusjon
 
 Oppfølging av Kirkenes-forskyvningen (v12.1.52 fjernet projeksjons-komponenten på ~300 m; gjenstående ~30–50 m isotrop «land-dilasjon» rundt Prestøya har annen årsak). Verifisert mot Terrarium-høydedata (Kartverket-kilde): fjæresonen ved Prestøya er bare ~8 m bred, så avviket er IKKE tidevann — det er pipeline-geometri. Tre endringer: (1) **Midtpunkt-kant i DEM-sjøen:** marching squares interpolerte sjø/land-krysningen mellom sjø-celle (0 m) og landcelle (f.eks. 5 m) ved terskel 0,5 m → krysningen havnet bare 10 % ut i celle-gapet, og nesten hele gapet ble land (~0,4 celle = 8 m systematisk land-dilasjon ved 20 m-DEM, hele kysten rundt). Kontur-feltet klippes nå ved 2×terskel så kanten legges midt mellom celle-sentrene (verifisert i test: 92 m → 100 m der midtpunktet er 100 m). (2) **10 m-reserve for kyst-oppgraderingen:** når 5 m-hentingen feiler (flaky mobil-WCS) prøves 10 m før vi gir opp — en feilet oppgradering betydde at kartet ble stående på 20 m-probe-DEM med grov kystlinje. (3) **DEM-oppløsning i attribusjonen** («DEM: flis-cache · 20 m») så man kan SE hvilken oppløsning kysten er avledet fra — står det 20 m på et kystkart, er resten av avviket WCS-nedsampling (strandceller som midles til >0,5 m blir land, opptil én celle). Kartet må bygges på nytt for effekt.

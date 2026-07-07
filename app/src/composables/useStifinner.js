@@ -23,6 +23,11 @@ const MAX_SNAP_M = 150
 
 // Antatt ganghastighet for estimert tid (m/min ≈ 4 km/t).
 const WALK_M_PER_MIN = 4000 / 60
+// Naismith-tillegg: +1 min per 10 høydemeter stigning (600 m/t vertikalt).
+const ASCENT_M_PER_MIN = 10
+// Mildt tillegg for nedstigning — bratt utfor koster også tid, men langt
+// mindre enn stigning: +1 min per 30 høydemeter fall.
+const DESCENT_M_PER_MIN = 30
 
 export function useStifinner() {
   const mode = ref('idle')          // 'idle' | 'pickingStart' | 'showing'
@@ -182,8 +187,17 @@ export function useStifinner() {
     if (idx >= 0 && idx < routes.value.length) selectedRouteIdx.value = idx
   }
 
-  function estWalkMinutes(lengthM) {
-    return Math.max(1, Math.round(lengthM / WALK_M_PER_MIN))
+  // Estimert gangtid. Basis er flat gange 4 km/t; med høydeprofil (DEM-sampla
+  // ascent/descent langs ruta) legges Naismith-tillegg på, så 1,5 km med 450
+  // stigningsmeter estimeres ~67 min i stedet for urealistiske 22. Uten profil
+  // (kart uten DEM) faller vi tilbake til ren distanse som før.
+  function estWalkMinutes(lengthM, climb = null) {
+    let min = lengthM / WALK_M_PER_MIN
+    if (climb) {
+      min += (climb.ascent || 0) / ASCENT_M_PER_MIN
+      min += (climb.descent || 0) / DESCENT_M_PER_MIN
+    }
+    return Math.max(1, Math.round(min))
   }
 
   return {

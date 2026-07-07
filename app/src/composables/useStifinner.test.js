@@ -67,6 +67,38 @@ describe('useStifinner – vann-guard for startpunkt', () => {
   })
 })
 
+describe('useStifinner – estWalkMinutes (Naismith)', () => {
+  it('flatt (uten høydeprofil): ren distanse ved 4 km/t', () => {
+    const sti = useStifinner()
+    expect(sti.estWalkMinutes(1000)).toBe(15)
+    expect(sti.estWalkMinutes(4000)).toBe(60)
+  })
+
+  it('stigning gir Naismith-tillegg: +1 min per 10 m opp', () => {
+    const sti = useStifinner()
+    // Ulriken-tilfellet: 1,48 km med 443 m opp / 1 m ned var 22 min flatt —
+    // med tillegg: 22,2 + 44,3 + 0,03 ≈ 67 min.
+    expect(sti.estWalkMinutes(1480, { ascent: 443, descent: 1 })).toBe(67)
+  })
+
+  it('nedstigning gir mildt tillegg: +1 min per 30 m ned', () => {
+    const sti = useStifinner()
+    // Samme rute motsatt vei: 22,2 + 0,1 + 14,8 ≈ 37 min.
+    expect(sti.estWalkMinutes(1480, { ascent: 1, descent: 443 })).toBe(37)
+  })
+
+  it('null/tom profil er lik flat-estimatet (kart uten DEM)', () => {
+    const sti = useStifinner()
+    expect(sti.estWalkMinutes(1480, null)).toBe(sti.estWalkMinutes(1480))
+    expect(sti.estWalkMinutes(1480, { ascent: 0, descent: 0 })).toBe(sti.estWalkMinutes(1480))
+  })
+
+  it('aldri under 1 min', () => {
+    const sti = useStifinner()
+    expect(sti.estWalkMinutes(10)).toBe(1)
+  })
+})
+
 describe('useStifinner – mosaikk (spøkelsesfliser)', () => {
   it('ruter på tvers av flisegrensen: ghost-paths løftes med nested-svg-offset', () => {
     const sti = useStifinner()

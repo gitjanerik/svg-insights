@@ -3639,19 +3639,21 @@ function formatElevationDiff(m) {
   return `${r > 0 ? '+' : '−'}${Math.abs(r)} m`
 }
 
-// Samlet stigning/fall langs den VALGTE ruta (rute-avhengig, til forskjell fra
-// netto-diffen over). sampleProfile sampler DEM jevnt langs rute-geometrien og
-// summerer opp- og nedstigninger (5-punkts glatting demper DEM-støy). null når
-// DEM mangler eller ingen rute er valgt.
-const stiSelectedClimb = computed(() => {
-  if (sti.mode.value !== 'showing') return null
-  const r = sti.routes.value[sti.selectedRouteIdx.value]
+// Samlet stigning/fall langs HVER rute (parallelt array til sti.routes, til
+// forskjell fra netto-diffen over). sampleProfile sampler DEM jevnt langs
+// rute-geometrien og summerer opp- og nedstigninger (5-punkts glatting demper
+// DEM-støy). Brukes både av tidsestimatet (Naismith-tillegg i estWalkMinutes)
+// og «Valgt rute»-linja. Tomt array / null-innslag når DEM mangler.
+const stiRouteClimbs = computed(() => {
   const dem = storedDem.value
-  if (!r || !r.coordinates?.length || !dem) return null
-  const prof = sampleProfile({ points: r.coordinates.map(c => ({ x: c[0], y: c[1] })) }, dem)
-  if (!prof) return null
-  return { ascent: prof.totalAscent, descent: prof.totalDescent }
+  if (sti.mode.value !== 'showing' || !dem) return []
+  return sti.routes.value.map((r) => {
+    if (!r?.coordinates?.length) return null
+    const prof = sampleProfile({ points: r.coordinates.map(c => ({ x: c[0], y: c[1] })) }, dem)
+    return prof ? { ascent: prof.totalAscent, descent: prof.totalDescent } : null
+  })
 })
+const stiSelectedClimb = computed(() => stiRouteClimbs.value[sti.selectedRouteIdx.value] ?? null)
 function onOpenGoogleMaps() {
   const info = contextMenuInfo.value
   if (!info) return
@@ -7080,7 +7082,7 @@ onUnmounted(() => {
                 <span class="w-2.5 h-2.5 rounded-full shrink-0"
                       :style="{ background: ['#dc2626','#7c3aed','#0891b2'][i % 3] }"></span>
                 <span class="text-[11px] tabular-nums">
-                  {{ formatDistance(r.lengthM) }} · {{ sti.estWalkMinutes(r.lengthM) }} min
+                  {{ formatDistance(r.lengthM) }} · {{ sti.estWalkMinutes(r.lengthM, stiRouteClimbs[i]) }} min
                 </span>
                 <span v-if="r.shortest"
                       class="text-[8px] uppercase tracking-wide bg-white/25 rounded px-1 py-px shrink-0">
