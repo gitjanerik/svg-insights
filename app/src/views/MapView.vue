@@ -10,6 +10,7 @@ import { useResizablePanel } from '../composables/useResizablePanel.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
+import { useSearchKeyboard } from '../composables/useSearchKeyboard.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
 import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims, DEFAULT_MAP_WIDTH_KM, MAP_SIZE_MIN_KM, MAP_SIZE_MAX_KM } from '../composables/useMapSizePreference.js'
@@ -1987,6 +1988,14 @@ function selectSearchResult(r) {
   mapSearch.clear()
   renderHighlight()
 }
+
+// Tastaturnavigasjon (desktop): pil ned/opp markerer, Enter velger, Escape
+// nullstiller søkebegrepet. Fokus blir i input-en så Escape alltid virker.
+const { activeIndex: searchActiveIndex, onKeydown: onSearchKeydown } = useSearchKeyboard(searchResults, {
+  onSelect: selectSearchResult,
+  onClear: () => mapSearch.clear(),
+  optionId: (i) => `mapsearch-opt-${i}`,
+})
 
 // ── «Nærmeste …»-snarveier (parkering / toalett / holdeplass) ─────────────
 // Highlighter samme rosa puls-ring som et fritekstsøk-treff, men finner
@@ -6635,6 +6644,10 @@ onUnmounted(() => {
                  autocorrect="off" autocapitalize="off" spellcheck="false"
                  placeholder="Søk i kart — steder, vann, øyer …"
                  ref="searchInputRef"
+                 @keydown="onSearchKeydown"
+                 role="combobox" aria-autocomplete="list"
+                 :aria-expanded="searchResults.length > 0" aria-controls="mapsearch-results"
+                 :aria-activedescendant="searchActiveIndex >= 0 ? `mapsearch-opt-${searchActiveIndex}` : undefined"
                  class="flex-1 bg-transparent text-[14px] text-white placeholder-white/35
                         focus:outline-none"/>
           <button @click="closeSearch" aria-label="Lukk søk"
@@ -6646,7 +6659,7 @@ onUnmounted(() => {
             </svg>
           </button>
         </div>
-        <div class="flex-1 overflow-y-auto">
+        <div class="flex-1 overflow-y-auto" id="mapsearch-results" role="listbox">
           <div v-if="searchQuery && searchResults.length === 0"
                class="px-4 py-6 text-center text-[12px] text-white/45">
             Ingen treff på «{{ searchQuery }}»
@@ -6658,10 +6671,14 @@ onUnmounted(() => {
             Skriv «parkering» for å liste utfartsparkeringene.
             Skriv «topp» for kartets ti høyeste punkter.
           </div>
-          <button v-for="r in searchResults" :key="r.id"
+          <button v-for="(r, index) in searchResults" :key="r.id"
+                  :id="`mapsearch-opt-${index}`" role="option"
+                  :aria-selected="index === searchActiveIndex"
                   @click="selectSearchResult(r)"
-                  class="w-full text-left px-3 py-2.5 active:bg-white/10 transition border-b
-                         border-white/8 last:border-0 flex items-center gap-2">
+                  @mousemove="searchActiveIndex = index"
+                  class="w-full text-left px-3 py-2.5 transition border-b
+                         border-white/8 last:border-0 flex items-center gap-2"
+                  :class="index === searchActiveIndex ? 'bg-white/12' : 'active:bg-white/10'">
             <div class="flex-1 min-w-0">
               <div class="text-[13px] font-medium text-white truncate">
                 {{ r.name }}<span v-if="r.kind === 'parkering'" aria-hidden="true"> *</span>

@@ -20,6 +20,7 @@ import { fetchOverpassWithRetry } from '../lib/overpassClient.js'
 import { simplifyDP } from '../lib/pathUtils.js'
 import { estimateMcTimeS, fmtAvstandM, MAX_SNAP_DIST_M } from '../lib/brouterClient.js'
 import { useNominatim } from '../composables/useNominatim.js'
+import { useSearchKeyboard } from '../composables/useSearchKeyboard.js'
 import { reverseNearestPlace } from '../lib/nominatimReverse.js'
 import { routeShareToken, parseRouteToken, MAX_SHARE_ROUTES } from '../lib/routeShare.js'
 import { useGravelPlanner } from '../composables/useGravelPlanner.js'
@@ -326,6 +327,24 @@ function swapPoints() {
 function selectResult(field, r) {
   setPoint(field, { lat: r.lat, lon: r.lon, name: r.shortName ?? r.name }, { pan: true })
 }
+
+// Tastaturnavigasjon (desktop) for begge feltene. Bare én dropdown vises av
+// gangen (activeSearch), så vi navigerer den aktives treffliste. Fokus blir i
+// input-en så Escape alltid virker — der nullstiller den søkefeltet.
+const activeSearchResults = computed(() => {
+  if (activeSearch.value === 'A') return searchA.results.value
+  if (activeSearch.value === 'B') return searchB.results.value
+  return []
+})
+const { activeIndex: searchActiveIndex, onKeydown: onSearchKeydown } = useSearchKeyboard(activeSearchResults, {
+  onSelect: (r) => { if (activeSearch.value) selectResult(activeSearch.value, r) },
+  onClear: () => {
+    const s = activeSearch.value === 'A' ? searchA : activeSearch.value === 'B' ? searchB : null
+    if (s) s.query.value = ''
+    activeSearch.value = null
+  },
+  optionId: (i) => `route-opt-${i}`,
+})
 
 // Cooldown mellom tap-to-set: minst 1 s mellom at A og B settes fra kartet,
 // så et dobbelt-registrert tap aldri setter begge på samme punkt.
@@ -1818,6 +1837,11 @@ onUnmounted(() => {
             <input :value="field === 'A' ? searchA.query.value : searchB.query.value"
                    @input="routeInvite || ((field === 'A' ? searchA : searchB).query.value = $event.target.value, activeSearch = field)"
                    @focus="activeSearch = routeInvite ? null : field"
+                   @keydown="onSearchKeydown"
+                   role="combobox" aria-autocomplete="list"
+                   :aria-expanded="activeSearch === field && (field === 'A' ? searchA : searchB).results.value.length > 0"
+                   :aria-controls="`route-results-${field}`"
+                   :aria-activedescendant="activeSearch === field && searchActiveIndex >= 0 ? `route-opt-${searchActiveIndex}` : undefined"
                    type="search" autocomplete="off" :readonly="!!routeInvite"
                    :placeholder="field === 'A' ? 'Fra — startsted' : 'Til — destinasjon'"
                    class="flex-1 min-w-0 py-2 bg-transparent text-[13px] placeholder-white/35
@@ -1860,11 +1884,16 @@ onUnmounted(() => {
           <!-- Nominatim-treff (åpner NEDOVER — skuffens innhold scroller, så
                treff over feltet ville klippes mot scroll-toppen) -->
           <div v-if="activeSearch === field && (field === 'A' ? searchA : searchB).results.value.length"
+               :id="`route-results-${field}`" role="listbox"
                class="absolute left-0 right-0 top-full mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
                       border border-white/10 shadow-2xl max-h-[36dvh] overflow-y-auto z-30">
-            <button v-for="r in (field === 'A' ? searchA : searchB).results.value" :key="r.id"
+            <button v-for="(r, index) in (field === 'A' ? searchA : searchB).results.value" :key="r.id"
+                    :id="`route-opt-${index}`" role="option"
+                    :aria-selected="index === searchActiveIndex"
                     @click="selectResult(field, r)"
-                    class="w-full text-left px-3 py-2 active:bg-white/10 transition border-b border-white/8 last:border-0">
+                    @mousemove="searchActiveIndex = index"
+                    class="w-full text-left px-3 py-2 transition border-b border-white/8 last:border-0"
+                    :class="index === searchActiveIndex ? 'bg-white/12' : 'active:bg-white/10'">
               <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
               <div class="text-[11px] text-white/50 truncate">{{ r.name }}</div>
             </button>

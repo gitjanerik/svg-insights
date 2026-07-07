@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useNominatim } from '../composables/useNominatim.js'
+import { useSearchKeyboard } from '../composables/useSearchKeyboard.js'
 import { bboxFromCenter, viewportAspect, PRINT_ASPECT } from '../lib/mapBuilder.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { tileMosaic, zoomForKm, metersPerPixel } from '../lib/tileBackground.js'
@@ -250,6 +251,14 @@ function selectResult(r) {
   query.value = ''
   results.value = []
 }
+
+// Tastaturnavigasjon (desktop): pil ned/opp markerer, Enter velger, Escape
+// nullstiller søkefeltet. Fokus blir i input-en så Escape alltid virker.
+const { activeIndex: searchActiveIndex, onKeydown: onSearchKeydown } = useSearchKeyboard(results, {
+  onSelect: selectResult,
+  onClear: () => { query.value = ''; results.value = [] },
+  optionId: (i) => `mappicker-opt-${i}`,
+})
 
 const bbox = computed(() => bboxFromCenter(center.value.lat, center.value.lon, halfKm.value, effectiveAspect.value))
 
@@ -604,6 +613,10 @@ onMounted(() => {
         </svg>
         <input v-model="query" type="search" autocomplete="off" autocorrect="off"
                :readonly="controlsLocked" :disabled="controlsLocked"
+               @keydown="onSearchKeydown"
+               role="combobox" aria-autocomplete="list" :aria-expanded="showResults"
+               aria-controls="mappicker-results"
+               :aria-activedescendant="searchActiveIndex >= 0 ? `mappicker-opt-${searchActiveIndex}` : undefined"
                :placeholder="controlsLocked ? lockedSearchPlaceholder : 'f.eks. Sognsvann, 0855, Vardåsen Asker'"
                class="w-full pl-10 pr-3 py-3 rounded-xl bg-white/[0.06] border border-white/15
                       text-[14px] placeholder-white/30 focus:outline-none focus:bg-white/12
@@ -615,15 +628,19 @@ onMounted(() => {
 
       <!-- Søkeresultater -->
       <Transition name="fade">
-        <div v-if="showResults"
+        <div v-if="showResults" id="mappicker-results" role="listbox"
              class="absolute left-4 right-4 mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
                     border border-white/10 shadow-2xl max-h-[50dvh] overflow-y-auto z-30">
           <div v-if="results.length === 0 && !isSearching"
                class="px-4 py-3 text-[13px] text-white/50">Ingen treff</div>
-          <button v-for="r in results" :key="r.id"
+          <button v-for="(r, index) in results" :key="r.id"
+                  :id="`mappicker-opt-${index}`" role="option"
+                  :aria-selected="index === searchActiveIndex"
                   @click="selectResult(r)"
-                  class="w-full text-left px-4 py-2.5 active:bg-white/10 transition border-b
-                         border-white/8 last:border-0">
+                  @mousemove="searchActiveIndex = index"
+                  class="w-full text-left px-4 py-2.5 transition border-b
+                         border-white/8 last:border-0"
+                  :class="index === searchActiveIndex ? 'bg-white/12' : 'active:bg-white/10'">
             <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
             <div class="text-[11px] text-white/50 truncate">{{ r.name }}</div>
           </button>
