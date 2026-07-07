@@ -129,6 +129,18 @@ export function buildSeaFromDem(dem, opts = {}) {
 
   const seaVoids = findSeaConnectedVoids(data, cols, rows, noData, thresholdM, voidMask, voidSeaMaxM)
 
+  // v12.1.53: kontur-feltet KLIPPES ved 2×terskel. Uklippet la marching
+  // squares sjø/land-krysningen nesten inntil sjø-cella: lineær interpolasjon
+  // mellom sjø (0 m) og en landcelle på f.eks. 5 m krysser terskelen (0.5 m)
+  // bare 10 % ut i celle-gapet — nesten hele gapet ble land. Det ga en
+  // systematisk land-dilasjon på ~0.4 celle (8 m ved 20 m-DEM) langs HELE
+  // kysten, synlig som «forskyvning» mot OSM-baserte lag som naturreservat-
+  // grenser (rapportert Kirkenes/Prestøya). Med land klippet til 2×terskel
+  // (1 m) ligger krysningen midt mellom celle-sentrene — beste estimat uten
+  // finere data. Celler med ekte verdi mellom terskel og 2×terskel beholder
+  // proporsjonal plassering (klippen endrer bare verdier OVER 2×terskel, som
+  // uansett er utenfor sjøen). Topologien er uendret — kun kant-plassering.
+  const landClampM = thresholdM * 2
   let hasSea = false
   const inverted = new Array(data.length)
   for (let i = 0; i < data.length; i++) {
@@ -138,10 +150,10 @@ export function buildSeaFromDem(dem, opts = {}) {
     }
     const v = data[i]
     if (v === noData || !Number.isFinite(v)) {
-      inverted[i] = -1e6
+      inverted[i] = -landClampM // unådd void = land; midtpunkt-kant som ellers
       continue
     }
-    inverted[i] = -v
+    inverted[i] = -Math.min(v, landClampM)
     if (v <= thresholdM) hasSea = true
   }
 

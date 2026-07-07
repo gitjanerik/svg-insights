@@ -5456,6 +5456,7 @@ async function loadMap({ silent = false } = {}) {
       scaleDenom: m.scaleDenom ?? 10000,
       source: m.source,
       demSource: m.demSource ?? null,
+      demResolutionM: m.demResolutionM ?? null, // grid-oppløsning (m) — diagnostikk for kyst-presisjon
       depthSource: m.depthSource ?? null, // 'sjokart' | 'dem-estimat' | 'ingen' | null (eldre kart)
       contoursSkipped: m.contoursSkipped ?? null,
       coastal: m.coastal ?? null,        // true=kyst, false=innland, null=ukjent (eldre kart)
@@ -7291,7 +7292,7 @@ onUnmounted(() => {
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
       <span class="text-white/50">{{ meta?.isomVersion ? `ISOM ${meta.isomVersion}` : '' }}</span><br>
-      <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}</span>
+      <span class="text-white/50">DEM: {{ meta?.demSource ?? '—' }}{{ meta?.demResolutionM ? ` · ${meta.demResolutionM} m` : '' }}</span>
       <!-- Dybde-provenens-badge (v11.0.54): ekte Sjøkart vs DEM-estimat. Det
            fragile Sjøkart-WFS faller stille tilbake til estimatet — padleren
            må vite hva dybden faktisk er. -->
