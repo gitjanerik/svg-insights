@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-07 — v12.1.52: Fiks — kart-forskyvning i Øst-Finnmark + slipp-pil-klynger
+
+To Kirkenes-funn (rapportert med skjermbilder fra Presteøya). (1) **Forskyvning land vs naturreservat:** UTM-inversen (`utm32ToWgs84`) var en ren Snyder-serie som divergerer langt fra sentralmeridianen (9°E) — roundtrip-feilen var ~0 i Sør-Norge, men ~18 m i Alta, ~310 m i Kirkenes og ~440 m i Vardø. Terrarium-fyllet samplet dermed høyder ~300 m øst for riktig posisjon, så sjø-celler nær kysten fikk landhøyder og DEM-kystlinjen (land) forskjøv seg mot alle OSM-baserte lag (naturreservat-grensa, veier, stier). Samme invers forskjøv Overpass/N50/Sjøkart-bboksen (~300 m manglende data-stripe i vest) og long-press-oppslag/GPX-eksport i Øst-Finnmark. Fiks: inversen bruker nå serien som startgjett og itererer mot appens egen forward-projeksjon til residualen er under 1 mm — roundtrip er meter-eksakt fra Bergen (5°E) til Vardø (31°E). Kartet må bygges på nytt for å se effekten (flis-cachen lagrer rå Kartverket-data og er ikke berørt). (2) **Veldig mange blå piler på én strand:** Sjøkart-datasettet har én `app:Slipp`-feature pr fysisk båtslipp, så en småbåthavn ga 15–20 identiske landingssted-piler (550). Disse klynges nå (transitivt, 40 m-radius, som holdeplasser) til én pil pr klynge. Skjær og sjømerker klynges bevisst IKKE — de er individuelt navigasjons-relevante.
+
+---
+
 ## 2026-07-07 — v12.1.51: Tastaturnavigasjon i søk (desktop)
 
 På desktop med tastatur kan man nå navigere søketreff med piltastene: **pil ned / pil opp** flytter markeringen, **Enter** velger det markerte treffet, og **Escape** nullstiller søkefeltet. Gjelder alle tre søkefeltene — turkart-søk (MapPickerView), søk inne i et valgt turkart (MapView) og fra/til-stedssøk i ruteplanleggeren (GravelPlannerView). Det markerte treffet får tydelig uthevet bakgrunn og scroller automatisk inn i visning i lange lister. Delt logikk ligger i en ny composable `useSearchKeyboard.js` (combobox-mønster: fokus blir værende i input-feltet, markeringen spores via `aria-activedescendant` i stedet for å flytte DOM-fokus — det er nettopp derfor Escape fortsatt treffer input-en og nullstiller søket, som var kravet). Musepekeren over et treff synkroniserer markeringen. Berører kun tastatur-/pekeroppførsel; museklikk og mobil-touch er uendret.

@@ -87,10 +87,38 @@ export function wgs84ToSvg(lat, lon, meta) {
   return utmToSvg(wgs84ToUtm32(lat, lon), meta)
 }
 
-// Inverse — UTM 32N → WGS84. Brukes til GPX-eksport av lagrede spor (v8.9.2).
-// Series-formler fra USGS Professional Paper 1395 (Snyder), samme presisjon
-// som forward (cm-niv&aring; ved 59°N).
+// Inverse — UTM 32N → WGS84.
+//
+// v12.1.52: Snyder-serien alene DIVERGERER langt fra sentralmeridianen —
+// roundtrip-feilen er ~0 ved Oslo, men ~18 m i Alta, ~310 m i Kirkenes og
+// ~440 m i Vardø (Δλ = 21–22° fra 9°E, langt utenfor serienes gyldighets-
+// område på ±3–4°). Forward-serien holder seg derimot god (< 6 m selv i
+// Vardø). Symptom i felt: Terrarium-fyllet samplet høyder ~300 m øst for
+// riktig posisjon i Kirkenes → DEM-kystlinjen forskjøvet mot OSM-data
+// (naturreservat-grensa), og Overpass-bboksen (utledet via inversen) mistet
+// en ~300 m-stripe i vest. Fiks: bruk serien som startgjett og iterér mot
+// vår EGEN forward til residualen er < 1 mm — inversen er da per definisjon
+// konsistent med forward i hele sone-utvidelsen vi bruker (5–31°E).
+// Residualen roteres med meridiankonvergensen γ ≈ (λ−λ0)·sin(φ) (opptil
+// ~20° i Øst-Finnmark) før grader↔meter-skalering — uten rotasjonen
+// kontraherer iterasjonen bare ~0.36 pr steg der; med den konvergerer
+// selv Vardø på ~4 iterasjoner (1–2 innenfor normal sonebredde).
 export function utm32ToWgs84(e, n) {
+  let { lat, lon } = utm32ToWgs84Series(e, n)
+  for (let i = 0; i < 25; i++) {
+    const p = wgs84ToUtm32(lat, lon)
+    const dE = e - p.e
+    const dN = n - p.n
+    if (Math.abs(dE) < 1e-3 && Math.abs(dN) < 1e-3) break
+    const g = (lon * Math.PI / 180 - LON0) * Math.sin(lat * Math.PI / 180)
+    const cg = Math.cos(g), sg = Math.sin(g)
+    lat += (dN * cg - dE * sg) / 111132
+    lon += (dE * cg + dN * sg) / (111320 * Math.cos(lat * Math.PI / 180))
+  }
+  return { lat, lon }
+}
+
+function utm32ToWgs84Series(e, n) {
   const x = e - FALSE_EASTING
   const y = n
   const M = y / K0

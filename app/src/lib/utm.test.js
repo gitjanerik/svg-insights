@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { wgs84ToUtm32, utm32BboxFromWgs84 } from './utm.js'
+import { wgs84ToUtm32, utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
 
 // v10.1.x: et kart som er kvadratisk i bakke-avstand skal rendres ~kvadratisk i
 // UTM-meter-rom. Den gamle SW+NE-diagonal-utledningen undervurderte øst-vest pga.
@@ -49,4 +49,37 @@ describe('utm32BboxFromWgs84 — kvadratisk kart', () => {
     // Tromsø var grovt portrett med diagonalen; nå er den kvadratisk.
     expect(two.widthM / two.heightM).toBeLessThan(0.8)
   })
+})
+
+// v12.1.52: inversen (utm32ToWgs84) var en ren Snyder-serie som divergerer
+// langt fra sentralmeridianen — roundtrip-feilen var ~310 m i Kirkenes og
+// ~440 m i Vardø. Det forskjøv Terrarium-samplingen (DEM-kystlinje vs OSM-
+// data som naturreservat-grenser) og Overpass-bboksen i Øst-Finnmark. Nå
+// itererer inversen mot forward til < 1 mm residual, så roundtrip skal være
+// meter-eksakt i HELE bruksområdet (Bergen 5°E → Vardø 31°E).
+describe('utm32ToWgs84 — roundtrip-konsistens med forward (v12.1.52)', () => {
+  const cases = [
+    ['Oslo', 59.91, 10.75],
+    ['Bergen', 60.39, 5.32],
+    ['Tromsø', 69.65, 18.96],
+    ['Alta', 69.97, 23.27],
+    ['Kirkenes', 69.73, 30.05],
+    ['Vardø', 70.37, 31.11],
+  ]
+  for (const [name, lat, lon] of cases) {
+    it(`${name}: forward → inverse gir samme punkt (< 0.05 m)`, () => {
+      const { e, n } = wgs84ToUtm32(lat, lon)
+      const back = utm32ToWgs84(e, n)
+      const dN = (back.lat - lat) * 111132
+      const dE = (back.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180)
+      expect(Math.hypot(dE, dN)).toBeLessThan(0.05)
+    })
+    it(`${name}: inverse → forward gir samme UTM-koordinat (< 0.05 m)`, () => {
+      const { e, n } = wgs84ToUtm32(lat, lon)
+      // Vilkårlig UTM-punkt i nærheten (celle-hjørner fra DEM-grid o.l.)
+      const ll = utm32ToWgs84(e + 137.5, n - 262.25)
+      const p2 = wgs84ToUtm32(ll.lat, ll.lon)
+      expect(Math.hypot(p2.e - (e + 137.5), p2.n - (n - 262.25))).toBeLessThan(0.05)
+    })
+  }
 })
