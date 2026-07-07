@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSvg } from './mapBuilder.js'
+import { buildSvg, clusterLandingssteder } from './mapBuilder.js'
 import { classifyToIsom, buildIsomDefs, isomCatalog } from './symbolizer.js'
 
 // Fase 3: marine / padle-POI. Klassifisering + rendering + topologisk filter.
@@ -89,6 +89,39 @@ describe('buildSvg — marine POI rendres', () => {
     expect(svg).toContain('data-iso="553"')
     expect(svg).toContain('data-iso="554"')
     expect(svg).toContain('data-iso="555"')
+  })
+})
+
+describe('clusterLandingssteder — tett slipp-klynge tynnes (v12.1.52)', () => {
+  const p550 = (x, y) => ({ code: '550', p: { x, y } })
+  const p211 = (x, y) => ({ code: '211', p: { x, y } })
+
+  it('to 550 innen 40 m slås sammen til én', () => {
+    expect(clusterLandingssteder([p550(0, 0), p550(20, 0)])).toHaveLength(1)
+  })
+  it('to 550 med > 40 m avstand beholdes begge', () => {
+    expect(clusterLandingssteder([p550(0, 0), p550(50, 0)])).toHaveLength(2)
+  })
+  it('kjede-klynge (transitiv) kollapser til representanten nærmest tyngdepunktet', () => {
+    const chain = [p550(0, 0), p550(30, 0), p550(60, 0), p550(90, 0)]
+    const reps = clusterLandingssteder(chain)
+    expect(reps).toHaveLength(1)
+    expect(reps[0].p.x).toBe(30)
+  })
+  it('andre marine koder (skjær) klynges ALDRI', () => {
+    const mix = [p211(0, 0), p211(5, 0), p550(100, 0), p550(110, 0)]
+    const reps = clusterLandingssteder(mix)
+    expect(reps.filter(q => q.code === '211')).toHaveLength(2)
+    expect(reps.filter(q => q.code === '550')).toHaveLength(1)
+  })
+  it('buildSvg: 12 slipp-noder på samme strand gir én pil', () => {
+    // 12 noder à ~11 m mellomrom (0.0002° lon ved 59°N ≈ 11.5 m)
+    const els = Array.from({ length: 12 }, (_, i) =>
+      node(300 + i, 59.02, 10.03 + i * 0.0002, { leisure: 'slipway' }))
+    const { svg } = buildSvg(els, bbox, {})
+    // Kun rendrede symboler — CSS-en har også en [data-iso="550"]-selektor.
+    const arrows = (svg.match(/<g data-upright="1" data-iso="550"/g) ?? []).length
+    expect(arrows).toBe(1)
   })
 })
 

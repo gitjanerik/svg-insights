@@ -673,6 +673,53 @@ const MARINE_POINT_CODES = {
   // v9.3.37 — se STRAND_CODES + POLYGON_CODES. Ikonet er fjernet helt.
 }
 
+// Slipp/landingssted (550): Sjøkart-datasettet har én app:Slipp-feature pr
+// fysisk båtslipp, så en småbåthavn gir 15–20 identiske blå piler på samme
+// strand (rapportert Kirkenes, v12.1.52). Klynges som holdeplasser: 550-
+// punkter nærmere enn minSepM slås transitivt sammen (union-find), og
+// representanten nærmest klyngens tyngdepunkt beholdes. Andre marine koder
+// røres IKKE — skjær og sjømerker er individuelt navigasjons-relevante.
+// Opererer på ferdig prosjiserte punkter ({ code, p: {x, y} } i meter) og
+// bevarer opprinnelig rekkefølge.
+export function clusterLandingssteder(placed, minSepM = 40) {
+  const idx = []
+  for (let i = 0; i < placed.length; i++) {
+    if (placed[i].code === '550') idx.push(i)
+  }
+  if (idx.length <= 1) return placed.slice()
+
+  const parent = idx.map((_, i) => i)
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb }
+  for (let i = 0; i < idx.length; i++) {
+    for (let j = i + 1; j < idx.length; j++) {
+      const a = placed[idx[i]].p, b = placed[idx[j]].p
+      if (Math.hypot(a.x - b.x, a.y - b.y) < minSepM) union(i, j)
+    }
+  }
+
+  const groups = new Map()
+  for (let i = 0; i < idx.length; i++) {
+    const r = find(i)
+    if (!groups.has(r)) groups.set(r, [])
+    groups.get(r).push(idx[i])
+  }
+  const keep = new Set()
+  for (const g of groups.values()) {
+    if (g.length === 1) { keep.add(g[0]); continue }
+    let cx = 0, cy = 0
+    for (const i of g) { cx += placed[i].p.x; cy += placed[i].p.y }
+    cx /= g.length; cy /= g.length
+    let best = g[0], bestD = Infinity
+    for (const i of g) {
+      const d = Math.hypot(placed[i].p.x - cx, placed[i].p.y - cy)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    keep.add(best)
+  }
+  return placed.filter((q, i) => q.code !== '550' || keep.has(i))
+}
+
 const POLYGON_CODES = new Set(['001', '401', '403', '404', '406', '407', '408', '409', '210', '301', '302', '303', '307', '308', '309', '512', '513', '520', '521', '522', '551', '552', '556'])
 const LINE_CODES = new Set(['304', '305', '501', '502', '503', '504', '505', '506', '507', '510', '511', '515', '525', '528', '201', '203', '101', '102', '103', '104'])
 
@@ -2277,12 +2324,14 @@ export function buildSvg(elements, bbox, options = {}) {
   // rotasjon (samme som parkering). Topologisk Marker ∈ Water-filter:
   // koder med requireWater droppes hvis de faller på land (utenfor den
   // autoritative kysten) — kun aktivt når vi faktisk HAR en kyst-modell.
-  const marinePointSvg = marinePoints.map(({ el, code }) => {
+  const marinePlaced = marinePoints.map(({ el, code }) => {
     let p = null
     if (el.type === 'node') p = project(el.lat, el.lon)
     else if (el.geometry && el.geometry.length >= 3) p = polygonCentroid(el.geometry)
     else if (el.geometry && el.geometry.length >= 1) p = project(el.geometry[0].lat, el.geometry[0].lon)
-    if (!p) return ''
+    return p ? { code, p } : null
+  }).filter(Boolean)
+  const marinePointSvg = clusterLandingssteder(marinePlaced).map(({ code, p }) => {
     const mpc = MARINE_POINT_CODES[code]
     let uncertain = false
     if (mpc?.requireWater &&
