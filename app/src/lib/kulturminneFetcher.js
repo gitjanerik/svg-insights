@@ -128,7 +128,7 @@ function nextLink(json) {
 // Returnerer `fallback` ved feil/abort/timeout — kaster aldri. `retries` gir
 // ett ekstra forsøk ved transient nett-/timeout-feil (mobilnett er flakete —
 // et enkelt timeout ved bygging bakte ellers 0 kulturminner inn i kartet).
-async function safeFetchJson(url, { signal, timeoutMs, retries = 1 }, fallback) {
+async function safeFetchJson(url, { signal, timeoutMs, retries = 2 }, fallback) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     if (signal?.aborted) return fallback
     const ctrl = new AbortController()

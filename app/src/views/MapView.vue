@@ -41,7 +41,7 @@ import {
 import { svgToWgs84, wgs84ToSvg } from '../lib/utm.js'
 import { buildUtNoUrl, utNoZoomForMPerPx, UTNO_DEFAULT_ZOOM } from '../lib/utNoLink.js'
 import { gmapsUrl, streetViewUrl, buildVegkartUrl, buildKulturminnesokUrl } from '../lib/externalMapLinks.js'
-import { fetchKulturminneById } from '../lib/kulturminneFetcher.js'
+import { fetchKulturminneById, fetchKulturminner } from '../lib/kulturminneFetcher.js'
 import { fetchFredaKulturminner, fetchFredaCount, clusterByMinMeters } from '../lib/kulturminneWfs.js'
 import { polylineToPath } from '../lib/pathUtils.js'
 import { sampleElevation } from '../lib/demSampling.js'
@@ -55,7 +55,7 @@ import { groupSpecies } from '../lib/speciesGroups.js'
 import { fetchWikiSummary, titleMatches } from '../lib/wikiSummary.js'
 import { fetchNearestWikiPlace, placeNameMatches } from '../lib/wikiPlace.js'
 import { fetchSnlSummary } from '../lib/snlFetcher.js'
-import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, kulturminneIdKey, fredetKulturminneBboxKey, TTL } from '../lib/protectedAreaCache.js'
+import { cacheGet, cacheSet, pointKey, naturtypePointKey, placePointKey, kulturminneIdKey, kulturminneBboxKey, fredetKulturminneBboxKey, TTL } from '../lib/protectedAreaCache.js'
 import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace, pointToPolylineDist,
@@ -1046,6 +1046,7 @@ async function applyFredetKulturminneLayer() {
       if (it.navn) mk.setAttribute('data-navn', it.navn)
       if (it.vernetype) mk.setAttribute('data-vernetype', it.vernetype)
       if (it.informasjon) mk.setAttribute('data-informasjon', it.informasjon)
+      if (it.lokalitetInfo) mk.setAttribute('data-lokinfo', it.lokalitetInfo)
       if (it.kommune) mk.setAttribute('data-kommune', it.kommune)
       if (it.link) mk.setAttribute('data-link', it.link)
       mk.setAttribute('transform', `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`)
@@ -1069,6 +1070,68 @@ async function applyFredetKulturminneLayer() {
   }
 }
 
+// Runtime-fallback for brukerminne-laget: hvis kartet IKKE har innbakte
+// brukerminne-ikoner (typisk fordi bygge-tids-hentingen mot api.ra.no glapp på
+// mobil — se v12.1.45), men laget er på, henter vi dem live og injiserer (samme
+// mønster som fredet-laget). Desktop med innbakte ikoner røres ikke.
+let kmFallbackReqId = 0
+function ensureKulturminneSymbolDef(svg) {
+  if (svg.querySelector('#iso-sym-kulturminne')) return
+  const spec = isomCatalog.pointSymbols?.kulturminne
+  if (!spec) return
+  const ns = 'http://www.w3.org/2000/svg'
+  let defs = svg.querySelector('defs')
+  if (!defs) { defs = document.createElementNS(ns, 'defs'); svg.insertBefore(defs, svg.firstChild) }
+  const symStr = buildPointSymbolDef('iso-sym-kulturminne', spec)
+  const parsed = new DOMParser().parseFromString(`<svg xmlns="${ns}">${symStr}</svg>`, 'image/svg+xml')
+  const sym = parsed.querySelector('symbol')
+  if (sym) defs.appendChild(document.importNode(sym, true))
+}
+async function applyKulturminneFallback() {
+  const svg = svgHostRef.value?.querySelector('svg')
+  const m = meta.value
+  if (!svg || !m || !visibleLayers.value.has('kulturminne')) return
+  // Har kartet allerede brukerminne-ikoner (innbakt) eller et fallback-lag? Da ingenting.
+  if (svg.querySelector('[data-kulturminne-id]') || svg.querySelector('#km-fallback-layer')) return
+  const reqId = ++kmFallbackReqId
+  try {
+    const bbox = m.bbox || fredetBboxFromMeta(m)
+    const key = kulturminneBboxKey(bbox)
+    let data = await cacheGet(key)
+    if (!Array.isArray(data)) {
+      data = await fetchKulturminner(bbox)
+      if (data.length) cacheSet(key, data, TTL.kulturminne)
+    }
+    if (reqId !== kmFallbackReqId || !visibleLayers.value.has('kulturminne')) return
+    if (!svgHostRef.value?.querySelector('svg')?.isSameNode(svg)) return
+    if (!data.length || svg.querySelector('[data-kulturminne-id]')) return
+    ensureKulturminneSymbolDef(svg)
+    const ns = 'http://www.w3.org/2000/svg'
+    const g = document.createElementNS(ns, 'g')
+    g.setAttribute('id', 'km-fallback-layer'); g.setAttribute('data-layer', 'kulturminne')
+    const size = 3.6, half = size / 2
+    for (const it of clusterByMinMeters(data, 30)) {
+      const p = wgs84ToSvg(it.lat, it.lon, m)
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue
+      const mk = document.createElementNS(ns, 'g')
+      mk.setAttribute('data-kulturminne-id', it.id || '')
+      mk.setAttribute('data-kat', it.kategori || 'annet')
+      if (it.tittel) mk.setAttribute('data-tittel', it.tittel)
+      mk.setAttribute('data-upright', '1')
+      mk.setAttribute('transform', `translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`)
+      const use = document.createElementNS(ns, 'use')
+      use.setAttribute('href', '#iso-sym-kulturminne')
+      use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iso-sym-kulturminne')
+      use.setAttribute('x', `-${half}mm`); use.setAttribute('y', `-${half}mm`)
+      use.setAttribute('width', `${size}mm`); use.setAttribute('height', `${size}mm`)
+      mk.appendChild(use); g.appendChild(mk)
+    }
+    svg.appendChild(g)
+    kulturminneCount.value = data.length
+    applyUprightLabels()
+  } catch (e) { console.warn('[Kulturminne] runtime-fallback feilet:', e?.message ?? e) }
+}
+
 // Detalj-skuff for et fredet-kulturminne (leser data-attributter fra ikonet).
 function openFredetDetailFromEl(el) {
   const link = el.getAttribute('data-link') || null
@@ -1077,6 +1140,7 @@ function openFredetDetailFromEl(el) {
     tittel: el.getAttribute('data-navn') || 'Fredet kulturminne',
     subtittel: el.getAttribute('data-vernetype') || 'Fredet kulturminne',
     beskrivelse: el.getAttribute('data-informasjon') || '',
+    lokalitetInfo: el.getAttribute('data-lokinfo') || null,
     kommune: el.getAttribute('data-kommune'), fylke: null, opprettetAv: null,
     link, bilder: [],
   }
@@ -1127,8 +1191,11 @@ function applyLayerVisibility() {
   // Hold dybde-hovedlaget i synk med lag-tilstanden (presets/nullstill kan ha
   // endret 'dybde'); re-injiserer/fjerner #depth-main-layer etter behov.
   applyDepthLayer()
-  // Samme for fredet-kulturminne WMS-laget (injiser/fjern <image>).
+  // Samme for fredet-kulturminne WFS-vektorlaget (injiser/skjul).
   applyFredetKulturminneLayer()
+  // Brukerminne-fallback: hent live hvis laget er på men ingen ikoner er innbakt
+  // (typisk mobil der bygge-tids-hentingen glapp).
+  applyKulturminneFallback()
 }
 
 // Navne-labels som kan være flerspråklige (norsk - samisk - finsk). Tall-labels
@@ -8454,6 +8521,14 @@ onUnmounted(() => {
 
             <p v-if="kulturminneDetail.beskrivelse"
                class="text-[13px] text-white/85 leading-relaxed whitespace-pre-line break-words">{{ kulturminneDetail.beskrivelse }}</p>
+
+            <!-- Sekundær kontekst: felles beskrivelse for hele lokaliteten
+                 (f.eks. «Oscarsborg festning»), skilt fra den unike enkeltminne-
+                 teksten over. -->
+            <div v-if="kulturminneDetail.lokalitetInfo" class="mt-3">
+              <div class="text-[10px] uppercase tracking-wide text-white/40 mb-0.5">Om lokaliteten</div>
+              <p class="text-[12px] text-white/55 leading-relaxed whitespace-pre-line break-words">{{ kulturminneDetail.lokalitetInfo }}</p>
+            </div>
 
             <div v-if="kulturminneDetail.kommune || kulturminneDetail.fylke"
                  class="mt-2.5 text-[12px] text-white/55">
