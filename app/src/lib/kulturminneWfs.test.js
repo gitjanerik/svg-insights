@@ -1,7 +1,22 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildWfsUrl, centroidFromPosList, vernInfo, parseWfsKulturminner,
+  buildWfsUrl, centroidFromPosList, vernInfo, parseWfsKulturminner, splitInformasjon,
 } from './kulturminneWfs.js'
+
+describe('splitInformasjon', () => {
+  it('skiller enkeltminne-tekst fra felles lokalitet-tekst', () => {
+    const raw = 'Beskrivelse fra lokalitet:\nFunnsted for stokkanker.\n\nBeskrivelse fra Enkeltminne:\nStokkanker, 3-4 meter høyt.'
+    const s = splitInformasjon(raw)
+    expect(s.enkeltminne).toBe('Stokkanker, 3-4 meter høyt.')
+    expect(s.lokalitet).toBe('Funnsted for stokkanker.')
+  })
+  it('uten seksjons-prefiks → alt er enkeltminne-tekst', () => {
+    expect(splitInformasjon('Krittpipestilker fra 1700-tallet.')).toEqual({ enkeltminne: 'Krittpipestilker fra 1700-tallet.', lokalitet: null })
+  })
+  it('tom input', () => {
+    expect(splitInformasjon(null)).toEqual({ enkeltminne: null, lokalitet: null })
+  })
+})
 
 const bbox = { south: 59.66, west: 10.53, north: 59.71, east: 10.62 }
 

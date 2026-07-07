@@ -120,6 +120,27 @@ export function centroidFromPosList(posList) {
   return { lat: sLat / n, lon: sLon / n }
 }
 
+// `informasjon` på et enkeltminne er ofte «Beskrivelse fra lokalitet: <felles>
+// [nl][nl] Beskrivelse fra Enkeltminne: <unik>». Del i to så vi kan vise den
+// UNIKE (enkeltminne-)teksten tydelig og lokalitet-teksten som sekundær kontekst
+// — ellers ser alle punktene i f.eks. «Oscarsborg festning» like ut på toppen.
+export function splitInformasjon(raw) {
+  if (!raw) return { enkeltminne: null, lokalitet: null }
+  const s = String(raw)
+  const enkIdx = s.search(/Beskrivelse fra Enkeltminne\s*:/i)
+  const lokIdx = s.search(/Beskrivelse fra lokalitet\s*:/i)
+  if (enkIdx >= 0) {
+    const enk = s.slice(enkIdx).replace(/^Beskrivelse fra Enkeltminne\s*:\s*/i, '').trim()
+    let lok = null
+    if (lokIdx >= 0 && lokIdx < enkIdx) {
+      lok = s.slice(lokIdx, enkIdx).replace(/^Beskrivelse fra lokalitet\s*:\s*/i, '').trim() || null
+    }
+    return { enkeltminne: enk || null, lokalitet: lok }
+  }
+  const whole = s.replace(/^Beskrivelse fra lokalitet\s*:\s*/i, '').trim()
+  return { enkeltminne: whole || null, lokalitet: null }
+}
+
 function firstTag(block, tag) {
   // Tåler æ/ø/å i tagnavn (linkKulturminnesøk, område …).
   const re = new RegExp(`<app:${tag}>([^<]*)</app:${tag}>`, 'i')
@@ -182,7 +203,7 @@ export function parseWfsKulturminner(gml) {
       // lesbar info ligger i `informasjon` og bak kulturminnesok-lenken.
       vernetype: vi.text,
       kategori: vi.kategori,
-      informasjon: firstTag(block, 'informasjon'),
+      ...(() => { const s = splitInformasjon(firstTag(block, 'informasjon')); return { informasjon: s.enkeltminne, lokalitetInfo: s.lokalitet } })(),
       kommune: firstTag(block, 'kommune'),
       link: link && /^https?:\/\//i.test(link) ? link : null,
     })

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-06 — v12.1.49: Brukerminne-fallback på mobil + tydeligere enkeltminne-detalj
+
+To ting. (1) **Brukerminner på mobil:** api.ra.no/brukerminner er tidvis nede (verifisert 502 under testing), så bygge-tids-hentingen bakte av og til 0 funn inn i kartet — sett som «Kulturminner (0)» på mobil mens desktop fikk 8 (samme område, ulikt tidspunkt). Nå: hvis et kart mangler innbakte brukerminne-ikoner men laget er på, hentes de LIVE i visningen (samme robuste vektor-injeksjon som fredet-laget) — et nytt forsøk når API-et er oppe igjen, uten å bygge kartet på nytt. Hente-forsøkene er også økt fra 2 til 3. (2) **Detalj pr koordinat:** enkeltminnenes `informasjon` er ofte delt i «Beskrivelse fra lokalitet:» (felles for hele gruppen, f.eks. Oscarsborg festning) + «Beskrivelse fra Enkeltminne:» (unik pr punkt). Detalj-skuffen viser nå den unike enkeltminne-teksten øverst og lokalitet-teksten som egen «Om lokaliteten»-seksjon under, så hvert punkt leser tydelig forskjellig.
+
+---
+
 ## 2026-07-06 — v12.1.48: Fredede kulturminner default PÅ + detalj pr koordinat (enkeltminne-nivå)
 
 To forbedringer på «Fredede kulturminner»: (1) Laget er nå PÅ som standard. (2) Datagrunnlaget er byttet fra lokalitet- til **enkeltminne-nivå** i WFS-en, så hvert ikon er ett konkret kulturminne med eget navn og egen beskrivelse — detalj pr koordinat. Tidligere viste alle punktene i f.eks. «Oscarsborg festning» (én lokalitet spredt over Håøya og Nordre Kaholmen) samme tekst; nå får du «Kasernen», «Ammunisjonsarbeidshus», bunkere/stillinger osv. hver for seg med egen `informasjon`. Klynge-avstanden er strammet inn (45 → 25 m) så tett-liggende, men distinkte enkeltminner ikke slås sammen. Håøya har 363 enkeltminner (mot 244 lokaliteter). `enkeltminneart` er dessverre en tallkode i WFS-en (ikke lesbar), så navn + `informasjon` + vernestatus + kulturminnesok-lenke er det vi viser.
