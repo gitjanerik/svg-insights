@@ -8399,18 +8399,20 @@ onUnmounted(() => {
     <!-- Long-press kontekstmeny (bottom-sheet). Åpnes ved long-press eller
          høyreklikk på kartet. Viser koordinater, høyde, nærmeste sted/sti,
          og handlinger for det valgte punktet. -->
+    <!-- Ingen backdrop-blur her: long-press-siktet er et HTML-overlay foran
+         kartet, og backdrop-filter:blur tvinger re-blurring av hele den komplekse
+         kart-SVG-en på HVER animasjons-frame → mobil-kompositoren låser seg
+         (frys på store/innebygde kart, men ikke på små 1×1). Vanlig
+         halv-opak dimming er billig og fryser ikke. -->
+    <!-- Bare maksimert tilstand dimmer + sperrer kartet (modal: tapp utenfor
+         = lukk). Standard/minimert lar kartet stå synlig og interaktivt bak
+         arket (pointer-events-none) så man kan panorere/zoome hovedkartet for
+         kontekst, uavhengig av mini-kartets eget zoom-nivå i arket. -->
+    <!-- Kulturminne-detalj-skuff (Kulturminnesøk brukerminner). Tittel/kategori
+         vises straks fra kart-ikonets data-*, beskrivelse/sted/bilde hentes lazy.
+         NB: kommentarer må ligge UTENFOR <Transition> — i dev beholder Vue-kompilatoren
+         kommentar-noder, og <Transition> krever nøyaktig ett barn. -->
     <Transition name="overlay-fade">
-      <!-- Ingen backdrop-blur her: long-press-siktet er et HTML-overlay foran
-           kartet, og backdrop-filter:blur tvinger re-blurring av hele den komplekse
-           kart-SVG-en på HVER animasjons-frame → mobil-kompositoren låser seg
-           (frys på store/innebygde kart, men ikke på små 1×1). Vanlig
-           halv-opak dimming er billig og fryser ikke. -->
-      <!-- Bare maksimert tilstand dimmer + sperrer kartet (modal: tapp utenfor
-           = lukk). Standard/minimert lar kartet stå synlig og interaktivt bak
-           arket (pointer-events-none) så man kan panorere/zoome hovedkartet for
-           kontekst, uavhengig av mini-kartets eget zoom-nivå i arket. -->
-      <!-- Kulturminne-detalj-skuff (Kulturminnesøk brukerminner). Tittel/kategori
-           vises straks fra kart-ikonets data-*, beskrivelse/sted/bilde hentes lazy. -->
       <div v-if="kulturminneOpen && kulturminneDetail"
            class="absolute inset-0 z-40 flex items-end justify-center transition-colors duration-200"
            :class="kulturminneDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
@@ -8500,7 +8502,12 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
+    </Transition>
 
+    <!-- Long-press kontekstmeny (bottom-sheet) — egen Transition: to uavhengige
+         v-if-søsken i samme <Transition> er en dev-kompileringsfeil (krever
+         nøyaktig ett barn; sjekken er dev-only, derfor passerte prod-bygget). -->
+    <Transition name="overlay-fade">
       <div v-if="contextMenuOpen && contextMenuInfo"
            class="absolute inset-0 z-40 flex items-end justify-center transition-colors duration-200"
            :class="contextDrawer.isMaximized.value ? 'bg-black/60' : 'bg-transparent pointer-events-none'"
