@@ -18,7 +18,10 @@ import { sampleProfile } from '../src/lib/elevationProfile.js'
 import { sampleElevation } from '../src/lib/demSampling.js'
 import { buildRouteGpx } from '../src/lib/gpxExport.js'
 import { geocodePlace } from '../src/lib/geocode.js'
-import { buildRouteOverlaySvg, injectOverlay } from '../src/lib/routeOverlay.js'
+import { buildRouteOverlaySvg, injectOverlay, DEFAULT_OVERLAY_STYLE } from '../src/lib/routeOverlay.js'
+import { applyMapSettings, resolveVisibleLayers, buildSettingsCss } from '../src/lib/mapSettingsApply.js'
+import { LAYERS, LAYER_PRESETS } from '../src/lib/mapLayerCatalog.js'
+import { STROKE_GROUPS } from '../src/lib/strokeOverrides.js'
 import { enrichRoute } from '../src/lib/routeEnrichment.js'
 import { routeCues, extractNamedPointsFromSvg } from '../src/lib/routeCues.js'
 import { buildTripReportSvg, buildTripReportMarkdown } from '../src/lib/tripReport.js'
@@ -32,6 +35,16 @@ const state = {
   map: null,        // { svg, dem, meta, counts, bbox, navn, svgPath }
   routingGraph: null,
   routes: [],       // siste planlegg_rute-resultat, refereres av eksporter_gpx
+  // Visnings-innstillinger (juster_kart) — MCP-ens motstykke til drawer-
+  // tilstanden i appen (Kartlag-fanen + Strek-knott/-panel). Holdes på tvers
+  // av kall og påføres hver SVG som skrives; state.map.svg forblir urørt
+  // (som i appen, der kartet er komplett og drawer-en styrer visningen).
+  innstillinger: null,  // { preset?, lag?, strekSkala?, strek? } | null = urørt
+}
+
+// Påfør gjeldende innstillinger på en SVG som skal skrives til fil.
+function svgForOutput(svg) {
+  return state.innstillinger ? applyMapSettings(svg, state.innstillinger) : svg
 }
 
 // SVG-meter ↔ WGS84 trenger kartets UTM-forankring (samme form som gpxExport).
@@ -141,6 +154,20 @@ function jsonResult(obj) {
   return { content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] }
 }
 
+// Rute-overlayets strekbredder skalert med én faktor (rutebreddeFaktor på
+// tegn_rute_svg/turrapport_svg). Markører og etiketter beholder størrelsen.
+function overlayStyleFor(faktor) {
+  if (!Number.isFinite(faktor) || faktor === 1) return undefined
+  const s = DEFAULT_OVERLAY_STYLE
+  return {
+    lineSelected: s.lineSelected * faktor,
+    lineOther: s.lineOther * faktor,
+    haloSelected: s.haloSelected * faktor,
+    haloOther: s.haloOther * faktor,
+    connector: s.connector * faktor,
+  }
+}
+
 // Rødliste-oppslag fra disk (public/data/redlist-no.json, bygget av CI). Cachet;
 // null hvis bundelen mangler → rødliste-seksjonen går i dvale (aldri oppdiktet).
 let _redList
@@ -212,7 +239,7 @@ server.registerTool(
     const slug = navn.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
     const svgPath = resolve(filsti ?? resolve(tmpdir(), 'svg-insights-mcp', `${slug}.svg`))
     mkdirSync(dirname(svgPath), { recursive: true })
-    writeFileSync(svgPath, built.svg)
+    writeFileSync(svgPath, svgForOutput(built.svg))
 
     state.map = { ...built, navn, svgPath }
     state.routingGraph = null
@@ -404,11 +431,13 @@ server.registerTool(
       ruteIndeks: z.number().int().min(0).default(0).describe('Hvilken rute som markeres/velges'),
       startNavn: z.string().optional().describe('Etikett ved startpunktet'),
       maalNavn: z.string().optional().describe('Etikett ved målpunktet'),
+      rutebreddeFaktor: z.number().min(0.1).max(3).default(1)
+        .describe('Skalerer rutestrekens bredde (1 = appens standard, 0.33 = tredjedel)'),
       navn: z.string().default('mcp-kart-rute').describe('Kartnavn, brukes i filnavn'),
       filsti: z.string().optional().describe('Hvor SVG-en skrives (default: tmp)'),
     },
   },
-  async ({ start, maal, via, visAlle, ruteIndeks, startNavn, maalNavn, navn, filsti }) => {
+  async ({ start, maal, via, visAlle, ruteIndeks, startNavn, maalNavn, rutebreddeFaktor, navn, filsti }) => {
     requireMap()
     const viaPts = via ?? []
     const points = [start, ...viaPts, maal]
@@ -443,8 +472,9 @@ server.registerTool(
       markers,
       start: [a.x, a.y],
       dest: [b.x, b.y],
+      style: overlayStyleFor(rutebreddeFaktor),
     })
-    const svg = injectOverlay(state.map.svg, overlay)
+    const svg = injectOverlay(svgForOutput(state.map.svg), overlay)
 
     const slug = navn.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
     const svgPath = resolve(filsti ?? resolve(tmpdir(), 'svg-insights-mcp', `${slug}.svg`))
@@ -526,12 +556,14 @@ server.registerTool(
       ruteIndeks: z.number().int().min(0).default(0).describe('Hvilket rute-alternativ som brukes'),
       startNavn: z.string().optional().describe('Etikett ved start'),
       maalNavn: z.string().optional().describe('Etikett ved mål'),
+      rutebreddeFaktor: z.number().min(0.1).max(3).default(1)
+        .describe('Skalerer rutestrekens bredde (1 = appens standard, 0.33 = tredjedel)'),
       tittel: z.string().optional().describe('Rapport-tittel'),
       navn: z.string().default('turrapport').describe('Kartnavn, brukes i filnavn'),
       filsti: z.string().optional().describe('Hvor SVG-en skrives (default: tmp)'),
     },
   },
-  async ({ start, maal, via, bufferM, ruteIndeks, startNavn, maalNavn, tittel, navn, filsti }) => {
+  async ({ start, maal, via, bufferM, ruteIndeks, startNavn, maalNavn, rutebreddeFaktor, tittel, navn, filsti }) => {
     requireMap()
     const viaPts = via ?? []
     const { found, sel, route, snaps, enrichment } = await planAndEnrich(
@@ -551,8 +583,9 @@ server.registerTool(
     const overlay = buildRouteOverlaySvg({
       routes: [{ coordinates: route, shortest: found[sel].shortest }],
       selectedIndex: 0, connectors, markers, start: [a.x, a.y], dest: [b.x, b.y],
+      style: overlayStyleFor(rutebreddeFaktor),
     })
-    const mapSvg = injectOverlay(state.map.svg, overlay)
+    const mapSvg = injectOverlay(svgForOutput(state.map.svg), overlay)
 
     // Høydeprofil + sti-kryss-varsler.
     const profile = sampleProfile({ points: route.map(([x, y]) => ({ x, y })) }, state.map.dem)
@@ -602,6 +635,72 @@ server.registerTool(
         veibeskrivelseSteg: cues.length,
       },
       kilder: enrichment.kilder,
+    })
+  },
+)
+
+// Gyldige nøkler listes i beskrivelsen så klienten slipper prøving/feiling —
+// hentet fra SAMME katalog som appens drawer (mapLayerCatalog/strokeOverrides).
+const LAG_DOC = LAYERS.map(l => `${l.key} (${l.label})`).join(', ')
+const PRESET_KEYS = LAYER_PRESETS.map(p => p.key)
+const STREK_DOC = STROKE_GROUPS.map(g => `${g.id} (${g.label})`).join(', ')
+
+server.registerTool(
+  'juster_kart',
+  {
+    title: 'Juster kartvisning (lag / preset / strek)',
+    description:
+      'Justerer visningen av sist bygde kart med SAMME valg som en bruker har i appens ' +
+      'drawer: lag-toggles fra Kartlag-fanen, lag-presets, global strek-skala (Strek-knotten) ' +
+      'og per-gruppe strektykkelse (Strek-panelet). Innstillingene huskes og påføres alle ' +
+      'senere SVG-er (tegn_rute_svg / turrapport_svg / bygg_kart) til de nullstilles — som ' +
+      'drawer-tilstand i appen. Kart-SVG-en på disk skrives om med innstillingene bakt inn. ' +
+      `Lag-nøkler: ${LAG_DOC}, dybde (Sjøkart-dybde på hovedkartet). ` +
+      `Strek-grupper: ${STREK_DOC}.`,
+    inputSchema: {
+      preset: z.enum(PRESET_KEYS).optional()
+        .describe('Lag-forhåndsvalg (som preset-knappene i appen) — nullstiller tidligere lag-valg'),
+      lag: z.record(z.boolean()).optional()
+        .describe('Enkelt-lag av/på oppå preset/default, f.eks. {"kontur": false}'),
+      strekSkala: z.number().min(0.1).max(3).optional()
+        .describe('Global strek-skala (--stroke-scale), 1 = som bygget'),
+      strek: z.record(z.number().min(0.4).max(3)).optional()
+        .describe('Per-gruppe strek-multiplikator, f.eks. {"sti": 0.6} (0.4–3, 1 = nøytral)'),
+      nullstill: z.boolean().default(false)
+        .describe('Fjern alle innstillinger først (som «Nullstill» i Lag-fanen)'),
+    },
+  },
+  async ({ preset, lag, strekSkala, strek, nullstill }) => {
+    const prev = nullstill ? {} : (state.innstillinger ?? {})
+    const next = {
+      preset: preset ?? prev.preset,
+      // Preset-trykk nullstiller enkelt-lag-valg (samme semantikk som appen).
+      lag: preset ? { ...(lag ?? {}) } : { ...(prev.lag ?? {}), ...(lag ?? {}) },
+      strekSkala: strekSkala ?? prev.strekSkala,
+      strek: { ...(prev.strek ?? {}), ...(strek ?? {}) },
+    }
+    // Validerer nøkler (kaster med liste over gyldige ved feil).
+    const visible = resolveVisibleLayers(next)
+    buildSettingsCss(next)
+
+    const neutral = !next.preset && !Object.keys(next.lag).length
+      && next.strekSkala == null && !Object.keys(next.strek).length
+    state.innstillinger = neutral ? null : next
+
+    let svgPath = null
+    if (state.map) {
+      svgPath = state.map.svgPath
+      writeFileSync(svgPath, svgForOutput(state.map.svg))
+    }
+    const skjulteLag = LAYERS.filter(l => !visible.has(l.key)).map(l => l.key)
+    return jsonResult({
+      status: 'ok',
+      svgPath,
+      innstillinger: state.innstillinger ?? 'nullstilt (som bygget)',
+      skjulteLag,
+      merknad: state.map
+        ? 'Kart-SVG-en er skrevet om; innstillingene påføres også senere rute-/rapport-SVG-er.'
+        : 'Ingen kart bygget ennå — innstillingene påføres når et kart bygges.',
     })
   },
 )

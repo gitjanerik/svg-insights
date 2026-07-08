@@ -1,4 +1,4 @@
-import isomCatalogDefault from './isomCatalog.json'
+import isomCatalogDefault from './isomCatalog.json' with { type: 'json' }
 
 // Per-element strek-overstyring (v12.0.18): strek-panelet på Strek-FAB-en lar
 // brukeren skalere strekbredden per elementgruppe. Bredder er bakt inn i hvert

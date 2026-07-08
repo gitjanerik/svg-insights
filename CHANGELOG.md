@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 — v12.1.61: MCP juster_kart — kartlag/presets/strek med appens eget vokabular
+
+MCP-serveren kan nå «skru» på de samme visnings-innstillingene som en ekspert-bruker gjør i drawer-en, med samme vokabular og delt kode — første trinn i MCP-paritet-planen (nytt `docs/MCP_PARITET.md`, A/B/C-klassifisering av alle app-funksjoner). (1) Lag-katalogen (LAYERS, presets Tur/Padling/Detaljert/Print, defaults) er ekstrahert fra MapView.vue til delt **`lib/mapLayerCatalog.js`** — drawer-en og MCP leser nå samme kilde. (2) Ny **`lib/mapSettingsApply.js`**: string-basert påføring av innstillingene på en kart-SVG (`<style id="kart-innstillinger">`, idempotent) — lag av/på som `display:none` per `data-layer` (inkl. ghost-fliser og navn-spesialtilfellet), global `--stroke-scale`, og per-gruppe strek via eksisterende `buildStrokeOverrideCss`. (3) Nytt MCP-verktøy **`juster_kart`** (preset/lag/strekSkala/strek/nullstill) — innstillingene huskes i server-state som drawer-tilstand og påføres alle senere SVG-utganger. (4) `tegn_rute_svg`/`turrapport_svg` har fått **`rutebreddeFaktor`** (skalerer rutestrek + halo). `strokeOverrides.js` fikk `with { type: 'json' }` på katalog-importen så den kjører i ren Node (MCP). Verifisert ende-til-ende: Kullebunn-rundturen regenerert uten høydekurver og med 1/3 rutestrek. 18 nye tester.
+
+---
+
 ## 2026-07-08 — v12.1.60: Turrapport skriver også delbar Markdown (.md)
 
 `turrapport_svg` skriver nå i tillegg en Markdown-versjon (`.md`) ved siden av SVG-en — samme innhold som tekst (tittel + sammendrag, kulturminner, verneområder, arter/rødliste, nummerert veibeskrivelse), grei å lime inn, lese på mobil eller sende videre. Ny ren `buildTripReportMarkdown()` i `lib/tripReport.js` (kartet utelates); verktøyet returnerer nå både `svgPath` og `mdPath`. Enhetstestet. 1087 tester passerer.
