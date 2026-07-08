@@ -6,7 +6,7 @@ Sist oppdatert: 8. juli 2026.
 ## Hvor vi står
 
 `origin/master` er sannheten (auto-deployer til gh-pages). MCP-serveren
-(`app/mcp/server.js`, stdio) eksponerer nå **8 verktøy** som gjenbruker appens
+(`app/mcp/server.js`, stdio) eksponerer nå **9 verktøy** som gjenbruker appens
 DOM-frie lib-er:
 
 | Verktøy | Gjør |
@@ -19,6 +19,7 @@ DOM-frie lib-er:
 | `eksporter_gpx` | GPX 1.1 |
 | **`berik_rute`** | kulturminner / verneområder / rødlistede arter LANGS ruten |
 | **`turrapport_svg`** | komplett turrapport-SVG (kart + profil + funn + veibeskrivelse) |
+| **`finn_poi_paa_kart`** | navngitte POI-er (topp/hytte/vann/sted/område/reservat) m/ koordinater |
 
 Stifinner i appen har via-punkter (0–3) i UI-et (additiv «+ Via», gult sikte).
 
@@ -57,10 +58,17 @@ Tre nye delte libs (alle med enhetstester, `npm run test`-grønne):
 - De eksterne API-ene er CORS/nett-avhengige; i en annen sandkasse kan de være
   blokkert → seksjonen faller pent til «Kilde utilgjengelig» (ikke en feil).
 
+## Navnetetthet påvirker IKKE MCP (avklart 8. juli)
+Appens «Navnetetthet» (Lav/Middels/Høy, `useLabelDensity`) er ren runtime-
+visning: MapView toggler CSS-klassen `name-lod-off` på `<text>` (skjuler, fjerner
+aldri). MCP bygger sin egen SVG server-side uten den innstillingen og ser hele
+navne-settet — som appens søk («aldri LOD-et»). `finn_poi_paa_kart`/`routeCues`
+er derfor uavhengige av brukerens tetthetsvalg.
+
 ## Naturlige neste skritt (brukerens idéer)
-1. **`finn_poi_paa_kart`** — les navngitte features fra kartet (topper/hytter/
-   vann/P) så assistenten kan foreslå mål og mate `via`. Forsterker kryss-anker
-   i `routeCues`.
+1. ✅ **`finn_poi_paa_kart`** — GJORT (v12.1.59). Neste: bruk POI-ene til å
+   forbedre kryss-ankeret i `routeCues` (bytt `extractNamedPointsFromSvg` mot
+   `extractMapPoiFromSvg` som har korrekte, transform-justerte posisjoner).
 2. **`planlegg_rundtur`** — start = mål (loop), lett straff mot å gå samme sti
    tilbake. Bygger på `planRoutesThrough`.
 3. **`foresla_tur`** — generativ turplanlegging fra rammer (lengde/høydemeter/

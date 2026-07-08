@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { buildMapHeadless, routableFeaturesFromSvg } from './headless.js'
+import { buildMapHeadless, routableFeaturesFromSvg, extractMapPoiFromSvg } from './headless.js'
+import { filterPoi, POI_LABELS } from '../src/lib/mapPoi.js'
 import { buildRoutingGraph, planRoutes, planRoutesThrough } from '../src/lib/routing.js'
 import { wgs84ToSvg, svgToWgs84 } from '../src/lib/utm.js'
 import { sampleProfile } from '../src/lib/elevationProfile.js'
@@ -556,7 +557,10 @@ server.registerTool(
     // Høydeprofil + sti-kryss-varsler.
     const profile = sampleProfile({ points: route.map(([x, y]) => ({ x, y })) }, state.map.dem)
     const rg = ensureRoutingGraph()
-    const namedPoints = extractNamedPointsFromSvg(state.map.svg)
+    // POI-ene har transform-korrekte posisjoner (bedre kryss-anker enn rå
+    // <text>-x/y); faller tilbake til alle tekst-etiketter om ingen POI finnes.
+    const poi = extractMapPoiFromSvg(state.map.svg).map(p => ({ x: p.x, y: p.y, name: p.navn }))
+    const namedPoints = poi.length ? poi : extractNamedPointsFromSvg(state.map.svg)
     const junctionAt = ([x, y]) => { const id = rg.nodeAt([x, y], 5); return id ? rg.graph.degree(id) >= 3 : false }
     const cues = routeCues(route, { junctionAt, namedPoints })
 
@@ -594,6 +598,39 @@ server.registerTool(
       },
       kilder: enrichment.kilder,
     })
+  },
+)
+
+server.registerTool(
+  'finn_poi_paa_kart',
+  {
+    title: 'Finn interessepunkter på kartet',
+    description:
+      'Leser navngitte interessepunkter fra sist bygde kart — topper, hytter, vann, ' +
+      'steder, områder og naturreservat — med koordinater. Bruk til å oppdage mål og ' +
+      'via-punkter uten manuell koordinat-oppslag (mat rett inn i planlegg_rute / ' +
+      'tegn_rute_svg / turrapport_svg). Filtrer på type og/eller fritekst-søk.',
+    inputSchema: {
+      typer: z.array(z.enum(Object.values(POI_LABELS)))
+        .optional().describe('Begrens til typer, f.eks. ["topp","hytte","vann"]'),
+      sok: z.string().optional().describe('Fritekst-filter på navnet'),
+      maks: z.number().int().min(1).max(200).default(60).describe('Maks antall treff'),
+    },
+  },
+  async ({ typer, sok, maks }) => {
+    requireMap()
+    const meta = svgMeta()
+    const all = extractMapPoiFromSvg(state.map.svg)
+    const filtered = filterPoi(all, { typer, sok })
+      .map(p => {
+        const ll = svgToWgs84(p.x, p.y, meta)
+        return { navn: p.navn, type: p.type, lat: Number(ll.lat.toFixed(6)), lon: Number(ll.lon.toFixed(6)) }
+      })
+      .slice(0, maks)
+    // Antall pr type (av alt funnet, før maks-cap) for en rask oversikt.
+    const perType = {}
+    for (const p of all) perType[p.type] = (perType[p.type] ?? 0) + 1
+    return jsonResult({ status: 'ok', antall: filtered.length, perType, poi: filtered })
   },
 )
 

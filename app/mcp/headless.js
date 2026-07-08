@@ -9,6 +9,7 @@ import { fetchDOM } from '../src/lib/canopyHeight.js'
 import { fetchN50Water } from '../src/lib/n50Fetcher.js'
 import { utm32BboxFromWgs84 } from '../src/lib/utm.js'
 import { parsePathSubpaths } from '../src/lib/pathUtils.js'
+import { poiType, parseLen, sumTranslate, mmToUnitFromSvg, dedupePoi } from '../src/lib/mapPoi.js'
 
 // sjokartFetcher sjekker `typeof DOMParser` for GML-parsing — uten shim
 // returnerer den tomt og kystkart mister dybdedata i Node.
@@ -83,4 +84,33 @@ export function routableFeaturesFromSvg(svgText) {
     }
   }
   return features
+}
+
+/**
+ * Ekstraher navngitte POI-er fra en generert kart-SVG med absolutt posisjon
+ * (SVG-meter). Etikett-tekstens egen x/y (kan være en mm-offset) legges til
+ * summen av forelder-transformenes translate, så både absolutt-plasserte
+ * (hytte/vann) og gruppe-plasserte (topp) etiketter havner riktig.
+ * @param {string} svgText
+ * @returns {Array<{navn:string, type:string, x:number, y:number}>}
+ */
+export function extractMapPoiFromSvg(svgText) {
+  const { document } = parseHTML(`<html><body>${svgText}</body></html>`)
+  const mmToUnit = mmToUnitFromSvg(svgText)
+  const out = []
+  for (const el of document.querySelectorAll('text[data-label]')) {
+    const type = poiType(el.getAttribute('data-label'))
+    if (!type) continue
+    const navn = (el.textContent ?? '').trim()
+    if (!navn) continue
+    let dx = 0, dy = 0
+    for (let n = el; n && n.getAttribute; n = n.parentNode) {
+      const t = sumTranslate(n.getAttribute('transform'))
+      dx += t.dx; dy += t.dy
+    }
+    const x = dx + parseLen(el.getAttribute('x'), mmToUnit)
+    const y = dy + parseLen(el.getAttribute('y'), mmToUnit)
+    out.push({ navn, type, x, y })
+  }
+  return dedupePoi(out)
 }
