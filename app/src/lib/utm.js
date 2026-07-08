@@ -21,33 +21,42 @@ export function wgs84ToUtm33(lat, lon) {
   return wgs84ToUtmZone(lat, lon, ((33 * 6) - 183) * Math.PI / 180)
 }
 
+// v12.1.64: Snyder-serien er byttet med 6. ordens Krüger-serie (Karney 2011 /
+// GeographicLib, samme metode som proj sin etmerc). Snyder-forward var god nær
+// sentralmeridianen men hadde systematisk bias i sone-utvidelsen vi bruker:
+// ~0 i Sør-Norge, −0,26 m i Alta, −4,0 m i Kirkenes, −5,4 m i Vardø (mot sann
+// UTM32). Siden Kartverket-rastre (DEM/WCS) ligger i SANN UTM32 mens OSM-lag
+// projiseres med denne funksjonen, ble hele OSM-innholdet tegnet ~4 m vest for
+// terrenget i Øst-Finnmark. Krüger-serien matcher proj/etmerc < 1 mm i hele
+// Norge inkl. sone-utvidelsen (verifisert mot proj4 i utm.test.js).
+const N3 = F / (2 - F)  // tredje flattening
+const KRUGER_A = (A / (1 + N3)) * (1 + N3 ** 2 / 4 + N3 ** 4 / 64 + N3 ** 6 / 256)
+const KRUGER_ALPHA = [
+  N3 / 2 - 2 / 3 * N3 ** 2 + 5 / 16 * N3 ** 3 + 41 / 180 * N3 ** 4 - 127 / 288 * N3 ** 5 + 7891 / 37800 * N3 ** 6,
+  13 / 48 * N3 ** 2 - 3 / 5 * N3 ** 3 + 557 / 1440 * N3 ** 4 + 281 / 630 * N3 ** 5 - 1983433 / 1935360 * N3 ** 6,
+  61 / 240 * N3 ** 3 - 103 / 140 * N3 ** 4 + 15061 / 26880 * N3 ** 5 + 167603 / 181440 * N3 ** 6,
+  49561 / 161280 * N3 ** 4 - 179 / 168 * N3 ** 5 + 6601661 / 7257600 * N3 ** 6,
+  34729 / 80640 * N3 ** 5 - 3418889 / 1995840 * N3 ** 6,
+  212378941 / 319334400 * N3 ** 6,
+]
+const ECC = Math.sqrt(E2)
+
 function wgs84ToUtmZone(lat, lon, lon0) {
   const phi = lat * Math.PI / 180
-  const lam = lon * Math.PI / 180
-  const N = A / Math.sqrt(1 - E2 * Math.sin(phi) ** 2)
-  const T = Math.tan(phi) ** 2
-  const C = EP2 * Math.cos(phi) ** 2
-  const Aa = (lam - lon0) * Math.cos(phi)
-
-  const M = A * (
-    (1 - E2 / 4 - 3 * E2 * E2 / 64 - 5 * E2 ** 3 / 256) * phi
-    - (3 * E2 / 8 + 3 * E2 * E2 / 32 + 45 * E2 ** 3 / 1024) * Math.sin(2 * phi)
-    + (15 * E2 * E2 / 256 + 45 * E2 ** 3 / 1024) * Math.sin(4 * phi)
-    - (35 * E2 ** 3 / 3072) * Math.sin(6 * phi)
-  )
-
-  const easting = K0 * N * (
-    Aa + (1 - T + C) * Aa ** 3 / 6
-    + (5 - 18 * T + T * T + 72 * C - 58 * EP2) * Aa ** 5 / 120
-  ) + FALSE_EASTING
-
-  const northing = K0 * (M + N * Math.tan(phi) * (
-    Aa ** 2 / 2
-    + (5 - T + 9 * C + 4 * C * C) * Aa ** 4 / 24
-    + (61 - 58 * T + T * T + 600 * C - 330 * EP2) * Aa ** 6 / 720
-  ))
-
-  return { e: easting, n: northing }
+  const dlam = lon * Math.PI / 180 - lon0
+  const sphi = Math.sin(phi)
+  // Konform breddegrad: tan(chi) via Gauss-Schreiber
+  const t = Math.sinh(Math.atanh(sphi) - ECC * Math.atanh(ECC * sphi))
+  const cosl = Math.cos(dlam)
+  const xip = Math.atan2(t, cosl)
+  const etap = Math.asinh(Math.sin(dlam) / Math.hypot(t, cosl))
+  let xi = xip
+  let eta = etap
+  for (let j = 1; j <= 6; j++) {
+    xi += KRUGER_ALPHA[j - 1] * Math.sin(2 * j * xip) * Math.cosh(2 * j * etap)
+    eta += KRUGER_ALPHA[j - 1] * Math.cos(2 * j * xip) * Math.sinh(2 * j * etap)
+  }
+  return { e: K0 * KRUGER_A * eta + FALSE_EASTING, n: K0 * KRUGER_A * xi }
 }
 
 // Akse-justert UTM 32N-bboks som omslutter HELE WGS84-bboksens lat/lon-rektangel.

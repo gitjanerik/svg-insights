@@ -1,5 +1,36 @@
 import { describe, it, expect } from 'vitest'
-import { wgs84ToUtm32, utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
+import { wgs84ToUtm32, wgs84ToUtm33, utm32ToWgs84, utm32BboxFromWgs84 } from './utm.js'
+
+// v12.1.64: forward-projeksjonen er 6. ordens Krüger (Karney/etmerc-ekvivalent).
+// Fasit generert med proj4 (+proj=utm +zone=32/33 +ellps=GRS80) — sann UTM.
+// Snyder-forwarden som ble byttet ut hadde −4,0 m Ø-V-bias i Kirkenes og
+// −5,4 m i Vardø: OSM-lag ble tegnet vest for Kartverket-terrenget (DEM/WCS
+// ligger i sann UTM32). Kravet < 1 cm gir god margin til flyttall-støy uten
+// å slippe gjennom serie-avvik.
+describe('wgs84ToUtm32/33 — absolutt nøyaktighet mot proj4-fasit (v12.1.64)', () => {
+  const cases = [
+    // navn, lat, lon, E32, N32, E33, N33
+    ['Oslo', 59.91, 10.75, 597868.381, 6642681.510, 262409.732, 6649017.749],
+    ['Bergen', 60.39, 5.32, 297230.220, 6700510.175, -32253.597, 6734074.911],
+    ['Trondheim', 63.43, 10.4, 569864.338, 7034263.482, 270580.083, 7041743.103],
+    ['Bodø', 67.28, 14.4, 732500.397, 7472710.152, 474140.073, 7462719.171],
+    ['Tromsø', 69.65, 18.96, 885075.424, 7758322.052, 653597.495, 7731821.943],
+    ['Alta', 69.97, 23.27, 1041153.552, 7826247.479, 815288.897, 7783951.429],
+    ['Kirkenes', 69.727, 30.045, 1299782.811, 7875158.263, 1076688.274, 7806963.356],
+    ['Vardø', 70.37, 31.11, 1312917.040, 7957147.879, 1097833.050, 7886942.078],
+    ['Lindesnes', 57.98, 7.05, 384682.521, 6428147.559, 30483.414, 6454170.969],
+  ]
+  for (const [name, lat, lon, e32, n32, e33, n33] of cases) {
+    it(`${name}: sone 32 innenfor 1 cm av proj4`, () => {
+      const p = wgs84ToUtm32(lat, lon)
+      expect(Math.hypot(p.e - e32, p.n - n32)).toBeLessThan(0.01)
+    })
+    it(`${name}: sone 33 innenfor 1 cm av proj4`, () => {
+      const p = wgs84ToUtm33(lat, lon)
+      expect(Math.hypot(p.e - e33, p.n - n33)).toBeLessThan(0.01)
+    })
+  }
+})
 
 // v10.1.x: et kart som er kvadratisk i bakke-avstand skal rendres ~kvadratisk i
 // UTM-meter-rom. Den gamle SW+NE-diagonal-utledningen undervurderte øst-vest pga.
