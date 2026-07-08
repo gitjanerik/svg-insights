@@ -20,6 +20,9 @@ import { useLabelDensity } from '../composables/useLabelDensity.js'
 import { useStrokeTuning } from '../composables/useStrokeTuning.js'
 import { useReliefSettings } from '../composables/useReliefSettings.js'
 import { buildStrokeOverrideCss, STROKE_GROUPS } from '../lib/strokeOverrides.js'
+import {
+  LAYERS, MARINE_LAYER_KEYS, DEFAULT_VISIBLE_LAYER_KEYS, LAYER_PRESETS,
+} from '../lib/mapLayerCatalog.js'
 import { declutter, makeMinZoomOf } from '../lib/labelDeclutter.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import { norwegianName } from '../lib/placeName.js'
@@ -354,123 +357,13 @@ const BUILTIN = {
   vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
 }
 
-// Lag-kategorier som matcher mapBuilder.js sin categoryFor().
-// 'spor' er et klient-side syntetisk lag (ikke fra mapBuilder). Relieff
-// (hillshade) er ikke lenger en lag-toggle her — det styres av relieff-
-// knotten i FAB-stacken (se STROKE_STEPS/RELIEF_STEPS lenger ned).
-// Rekkefølge = hvordan toggles vises i drawer-en (IKKE render-z-order, som
-// styres av LAYER_ORDER i mapBuilder). v10.1.24: de tre mest brukte øverst
-// (sti, høydekurver, vann), navne-lagene samlet mot slutten, og de sære
-// vinter-tingene (heistrasé, slalombakke) aller sist.
-const LAYERS = [
-  // Mest brukt — øverst.
-  { key: 'sti',        label: 'Sti' },
-  { key: 'kontur',     label: 'Høydekurver' },
-  { key: 'vann',       label: 'Vann' },
-  // Terreng / natur.
-  { key: 'skog',       label: 'Skog' },
-  { key: 'aapen',      label: 'Åpen mark' },
-  { key: 'aker',       label: 'Åker' },
-  { key: 'myr',        label: 'Myr' },
-  { key: 'bekk',       label: 'Bekk' },
-  { key: 'strand',     label: 'Strand' },
-  { key: 'naturreservat', label: 'Naturreservat' },
-  { key: 'stein',      label: 'Stein / skjær' },
-  { key: 'stupkant',   label: 'Stupkant' },
-  // Bebyggelse / infrastruktur.
-  { key: 'bygning',    label: 'Hus og hytter' },
-  { key: 'bymasse',    label: 'Tett bebyggelse' },
-  { key: 'kirke',      label: 'Kirker' },
-  { key: 'parkering',  label: 'Parkering' },
-  { key: 'holdeplass', label: 'Holdeplass' },
-  { key: 'bro',        label: 'Bro' },
-  { key: 'bom',        label: 'Bom / barriere' },
-  { key: 'vei-stor',   label: 'Storveg' },
-  { key: 'vei-liten',  label: 'Småveg' },
-  { key: 'veinummer',  label: 'Veinummer' },
-  { key: 'tog',        label: 'Jernbane' },
-  { key: 'linje',      label: 'Gjerde / kraft' },
-  { key: 'trig',       label: 'Trigpunkter' },
-  // Kulturminne-overlegg (Kulturminnesøk brukerminner) — klikkbare tema-ikoner.
-  // Default PÅ (v12.1.42): dataene bakes alltid inn ved bygging. Klikk →
-  // detalj-skuff + lenke.
-  { key: 'kulturminne', label: 'Kulturminner' },
-  // Offisielle fredede kulturminner (Riksantikvaren/Askeladden) som WMS-rasterlag
-  // (Geonorge WFS-vektor, enkeltminne-nivå — se kulturminneWfs.js). Default PÅ.
-  { key: 'fredet-kulturminne', label: 'Fredede kulturminner' },
-  // Navn — samlet mot slutten.
-  { key: 'navn',       label: 'Navn' },
-  // Stedsnavn delt i tre viktighets-nivåer (v9.1.20) — egne lag så de kan
-  // toggles hver for seg (f.eks. landsby av, by på).
-  { key: 'stedsnavn-major', label: 'By / tettsted' },
-  { key: 'stedsnavn-mid',   label: 'Landsby / bydel' },
-  { key: 'stedsnavn-minor', label: 'Grend / gård' },
-  { key: 'spor',       label: 'GPS-spor' },
-  // Sære vinter-ting — aller sist (lysløype flyttet hit fra infrastruktur-
-  // blokken; den er lite relevant for de fleste turkart og default AV).
-  { key: 'lysloype',   label: 'Lysløype' },
-  { key: 'heistrase',  label: 'Heistrasé' },
-  { key: 'slalombakke', label: 'Slalombakke' },
-  { key: 'idrettsanlegg', label: 'Idrettsanlegg' },
-  // Sjø & padling — marine POI (fyr, sjømerker, skjær, marina, toalett,
-  // drikkevann) + fareområde (data-layer 'sjo-poi'). Rendres i en egen
-  // gruppert seksjon i Lag-fanen. Dybdepunkt/dybdekurver er IKKE her —
-  // de er skjulte detalj-lag som kun vises i long-press-inset-en.
-  { key: 'kai',        label: 'Kai / brygge / molo' },
-  { key: 'sjo-poi',    label: 'Sjø & padling' },
-  // Sjønavn — geografiske navn i/ved sjøen (bukt, vik, sund, nes, grunne,
-  // holme, øy, skjær). Default PÅ. Eget lag så man kan slå av navnerikt
-  // arkipel uten å miste padle-POI.
-  { key: 'sjo-navn',   label: 'Sjønavn' },
-]
-// Lag som hører til den marine «Sjø & padling»-seksjonen i drawer-en
-// (skilles ut fra terreng-grid-en for ryddigere gruppering). 'kai' (ISOM 551
-// havne-strukturer) er et eget lag med egen toggle, default PÅ.
-const MARINE_LAYER_KEYS = new Set(['kai', 'sjo-poi', 'sjo-navn'])
+// Lag-katalogen (LAYERS, presets, defaults) er delt med MCP-serveren —
+// se lib/mapLayerCatalog.js. Drawer-en og MCP-ens juster_kart leser samme kilde.
 const landLayerButtons = LAYERS.filter(l => !MARINE_LAYER_KEYS.has(l.key))
 const marineLayerButtons = LAYERS.filter(l => MARINE_LAYER_KEYS.has(l.key))
 
-// v8.1.0: Stedsnavn-overlay er AV som default — det er et stort tekst-
-// overlegg over kartet som brukeren slår på når de trenger områdenavn
-// med stor skrift (matcher tradisjonell turkart-stil).
-// v8.2.0: lysloype skjules som default (lite relevant for de fleste
-// turkart-bbox), og stedsnavn vises som default (større områdenavn er
-// nyttig kontekst).
-// v9.1.31: ISOM 521 (frittstående bygg) er «Hus og hytter» (data-layer
-// 'bygning'), ISOM 522 (tett bebyggelse) er «Tett bebyggelse» (data-layer
-// 'bymasse'). v12.0.15: bymasse er PÅ som default — flaten er nå flat dempet
-// grå-beige (ikke det tette mønsteret) og dempes ekstra ved utzoom, så den
-// leser som kontekst uten å konkurrere med veier/stier.
-const DEFAULT_OFF_LAYERS = new Set(['lysloype'])
-// Kanonisk default-synlighet (alt PÅ unntatt DEFAULT_OFF_LAYERS). Brukes både
-// til init, art-mode-restaurering og «Nullstill»-knappen i Lag-fanen.
-const DEFAULT_VISIBLE_LAYER_KEYS = LAYERS.filter(l => !DEFAULT_OFF_LAYERS.has(l.key)).map(l => l.key)
 const visibleLayers = ref(new Set(DEFAULT_VISIBLE_LAYER_KEYS))
 
-// Lag-forhåndsvalg (v11.0.46) — ~34 enkelt-toggles er desktop-GIS på mobil.
-// Fire navngitte presets gir ett trykk til en sammenhengende kart-tilstand;
-// hele toggle-listen ligger fortsatt under for finjustering.
-//   Tur       — rent turkart: terreng + sti/vei/navn, uten marine/vinter/rot.
-//   Padling   — Tur + marine POI (kai, sjø & padling, sjønavn).
-//   Detaljert — alt på.
-//   Print     — som Tur, men uten GPS-spor (ren papir-utskrift).
-const ALL_LAYER_KEYS = LAYERS.map((l) => l.key)
-const _turExclude = new Set([
-  'kai', 'sjo-poi', 'sjo-navn',           // marine — egen Padling-preset
-  'lysloype', 'heistrase', 'slalombakke', // vinter-ting
-  'idrettsanlegg',                        // dekkende flate, sjelden ønsket i oversikt
-  'stedsnavn-minor', 'linje',             // navne-/strek-rot (grend/gård, gjerde/kraft)
-])
-const PRESET_TUR = ALL_LAYER_KEYS.filter((k) => !_turExclude.has(k))
-const LAYER_PRESETS = [
-  { key: 'tur', label: 'Tur', keys: PRESET_TUR },
-  // Padling tar med 'dybde' så dybde-tall/-kurver (Sjøkart) vises på HOVEDkartet,
-  // ikke bare i long-press-inset-en — padleren vil se dyp uten ekstra trykk.
-  // No-op på kart uten ekte Sjøkart-dybde (ingen detalj-lag å vise).
-  { key: 'padling', label: 'Padling', keys: [...new Set([...PRESET_TUR, 'kai', 'sjo-poi', 'sjo-navn', 'dybde'])] },
-  { key: 'detaljert', label: 'Detaljert', keys: ALL_LAYER_KEYS.slice() },
-  { key: 'print', label: 'Print', keys: PRESET_TUR.filter((k) => k !== 'spor') },
-]
 const activePreset = computed(() => {
   const cur = visibleLayers.value
   const hit = LAYER_PRESETS.find((p) => p.keys.length === cur.size && p.keys.every((k) => cur.has(k)))
