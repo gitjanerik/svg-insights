@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onActivated } from 'vue'
+import { ref, computed, onMounted, onActivated, onUnmounted, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { listMaps, deleteMap, clearAll } from '../lib/mapStorage.js'
 import { buildMapFromCenter } from '../lib/createMapFlow.js'
 import { useMapSizePreference, equidistanceForWidthKm, defaultMapDims } from '../composables/useMapSizePreference.js'
 import { useNominatim } from '../composables/useNominatim.js'
+import { useSearchKeyboard } from '../composables/useSearchKeyboard.js'
 
 const router = useRouter()
 const maps = ref([])
@@ -205,6 +206,46 @@ async function onSelectSearchResult(r) {
     alert('Kunne ikke opprette kart: ' + (e.message ?? 'ukjent feil'))
   }
 }
+
+// ── Tastaturnavigasjon (desktop) ────────────────────────────────────────
+// Samme combobox-mønster som MapPickerView/GravelPlannerView: pil ned/opp
+// markerer, Enter velger, Escape nullstiller. To lister deler mønsteret:
+//   1. Søketreff (når nedtrekket er åpent) — Enter bygger kart der.
+//   2. «Mine kart» (ellers) — Enter åpner det markerte kartet.
+const { activeIndex: searchActiveIndex, onKeydown: onSearchResultsKeydown } = useSearchKeyboard(results, {
+  onSelect: onSelectSearchResult,
+  onClear: () => { query.value = ''; results.value = [] },
+  optionId: (i) => `maphome-opt-${i}`,
+})
+
+const { activeIndex: mapsActiveIndex, onKeydown: onMapsKeydown } = useSearchKeyboard(maps, {
+  onSelect: (m) => { if (!buildingOnTheFly.value) openMap(m.id) },
+  optionId: (i) => `maphome-map-${i}`,
+})
+
+// Keydown i søkefeltet: åpne nedtrekk → naviger treff; ellers faller
+// piltastene gjennom til kart-lista, så flyten virker uten å flytte fokus.
+function onSearchKeydown(e) {
+  if (showResults.value) onSearchResultsKeydown(e)
+  else if (e.key !== 'Escape') onMapsKeydown(e)
+}
+
+// Piltaster skal også virke uten fokus i søkefeltet (rett etter side-last).
+// Interaktive elementer (knapper, input) beholder sin egen Enter/Escape.
+function onWindowKeydown(e) {
+  if (buildingOnTheFly.value) return
+  const t = e.target
+  if (t instanceof HTMLElement &&
+      (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(t.tagName) || t.isContentEditable)) return
+  onMapsKeydown(e)
+}
+
+// Duplikat-add er ufarlig (samme funksjonsreferanse er no-op), så mounted +
+// activated kan begge legge til — viewet lever i keep-alive.
+onMounted(() => window.addEventListener('keydown', onWindowKeydown))
+onActivated(() => window.addEventListener('keydown', onWindowKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onWindowKeydown))
+onDeactivated(() => window.removeEventListener('keydown', onWindowKeydown))
 </script>
 
 <template>
@@ -258,6 +299,10 @@ async function onSelectSearchResult(r) {
             <circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/>
           </svg>
           <input v-model="query" type="search" autocomplete="off" autocorrect="off"
+                 @keydown="onSearchKeydown"
+                 role="combobox" aria-autocomplete="list" :aria-expanded="showResults"
+                 aria-controls="maphome-results"
+                 :aria-activedescendant="searchActiveIndex >= 0 ? `maphome-opt-${searchActiveIndex}` : undefined"
                  placeholder="Søk etter sted, postnummer eller adresse"
                  :class="['w-full pl-11 py-3.5 rounded-xl bg-white/[0.06] border text-[15px]',
                           'placeholder-white/35 focus:outline-none focus:bg-white/[0.1]',
@@ -286,15 +331,19 @@ async function onSelectSearchResult(r) {
 
         <!-- Søkeresultater -->
         <Transition name="fade">
-          <div v-if="showResults"
+          <div v-if="showResults" id="maphome-results" role="listbox"
                class="absolute left-0 right-0 mt-1 rounded-xl bg-zinc-900/98 backdrop-blur
                       border border-white/10 shadow-2xl max-h-[50dvh] overflow-y-auto z-30">
             <div v-if="results.length === 0 && !isSearching"
                  class="px-4 py-3 text-[13px] text-white/50">Ingen treff</div>
-            <button v-for="r in results" :key="r.id"
+            <button v-for="(r, index) in results" :key="r.id"
+                    :id="`maphome-opt-${index}`" role="option"
+                    :aria-selected="index === searchActiveIndex"
                     @click="onSelectSearchResult(r)"
-                    class="w-full text-left px-4 py-2.5 active:bg-white/10 transition border-b
-                           border-white/8 last:border-0">
+                    @mousemove="searchActiveIndex = index"
+                    class="w-full text-left px-4 py-2.5 transition border-b
+                           border-white/8 last:border-0"
+                    :class="index === searchActiveIndex ? 'bg-white/12' : 'active:bg-white/10'">
               <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
               <div class="text-[11px] text-white/50 truncate">{{ r.name }}</div>
             </button>
@@ -339,8 +388,12 @@ async function onSelectSearchResult(r) {
         <div class="w-5 h-5 border-2 border-white/15 border-t-white/60 rounded-full animate-spin"/>
       </div>
 
-      <div v-for="m in maps" :key="m.id"
-           class="mb-2 rounded-lg bg-white/[0.04] border border-white/10 overflow-hidden">
+      <div v-for="(m, index) in maps" :key="m.id"
+           :id="`maphome-map-${index}`"
+           class="mb-2 rounded-lg border overflow-hidden"
+           :class="index === mapsActiveIndex
+             ? 'border-emerald-300/50 bg-white/[0.08]'
+             : 'border-white/10 bg-white/[0.04]'">
         <div class="flex items-center gap-3 px-4 py-3 active:bg-white/[0.07]"
              @click="openMap(m.id)">
           <div class="shrink-0 w-10 h-10 rounded-lg bg-slate-500/15 border border-slate-300/25

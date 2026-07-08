@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 — v12.1.63: Tastaturnavigasjon på kart-forsiden — piltaster + Enter
+
+Kart-forsiden (MapHomeView) har fått samme tastaturstøtte som ruteplanleggeren og søket inne i kartet, via den delte `useSearchKeyboard`-composablen. To lister deler mønsteret: er søke-nedtrekket åpent, markerer pil ned/opp treffene og Enter bygger kart der (Escape nullstiller søket); ellers navigerer piltastene «Mine kart»-lista og Enter åpner det markerte kartet — også uten fokus i søkefeltet (window-lytter som viker for knapper/inputs). Markert rad utheves visuelt og auto-scrolles inn i visning; søkefeltet har fått fullt combobox-ARIA-oppsett (`aria-activedescendant` m.m.) som i MapPickerView. I tillegg: dev-serveren kompilerte ikke MapView.vue («`<Transition>` expects exactly one child») — kulturminne-skuffen og long-press-menyen lå som to uavhengige v-if-søsken i samme `<Transition>` (sjekken er dev-only, derfor passerte prod-bygget); de har nå hver sin Transition, og kommentar-noder er flyttet ut av taggen. Verifisert ende-til-ende med Playwright (piltast-markering, Enter åpner markert kart, passthrough fra søkefeltet).
+
+---
+
 ## 2026-07-08 — v12.1.62: MCP juster_kart tema — dark/sepia/curves m.fl. med delt tema-kilde
 
 `juster_kart` har fått `tema`-parameter med alle appens 8 temaer (light/dark/mono-sepia/mono-indigo/mono-slate/mocha/forest/curves); verktøys-beskrivelsen genereres fra katalogens `$comment` så MCP kan liste temaene og forklare forskjellene. Tema-logikken er samlet i **én delt kilde**: `themeVarEntries()`/`allThemeVarNames()` i `lib/mapSettingsApply.js` gir CSS-variablene per tema — MapViews `applyTheme()` er refaktorert til å konsumere dem (live-DOM), og ny `buildThemeCss()` baker de samme variablene inn i statiske MCP-SVG-er. **Curves** speiler appens art-mode: auto-skjuler alle lag unntatt høydekurver (kraftig gul, `#ffd84a`); eksplisitt preset/lag-valg vinner over auto-skjulingen, og relieff finnes uansett ikke i headless-bygde kart. Verifisert ende-til-ende med Chromium-raster av dark- og curves-kart. 1112 tester passerer (+7).
