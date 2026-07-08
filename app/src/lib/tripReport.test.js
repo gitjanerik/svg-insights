@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTripReportSvg, extractMapInner } from './tripReport.js'
+import { buildTripReportSvg, buildTripReportMarkdown, extractMapInner } from './tripReport.js'
 
 describe('extractMapInner', () => {
   it('trekker ut viewBox og indre innhold', () => {
@@ -51,5 +51,39 @@ describe('buildTripReportSvg', () => {
   it('tåler manglende profil', () => {
     const svg = buildTripReportSvg({ ...base, profile: null })
     expect(svg).toContain('Ingen høydeprofil')
+  })
+})
+
+describe('buildTripReportMarkdown', () => {
+  const base = {
+    title: 'Bondivann → Vardåsen',
+    summary: { distanceM: 2906, ascentM: 283, timeMin: 73, viaNavn: ['Wentzelhytta'] },
+    enrichment: {
+      kulturminner: [{ navn: 'Gravrøys', vernetype: 'Automatisk fredet', langsM: 800, avstandM: 40 }],
+      reservater: [{ navn: 'Oppsjømyrene', verneform: 'Naturreservat', arealKm2: 1.2 }],
+      arter: { observasjoner: 120, arter: 45, arterCappet: false, rodliste: { antall: 3, perKategori: { CR: 0, EN: 1, VU: 1, NT: 1 }, arter: [{ kategori: 'EN', vitenskapelig: 'Sci', norsk: 'Hønsehauk', gruppe: 'Fugler' }] } },
+      kilder: { kulturminne: true, vern: true, arter: true },
+    },
+    cues: [{ text: 'Etter 1,2 km: ta til venstre ved Abbortjern' }],
+  }
+
+  it('lager markdown med overskrifter, funn og nummerert veibeskrivelse', () => {
+    const md = buildTripReportMarkdown(base)
+    expect(md).toContain('# Bondivann → Vardåsen')
+    expect(md).toContain('**2,9 km · ↑283 m · ~73 min · via Wentzelhytta**')
+    expect(md).toContain('## Fredede kulturminner (1)')
+    expect(md).toContain('- Gravrøys — Automatisk fredet')
+    expect(md).toContain('## Verneområder')
+    expect(md).toContain('- Oppsjømyrene — Naturreservat, 1.2 km²')
+    expect(md).toContain('**Rødlistet: 3**')
+    expect(md).toContain('- Hønsehauk (EN, Fugler)')
+    expect(md).toContain('1. Etter 1,2 km: ta til venstre ved Abbortjern')
+  })
+
+  it('viser dvale-tekst når kilder er nede', () => {
+    const md = buildTripReportMarkdown({ ...base, enrichment: { kilder: { kulturminne: false, vern: false, arter: false } } })
+    expect(md).toContain('_Kilde utilgjengelig (Riksantikvaren)_')
+    expect(md).toContain('_Kilde utilgjengelig (Naturbase)_')
+    expect(md).toContain('_Kilde utilgjengelig (GBIF)_')
   })
 })

@@ -21,7 +21,7 @@ import { geocodePlace } from '../src/lib/geocode.js'
 import { buildRouteOverlaySvg, injectOverlay } from '../src/lib/routeOverlay.js'
 import { enrichRoute } from '../src/lib/routeEnrichment.js'
 import { routeCues, extractNamedPointsFromSvg } from '../src/lib/routeCues.js'
-import { buildTripReportSvg } from '../src/lib/tripReport.js'
+import { buildTripReportSvg, buildTripReportMarkdown } from '../src/lib/tripReport.js'
 import { collectRedListed } from '../src/lib/redListNo.js'
 import { fetchFredaKulturminner } from '../src/lib/kulturminneWfs.js'
 import { fetchProtectedArea } from '../src/lib/verneFetcher.js'
@@ -515,8 +515,8 @@ server.registerTool(
     description:
       'Lager én komplett turrapport som SVG: kartutsnitt med ruten tegnet inn, høydeprofil, ' +
       'funn langs ruten (kulturminner / verneområder / rødlistede arter) og en veibeskrivelse ' +
-      'med sti-kryss-varsler («ta til venstre ved …»). Skriver filen til disk og returnerer ' +
-      'stien. Ett kall = ferdig, delbar oppsummering av hele turen.',
+      'med sti-kryss-varsler («ta til venstre ved …»). Skriver både SVG-en og en delbar ' +
+      'Markdown-versjon (.md) til disk og returnerer stiene. Ett kall = ferdig oppsummering.',
     inputSchema: {
       start: z.object({ lat: z.number(), lon: z.number() }).describe('Startpunkt'),
       maal: z.object({ lat: z.number(), lon: z.number() }).describe('Målpunkt'),
@@ -566,24 +566,29 @@ server.registerTool(
 
     const climb = climbFor(route)
     const lengthM = found[sel].lengthM
-    const svg = buildTripReportSvg({
+    const reportArgs = {
       title: tittel ?? `${startNavn ?? 'Start'} → ${maalNavn ?? 'Mål'}`,
       summary: {
         distanceM: lengthM, ascentM: climb?.ascent, descentM: climb?.descent,
         timeMin: estWalkMinutes(lengthM, climb?.ascent, climb?.descent),
         viaNavn: viaPts.map(v => v.navn).filter(Boolean),
       },
-      mapSvg, profile, enrichment, cues,
-    })
+      enrichment, cues,
+    }
+    const svg = buildTripReportSvg({ ...reportArgs, mapSvg, profile })
+    const md = buildTripReportMarkdown(reportArgs)
 
     const slug = navn.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
     const svgPath = resolve(filsti ?? resolve(tmpdir(), 'svg-insights-mcp', `${slug}.svg`))
+    const mdPath = svgPath.replace(/\.svg$/i, '') + '.md'
     mkdirSync(dirname(svgPath), { recursive: true })
     writeFileSync(svgPath, svg)
+    writeFileSync(mdPath, md)
 
     return jsonResult({
       status: 'ok',
       svgPath,
+      mdPath,
       svgKb: Math.round(svg.length / 1024),
       rute: {
         lengdeM: Math.round(lengthM),

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 — v12.1.60: Turrapport skriver også delbar Markdown (.md)
+
+`turrapport_svg` skriver nå i tillegg en Markdown-versjon (`.md`) ved siden av SVG-en — samme innhold som tekst (tittel + sammendrag, kulturminner, verneområder, arter/rødliste, nummerert veibeskrivelse), grei å lime inn, lese på mobil eller sende videre. Ny ren `buildTripReportMarkdown()` i `lib/tripReport.js` (kartet utelates); verktøyet returnerer nå både `svgPath` og `mdPath`. Enhetstestet. 1087 tester passerer.
+
+---
+
 ## 2026-07-08 — v12.1.59: MCP finn_poi_paa_kart — les navngitte interessepunkter fra kartet
 
 Nytt MCP-verktøy `finn_poi_paa_kart` + delt `lib/mapPoi.js`: leser navngitte interessepunkter (topper, hytter, vann, steder, områder, naturreservat) fra sist bygde kart med koordinater, så assistenten kan oppdage mål/via-punkter uten manuell koordinat-oppslag (mates rett inn i planlegg_rute / tegn_rute_svg / turrapport_svg). Etikettene er `<text data-label>`-elementer; `extractMapPoiFromSvg` (headless.js, linkedom) summerer forelder-`translate` + etikettens egen x/y (mm-aware) så både absolutt-plasserte (hytte/vann) og gruppe-plasserte (topp) navn havner riktig i SVG-meter, deretter → WGS84. Filtrering på type + fritekst; dedup av LOD-dubletter. **Navnetetthet-avklaring:** appens «Navnetetthet»-innstilling (Lav/Middels/Høy) påvirker IKKE MCP — den er ren runtime-visning (toggler CSS-klassen `name-lod-off`, fjerner aldri `<text>`), og MCP bygger uansett sin egen SVG server-side uten den innstillingen. finn_poi/routeCues leser hele navne-settet, som appens søk. 1085 lib/composable-tester passerer. Appens views uendret.

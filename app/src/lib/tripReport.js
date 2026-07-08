@@ -157,3 +157,57 @@ export function buildTripReportSvg(opts = {}) {
 ${parts.join('\n')}
 </svg>`
 }
+
+/**
+ * Delbar Markdown-versjon av turrapporten (samme innhold som SVG-en, som ren
+ * tekst — grei å lime inn, lese på mobil eller sende videre). Tar samme
+ * `summary`/`enrichment`/`cues` som buildTripReportSvg (kartet utelates).
+ */
+export function buildTripReportMarkdown(opts = {}) {
+  const { title = 'Turrapport', summary = {}, enrichment = {}, cues = [] } = opts
+  const L = []
+  L.push(`# ${title}`, '')
+
+  const sum = []
+  if (summary.distanceM != null) sum.push(fmtKm(summary.distanceM))
+  if (summary.ascentM != null) sum.push(`↑${Math.round(summary.ascentM)} m`)
+  if (summary.descentM != null) sum.push(`↓${Math.round(summary.descentM)} m`)
+  if (summary.timeMin != null) sum.push(`~${summary.timeMin} min`)
+  if (summary.viaNavn?.length) sum.push(`via ${summary.viaNavn.join(', ')}`)
+  if (sum.length) L.push(`**${sum.join(' · ')}**`, '')
+
+  const k = enrichment.kilder ?? {}
+  const km = enrichment.kulturminner ?? []
+  L.push(`## Fredede kulturminner${k.kulturminne ? ` (${km.length})` : ''}`)
+  if (!k.kulturminne) L.push('_Kilde utilgjengelig (Riksantikvaren)_')
+  else if (!km.length) L.push('_Ingen langs ruten_')
+  else for (const it of km.slice(0, 12)) L.push(`- ${it.navn ?? 'Kulturminne'}${it.vernetype ? ` — ${it.vernetype}` : ''} (${fmtKm(it.langsM)} inn, ${it.avstandM} m fra sti)`)
+  L.push('')
+
+  const res = enrichment.reservater ?? []
+  L.push('## Verneområder')
+  if (!k.vern) L.push('_Kilde utilgjengelig (Naturbase)_')
+  else if (!res.length) L.push('_Ingen krysses_')
+  else for (const r of res) L.push(`- ${r.navn}${r.verneform ? ` — ${r.verneform}` : ''}${r.arealKm2 ? `, ${r.arealKm2.toFixed(1)} km²` : ''}`)
+  L.push('')
+
+  const arter = enrichment.arter
+  L.push('## Arter i korridoren')
+  if (!k.arter || !arter) L.push('_Kilde utilgjengelig (GBIF)_')
+  else {
+    L.push(`${arter.observasjoner} observasjoner · ${arter.arter} arter${arter.arterCappet ? '+' : ''}`)
+    if (arter.rodliste) {
+      const bc = arter.rodliste.perKategori
+      L.push('', `**Rødlistet: ${arter.rodliste.antall}** (CR ${bc.CR} · EN ${bc.EN} · VU ${bc.VU} · NT ${bc.NT})`)
+      for (const sp of arter.rodliste.arter.slice(0, 12)) L.push(`- ${sp.norsk || sp.vitenskapelig || 'art'} (${sp.kategori}${sp.gruppe ? ', ' + sp.gruppe : ''})`)
+    }
+  }
+  L.push('')
+
+  L.push('## Veibeskrivelse')
+  if (!cues.length) L.push('_Ingen tydelige kryss-valg oppdaget_')
+  else cues.forEach((c, i) => L.push(`${i + 1}. ${c.text}`))
+  L.push('')
+
+  return L.join('\n')
+}
