@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-08 — v12.1.64: Meter-eksakt UTM-forward — siste rest av Kirkenes-forskyvningen
+
+Oppfølging av kyst-forskyvningen (v12.1.52/53). Diagnose med ekte data viste at appens EGEN gjenværende feil var forward-projeksjonen: Snyder-serien hadde −4,0 m Ø-V-bias i Kirkenes og −5,4 m i Vardø mot sann UTM32 — Kartverket-rastrene (DEM/WCS) ligger i sann UTM32, så alle OSM-lag ble tegnet ~4 m vest for terrenget i Øst-Finnmark. `wgs84ToUtmZone` bruker nå 6. ordens Krüger-serie (Karney/GeographicLib, samme metode som proj sin etmerc) — verifisert < 1 mm mot proj4 fra Lindesnes til Vardø i både sone 32 og 33 (18 nye fasit-tester). Inversen itererer mot forward som før og arver presisjonen. VIKTIG kontekst fra diagnosen: mesteparten av det synlige avviket mellom kystlinja og naturreservat-omrisset ved Kirkenes («Kirkeneshalvøya dyrelivsfredning», OSM way 230772203) er datakvalitet i OSM — grensa er grovt digitalisert og vandrer ±30–40 m rundt kystlinja (målt: median −10 m, p10 −39 m, p90 +32 m signert avstand). Pipelinen tegner grensa trofast (median 0,2 m fra rådata i ferdig SVG).
+
+---
+
 ## 2026-07-08 — v12.1.63: Tastaturnavigasjon på kart-forsiden — piltaster + Enter
 
 Kart-forsiden (MapHomeView) har fått samme tastaturstøtte som ruteplanleggeren og søket inne i kartet, via den delte `useSearchKeyboard`-composablen. To lister deler mønsteret: er søke-nedtrekket åpent, markerer pil ned/opp treffene og Enter bygger kart der (Escape nullstiller søket); ellers navigerer piltastene «Mine kart»-lista og Enter åpner det markerte kartet — også uten fokus i søkefeltet (window-lytter som viker for knapper/inputs). Markert rad utheves visuelt og auto-scrolles inn i visning; søkefeltet har fått fullt combobox-ARIA-oppsett (`aria-activedescendant` m.m.) som i MapPickerView. I tillegg: dev-serveren kompilerte ikke MapView.vue («`<Transition>` expects exactly one child») — kulturminne-skuffen og long-press-menyen lå som to uavhengige v-if-søsken i samme `<Transition>` (sjekken er dev-only, derfor passerte prod-bygget); de har nå hver sin Transition, og kommentar-noder er flyttet ut av taggen. Verifisert ende-til-ende med Playwright (piltast-markering, Enter åpner markert kart, passthrough fra søkefeltet).
