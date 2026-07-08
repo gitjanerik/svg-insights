@@ -23,6 +23,7 @@ import { buildStrokeOverrideCss, STROKE_GROUPS } from '../lib/strokeOverrides.js
 import {
   LAYERS, MARINE_LAYER_KEYS, DEFAULT_VISIBLE_LAYER_KEYS, LAYER_PRESETS,
 } from '../lib/mapLayerCatalog.js'
+import { themeVarEntries, allThemeVarNames } from '../lib/mapSettingsApply.js'
 import { declutter, makeMinZoomOf } from '../lib/labelDeclutter.js'
 import { trackLengthM, trackDurationMs, downloadGpx } from '../lib/gpxExport.js'
 import { norwegianName } from '../lib/placeName.js'
@@ -6139,29 +6140,10 @@ const scaleBar = computed(() => {
 function applyTheme() {
   const root = mapInnerRef.value
   if (!root || !svgHostRef.value?.querySelector('svg')) return
-  const themes = isomCatalog.themes ?? {}
-  const allCodes = new Set()
-  const allLabels = new Set()
-  for (const t of Object.values(themes)) {
-    for (const c of Object.keys(t.categories ?? {})) allCodes.add(c)
-    for (const l of Object.keys(t.labels ?? {})) allLabels.add(l)
-  }
-  root.style.removeProperty('--bg')
-  root.style.removeProperty('--art-fill-opacity')
-  for (const code of allCodes) {
-    root.style.removeProperty(`--iso-${code}-fill`)
-    root.style.removeProperty(`--iso-${code}-stroke`)
-    root.style.removeProperty(`--iso-${code}-overlay-stroke`)
-  }
-  for (const name of allLabels) {
-    root.style.removeProperty(`--label-${name}-fill`)
-    root.style.removeProperty(`--label-${name}-halo`)
-  }
-  // Dybde-skala-variabler (sjø/dybdeareal). Ryddes ALLTID først — også før
-  // lys-tema sin tidlige retur — så et mørkt temas dybde-skala ikke henger
-  // igjen ved bytte tilbake til lys (der inline-fallbacken skal gjelde).
-  for (let i = 1; i <= 5; i++) root.style.removeProperty(`--iso-depth-${i}`)
-  const t = themes[currentTheme.value]
+  // Tema-variablene kommer fra samme delte kilde som MCP-ens juster_kart
+  // (lib/mapSettingsApply.js) — rydd alt et tema KAN sette, sett så gjeldende.
+  for (const name of allThemeVarNames()) root.style.removeProperty(name)
+  const t = isomCatalog.themes?.[currentTheme.value]
   // Viewport-bakgrunn: mal kartets bakgrunnsfarge på den FASTE (utransformerte)
   // viewporten, så hele kartflaten har riktig base-farge — også letterbox-kanter
   // og periferi-fliser som ennå ikke er lastet. v10.1.23: GJELDER NÅ OGSÅ
@@ -6173,26 +6155,8 @@ function applyTheme() {
     wrapperRef.value.style.backgroundColor = (t && t.background) ? t.background : ''
   }
   if (!t) return
-  // Fyll-opacity (subtilt mørke + art-modes) — settes selv for light=1 så
-  // tidligere art-mode-rest ikke henger igjen.
-  if (typeof t.fillOpacity === 'number' && t.fillOpacity < 1) {
-    root.style.setProperty('--art-fill-opacity', String(t.fillOpacity))
-  }
-  if (currentTheme.value === 'light') return
-  if (t.background) root.style.setProperty('--bg', t.background)
-  for (const [code, def] of Object.entries(t.categories ?? {})) {
-    if (def.fill?.color) root.style.setProperty(`--iso-${code}-fill`, def.fill.color)
-    if (def.stroke?.color) root.style.setProperty(`--iso-${code}-stroke`, def.stroke.color)
-    if (def.overlayStroke?.color) root.style.setProperty(`--iso-${code}-overlay-stroke`, def.overlayStroke.color)
-  }
-  // Tema-tilpasset dybde-skala (grunnest → dypest). Uten dette ble sjø-/dybde-
-  // flatene hengende på den lyse standard-skalaen i mørke temaer.
-  if (Array.isArray(t.depthScale)) {
-    t.depthScale.forEach((c, i) => root.style.setProperty(`--iso-depth-${i + 1}`, c))
-  }
-  for (const [name, def] of Object.entries(t.labels ?? {})) {
-    if (def.color) root.style.setProperty(`--label-${name}-fill`, def.color)
-    if (def.haloColor) root.style.setProperty(`--label-${name}-halo`, def.haloColor)
+  for (const [name, value] of themeVarEntries(currentTheme.value)) {
+    root.style.setProperty(name, value)
   }
 }
 

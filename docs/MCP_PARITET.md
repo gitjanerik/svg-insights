@@ -31,7 +31,7 @@ MCP-status, så paritet kan vedlikeholdes uten å avklare funksjon for funksjon.
 | Dybde (Sjøkart) på hovedkart | `MapView.vue` `toggleDepth` | A | ✅ `juster_kart` `lag.dybde` (v12.1.61) |
 | Global strek-skala (Strek-knott) | `--stroke-scale`, `symbolizer.js` | A | ✅ `juster_kart` `strekSkala` (v12.1.61) |
 | Per-gruppe strektykkelse (Strek-panel) | `lib/strokeOverrides.js` `STROKE_GROUPS` | A | ✅ `juster_kart` `strek` (v12.1.61) |
-| Tema (Lyst/Mørkt/Sepia/Indigo/Slate/Curves) | `MapView.vue` `onThemeTap`, `isomCatalog.themes` | A | ❌ kandidat (`juster_kart` `tema`) |
+| Tema (Lyst/Mørkt/Sepia/Indigo/Slate/Mocha/Forest/Curves) | `lib/mapSettingsApply.js` `themeVarEntries` (delt), `isomCatalog.themes` | A | ✅ `juster_kart` `tema` (v12.1.62); Curves auto-skjuler lag som i appen |
 | Skrift på kart-navn (font-par) | `useLabelFonts.js` | A | ❌ kandidat |
 | Tekststørrelse på etiketter | `MapView.vue` `labelScaleSlider` | A | ❌ kandidat |
 | Relieff på/av | `useReliefSettings.js` | A | ❌ kandidat |

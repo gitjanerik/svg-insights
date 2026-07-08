@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   resolveVisibleLayers, buildSettingsCss, applyMapSettings, SETTINGS_STYLE_ID,
+  buildThemeCss, listThemes,
 } from './mapSettingsApply.js'
 import {
   LAYERS, ALL_LAYER_KEYS, DEFAULT_VISIBLE_LAYER_KEYS, DEFAULT_OFF_LAYERS,
@@ -97,6 +98,64 @@ describe('buildSettingsCss', () => {
     expect(css).toContain('[data-iso="505"]')
     expect(css).toContain('* 0.5')
     expect(() => buildSettingsCss({ strek: { tull: 2 } })).toThrow(/Ukjent strek-gruppe/)
+  })
+})
+
+describe('tema', () => {
+  it('listThemes returnerer alle katalog-temaer med etikett og beskrivelse', () => {
+    const themes = listThemes()
+    const keys = themes.map((t) => t.key)
+    for (const k of ['light', 'dark', 'mono-sepia', 'mono-indigo', 'mono-slate', 'mocha', 'forest', 'curves']) {
+      expect(keys).toContain(k)
+    }
+    for (const t of themes) {
+      expect(t.label).toBeTruthy()
+      expect(t.beskrivelse).toBeTruthy()
+    }
+    expect(themes.find((t) => t.key === 'curves').autoHideLayers).toBe(true)
+    expect(themes.find((t) => t.key === 'dark').autoHideLayers).toBe(false)
+  })
+
+  it('light = katalog-defaults → ingen CSS', () => {
+    expect(buildThemeCss('light')).toBe('')
+  })
+
+  it('dark setter samme CSS-variabler som appens applyTheme', () => {
+    const css = buildThemeCss('dark')
+    expect(css).toContain('--bg: #2a1f15')
+    expect(css).toContain('--iso-101-stroke: #f0c275')
+    expect(css).toContain('--art-fill-opacity: 0.85')
+    expect(css).toContain('--iso-depth-1: #356f8c')
+    expect(css).toContain('--label-place-fill: #e8e0d0')
+    expect(css.startsWith('.isom-map {')).toBe(true)
+  })
+
+  it('ukjent tema kaster med liste over gyldige', () => {
+    expect(() => buildThemeCss('neon')).toThrow(/Ukjent tema .*curves/)
+  })
+
+  it('curves auto-skjuler alle lag unntatt høydekurver (gul)', () => {
+    const v = resolveVisibleLayers({ tema: 'curves' })
+    expect([...v]).toEqual(['kontur'])
+    const css = buildSettingsCss({ tema: 'curves' })
+    expect(css).toContain('--iso-101-stroke: #ffd84a')
+    expect(css).toContain('[data-layer="sti"]')
+    expect(css).toContain('[data-layer="vann"]')
+    expect(css).not.toContain('[data-layer="kontur"], ')
+  })
+
+  it('lag-overstyring og preset vinner over curves-basen', () => {
+    const medVann = resolveVisibleLayers({ tema: 'curves', lag: { vann: true } })
+    expect(medVann.has('vann')).toBe(true)
+    expect(medVann.has('sti')).toBe(false)
+    const medPreset = resolveVisibleLayers({ tema: 'curves', preset: 'tur' })
+    expect(medPreset.has('sti')).toBe(true)
+  })
+
+  it('vanlig tema (dark) endrer ikke lag-synligheten', () => {
+    const v = resolveVisibleLayers({ tema: 'dark' })
+    expect(v.has('sti')).toBe(true)
+    expect(v.has('kontur')).toBe(true)
   })
 })
 
