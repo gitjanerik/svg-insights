@@ -4,7 +4,7 @@
 // Kjør: node mcp/server.js  (eller npm run mcp fra app/)
 // Registrert for Claude Code i repo-rotens .mcp.json.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -18,6 +18,13 @@ import { sampleElevation } from '../src/lib/demSampling.js'
 import { buildRouteGpx } from '../src/lib/gpxExport.js'
 import { geocodePlace } from '../src/lib/geocode.js'
 import { buildRouteOverlaySvg, injectOverlay } from '../src/lib/routeOverlay.js'
+import { enrichRoute } from '../src/lib/routeEnrichment.js'
+import { routeCues, extractNamedPointsFromSvg } from '../src/lib/routeCues.js'
+import { buildTripReportSvg } from '../src/lib/tripReport.js'
+import { collectRedListed } from '../src/lib/redListNo.js'
+import { fetchFredaKulturminner } from '../src/lib/kulturminneWfs.js'
+import { fetchProtectedArea } from '../src/lib/verneFetcher.js'
+import { fetchSpeciesSummary } from '../src/lib/gbifSpecies.js'
 
 // Sist bygde kart + avledet tilstand, så rute-verktøyene slipper re-bygging.
 const state = {
@@ -131,6 +138,41 @@ function downsample(coords, n = 80) {
 
 function jsonResult(obj) {
   return { content: [{ type: 'text', text: JSON.stringify(obj, null, 2) }] }
+}
+
+// Rødliste-oppslag fra disk (public/data/redlist-no.json, bygget av CI). Cachet;
+// null hvis bundelen mangler → rødliste-seksjonen går i dvale (aldri oppdiktet).
+let _redList
+function loadRedListDisk() {
+  if (_redList !== undefined) return _redList
+  try {
+    _redList = JSON.parse(readFileSync(new URL('../public/data/redlist-no.json', import.meta.url), 'utf8'))
+  } catch { _redList = null }
+  return _redList
+}
+
+// De ekte fetcherne pakket for enrichRoute (injiseres så lib-en er testbar).
+const ENRICH_FETCHERS = {
+  fetchFredaKulturminner: (bbox, o) => fetchFredaKulturminner(bbox, o),
+  fetchProtectedArea: (lat, lon, o) => fetchProtectedArea(lat, lon, o),
+  fetchSpeciesSummary: (geom, o) => fetchSpeciesSummary(geom, o),
+}
+
+// Planlegg rute gjennom punktene [start, ...via, maal], velg én, og berik den
+// langs traséen (kulturminner/vern/arter). Delt av berik_rute og turrapport_svg.
+async function planAndEnrich(points, { bufferM = 150, ruteIndeks = 0 } = {}) {
+  const { found, meta, snaps } = planThrough(points)
+  const sel = Math.min(ruteIndeks, found.length - 1)
+  const route = found[sel].coordinates
+  const enrichment = await enrichRoute(route, {
+    toWgs84: (x, y) => svgToWgs84(x, y, meta),
+    toSvg: (lat, lon) => wgs84ToSvg(lat, lon, meta),
+    bufferM,
+    fetchers: ENRICH_FETCHERS,
+    collectRedListed,
+    redListLookup: loadRedListDisk(),
+  })
+  return { found, sel, route, meta, snaps, enrichment }
 }
 
 const server = new McpServer({ name: 'svg-insights', version: '0.1.0' })
@@ -424,6 +466,133 @@ server.registerTool(
         estimertGangtidMin: estWalkMinutes(valgt.lengthM, climb?.ascent, climb?.descent),
       },
       snappingM: { start: Math.round(startSnap.node.distM), maal: Math.round(maalSnap.node.distM) },
+    })
+  },
+)
+
+server.registerTool(
+  'berik_rute',
+  {
+    title: 'Berik rute (kulturminner / vern / arter)',
+    description:
+      'Planlegger en rute (evt. innom via-punkter) på sist bygde kart og finner hva som ' +
+      'ligger LANGS den: fredede kulturminner (Riksantikvaren), verneområder ruten går ' +
+      'gjennom (Naturbase), og rødlistede arter i korridoren (GBIF × norsk rødliste). ' +
+      'Hver kilde faller pent tilbake til tomt hvis den er utilgjengelig (se «kilder»).',
+    inputSchema: {
+      start: z.object({ lat: z.number(), lon: z.number() }).describe('Startpunkt'),
+      maal: z.object({ lat: z.number(), lon: z.number() }).describe('Målpunkt'),
+      via: z.array(z.object({ lat: z.number(), lon: z.number(), navn: z.string().optional() }))
+        .optional().describe('Via-punkter ruten må innom, i rekkefølge'),
+      bufferM: z.number().min(20).max(1000).default(150).describe('Korridor-bredde (halv) i meter'),
+    },
+  },
+  async ({ start, maal, via, bufferM }) => {
+    requireMap()
+    const { found, sel, route, enrichment } = await planAndEnrich([start, ...(via ?? []), maal], { bufferM })
+    const climb = climbFor(route)
+    return jsonResult({
+      status: 'ok',
+      rute: {
+        lengdeM: Math.round(found[sel].lengthM),
+        stigningM: climb?.ascent ?? null,
+        fallM: climb?.descent ?? null,
+        estimertGangtidMin: estWalkMinutes(found[sel].lengthM, climb?.ascent, climb?.descent),
+      },
+      kulturminner: enrichment.kulturminner,
+      reservater: enrichment.reservater,
+      arter: enrichment.arter,
+      kilder: enrichment.kilder,
+    })
+  },
+)
+
+server.registerTool(
+  'turrapport_svg',
+  {
+    title: 'Turrapport (samle-SVG)',
+    description:
+      'Lager én komplett turrapport som SVG: kartutsnitt med ruten tegnet inn, høydeprofil, ' +
+      'funn langs ruten (kulturminner / verneområder / rødlistede arter) og en veibeskrivelse ' +
+      'med sti-kryss-varsler («ta til venstre ved …»). Skriver filen til disk og returnerer ' +
+      'stien. Ett kall = ferdig, delbar oppsummering av hele turen.',
+    inputSchema: {
+      start: z.object({ lat: z.number(), lon: z.number() }).describe('Startpunkt'),
+      maal: z.object({ lat: z.number(), lon: z.number() }).describe('Målpunkt'),
+      via: z.array(z.object({ lat: z.number(), lon: z.number(), navn: z.string().optional() }))
+        .optional().describe('Via-punkter ruten må innom, i rekkefølge'),
+      bufferM: z.number().min(20).max(1000).default(150).describe('Korridor-bredde (halv) i meter for funn'),
+      ruteIndeks: z.number().int().min(0).default(0).describe('Hvilket rute-alternativ som brukes'),
+      startNavn: z.string().optional().describe('Etikett ved start'),
+      maalNavn: z.string().optional().describe('Etikett ved mål'),
+      tittel: z.string().optional().describe('Rapport-tittel'),
+      navn: z.string().default('turrapport').describe('Kartnavn, brukes i filnavn'),
+      filsti: z.string().optional().describe('Hvor SVG-en skrives (default: tmp)'),
+    },
+  },
+  async ({ start, maal, via, bufferM, ruteIndeks, startNavn, maalNavn, tittel, navn, filsti }) => {
+    requireMap()
+    const viaPts = via ?? []
+    const { found, sel, route, snaps, enrichment } = await planAndEnrich(
+      [start, ...viaPts, maal], { bufferM, ruteIndeks })
+
+    // Rute-overlay på kartet (samme stil som tegn_rute_svg).
+    const startSnap = snaps[0], maalSnap = snaps[snaps.length - 1]
+    const a = startSnap.p, b = maalSnap.p
+    const connectors = [
+      { from: [a.x, a.y], to: startSnap.node.pos },
+      { from: [b.x, b.y], to: maalSnap.node.pos },
+    ]
+    const markers = []
+    if (startNavn) markers.push({ x: a.x, y: a.y, color: '#16a34a', label: startNavn, anchor: 'start' })
+    viaPts.forEach((v, i) => markers.push({ x: snaps[i + 1].p.x, y: snaps[i + 1].p.y, color: '#f59e0b', label: v.navn, anchor: 'start' }))
+    if (maalNavn) markers.push({ x: b.x, y: b.y, color: '#dc2626', label: maalNavn, anchor: 'end' })
+    const overlay = buildRouteOverlaySvg({
+      routes: [{ coordinates: route, shortest: found[sel].shortest }],
+      selectedIndex: 0, connectors, markers, start: [a.x, a.y], dest: [b.x, b.y],
+    })
+    const mapSvg = injectOverlay(state.map.svg, overlay)
+
+    // Høydeprofil + sti-kryss-varsler.
+    const profile = sampleProfile({ points: route.map(([x, y]) => ({ x, y })) }, state.map.dem)
+    const rg = ensureRoutingGraph()
+    const namedPoints = extractNamedPointsFromSvg(state.map.svg)
+    const junctionAt = ([x, y]) => { const id = rg.nodeAt([x, y], 5); return id ? rg.graph.degree(id) >= 3 : false }
+    const cues = routeCues(route, { junctionAt, namedPoints })
+
+    const climb = climbFor(route)
+    const lengthM = found[sel].lengthM
+    const svg = buildTripReportSvg({
+      title: tittel ?? `${startNavn ?? 'Start'} → ${maalNavn ?? 'Mål'}`,
+      summary: {
+        distanceM: lengthM, ascentM: climb?.ascent, descentM: climb?.descent,
+        timeMin: estWalkMinutes(lengthM, climb?.ascent, climb?.descent),
+        viaNavn: viaPts.map(v => v.navn).filter(Boolean),
+      },
+      mapSvg, profile, enrichment, cues,
+    })
+
+    const slug = navn.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
+    const svgPath = resolve(filsti ?? resolve(tmpdir(), 'svg-insights-mcp', `${slug}.svg`))
+    mkdirSync(dirname(svgPath), { recursive: true })
+    writeFileSync(svgPath, svg)
+
+    return jsonResult({
+      status: 'ok',
+      svgPath,
+      svgKb: Math.round(svg.length / 1024),
+      rute: {
+        lengdeM: Math.round(lengthM),
+        stigningM: climb?.ascent ?? null,
+        estimertGangtidMin: estWalkMinutes(lengthM, climb?.ascent, climb?.descent),
+      },
+      funn: {
+        kulturminner: enrichment.kulturminner.length,
+        reservater: enrichment.reservater.length,
+        rodliste: enrichment.arter?.rodliste?.antall ?? null,
+        veibeskrivelseSteg: cues.length,
+      },
+      kilder: enrichment.kilder,
     })
   },
 )

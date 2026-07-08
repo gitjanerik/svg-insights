@@ -44,7 +44,7 @@ Browser-avhengighetene i pipeline-koden er få og godt inngjerdet: IndexedDB (`m
 
 ## 4. Scenario A — Lokal stdio-MCP-server (dev + desktop)
 
-**Dette er PoC-en i denne PR-en.** Claude Code (denne repoen har `.mcp.json`) og Claude Desktop starter `node app/mcp/server.js` lokalt og får seks verktøy:
+**Dette er PoC-en i denne PR-en.** Claude Code (denne repoen har `.mcp.json`) og Claude Desktop starter `node app/mcp/server.js` lokalt og får åtte verktøy:
 
 | Verktøy | Gjør | Gjenbruker |
 |---|---|---|
@@ -54,6 +54,8 @@ Browser-avhengighetene i pipeline-koden er få og godt inngjerdet: IndexedDB (`m
 | `eksporter_gpx` | GPX 1.1 `<rte>` med `<ele>`, klar for Garmin/Strava/OsmAnd | `gpxExport.buildRouteGpx` |
 | `sok_sted` | Geokoder et fritekst-stedsnavn til koordinater (Nominatim, Norge) | `geocode.geocodePlace` (delt med `useNominatim`) |
 | `tegn_rute_svg` | Planlegger en rute og tegner stiforslaget inn i kart-SVG-en i Stifinner-stil, i ett kall | `routing.js` + `routeOverlay.buildRouteOverlaySvg` (delt med MapView-stilen) |
+| `berik_rute` | Finner fredede kulturminner / verneområder / rødlistede arter LANGS ruten | `routeEnrichment` × `kulturminneWfs` + `verneFetcher` + `gbifSpecies` × `redListNo` |
+| `turrapport_svg` | Komplett turrapport-SVG: kart + rute + høydeprofil + funn + veibeskrivelse | `routeEnrichment` + `routeCues` + `tripReport` + `sampleProfile` |
 
 **Nytteverdi:**
 
