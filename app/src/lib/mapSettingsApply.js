@@ -13,8 +13,73 @@ import {
   LAYERS, DEFAULT_VISIBLE_LAYER_KEYS, LAYER_PRESETS,
 } from './mapLayerCatalog.js'
 import { buildStrokeOverrideCss, STROKE_GROUPS } from './strokeOverrides.js'
+import isomCatalogDefault from './isomCatalog.json' with { type: 'json' }
 
 export const SETTINGS_STYLE_ID = 'kart-innstillinger'
+
+// Temaene fra isomCatalog.themes i presentabel form (nøkkel, etikett,
+// beskrivelse fra katalogens $comment, og om temaet auto-skjuler lag slik
+// Curves gjør). Delt kilde for MapViews tema-knapper og MCP-ens juster_kart.
+export function listThemes(catalog = isomCatalogDefault) {
+  return Object.entries(catalog.themes ?? {}).map(([key, t]) => ({
+    key,
+    label: t.label ?? key,
+    beskrivelse: t.$comment ?? '',
+    autoHideLayers: !!t.autoHideLayers,
+  }))
+}
+
+/**
+ * CSS-variablene et tema setter, som [navn, verdi]-par — kilden både for
+ * MapViews applyTheme() (live-DOM, style.setProperty) og buildThemeCss()
+ * (statisk SVG): --bg, --iso-<kode>-fill/stroke/overlay-stroke,
+ * --iso-depth-1..5, --label-*-fill/halo og --art-fill-opacity. 'light' er
+ * katalog-defaultene → tom liste. Casing-streker følger med gratis: bakt CSS
+ * faller tilbake på var(--bg).
+ */
+export function themeVarEntries(temaKey, catalog = isomCatalogDefault) {
+  const themes = catalog.themes ?? {}
+  const t = themes[temaKey]
+  if (!t) {
+    throw new Error(`Ukjent tema «${temaKey}» — gyldige: ${Object.keys(themes).join(', ')}`)
+  }
+  const vars = []
+  if (typeof t.fillOpacity === 'number' && t.fillOpacity < 1) {
+    vars.push(['--art-fill-opacity', String(t.fillOpacity)])
+  }
+  if (temaKey !== 'light') {
+    if (t.background) vars.push(['--bg', t.background])
+    for (const [code, def] of Object.entries(t.categories ?? {})) {
+      if (def.fill?.color) vars.push([`--iso-${code}-fill`, def.fill.color])
+      if (def.stroke?.color) vars.push([`--iso-${code}-stroke`, def.stroke.color])
+      if (def.overlayStroke?.color) vars.push([`--iso-${code}-overlay-stroke`, def.overlayStroke.color])
+    }
+    if (Array.isArray(t.depthScale)) {
+      t.depthScale.forEach((c, i) => vars.push([`--iso-depth-${i + 1}`, c]))
+    }
+    for (const [name, def] of Object.entries(t.labels ?? {})) {
+      if (def.color) vars.push([`--label-${name}-fill`, def.color])
+      if (def.haloColor) vars.push([`--label-${name}-halo`, def.haloColor])
+    }
+  }
+  return vars
+}
+
+// Unionen av alle variabel-navn noe tema kan sette — MapViews applyTheme
+// bruker den til å rydde forrige temas variabler før nye settes.
+export function allThemeVarNames(catalog = isomCatalogDefault) {
+  const names = new Set()
+  for (const key of Object.keys(catalog.themes ?? {})) {
+    for (const [name] of themeVarEntries(key, catalog)) names.add(name)
+  }
+  return [...names]
+}
+
+export function buildThemeCss(temaKey, catalog = isomCatalogDefault) {
+  const vars = themeVarEntries(temaKey, catalog)
+  if (!vars.length) return ''
+  return `.isom-map { ${vars.map(([n, v]) => `${n}: ${v}`).join('; ')}; }`
+}
 
 const LAYER_KEY_SET = new Set(LAYERS.map((l) => l.key))
 // 'dybde' er MapViews spesial-toggle (Sjøkart-dybde på hovedkartet) — ikke et
@@ -22,15 +87,19 @@ const LAYER_KEY_SET = new Set(LAYERS.map((l) => l.key))
 const EXTRA_KEYS = new Set(['dybde'])
 
 /**
- * Regn ut hvilke lag som er synlige gitt preset + per-lag-overstyringer —
- * samme semantikk som drawer-en: preset (eller default-synligheten) er
- * utgangspunktet, `lag` skrur enkelt-lag av/på oppå det.
+ * Regn ut hvilke lag som er synlige gitt tema + preset + per-lag-
+ * overstyringer — samme semantikk som drawer-en: preset (eller default-
+ * synligheten) er utgangspunktet, `lag` skrur enkelt-lag av/på oppå det.
+ * Et autoHideLayers-tema (Curves) speiler appens onThemeChange: basen blir
+ * KUN høydekurver — et eksplisitt preset vinner over det, og `lag` justerer
+ * til slutt.
  *
- * @param {{preset?: string, lag?: Record<string, boolean>}} settings
+ * @param {{tema?: string, preset?: string, lag?: Record<string, boolean>}} settings
+ * @param {object} [catalog]
  * @returns {Set<string>} synlige lag-nøkler
  */
-export function resolveVisibleLayers(settings = {}) {
-  const { preset, lag = {} } = settings
+export function resolveVisibleLayers(settings = {}, catalog = isomCatalogDefault) {
+  const { tema, preset, lag = {} } = settings
   let visible
   if (preset) {
     const p = LAYER_PRESETS.find((x) => x.key === preset)
@@ -39,6 +108,8 @@ export function resolveVisibleLayers(settings = {}) {
       throw new Error(`Ukjent preset «${preset}» — gyldige: ${known}`)
     }
     visible = new Set(p.keys)
+  } else if (tema && catalog.themes?.[tema]?.autoHideLayers) {
+    visible = new Set(['kontur'])
   } else {
     visible = new Set(DEFAULT_VISIBLE_LAYER_KEYS)
   }
@@ -62,6 +133,7 @@ export function resolveVisibleLayers(settings = {}) {
  * bygging, derfor !important + display:inline).
  *
  * @param {{
+ *   tema?: string,
  *   preset?: string,
  *   lag?: Record<string, boolean>,
  *   strekSkala?: number,
@@ -71,6 +143,10 @@ export function resolveVisibleLayers(settings = {}) {
  */
 export function buildSettingsCss(settings = {}) {
   const rules = []
+  if (settings.tema) {
+    const themeCss = buildThemeCss(settings.tema)
+    if (themeCss) rules.push(themeCss)
+  }
   const visible = resolveVisibleLayers(settings)
 
   for (const l of LAYERS) {

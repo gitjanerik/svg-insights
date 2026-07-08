@@ -19,7 +19,7 @@ import { sampleElevation } from '../src/lib/demSampling.js'
 import { buildRouteGpx } from '../src/lib/gpxExport.js'
 import { geocodePlace } from '../src/lib/geocode.js'
 import { buildRouteOverlaySvg, injectOverlay, DEFAULT_OVERLAY_STYLE } from '../src/lib/routeOverlay.js'
-import { applyMapSettings, resolveVisibleLayers, buildSettingsCss } from '../src/lib/mapSettingsApply.js'
+import { applyMapSettings, resolveVisibleLayers, buildSettingsCss, listThemes } from '../src/lib/mapSettingsApply.js'
 import { LAYERS, LAYER_PRESETS } from '../src/lib/mapLayerCatalog.js'
 import { STROKE_GROUPS } from '../src/lib/strokeOverrides.js'
 import { enrichRoute } from '../src/lib/routeEnrichment.js'
@@ -644,6 +644,11 @@ server.registerTool(
 const LAG_DOC = LAYERS.map(l => `${l.key} (${l.label})`).join(', ')
 const PRESET_KEYS = LAYER_PRESETS.map(p => p.key)
 const STREK_DOC = STROKE_GROUPS.map(g => `${g.id} (${g.label})`).join(', ')
+const THEMES = listThemes()
+const TEMA_KEYS = THEMES.map(t => t.key)
+const TEMA_DOC = THEMES
+  .map(t => `«${t.key}» (${t.label}): ${t.beskrivelse}${t.autoHideLayers ? ' Skjuler automatisk alle lag unntatt høydekurver; relieff er uansett ikke med i MCP-bygde kart.' : ''}`)
+  .join(' ')
 
 server.registerTool(
   'juster_kart',
@@ -651,13 +656,17 @@ server.registerTool(
     title: 'Juster kartvisning (lag / preset / strek)',
     description:
       'Justerer visningen av sist bygde kart med SAMME valg som en bruker har i appens ' +
-      'drawer: lag-toggles fra Kartlag-fanen, lag-presets, global strek-skala (Strek-knotten) ' +
-      'og per-gruppe strektykkelse (Strek-panelet). Innstillingene huskes og påføres alle ' +
-      'senere SVG-er (tegn_rute_svg / turrapport_svg / bygg_kart) til de nullstilles — som ' +
-      'drawer-tilstand i appen. Kart-SVG-en på disk skrives om med innstillingene bakt inn. ' +
+      'drawer: tema, lag-toggles fra Kartlag-fanen, lag-presets, global strek-skala ' +
+      '(Strek-knotten) og per-gruppe strektykkelse (Strek-panelet). Innstillingene huskes og ' +
+      'påføres alle senere SVG-er (tegn_rute_svg / turrapport_svg / bygg_kart) til de ' +
+      'nullstilles — som drawer-tilstand i appen. Kart-SVG-en på disk skrives om med ' +
+      'innstillingene bakt inn. ' +
+      `Temaer: ${TEMA_DOC} ` +
       `Lag-nøkler: ${LAG_DOC}, dybde (Sjøkart-dybde på hovedkartet). ` +
       `Strek-grupper: ${STREK_DOC}.`,
     inputSchema: {
+      tema: z.enum(TEMA_KEYS).optional()
+        .describe('Fargetema (som Tema-knappene i appen) — «light» er default ISOM'),
       preset: z.enum(PRESET_KEYS).optional()
         .describe('Lag-forhåndsvalg (som preset-knappene i appen) — nullstiller tidligere lag-valg'),
       lag: z.record(z.boolean()).optional()
@@ -670,12 +679,17 @@ server.registerTool(
         .describe('Fjern alle innstillinger først (som «Nullstill» i Lag-fanen)'),
     },
   },
-  async ({ preset, lag, strekSkala, strek, nullstill }) => {
+  async ({ tema, preset, lag, strekSkala, strek, nullstill }) => {
     const prev = nullstill ? {} : (state.innstillinger ?? {})
+    // Tema-bytte nullstiller enkelt-lag-valg når temaet auto-skjuler lag
+    // (Curves) — speiler appens onThemeChange.
+    const nextTema = tema ?? prev.tema
+    const temaResetsLag = tema && THEMES.find(t => t.key === tema)?.autoHideLayers
     const next = {
-      preset: preset ?? prev.preset,
+      tema: nextTema === 'light' ? undefined : nextTema,
+      preset: preset ?? (temaResetsLag ? undefined : prev.preset),
       // Preset-trykk nullstiller enkelt-lag-valg (samme semantikk som appen).
-      lag: preset ? { ...(lag ?? {}) } : { ...(prev.lag ?? {}), ...(lag ?? {}) },
+      lag: (preset || temaResetsLag) ? { ...(lag ?? {}) } : { ...(prev.lag ?? {}), ...(lag ?? {}) },
       strekSkala: strekSkala ?? prev.strekSkala,
       strek: { ...(prev.strek ?? {}), ...(strek ?? {}) },
     }
@@ -683,7 +697,7 @@ server.registerTool(
     const visible = resolveVisibleLayers(next)
     buildSettingsCss(next)
 
-    const neutral = !next.preset && !Object.keys(next.lag).length
+    const neutral = !next.tema && !next.preset && !Object.keys(next.lag).length
       && next.strekSkala == null && !Object.keys(next.strek).length
     state.innstillinger = neutral ? null : next
 
