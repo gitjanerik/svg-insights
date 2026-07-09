@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { filterIndex, foldName, elementPosition, dedupeHeightPoints, readPeakLabel } from './useMapSearch.js'
+import { parseHTML } from 'linkedom'
+import {
+  filterIndex, foldName, elementPosition, dedupeHeightPoints, readPeakLabel,
+  buildSearchIndex,
+} from './useMapSearch.js'
 
 // Pure-funksjons-tester. buildSearchIndex tester vi ikke her — den krever
 // reell DOM (jsdom er ikke installert), og vi har hverken @napi-rs eller
@@ -442,5 +446,64 @@ describe('readPeakLabel', () => {
   it('høyde-forurenset data-name-full («Vardåsen349», ≤ v12.1.28) strippes', () => {
     const t = peakTextStub({ nameFull: 'Vardåsen349', textNodes: ['Vardåsen'], inlineEle: 349 })
     expect(readPeakLabel(t)).toEqual({ name: 'Vardåsen', ele: 349 })
+  })
+})
+
+// Headless ende-til-ende av buildSearchIndex via linkedom (samme DOM-motor som
+// MCP-serverens headless.js). Sikrer at «vann»/«topp»-spesialsøkene virker uten
+// nettleser — og at getBBox-fallbacken (linkedom har ingen getBBox) gir
+// navngitte polygoner ekte koordinat i stedet for (0,0). tagName er UPPERCASE i
+// linkedom, så dette fanger også case-følsomme tagName-sammenligninger.
+describe('buildSearchIndex (headless via linkedom)', () => {
+  // Koordinater i meter (SVG-units). Firkantene er store nok til å passere
+  // MIN_LAKE_AREA_M2 (300 m²).
+  const svgMarkup = `
+    <svg viewBox="0 0 1000 1000">
+      <g data-iso="301">
+        <path d="M0,0 L60,0 L60,60 L0,60 Z M100,100 L130,100 L130,130 L100,130 Z"/>
+        <path data-name="Bjørnsjøen" d="M300,300 L360,300 L360,360 L300,360 Z"/>
+      </g>
+      <g data-iso="302">
+        <path d="M200,200 L250,200 L250,250 L200,250 Z"/>
+      </g>
+      <g transform="translate(500,500)">
+        <text data-label="peak" x="0" y="0">Stortoppen<tspan data-label="peak-ele">980</tspan></text>
+      </g>
+      <g transform="translate(600,600)">
+        <text data-label="peak" x="0" y="0">Lilletoppen<tspan data-label="peak-ele">320</tspan></text>
+      </g>
+    </svg>`
+
+  const buildIndex = () => {
+    const { document } = parseHTML(`<html><body>${svgMarkup}</body></html>`)
+    return buildSearchIndex(document.querySelector('svg'))
+  }
+
+  it('«topp» rangerer topper på moh desc (label-tekst, uten getBBox)', () => {
+    const results = filterIndex(buildIndex(), 'topp')
+    expect(results.map(r => r.name)).toEqual(['Stortoppen', 'Lilletoppen'])
+    expect(results.map(r => r.ele)).toEqual([980, 320])
+  })
+
+  it('«vann» lister navnløse innsjøer sortert på areal + den navngitte', () => {
+    const results = filterIndex(buildIndex(), 'vann')
+    const names = results.map(r => r.name)
+    expect(names).toContain('Bjørnsjøen')
+    // 3 navnløse: 301 (3600 m²), 302 (2500 m²), 301 (900 m²)
+    const unnamed = results.filter(r => r.kind === 'vann-omrade')
+    expect(unnamed.length).toBe(3)
+    // Sortert på areal desc innenfor den navnløse gruppa
+    expect(unnamed.map(r => Math.round(r.areaM2))).toEqual([3600, 2500, 900])
+  })
+
+  it('getBBox-fallback gir navngitt polygon ekte koordinat (ikke 0,0)', () => {
+    const bjorn = buildIndex().find(r => r.name === 'Bjørnsjøen')
+    expect(bjorn).toBeTruthy()
+    // Union-bbox-senter av firkanten 300..360 = (330, 330)
+    expect(bjorn.x).toBeCloseTo(330, 3)
+    expect(bjorn.y).toBeCloseTo(330, 3)
+    // Og den fikk vann-kategori via data-iso="301"-forelderen (case-insensitiv
+    // tagName-sjekk headless).
+    expect(bjorn.categories).toContain('vann')
   })
 })

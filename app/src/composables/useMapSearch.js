@@ -202,7 +202,7 @@ function ancestorTranslate(el, stopEl) {
  */
 export function elementPosition(svgEl, el) {
   try {
-    if (el.tagName === 'text') {
+    if ((el.tagName ?? '').toLowerCase() === 'text') {
       // parseFloat strips ev. mm-suffiks (peak-labels bruker "2mm"); 2 user-
       // units = 2 m, neglisjerbart relativt til parent-gruppens translate
       // som inneholder den ekte posisjonen.
@@ -211,19 +211,56 @@ export function elementPosition(svgEl, el) {
       const [dx, dy] = ancestorTranslate(el, svgEl)
       return { x: ax + dx, y: ay + dy }
     }
-    const bb = el.getBBox()
-    if (!Number.isFinite(bb.x) || !Number.isFinite(bb.y)) return null
-    // Degenerert bbox (display:none / tomt polygon) — skip
-    if (bb.width <= 0 && bb.height <= 0) return null
+    // Lokalt bbox-senter i elementets EGET koordinatsystem (før egen transform).
+    // Nettleser: getBBox(). Headless (linkedom har ingen getBBox): utled fra
+    // path-geometrien, ellers (0,0) for punkt-grupper der hele posisjonen ligger
+    // i transform-kjeden — se geometryCenter.
+    let lx, ly
+    if (typeof el.getBBox === 'function') {
+      const bb = el.getBBox()
+      if (!Number.isFinite(bb.x) || !Number.isFinite(bb.y)) return null
+      // Degenerert bbox (display:none / tomt polygon) — skip
+      if (bb.width <= 0 && bb.height <= 0) return null
+      lx = bb.x + bb.width / 2
+      ly = bb.y + bb.height / 2
+    } else {
+      const c = geometryCenter(el)
+      if (!c) return null
+      lx = c.x
+      ly = c.y
+    }
     const own = parseTranslate(el.getAttribute('transform')) ?? [0, 0]
     const [dx, dy] = ancestorTranslate(el, svgEl)
-    return {
-      x: bb.x + bb.width / 2 + own[0] + dx,
-      y: bb.y + bb.height / 2 + own[1] + dy,
-    }
+    return { x: lx + own[0] + dx, y: ly + own[1] + dy }
   } catch {
     return null
   }
+}
+
+/**
+ * Headless erstatning for getBBox-senter (linkedom mangler getBBox). For
+ * <path>: union-bbox fra parsePathSubpaths → senter i elementets egne (lokale)
+ * koordinater, samme rom getBBox ville gitt. For <g>/andre uten egen `d`:
+ * (0,0) lokalt, siden posisjonen for punkt-grupper (parkering/sjø-POI) ligger i
+ * egen/forelder-transform (kommentaren over gjelder). Returnerer null når
+ * ingen geometri kan utledes.
+ */
+function geometryCenter(el) {
+  const tag = (el.tagName ?? '').toLowerCase()
+  if (tag === 'path') {
+    const subs = parsePathSubpaths(el.getAttribute('d'))
+    if (!subs.length) return null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const s of subs) {
+      if (s.bbox.minX < minX) minX = s.bbox.minX
+      if (s.bbox.minY < minY) minY = s.bbox.minY
+      if (s.bbox.maxX > maxX) maxX = s.bbox.maxX
+      if (s.bbox.maxY > maxY) maxY = s.bbox.maxY
+    }
+    if (!Number.isFinite(minX)) return null
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }
+  }
+  return { x: 0, y: 0 }
 }
 
 /**
@@ -309,7 +346,7 @@ function categoriesForIsom(iso) {
 function isomFromAncestor(el) {
   let p = el
   while (p && p.nodeType === 1) {
-    if (p.tagName === 'g' && p.hasAttribute('data-iso')) {
+    if ((p.tagName ?? '').toLowerCase() === 'g' && p.hasAttribute('data-iso')) {
       return p.getAttribute('data-iso')
     }
     p = p.parentElement
@@ -376,7 +413,7 @@ function lakeLabelForIsom(iso) {
   return 'Innsjø uten navn'
 }
 
-function formatAreaShort(m2) {
+export function formatAreaShort(m2) {
   if (!Number.isFinite(m2) || m2 <= 0) return ''
   if (m2 >= 1_000_000) return `~${(m2 / 1_000_000).toFixed(1).replace('.0', '')} km²`
   if (m2 >= 10_000) return `~${Math.round(m2 / 10_000)} ha`
@@ -439,7 +476,7 @@ export function buildSearchIndex(svgEl) {
   //    så vi deduper på navn+omtrentlig posisjon under.
   for (const p of svgEl.querySelectorAll('[data-name]')) {
     // 534u-markørene plukkes i 1b — skip dem her så vi ikke dobbelt-indekserer.
-    if (p.tagName === 'g' && p.getAttribute('data-iso') === '534u') continue
+    if ((p.tagName ?? '').toLowerCase() === 'g' && p.getAttribute('data-iso') === '534u') continue
     const name = p.getAttribute('data-name')?.trim()
     if (!name) continue
     const pos = elementPosition(svgEl, p)

@@ -10,11 +10,27 @@ import { fetchN50Water } from '../src/lib/n50Fetcher.js'
 import { utm32BboxFromWgs84 } from '../src/lib/utm.js'
 import { parsePathSubpaths } from '../src/lib/pathUtils.js'
 import { poiType, parseLen, sumTranslate, mmToUnitFromSvg, dedupePoi } from '../src/lib/mapPoi.js'
+import { buildSearchIndex, filterIndex } from '../src/composables/useMapSearch.js'
 
 // sjokartFetcher sjekker `typeof DOMParser` for GML-parsing — uten shim
 // returnerer den tomt og kystkart mister dybdedata i Node.
 if (typeof globalThis.DOMParser === 'undefined') {
   globalThis.DOMParser = DOMParser
+}
+
+// Velg DEM/DOM-oppløsning ut fra kart-arealet så WCS-forespørselen holder seg
+// under et celletak. Headless-motstykket til appens coastalTargetResFor: små
+// kart beholder 5 m (uendret oppførsel ≤ ~8×8 km), mens store turområder/
+// nasjonalparker faller til 10/20/25 m i stedet for å be om titalls millioner
+// celler, time ut, og falle stille tilbake til syntetisk DEM (terrengløst kart).
+const DEM_MAX_CELLS = 4e6
+export function demResolutionForArea(utmBbox, maxCells = DEM_MAX_CELLS) {
+  const areaM2 = (utmBbox.maxE - utmBbox.minE) * (utmBbox.maxN - utmBbox.minN)
+  if (!(areaM2 > 0)) return 5
+  for (const res of [5, 10, 20, 25]) {
+    if (areaM2 / (res * res) <= maxCells) return res
+  }
+  return 25
 }
 
 /**
@@ -25,13 +41,15 @@ if (typeof globalThis.DOMParser === 'undefined') {
 export async function buildMapHeadless({ lat, lon, halfKm, equidistanceM }) {
   const bbox = bboxFromCenter(lat, lon, halfKm)
   const utmBbox = utm32BboxFromWgs84(bbox)
+  const resolutionM = demResolutionForArea(utmBbox)
+  console.error(`[buildMapHeadless] halfKm=${halfKm} → DEM/DOM-oppløsning ${resolutionM} m`)
 
   const [overpass, n50Water, dem] = await Promise.all([
     fetchOverpass(bbox),
     fetchN50Water(bbox).catch(() => []),
-    fetchDEM(bbox, utmBbox, { resolutionM: 5, useReal: true }),
+    fetchDEM(bbox, utmBbox, { resolutionM, useReal: true }),
   ])
-  const dom = await fetchDOM(utmBbox, 5).catch(() => null)
+  const dom = await fetchDOM(utmBbox, resolutionM).catch(() => null)
 
   // N50 er autoritativ vannkilde når den leverer (samme filter som CI-scriptet).
   const useN50 = n50Water.length > 0
@@ -113,4 +131,24 @@ export function extractMapPoiFromSvg(svgText) {
     out.push({ navn, type, x, y })
   }
   return dedupePoi(out)
+}
+
+/**
+ * Kjør appens kart-søk headless mot en generert SVG-streng. Gjenbruker
+ * useMapSearch (buildSearchIndex + filterIndex) så spesial-nøkkelord som
+ * «vann» (alle innsjøer, navnløse inkludert, sortert på areal) og «topp» (de
+ * høyeste, sortert på moh) oppfører seg identisk med nettleser-appen. Treffenes
+ * x/y er i SVG-meter (samme som extractMapPoiFromSvg) og konverteres til WGS84
+ * av kalleren.
+ * @param {string} svgText
+ * @param {string} query
+ * @param {number} [limit]
+ * @returns {Array<{name:string, kind:string, label:string, x:number, y:number, ele:number|null, areaM2:number|null, categories:string[]|null}>}
+ */
+export function searchMapSvg(svgText, query, limit = 30) {
+  const { document } = parseHTML(`<html><body>${svgText}</body></html>`)
+  const svgEl = document.querySelector('svg')
+  if (!svgEl) return []
+  const index = buildSearchIndex(svgEl)
+  return filterIndex(index, query, limit)
 }
