@@ -3707,7 +3707,11 @@ function buildDetailInset() {
   // 1 km roambare vinduet, 16:9-aspekt).
   svg.setAttribute('xmlns', ns)
   svg.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
-  svg.setAttribute('class', 'isom-map')
+  // zoom-near/zoomed-in: lupen ER per definisjon «helt inne» — uten disse
+  // klassene holder zoom-LOD-CSS-en igjen kontur-tall, vann-tall og de fine
+  // dybde-tallene (data-fine) også i inset-en (inline display:'' nuller bare
+  // inline-styles, ikke stylesheet-regler).
+  svg.setAttribute('class', 'isom-map zoom-near zoomed-in')
   svg.setAttribute('width', '100%')
   svg.setAttribute('height', '100%')
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')

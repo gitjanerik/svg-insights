@@ -594,6 +594,11 @@ export function buildIsomCss(catalog = isomCatalogDefault, patternIds, options =
   rules.push(`${root}:not(.zoom-near) [data-label="kontur-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-label="vann-tall"] { display: none; }`)
   rules.push(`${root}:not(.zoom-near) [data-layer="bekk"] text { display: none; }`)
+  // Dybde-tall to-trinns tetthet (mapBuilder grid-tynning): grov-cellevinnerne
+  // (480 m, grunneste) vises alltid når dybde-laget er på; de fine (120 m,
+  // data-fine) holdes igjen til .zoom-near. Long-press-lupen setter .zoom-near
+  // på sin egen SVG-rot og viser dermed full lupe-tetthet.
+  rules.push(`${root}:not(.zoom-near) [data-label="dybde-tall"][data-fine] { display: none; }`)
   // v12.0.15 — Bymasse (522) er nå flat dempet flate og PÅ som default:
   // dempes ekstra ved utzoom så den ligger som kontekst, og trer tydeligere
   // frem når man zoomer inn (.zoomed-in = scale >= 1.3).
