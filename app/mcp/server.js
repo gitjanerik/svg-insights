@@ -10,10 +10,11 @@ import { tmpdir } from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { buildMapHeadless, routableFeaturesFromSvg, extractMapPoiFromSvg } from './headless.js'
+import { buildMapHeadless, routableFeaturesFromSvg, extractMapPoiFromSvg, searchMapSvg } from './headless.js'
 import { filterPoi, POI_LABELS } from '../src/lib/mapPoi.js'
+import { formatAreaShort } from '../src/composables/useMapSearch.js'
 import { buildRoutingGraph, planRoutes, planRoutesThrough } from '../src/lib/routing.js'
-import { wgs84ToSvg, svgToWgs84 } from '../src/lib/utm.js'
+import { wgs84ToSvg, svgToWgs84, utm32BboxFromWgs84 } from '../src/lib/utm.js'
 import { sampleProfile } from '../src/lib/elevationProfile.js'
 import { sampleElevation } from '../src/lib/demSampling.js'
 import { buildRouteGpx } from '../src/lib/gpxExport.js'
@@ -66,6 +67,30 @@ function requireMap() {
 
 // User-Agent for Nominatim (kreves for ikke-nettleser-klienter).
 const GEOCODE_UA = 'svg-insights-mcp/0.1 (turkart-generator)'
+
+// Øvre grense for halv kartbredde (km). 20 → 40×40 km, nok for store turområder
+// og de fleste nasjonalparker. Over dette blir bygget tregt selv med grovere DEM.
+const MAX_HALF_KM = 20
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+
+// Utled areal + anbefalt kartstørrelse fra en Nominatim bounding box
+// [sør, nord, vest, øst] (grader). Arealet er bbox-rektangelet (ikke det ekte
+// polygon-omrisset) projisert til UTM 32N; god nok til å foreslå en halfKm som
+// dekker hele stedet. Returnerer null for manglende/degenerert bbox.
+function extentInfo(bbox) {
+  if (!Array.isArray(bbox) || bbox.length < 4) return null
+  const [south, north, west, east] = bbox
+  const ub = utm32BboxFromWgs84({ south, north, west, east })
+  const breddeKm = (ub.maxE - ub.minE) / 1000
+  const hoydeKm = (ub.maxN - ub.minN) / 1000
+  if (!(breddeKm > 0) || !(hoydeKm > 0)) return null
+  return {
+    breddeKm: Number(breddeKm.toFixed(2)),
+    hoydeKm: Number(hoydeKm.toFixed(2)),
+    arealKm2: Number((breddeKm * hoydeKm).toFixed(2)),
+    anbefaltHalfKm: Number(clamp(Math.max(breddeKm, hoydeKm) / 2, 0.5, MAX_HALF_KM).toFixed(2)),
+  }
+}
 
 // Bygg (eller gjenbruk) routing-grafen for sist bygde kart. componentBridgeM=80
 // kobler frakoblede sti-/vei-fragmenter til hovednettet (se lib/routing.js).
@@ -212,13 +237,18 @@ server.registerTool(
     description:
       'Bygger et ISOM-inspirert turkart (SVG) for et område, med ekte Kartverket-terreng ' +
       '(DTM/DOM), OSM-stier/veier og N50-vann. Kartet holdes i minnet for planlegg_rute/' +
-      'hoydeprofil/eksporter_gpx, og SVG-en skrives til fil. Bruk halfKm 1–5 for rask respons. ' +
-      'Oppgi enten lat+lon, ELLER et stedsnavn i «sted» (geokodes via Nominatim).',
+      'hoydeprofil/eksporter_gpx, og SVG-en skrives til fil. halfKm 1–5 gir rask respons; ' +
+      '6–20 dekker store turområder/nasjonalparker (grovere terreng-oppløsning, lengre ' +
+      'byggetid). Utelates halfKm når du bygger fra et «sted», auto-dimensjoneres kartet ' +
+      'til stedets utstrekning (f.eks. «hele Vestmarka»). Oppgi enten lat+lon, ELLER et ' +
+      'stedsnavn i «sted» (geokodes via Nominatim). Tips: kall sok_sted først for å se ' +
+      'arealet og en anbefalt halfKm.',
     inputSchema: {
       sted: z.string().optional().describe('Stedsnavn å geokode (f.eks. «Vardåsen, Asker») — alternativ til lat/lon'),
       lat: z.number().min(57).max(72).optional().describe('Senter-breddegrad (Norge)'),
       lon: z.number().min(4).max(32).optional().describe('Senter-lengdegrad (Norge)'),
-      halfKm: z.number().min(0.5).max(10).default(2).describe('Halv kartbredde i km'),
+      halfKm: z.number().min(0.5).max(MAX_HALF_KM).optional()
+        .describe('Halv kartbredde i km (0.5–20). Utelates: auto fra stedets utstrekning, ellers 2 km'),
       equidistanceM: z.number().optional().describe('Ekvidistanse i meter (auto hvis utelatt)'),
       navn: z.string().default('mcp-kart').describe('Kartnavn, brukes i filnavn'),
       filsti: z.string().optional().describe('Hvor SVG-en skrives (default: tmp)'),
@@ -235,7 +265,12 @@ server.registerTool(
       lon = geokodet.lon
       if (navn === 'mcp-kart') navn = geokodet.shortName || sted
     }
-    const built = await buildMapHeadless({ lat, lon, halfKm, equidistanceM })
+    // Auto-størrelse: mangler halfKm og vi geokodet et sted med kjent utstrekning
+    // → dekk hele stedet. Ellers fall tilbake til 2 km (dagens default).
+    const extent = geokodet ? extentInfo(geokodet.bbox) : null
+    const autoStorrelse = halfKm == null && !!extent
+    const effHalfKm = halfKm ?? extent?.anbefaltHalfKm ?? 2
+    const built = await buildMapHeadless({ lat, lon, halfKm: effHalfKm, equidistanceM })
     const slug = navn.replace(/[^a-z0-9æøå]+/gi, '-').toLowerCase()
     const svgPath = resolve(filsti ?? resolve(tmpdir(), 'svg-insights-mcp', `${slug}.svg`))
     mkdirSync(dirname(svgPath), { recursive: true })
@@ -249,7 +284,11 @@ server.registerTool(
     return jsonResult({
       status: 'ok',
       svgPath,
-      geokodet: geokodet ? { navn: geokodet.name, lat, lon } : null,
+      halfKm: Number(effHalfKm.toFixed(2)),
+      autoStorrelse,
+      geokodet: geokodet
+        ? { navn: geokodet.name, lat, lon, arealKm2: extent?.arealKm2 ?? null, bbox: geokodet.bbox ?? null }
+        : null,
       svgKb: Math.round(built.svg.length / 1024),
       kartStorrelseM: { bredde: Math.round(meta.widthM), hoyde: Math.round(meta.heightM) },
       terreng: {
@@ -387,8 +426,10 @@ server.registerTool(
     title: 'Søk sted (geokoding)',
     description:
       'Geokoder et fritekst-stedsnavn til koordinater via OpenStreetMap Nominatim ' +
-      '(begrenset til Norge). Returnerer inntil `antall` treff med lat/lon, klar til ' +
-      'bruk i bygg_kart / planlegg_rute. Slipper manuell koordinat-oppslag.',
+      '(begrenset til Norge). Returnerer inntil `antall` treff med lat/lon OG stedets ' +
+      'utstrekning: bredde/høyde/areal i km² (fra Nominatims bounding box) og en anbefalt ' +
+      '«halfKm» som dekker hele stedet. Bruk anbefaltHalfKm rett i bygg_kart for store ' +
+      'områder (f.eks. «hele Vestmarka» eller en nasjonalpark). Slipper manuell koordinat-oppslag.',
     inputSchema: {
       sok: z.string().min(2).describe('Stedsnavn å søke etter (f.eks. «Wentzelhytta»)'),
       antall: z.number().int().min(1).max(10).default(5).describe('Maks antall treff'),
@@ -399,13 +440,20 @@ server.registerTool(
     if (!treff.length) throw new Error(`Ingen treff for «${sok}».`)
     return jsonResult({
       status: 'ok',
-      treff: treff.map(t => ({
-        navn: t.name,
-        kortnavn: t.shortName,
-        type: t.type,
-        lat: Number(t.lat.toFixed(6)),
-        lon: Number(t.lon.toFixed(6)),
-      })),
+      treff: treff.map(t => {
+        const ext = extentInfo(t.bbox)
+        return {
+          navn: t.name,
+          kortnavn: t.shortName,
+          type: t.type,
+          lat: Number(t.lat.toFixed(6)),
+          lon: Number(t.lon.toFixed(6)),
+          breddeKm: ext?.breddeKm ?? null,
+          hoydeKm: ext?.hoydeKm ?? null,
+          arealKm2: ext?.arealKm2 ?? null,
+          anbefaltHalfKm: ext?.anbefaltHalfKm ?? null,
+        }
+      }),
     })
   },
 )
@@ -749,6 +797,47 @@ server.registerTool(
     const perType = {}
     for (const p of all) perType[p.type] = (perType[p.type] ?? 0) + 1
     return jsonResult({ status: 'ok', antall: filtered.length, perType, poi: filtered })
+  },
+)
+
+server.registerTool(
+  'sok_kart',
+  {
+    title: 'Søk på kartet (vann / topp / navn)',
+    description:
+      'Søker i sist bygde kart med SAMME logikk som appens søkefelt. Fritekst matcher ' +
+      'stedsnavn / vann / topper / områder. Spesial-nøkkelord gir rangerte oversikter: ' +
+      '«vann» (også «innsjø» / «tjern») lister ALLE ferskvann i utsnittet, navnløse ' +
+      'inkludert, sortert på areal (størst først); «topp» (også «topper») lister de ' +
+      'høyeste toppene sortert på moh; «parkering» (også «utfart») lister utfarts-' +
+      'parkeringer. Returnerer navn, type, koordinat (WGS84) og — der det finnes — høyde ' +
+      '(moh) og areal. Mat treff rett inn i planlegg_rute / tegn_rute_svg / turrapport_svg.',
+    inputSchema: {
+      sok: z.string().min(1)
+        .describe('Fritekst-navn ELLER nøkkelord: «vann», «topp», «parkering» (m. synonymer)'),
+      maks: z.number().int().min(1).max(200).default(30)
+        .describe('Maks antall treff for fritekst-søk (nøkkelord-oversikter lister alt uansett)'),
+    },
+  },
+  async ({ sok, maks }) => {
+    requireMap()
+    const meta = svgMeta()
+    const treff = searchMapSvg(state.map.svg, sok, maks).map(r => {
+      const ll = svgToWgs84(r.x, r.y, meta)
+      const o = {
+        navn: r.name,
+        type: r.label ?? r.kind,
+        lat: Number(ll.lat.toFixed(6)),
+        lon: Number(ll.lon.toFixed(6)),
+      }
+      if (Number.isFinite(r.ele)) o.moh = Math.round(r.ele)
+      if (Number.isFinite(r.areaM2) && r.areaM2 > 0) {
+        o.arealM2 = Math.round(r.areaM2)
+        o.areal = formatAreaShort(r.areaM2)
+      }
+      return o
+    })
+    return jsonResult({ status: 'ok', sok, antall: treff.length, treff })
   },
 )
 
