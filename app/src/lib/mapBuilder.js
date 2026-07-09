@@ -1284,6 +1284,18 @@ export function buildSvg(elements, bbox, options = {}) {
         // fylles — se 551-grenen under. Tom = vanlig fylt areal.
         let strokeOnlyStyle = ''
         const name = el.tags?.name ?? el.tags?.navn ?? ''
+        // natural=bay/strait er NAVNE-bærere, ikke vann-geometri: de hentes
+        // fra Overpass for å gi bukt/sund en etikett (sjo-navn/lakeLabels),
+        // men en LUKKET bukt-polygon (Korsvika i Trondheim, mappet som OSM-
+        // relation) ble klassifisert 303 og malt som flat saltvanns-flate
+        // OPPÅ den graderte Sjøkart-/DEM-sjøen — en mørkere polygon med
+        // harde, rette sjøkanter midt i fjorden. Når kartet har autoritativ
+        // sjø (DEM-0m/N50) er bukt-fyllet rent duplikat → hopp over. Uten
+        // autoritativ sjø (sjelden CORS-svikt) beholdes det som før, som
+        // eneste blå flate. (Åpne bay/strait-LINJER stoppes av wedge-vakten
+        // under uansett.)
+        if (cat === 'vann' && hasAuthoritativeSea &&
+            (el.tags?.natural === 'bay' || el.tags?.natural === 'strait')) continue
         if (el.type === 'merged-water' && el._mergedRings) {
           // polygon-clipping output: én <path> per topologisk polygon
           // (outer + dens hull), så holes virker via evenodd uten at
@@ -2702,14 +2714,49 @@ export function buildSvg(elements, bbox, options = {}) {
   // så de emitteres med display:none og data-detail="1". Inset-en (MapView)
   // kloner kart-innholdet i et 150×150 m vindu og skrur PÅ data-detail-lag.
   // Soundings: blå dybde-tall på hver node. Dybde rundes til heltall.
-  const soundingRows = soundings.map(el => {
-    if (el.type !== 'node') return ''
+  //
+  // Grid-tynning («grunneste vinner», gjeninnført fra v7.1.13): Sjøkart-WFS
+  // leverer 5000+ soundings i tette havneområder (Trondheim havn) — uten
+  // tynning blir både hovedkartets dybde-lag og long-press-lupen vegg-til-
+  // vegg med tall. Behold punktet med MINST dybde per celle (grunneste =
+  // mest sikkerhetsrelevant for kajakk). To trinn:
+  //   • FIN (120 m): alt som emitteres — lupe-tetthet (~8–12 tall i 350 m-
+  //     startvisningen) og taket for SVG-bytes.
+  //   • GROV (480 m): cellevinnerne vises alltid når dybde-laget er på;
+  //     resten merkes data-fine="1" og CSS-gates til .zoom-near på hoved-
+  //     kartet (lupen setter .zoom-near selv og viser alt).
+  // v7.1.13-filteret (400 m) forsvant da sjøkart-modusen ble revet i
+  // v8.9.11 og ble aldri gjeninnført med resten i v8.9.16.
+  const DYBDE_GRID_FINE_M = 120
+  const DYBDE_GRID_COARSE_M = 480   // 4 fine celler per grov-celle
+  const fineGrid = new Map()   // "col,row" → { p, dybde }
+  for (const el of soundings) {
+    if (el.type !== 'node') continue
     const dybde = Number(el.tags?.dybde)
-    if (!Number.isFinite(dybde)) return ''
+    if (!Number.isFinite(dybde)) continue
     const p = project(el.lat, el.lon)
-    const label = dybde >= 10 ? String(Math.round(dybde)) : dybde.toFixed(1)
-    return `    <text x="${fmt(p.x)}" y="${fmt(p.y)}" text-anchor="middle" data-label="dybde-tall">${label}</text>`
-  }).filter(Boolean)
+    const key = `${Math.floor(p.x / DYBDE_GRID_FINE_M)},${Math.floor(p.y / DYBDE_GRID_FINE_M)}`
+    const existing = fineGrid.get(key)
+    if (!existing || dybde < existing.dybde) fineGrid.set(key, { p, dybde })
+  }
+  const coarseWinners = new Set()
+  {
+    const coarseGrid = new Map()   // "col,row" → { p, dybde }
+    for (const s of fineGrid.values()) {
+      const key = `${Math.floor(s.p.x / DYBDE_GRID_COARSE_M)},${Math.floor(s.p.y / DYBDE_GRID_COARSE_M)}`
+      const existing = coarseGrid.get(key)
+      if (!existing || s.dybde < existing.dybde) coarseGrid.set(key, s)
+    }
+    for (const s of coarseGrid.values()) coarseWinners.add(s)
+  }
+  if (soundings.length) {
+    console.log(`[Sjøkart] Dybdepunkt: ${soundings.length} → ${fineGrid.size} etter grid-tynning (${DYBDE_GRID_FINE_M} m, grunneste vinner; ${coarseWinners.size} grove)`)
+  }
+  const soundingRows = [...fineGrid.values()].map(s => {
+    const label = s.dybde >= 10 ? String(Math.round(s.dybde)) : s.dybde.toFixed(1)
+    const fineAttr = coarseWinners.has(s) ? '' : ' data-fine="1"'
+    return `    <text x="${fmt(s.p.x)}" y="${fmt(s.p.y)}" text-anchor="middle"${fineAttr} data-label="dybde-tall">${label}</text>`
+  })
   const soundingLayerSvg = soundingRows.length
     ? `  <g data-layer="dybdepunkt" data-detail="1" style="display:none">\n${soundingRows.join('\n')}\n  </g>\n`
     : ''

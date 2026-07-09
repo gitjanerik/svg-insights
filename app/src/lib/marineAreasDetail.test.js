@@ -163,6 +163,61 @@ describe('buildSvg — skjulte detalj-lag (inset-only)', () => {
   })
 })
 
+describe('buildSvg — grid-tynning av dybdepunkt (grunneste vinner)', () => {
+  const sounding = (id, lat, lon, dybde) => ({
+    type: 'node', id, lat, lon,
+    tags: { sjokart: 'dybdepunkt', dybde: String(dybde) }, _source: 'sjokart',
+  })
+  it('to punkt i samme 120 m-celle → kun det grunneste emitteres', () => {
+    // ~20 m fra hverandre (0.0002° lat ≈ 22 m) — samme fine celle.
+    const { svg } = buildSvg([
+      n50Sea,
+      sounding(40, 59.0250, 10.07, 8.2),
+      sounding(41, 59.0252, 10.07, 3.1),
+    ], bbox, {})
+    expect(svg).toContain('>3.1<')
+    expect(svg).not.toContain('>8.2<')
+  })
+  it('grov-cellevinner umerket, øvrige fine punkt får data-fine', () => {
+    // ~220 m fra hverandre (0.002° lat) — ulike fine celler (120 m), men
+    // trolig samme grove celle (480 m): nøyaktig én av dem skal være umerket.
+    const { svg } = buildSvg([
+      n50Sea,
+      sounding(42, 59.0250, 10.07, 2.5),
+      sounding(43, 59.0270, 10.07, 15.3),
+    ], bbox, {})
+    expect(svg).toContain('>2.5<')
+    expect(svg).toContain('>15<')
+    const fineCount = (svg.match(/<text[^>]*data-fine="1"/g) ?? []).length
+    const totalCount = (svg.match(/<text[^>]*data-label="dybde-tall"/g) ?? []).length
+    expect(totalCount).toBe(2)
+    expect(fineCount).toBe(1)
+    // Grunneste vinner grov-cellen → 15 m-punktet er det fine.
+    expect(svg).toMatch(/data-fine="1"[^>]*>15</)
+  })
+})
+
+describe('buildSvg — natural=bay/strait fylles ikke over autoritativ sjø', () => {
+  const bayRelation = {
+    type: 'relation', id: 50, tags: { natural: 'bay', name: 'Korsvika' },
+    members: [{
+      type: 'way', role: 'outer',
+      geometry: ringGeom(59.01, 10.06, 59.03, 10.08),
+    }],
+  }
+  it('lukket bukt-relasjon males IKKE når N50-sjø finnes (Korsvika-tilfellet)', () => {
+    const { svg } = buildSvg([n50Sea, bayRelation], bbox, {})
+    // Navnet skal fortsatt finnes (sjo-navn/vann-label), men ingen
+    // fylt 303-path med data-name="Korsvika".
+    expect(svg).not.toMatch(/<path[^>]*data-name="Korsvika"/)
+    expect(svg).toContain('Korsvika')
+  })
+  it('uten autoritativ sjø beholdes bukt-fyllet som eneste blå flate', () => {
+    const { svg } = buildSvg([bayRelation], bbox, {})
+    expect(svg).toMatch(/<path[^>]*data-name="Korsvika"/)
+  })
+})
+
 describe('buildSvg — Fase 1b land-mask / øy-overlay', () => {
   it('med autoritativ N50-sjø beholdes øy-overlay (001) — N50 mangler hull', () => {
     const island = {
