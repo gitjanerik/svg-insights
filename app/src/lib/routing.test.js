@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildRoutingGraph, kShortestRoutes, planRoutes, planRoutesThrough, projectPointOnSegment } from './routing.js'
+import { buildRoutingGraph, kShortestRoutes, planRoutes, planRoutesThrough, planLoop, projectPointOnSegment } from './routing.js'
 
 // Lite rutenett i SVG-meter-rom (coordinates allerede projisert).
 // Et 2x2-grid med ekstra diagonal-snarvei, alt som ISOM 505 (sti):
@@ -310,6 +310,78 @@ describe('planRoutesThrough (via-punkter)', () => {
     ], { snapM: 2 })
     const a = rg.nodeAt([0, 0]), iso = rg.nodeAt([600, 500]), b = rg.nodeAt([100, 0])
     expect(planRoutesThrough(rg, [a, iso, b])).toEqual([])
+  })
+})
+
+describe('planLoop (rundtur)', () => {
+  it('lager en ekte sløyfe: ut én side, hjem den andre', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const b = rg.nodeAt([100, 0])       // origo
+    const f = rg.nodeAt([200, 100])     // vendepunkt
+    const loops = planLoop(rg, b, [f], { k: 3 })
+    expect(loops.length).toBeGreaterThanOrEqual(1)
+    const first = loops[0]
+    expect(first.loop).toBe(true)
+    expect(first.shortest).toBe(true)
+    // Start og slutt i origo
+    expect(first.coordinates[0]).toEqual([100, 0])
+    expect(first.coordinates.at(-1)).toEqual([100, 0])
+    // Innom vendepunktet F
+    expect(first.coordinates.some(([x, y]) => x === 200 && y === 100)).toBe(true)
+    // Ekte runde: bruker BÅDE C(200,0) og E(100,100) — dvs. ut én side, hjem
+    // den andre, ikke tur/retur langs samme kant.
+    expect(first.coordinates.some(([x, y]) => x === 200 && y === 0)).toBe(true)
+    expect(first.coordinates.some(([x, y]) => x === 100 && y === 100)).toBe(true)
+    // Uttur (B→…→F, 200 m) + hjemvei (F→…→B, 200 m) = 400 m
+    expect(first.lengthM).toBeCloseTo(400, 0)
+  })
+
+  it('retracer utturen når vendepunktet er en blindvei (tur/retur)', () => {
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0]], isomCode: '505' },        // A-B
+      { coordinates: [[100, 0], [100, -100]], isomCode: '505' },   // B-P blindvei
+    ], { snapM: 2 })
+    const b = rg.nodeAt([100, 0])
+    const p = rg.nodeAt([100, -100])
+    const loops = planLoop(rg, b, [p], { k: 3 })
+    expect(loops.length).toBe(1)
+    expect(loops[0].lengthM).toBeCloseTo(200, 0) // B→P→B
+    expect(loops[0].coordinates[0]).toEqual([100, 0])
+    expect(loops[0].coordinates.at(-1)).toEqual([100, 0])
+  })
+
+  it('sender aldri rundturen ut på motorvei (501)', () => {
+    // Sti direkte A→B, og en motorvei-omvei som eneste distinkte alternativ.
+    // Rundturen skal da retrace stien, ikke ta motorveien.
+    const rg = buildRoutingGraph([
+      { coordinates: [[0, 0], [100, 0], [200, 0]], isomCode: '505' },            // sti direkte
+      { coordinates: [[0, 0], [0, -80], [200, -80], [200, 0]], isomCode: '501' }, // motorvei-omvei
+    ], { snapM: 2 })
+    const a = rg.nodeAt([0, 0])
+    const bv = rg.nodeAt([200, 0])
+    const loops = planLoop(rg, a, [bv], { k: 3 })
+    expect(loops.length).toBeGreaterThanOrEqual(1)
+    for (const l of loops) {
+      expect(l.coordinates.every(([, y]) => y !== -80)).toBe(true) // ingen motorvei-punkter
+    }
+  })
+
+  it('restaurerer kant-cost etter beregning', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const b = rg.nodeAt([100, 0]), f = rg.nodeAt([200, 100])
+    const before = []
+    rg.graph.forEachEdge((e) => before.push(rg.graph.getEdgeAttribute(e, 'cost')))
+    planLoop(rg, b, [f], { k: 3 })
+    const after = []
+    rg.graph.forEachEdge((e) => after.push(rg.graph.getEdgeAttribute(e, 'cost')))
+    expect(after).toEqual(before)
+  })
+
+  it('returnerer tom liste uten origo eller uten vendepunkt', () => {
+    const rg = buildRoutingGraph(gridFeatures(), { snapM: 2 })
+    const b = rg.nodeAt([100, 0]), f = rg.nodeAt([200, 100])
+    expect(planLoop(rg, null, [f], {})).toEqual([])
+    expect(planLoop(rg, b, [], {})).toEqual([])
   })
 })
 

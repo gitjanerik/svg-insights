@@ -13,7 +13,7 @@
 // ren, testet lib (routing.js + pathUtils.parsePathSubpaths).
 
 import { ref, computed } from 'vue'
-import { buildRoutingGraph, planRoutesThrough } from '../lib/routing.js'
+import { buildRoutingGraph, planRoutesThrough, planLoop } from '../lib/routing.js'
 import { parsePathSubpaths } from '../lib/pathUtils.js'
 
 // ISOM-koder som er routbare (vei/sti/bro). Må matche ISOM_COST i routing.js.
@@ -36,7 +36,8 @@ const DESCENT_M_PER_MIN = 30
 
 export function useStifinner() {
   const mode = ref('idle')          // 'idle' | 'pickingStart' | 'showing' | 'pickingVia'
-  const destination = ref(null)     // { svgX, svgY } — B
+  const isLoop = ref(false)         // rundtur (origo = start = mål); via = vendepunkt(er)
+  const destination = ref(null)     // { svgX, svgY } — B (== start når isLoop)
   const start = ref(null)           // { svgX, svgY } — A
   const via = ref([])               // [{ svgX, svgY }] — 0–3 via-punkter, i rekkefølge
   const routes = ref([])            // [{ coordinates, lengthM, costM }]
@@ -64,12 +65,14 @@ export function useStifinner() {
   // også når ingen sammenhengende rute finnes, så brukeren alltid ser den
   // faktiske A→B-avstanden.
   const directDistanceM = computed(() => {
+    if (isLoop.value) return null       // origo == mål → luftlinje er meningsløs
     const a = start.value, b = destination.value
     if (!a || !b) return null
     return Math.hypot(a.svgX - b.svgX, a.svgY - b.svgY)
   })
 
   function begin(dest) {
+    isLoop.value = false
     destination.value = { svgX: dest.svgX, svgY: dest.svgY }
     start.value = null
     via.value = []
@@ -82,8 +85,27 @@ export function useStifinner() {
     mode.value = 'pickingStart'
   }
 
+  // Rundtur: origo (long-press-punktet) er BÅDE start og mål. Brukeren sikter
+  // deretter inn ett vendepunkt (via) — ruten blir origo → via → origo, der
+  // hjemveien unngår utturen (planLoop) så det blir en ekte sløyfe. Går rett
+  // til via-plukk siden en runde trenger minst ett vendepunkt.
+  function beginLoop(origin) {
+    isLoop.value = true
+    destination.value = { svgX: origin.svgX, svgY: origin.svgY }
+    start.value = { svgX: origin.svgX, svgY: origin.svgY }
+    via.value = []
+    routes.value = []
+    selectedRouteIdx.value = 0
+    error.value = ''
+    startSnap.value = null
+    destSnap.value = null
+    viaSnaps.value = []
+    mode.value = 'pickingVia'
+  }
+
   function cancel() {
     mode.value = 'idle'
+    isLoop.value = false
     destination.value = null
     start.value = null
     via.value = []
@@ -171,6 +193,32 @@ export function useStifinner() {
     const rg = graphFor(lastSvg)
     if (!rg) {
       error.value = 'Fant ingen sti eller vei på kartet'
+      return
+    }
+
+    // Rundtur: origo (start == mål) + vendepunkt(er). Ellers A → via… → B.
+    if (isLoop.value) {
+      if (!via.value.length) return   // trenger minst ett vendepunkt (venter på plukk)
+      const pts = [start.value, ...via.value]
+      const snapped = pts.map(p => rg.nearestNode([p.svgX, p.svgY]))
+      for (let i = 0; i < snapped.length; i++) {
+        const n = snapped[i]
+        if (!n || n.distM > MAX_SNAP_M) {
+          error.value = i === 0 ? 'Ingen sti eller vei i nærheten av startpunktet'
+            : `Ingen sti eller vei i nærheten av vendepunkt ${i}`
+          return
+        }
+      }
+      startSnap.value = { x: snapped[0].pos[0], y: snapped[0].pos[1] }
+      destSnap.value = { x: snapped[0].pos[0], y: snapped[0].pos[1] }
+      viaSnaps.value = snapped.slice(1).map(n => ({ x: n.pos[0], y: n.pos[1] }))
+
+      const found = planLoop(rg, snapped[0].id, snapped.slice(1).map(n => n.id), { k: 3 })
+      if (!found.length) {
+        error.value = 'Fant ingen rundtur innom vendepunktet'
+        return
+      }
+      routes.value = found
       return
     }
 
@@ -278,9 +326,9 @@ export function useStifinner() {
   }
 
   return {
-    mode, active, destination, start, via, routes, selectedRouteIdx, error,
+    mode, active, isLoop, destination, start, via, routes, selectedRouteIdx, error,
     startSnap, destSnap, viaSnaps, directDistanceM, canAddVia, MAX_VIA,
-    begin, cancel, confirmStart, beginAddVia, confirmVia, removeVia, clearVia,
+    begin, beginLoop, cancel, confirmStart, beginAddVia, confirmVia, removeVia, clearVia,
     selectRoute, estWalkMinutes,
   }
 }

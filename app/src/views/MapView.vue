@@ -10,6 +10,7 @@ import { useResizablePanel } from '../composables/useResizablePanel.js'
 import { useMapAnnotations, ANNOTATION_SYMBOLS } from '../composables/useMapAnnotations.js'
 import { useStifinner } from '../composables/useStifinner.js'
 import { useMapSearch, findByName } from '../composables/useMapSearch.js'
+import { useNominatim } from '../composables/useNominatim.js'
 import { useSearchKeyboard } from '../composables/useSearchKeyboard.js'
 import { useTrackRecorder, TRACK_STYLES } from '../composables/useTrackRecorder.js'
 import { useScreenWakeLock } from '../composables/useScreenWakeLock.js'
@@ -1810,6 +1811,18 @@ const searchIndex = mapSearch.index
 const searchOpen = ref(false)
 const highlightedFeature = ref(null)   // { name, x, y, kind } eller null
 
+// Globalt stedssøk (Nominatim) som FALLBACK: kart-søket ser bare navn i det
+// rendrede SVG-et, så et sted utenfor utsnittet gir 0 treff. Da tilbyr vi
+// globale forslag — velges ett, bygges et nytt kart der. Kobles kun når
+// kart-søket er tomt (og query ≥ 2 tegn) så vi ikke fyrer unødige Nominatim-
+// kall når kartet allerede har treff. Debounce/abort ligger i composablen.
+const placeSearch = useNominatim({ debounceMs: 350 })
+const globalResults = placeSearch.results
+const globalSearching = placeSearch.isSearching
+watch([searchResults, searchQuery], ([res, q]) => {
+  placeSearch.query.value = (res.length === 0 && (q ?? '').trim().length >= 2) ? q : ''
+})
+
 function openSearch() {
   searchOpen.value = true
   closeDrawer()
@@ -1819,6 +1832,7 @@ function openSearch() {
 function closeSearch() {
   searchOpen.value = false
   mapSearch.clear()
+  placeSearch.query.value = ''
 }
 function clearHighlight() {
   highlightedFeature.value = null
@@ -1880,7 +1894,38 @@ function selectSearchResult(r) {
   }
   searchOpen.value = false
   mapSearch.clear()
+  placeSearch.query.value = ''
   renderHighlight()
+}
+
+// Globalt treff valgt (utenfor dette kartet) → bygg et nytt kart sentrert der.
+// Gjenbruker buildMapFromCenter (samme flyt som on-the-fly-bygging og
+// rebuildAtChosenSize) med standard kartstørrelse.
+async function onSelectGlobalPlace(hit) {
+  if (buildingOnTheFly.value) return
+  searchOpen.value = false
+  mapSearch.clear()
+  placeSearch.query.value = ''
+  const dims = defaultMapDims()
+  const widthKm = (dims.halfKm ?? DEFAULT_MAP_WIDTH_KM / 2) * 2
+  buildingOnTheFly.value = true
+  buildingProgress.value = `Bygger kart ved ${hit.shortName} …`
+  try {
+    const { id } = await buildMapFromCenter({
+      center: { lat: hit.lat, lon: hit.lon, name: hit.shortName },
+      ...dims,
+      equidistanceM: equidistanceForWidthKm(widthKm),
+      navn: hit.shortName,
+      terrainFirst: true,
+      onProgress: (msg) => { buildingProgress.value = msg },
+    })
+    router.push({ name: 'kart-vis', params: { id } })
+  } catch (e) {
+    console.error('Bygg fra søk feilet:', e)
+    buildingOnTheFly.value = false
+    buildingProgress.value = ''
+    showAutoMapToast('Kunne ikke bygge kart her')
+  }
 }
 
 // Tastaturnavigasjon (desktop): pil ned/opp markerer, Enter velger, Escape
@@ -3497,6 +3542,19 @@ function onNavigateHere() {
   closeContextMenu()
   closeDrawer()
 }
+// Start Stifinner som RUNDTUR fra long-press-punktet (origo = start = mål).
+// Brukeren sikter deretter inn et vendepunkt (via) — ruten blir en sløyfe.
+function onRoundTripHere() {
+  const p = contextMenuPoint.value
+  if (!p) return
+  measureMode.value = false
+  annot.isAnnotateMode.value = false
+  annot.selectedSymbol.value = null
+  renderMeasure()
+  sti.beginLoop({ svgX: p.svgX, svgY: p.svgY })
+  closeContextMenu()
+  closeDrawer()
+}
 // Bekreft startpunkt = skjermsenteret (der siktet står) → beregn ruter.
 function onConfirmStart() {
   const c = visibleCenterSvg()
@@ -3536,6 +3594,7 @@ const stiPickColor = computed(() => (sti.mode.value === 'pickingVia' ? '#f59e0b'
 // vises på samme bunn-linje uansett hvilken rute som er valgt. null når kartet
 // mangler DEM (ingen WCS) eller et av punktene faller på noData.
 const stiElevationDiffM = computed(() => {
+  if (sti.isLoop.value) return null   // origo == mål → høydediff er 0, irrelevant
   const a = sti.start.value, b = sti.destination.value
   const dem = storedDem.value
   if (!a || !b || !dem) return null
@@ -4162,11 +4221,12 @@ function renderRoutes() {
     return p
   }
 
-  // Connector-strek (valgt punkt → snappet node). Stiplet grå.
+  // Connector-strek (valgt punkt → snappet node). Stiplet grå. Ved rundtur er
+  // start == mål (samme origo), så mål-connectoren droppes (den overlapper).
   const a = sti.start.value, b = sti.destination.value
   const aSnap = sti.startSnap.value, bSnap = sti.destSnap.value
   if (a && aSnap) layer.appendChild(mk(`M${a.svgX},${a.svgY}L${aSnap.x},${aSnap.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
-  if (b && bSnap) layer.appendChild(mk(`M${b.svgX},${b.svgY}L${bSnap.x},${bSnap.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
+  if (!sti.isLoop.value && b && bSnap) layer.appendChild(mk(`M${b.svgX},${b.svgY}L${bSnap.x},${bSnap.y}`, '#64748b', 1.5, { dash: 3, pe: 'none' }))
   const viaPts = sti.via.value, viaSnapArr = sti.viaSnaps.value
   for (let i = 0; i < viaPts.length; i++) {
     const v = viaPts[i], vs = viaSnapArr[i]
@@ -4205,7 +4265,8 @@ function renderRoutes() {
   }
   if (a) layer.appendChild(dot(a.svgX, a.svgY, '#16a34a'))
   for (const v of viaPts) if (v) layer.appendChild(dot(v.svgX, v.svgY, '#f59e0b'))
-  if (b) layer.appendChild(dot(b.svgX, b.svgY, '#dc2626'))
+  // Ved rundtur er mål == origo (grønn prikk allerede tegnet) → ingen egen rød.
+  if (!sti.isLoop.value && b) layer.appendChild(dot(b.svgX, b.svgY, '#dc2626'))
 }
 watch([() => sti.routes.value, () => sti.selectedRouteIdx.value, () => sti.mode.value,
        () => sti.via.value, scale],
@@ -6532,7 +6593,7 @@ onUnmounted(() => {
           </svg>
           <input v-model="searchQuery" type="search" autocomplete="off"
                  autocorrect="off" autocapitalize="off" spellcheck="false"
-                 placeholder="Søk i kart — steder, vann, øyer …"
+                 placeholder="Søk i dette kartet — steder, vann, øyer …"
                  ref="searchInputRef"
                  @keydown="onSearchKeydown"
                  role="combobox" aria-autocomplete="list"
@@ -6550,16 +6611,46 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="flex-1 overflow-y-auto" id="mapsearch-results" role="listbox">
-          <div v-if="searchQuery && searchResults.length === 0"
-               class="px-4 py-6 text-center text-[12px] text-white/45">
-            Ingen treff på «{{ searchQuery }}»
-          </div>
+          <!-- Ingen treff i DETTE kartet → globalt fallback (Nominatim). -->
+          <template v-if="searchQuery && searchResults.length === 0">
+            <div class="px-4 pt-4 pb-1 text-[11px] text-white/55 leading-relaxed">
+              Ingen treff i dette kartet.
+              <span class="text-white/40">Andre steder i Norge:</span>
+            </div>
+            <div v-if="globalSearching" class="px-4 py-3 text-[11px] text-white/40">
+              Søker …
+            </div>
+            <button v-for="r in globalResults" :key="'g' + r.id"
+                    @click="onSelectGlobalPlace(r)"
+                    class="w-full text-left px-3 py-2.5 transition border-b border-white/8
+                           last:border-0 flex items-center gap-2 active:bg-white/10">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 text-white/40 shrink-0" fill="none"
+                   stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+              <div class="flex-1 min-w-0">
+                <div class="text-[13px] font-medium text-white truncate">{{ r.shortName }}</div>
+                <div class="text-[10px] text-white/45 uppercase tracking-wide">Bygg nytt kart her</div>
+              </div>
+              <svg viewBox="0 0 24 24" class="w-3.5 h-3.5 text-white/35 shrink-0" fill="none"
+                   stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </button>
+            <div v-if="!globalSearching && globalResults.length === 0"
+                 class="px-4 py-6 text-center text-[12px] text-white/45">
+              Ingen treff på «{{ searchQuery }}»
+            </div>
+          </template>
           <div v-else-if="!searchQuery"
                class="px-4 py-4 text-[11px] text-white/45 leading-relaxed">
-            Søker i alle stedsnavn, vann, topper og områder ({{ searchIndex.length }} treffbare).
+            Søker i navn i <span class="text-white/70">dette kartet</span> — steder, vann,
+            topper og områder ({{ searchIndex.length }} treffbare).
             Skriv «vann» for å se alle innsjøer i utsnittet.
             Skriv «parkering» for å liste utfartsparkeringene.
             Skriv «topp» for kartets ti høyeste punkter.
+            Steder utenfor kartet dukker opp som forslag når det ikke er treff.
           </div>
           <button v-for="(r, index) in searchResults" :key="r.id"
                   :id="`mapsearch-opt-${index}`" role="option"
@@ -6812,7 +6903,9 @@ onUnmounted(() => {
              stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 6 L9 17 L4 12"/>
         </svg>
-        {{ sti.mode.value === 'pickingVia' ? 'Bekreft via-punkt' : 'Bekreft startpunkt' }}
+        {{ sti.mode.value === 'pickingVia'
+            ? (sti.isLoop.value ? 'Bekreft vendepunkt' : 'Bekreft via-punkt')
+            : 'Bekreft startpunkt' }}
       </button>
     </div>
 
@@ -6943,13 +7036,19 @@ onUnmounted(() => {
                 text-white text-[11px] font-medium shadow-lg
                 max-w-[70%] flex items-start gap-1.5 pl-3 pr-1 py-2">
       <div class="flex-1 min-w-0">
-        <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">Stifinner</div>
+        <div class="text-[9px] uppercase tracking-wide text-emerald-100/90">
+          {{ sti.isLoop.value ? 'Rundtur' : 'Stifinner' }}
+        </div>
         <template v-if="sti.mode.value === 'pickingStart'">
           <div class="text-[12px] font-semibold">Velg startpunkt</div>
           <div class="text-[10px] text-emerald-100/90">Sikt med krysset, trykk Bekreft</div>
         </template>
         <template v-else-if="sti.mode.value === 'pickingVia'">
-          <div class="text-[12px] font-semibold">Via-punkt {{ sti.via.value.length + 1 }} av {{ sti.MAX_VIA }}</div>
+          <div class="text-[12px] font-semibold">
+            {{ sti.isLoop.value
+                ? (sti.via.value.length === 0 ? 'Velg vendepunkt' : `Vendepunkt ${sti.via.value.length + 1} av ${sti.MAX_VIA}`)
+                : `Via-punkt ${sti.via.value.length + 1} av ${sti.MAX_VIA}` }}
+          </div>
           <div class="text-[10px] text-emerald-100/90">Sikt med krysset, trykk Bekreft</div>
         </template>
         <template v-else>
@@ -6987,7 +7086,7 @@ onUnmounted(() => {
               <span v-for="(v, i) in sti.via.value" :key="'via' + i"
                     class="flex items-center gap-1 bg-amber-500/30 rounded pl-1.5 pr-0.5 py-0.5 text-[10px]">
                 <span class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
-                Via {{ i + 1 }}
+                {{ sti.isLoop.value ? 'Vendepkt' : 'Via' }} {{ i + 1 }}
                 <button @click="onRemoveVia(i)" aria-label="Fjern via-punkt"
                         class="w-4 h-4 flex items-center justify-center rounded active:bg-white/20">
                   <svg viewBox="0 0 24 24" class="w-2.5 h-2.5" fill="none" stroke="currentColor"
@@ -7003,7 +7102,7 @@ onUnmounted(() => {
                      stroke-width="2.6" stroke-linecap="round">
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
-                Via
+                {{ sti.isLoop.value ? 'Vendepunkt' : 'Via' }}
               </button>
             </div>
             <div v-if="sti.directDistanceM.value" class="text-[10px] text-emerald-100/80 mt-1 tabular-nums">
@@ -8966,6 +9065,17 @@ onUnmounted(() => {
                 <polygon points="3 11 22 2 13 21 11 13 3 11"/>
               </svg>
               <span>Naviger hit</span>
+            </button>
+            <button v-if="ctxCanNavigate" @click="onRoundTripHere"
+                    class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
+                           flex items-center gap-2 bg-emerald-500/15 border-emerald-400/40 text-emerald-100">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 2.1 21 6l-4 3.9"/>
+                <path d="M21 6H9a6 6 0 0 0 0 12h1"/>
+                <circle cx="6.5" cy="18" r="2.5"/>
+              </svg>
+              <span>Gå en runde herfra</span>
             </button>
             <button v-if="ctxCanMeasure" @click="onStartMeasureHere"
                     class="px-3 py-2.5 rounded-lg border text-[12px] active:scale-[0.98]
