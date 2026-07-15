@@ -69,8 +69,7 @@ export function useProximityAlert(getUserPos) {
   let timer = null
   let audioCtx = null
 
-  // Egen, lav-volum AudioContext — bevisst frikoblet fra useCurveBallSound så
-  // spillets mute-flagg ikke kan kvele et nav-varsel.
+  // Egen, lav-volum AudioContext så ingen andre lyd-flagg kan kvele et nav-varsel.
   function playChime() {
     try {
       const Ctor = window.AudioContext || window.webkitAudioContext

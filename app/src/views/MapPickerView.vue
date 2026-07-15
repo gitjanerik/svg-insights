@@ -80,37 +80,16 @@ function onCenterOnMe() {
   )
 }
 
-// v7.4.0: Delings-utfordring. Hvis URL har ?n=ABC&lat=...&lon=...&km=...&eq=...
-// så kommer brukeren fra en delings-lenke — pre-populer alle felter og vis
-// banner med info om hvem som har utfordret + spillforklaring.
-const challenge = ref(null)   // { name, score, level } eller null
-const shareInvite = ref(null) // { hl } — del-flyt uten utfordring
+const shareInvite = ref(null) // { hl } — del-flyt fra delingslenke
 
-// v7.4.2: i utfordringsmodus skal alle valg (sted, navn, størrelse, ekvi-
-// distanse, preview drag/pinch) være read-only. `isLocked` styrer den
-// utfordrings-spesifikke CTA-en (amber «Start Curve Invaders»).
-const isLocked = computed(() => challenge.value !== null)
+// Et delt kart (shareInvite) låser alle utsnitt-valg (sted, navn, størrelse,
+// ekvidistanse, preview drag/pinch). Poenget med deling er at mottakeren ser
+// nøyaktig det samme som senderen — «se det jeg ser» — så bbox, størrelse og
+// ekvidistanse skal ikke kunne endres.
+const controlsLocked = computed(() => shareInvite.value !== null)
 
-// v9.1.x: Også et delt kart (shareInvite) skal låse alle utsnitt-valg.
-// Poenget med deling er at mottakeren ser nøyaktig det samme som senderen
-// — «se det jeg ser» — så bbox, størrelse og ekvidistanse skal ikke kunne
-// endres. Egen flag fra `isLocked` fordi shareInvite beholder den vanlige
-// «Lag turkart»-CTA-en (ikke spill-CTA-en).
-const controlsLocked = computed(() => challenge.value !== null || shareInvite.value !== null)
-
-// Låst-tekster varierer mellom utfordring og delt kart.
-const lockedSearchPlaceholder = computed(() =>
-  challenge.value ? t('picker.searchLockedPlaceholder') : t('picker.searchLockedPlaceholderShared'))
-const lockedPreviewHint = computed(() =>
-  challenge.value ? t('picker.previewLockedHint') : t('picker.previewLockedHintShared'))
-
-function cancelChallenge() {
-  // Fjerner banneret + lås, og clearer URL-query så f.eks. F5 ikke gir
-  // utfordring igjen. Gir brukeren mulighet til å gjøre vanlig kart-bygg.
-  challenge.value = null
-  customName.value = ''
-  router.replace({ name: 'kart-nytt', query: {} })
-}
+const lockedSearchPlaceholder = computed(() => t('picker.searchLockedPlaceholderShared'))
+const lockedPreviewHint = computed(() => t('picker.previewLockedHintShared'))
 
 function dismissShareInvite() {
   shareInvite.value = null
@@ -119,64 +98,12 @@ function dismissShareInvite() {
   router.replace({ name: 'kart-nytt', query: {} })
 }
 
-// HTML-escape for trygg interpolering i v-html (kun for utfordrernavn)
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]))
-}
-
-// Utfordrings-intro renderet med <strong> rundt spillnavnet. Bruker v-html
-// fordi vi vil bolde gameName uten å forurense i18n-stringen med markup.
-const challengeIntroHtml = computed(() => {
-  if (!challenge.value) return ''
-  return t('challenge.intro', {
-    gameName: `<strong class="text-white">${escapeHtml(t('game.name'))}</strong>`,
-    startBtn: escapeHtml(t('button.startGame')),
-    name: escapeHtml(challenge.value.name),
-  })
-})
-
-function parseShareQuery() {
-  const q = route.query
-  if (!q || !q.lat || !q.lon || !q.n) return null
-  const lat = parseFloat(q.lat)
-  const lon = parseFloat(q.lon)
-  const km = parseFloat(q.km)
-  const eq = parseInt(q.eq, 10)
-  const score = parseInt(q.score, 10)
-  const lv = parseInt(q.lv, 10)
-  // v8.4.0: utfordrerens Map Master-prestasjoner (Cartographer-rang). Valgfri
-  // — eldre lenker uten 'mm' tolkes som 0.
-  const mm = parseInt(q.mm, 10)
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null
-  // Pre-populer kart-oppsett. customName settes så challenger-navn synes
-  // i lagrede-kart-listen senere.
-  center.value = { lat, lon, name: '' }
-  // Eldre delte lenker kan ha km opptil 12 — clamp til dagens 8 km-tak.
-  if (Number.isFinite(km) && km >= 1 && km <= 12) halfKm.value = Math.min(km, 8) / 2
-  if (Number.isFinite(eq) && [5, 10, 20, 25, 50].includes(eq)) equidistanceM.value = eq
-  // Delte/utfordrings-kart ble bygd før Format-velgeren med skjerm-format —
-  // behold portrett så mottaker ser nøyaktig samme utsnitt («se det jeg ser»).
-  format.value = 'portrait'
-  const name = String(q.n).slice(0, 3).toUpperCase()
-  customName.value = t('challenge.from', { name })
-  return {
-    name,
-    score: Number.isFinite(score) ? score : null,
-    level: Number.isFinite(lv) ? lv : null,
-    mapMasters: Number.isFinite(mm) && mm >= 0 ? mm : 0,
-  }
-}
-
-// v8.10.0: Ren del-flyt (uten Curve Invaders-utfordring). URL har ?lat=&lon=
-// (+ optional km/eq/hl) men IKKE ?n=. Pre-populerer feltene som
-// parseShareQuery gjør, men returnerer en lettere "shareInvite" struct som
-// rendrer et beskjedent banner istedenfor det amber utfordrings-banneret.
+// Del-flyt: URL har ?lat=&lon= (+ optional km/eq/hl). Pre-populerer feltene
+// og returnerer en "shareInvite" struct som rendrer et beskjedent banner.
 // Returner { hl } slik at generateMap kan forwarde highlight til MapView.
 function parseShareInvite() {
   const q = route.query
-  if (!q || !q.lat || !q.lon || q.n) return null
+  if (!q || !q.lat || !q.lon) return null
   const lat = parseFloat(q.lat)
   const lon = parseFloat(q.lon)
   const km = parseFloat(q.km)
@@ -301,12 +228,6 @@ async function generateMap() {
         else if (msg.startsWith('Lagrer')) buildState.value = 'saving'
       },
     })
-    if (challenge.value) {
-      try {
-        sessionStorage.setItem('curveball-autostart-mapId', id)
-        sessionStorage.removeItem('flippkart-autostart-mapId')
-      } catch { /* QuotaExceeded */ }
-    }
     // v8.10.0: Forwarde delings-highlight slik at mottaker ser samme markering
     // som sender hadde valgt. Brukes når shareInvite er aktiv (ikke
     // utfordrings-share).
@@ -461,8 +382,7 @@ function onPreviewWheel(e) {
 }
 
 onMounted(() => {
-  challenge.value = parseShareQuery()
-  if (!challenge.value) shareInvite.value = parseShareInvite()
+  shareInvite.value = parseShareInvite()
   nextTick(() => measurePreview())
   window.addEventListener('resize', measurePreview)
 })
@@ -556,51 +476,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- v7.4.0: Banner ved share-link — pre-populer felter, vis utfordrer +
-         spillforklaring så mottaker forstår hva de er invitert til.
-         v7.4.2: alle valg låst (read-only). Eget X-button kansellerer
-         utfordringen og frigjør feltene. -->
-    <div v-if="challenge"
-         class="relative mx-4 mt-4 rounded-xl border border-amber-300/40 bg-amber-500/10 px-4 py-3">
-      <button @click="cancelChallenge"
-              :aria-label="t('challenge.cancel')"
-              class="absolute top-2 right-2 w-8 h-8 rounded-full flex items-center justify-center
-                     text-amber-200/70 hover:text-amber-100 hover:bg-amber-400/15
-                     active:scale-95 transition">
-        <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-        </svg>
-      </button>
-      <div class="flex items-center gap-3 pr-8">
-        <div class="shrink-0 w-10 h-10 rounded-full bg-amber-400/20 border border-amber-300/40
-                    flex items-center justify-center text-amber-200 text-base font-bold tracking-widest">
-          {{ challenge.name }}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="text-[13px] font-semibold text-amber-100">
-            {{ t('challenge.from', { name: challenge.name }) }}
-          </div>
-          <div v-if="challenge.score !== null" class="text-[11px] text-amber-100/70">
-            <template v-if="challenge.level">
-              {{ t('challenge.scoreLevel', { score: challenge.score.toLocaleString('no-NO'), level: challenge.level }) }}
-            </template>
-            <template v-else>
-              {{ t('challenge.score', { score: challenge.score.toLocaleString('no-NO') }) }}
-            </template>
-          </div>
-          <div v-if="challenge.mapMasters > 0" class="text-[11px] text-amber-300/85 mt-0.5">
-            {{ challenge.mapMasters }} × MAP MASTER ·
-            Cartographer Lv {{ String(challenge.mapMasters).padStart(2, '0') }}
-          </div>
-        </div>
-      </div>
-      <div class="mt-2.5 text-[11px] text-white/70 leading-relaxed"
-           v-html="challengeIntroHtml"></div>
-      <div class="mt-2 text-[10px] text-white/45">
-        {{ t('challenge.locked') }}
-      </div>
-    </div>
 
     <!-- Søkefelt. v9.1.x: skjult i delingsmodus — mottakeren skal bare se og
          lage det delte kartet, ikke søke/velge sted. -->
@@ -835,32 +710,24 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Bygg-knapp. v7.4.2: i utfordringsmodus heter den «Start Curve Invaders» —
-         samme handler kjører bygg + auto-start-flagg, så MapView lander direkte
-         i spillet med Curves-tema aktivert. v8.0.0: tekst kommer fra i18n.
-         v8.0.1: brand-skrivemåte endret til «Curve Invaders» (med mellomrom). -->
+    <!-- Bygg-knapp. -->
     <div class="sticky bottom-0 z-30 shrink-0 p-4 pb-6 bg-zinc-900/95 backdrop-blur border-t border-white/10">
       <button @click="generateMap" :disabled="buildState !== 'idle' && buildState !== 'error'"
               class="w-full py-4 rounded-xl text-white font-semibold flex items-center justify-center gap-2
-                     active:scale-[0.99] transition disabled:opacity-60"
-              :class="isLocked
-                      ? 'bg-amber-600 hover:bg-amber-500 disabled:bg-amber-900'
-                      : 'bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800'">
+                     active:scale-[0.99] transition disabled:opacity-60
+                     bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800">
         <div v-if="buildState !== 'idle' && buildState !== 'error'"
              class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
         <span v-if="buildState !== 'idle' && buildState !== 'error'">{{ buildProgress }}</span>
         <template v-else>
-          <svg v-if="isLocked" viewBox="0 0 24 24" class="w-4 h-4" fill="currentColor">
-            <polygon points="5,3 19,12 5,21"/>
-          </svg>
           <!-- v9.1.x: når mottakeren har huket av install i del-kart-banneret
                bytter CTA-en til «Installer som app og lag kart» med last-ned-ikon. -->
-          <svg v-else-if="installRequested" viewBox="0 0 24 24" class="w-4 h-4" fill="none"
+          <svg v-if="installRequested" viewBox="0 0 24 24" class="w-4 h-4" fill="none"
                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/>
             <rect x="3" y="17" width="18" height="4" rx="1"/>
           </svg>
-          <span>{{ isLocked ? t('button.startGame') : (installRequested ? t('picker.makeMapInstall') : t('picker.makeMap')) }}</span>
+          <span>{{ installRequested ? t('picker.makeMapInstall') : t('picker.makeMap') }}</span>
         </template>
       </button>
       <div v-if="buildError"

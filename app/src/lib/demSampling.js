@@ -1,5 +1,5 @@
 /**
- * DEM-sampling for CurveBall-fysikk.
+ * DEM-sampling — unpack, oppslag og utklipp av lagret DEM.
  *
  * DEM-strukturen (fra demFetcher.js) har:
  *   data:      Float32Array av lengde cols*rows, indeksert [row*cols + col]
@@ -104,9 +104,8 @@ export function findHighestPoint(dem) {
  * DEM-et har sin EGEN (0,0) i hjørnet (offX, offY) — sample(gx, gy) på utklippet
  * tilsvarer altså sample(offX+gx, offY+gy) på kilden.
  *
- * Brukes av CurveBall for å spille på det største sentrerte KVADRATISKE
- * utsnittet av et A-format (portrett) kart uten å røre fysikk-motoren: spillet
- * jobber i 0..Sm-koord mot dette utklippet, og render-laget translaterer
+ * Klipper ut det største sentrerte KVADRATISKE utsnittet av et A-format
+ * (portrett) kart: kalleren jobber i 0..Sm-koord mot dette utklippet og
  * tilbake til kartets senter.
  *
  * Klipping skjer på celle-grenser (round), så meter-offset kan avvike inntil en

@@ -32,7 +32,7 @@ import AnnotationIcon from '../components/AnnotationIcon.vue'
 import { loadMap as loadStoredMap, listMaps as listStoredMaps, deleteMap as deleteStoredMap } from '../lib/mapStorage.js'
 import { isomCatalog, buildPointSymbolDef, buildIsomDefs, buildIsomCss } from '../lib/symbolizer.js'
 import { printDocument, exportSvgFile, exportPngFile, exportPdfFile } from '../lib/printExport.js'
-import { unpackDem, findHighestPoint, cropDem } from '../lib/demSampling.js'
+import { unpackDem } from '../lib/demSampling.js'
 import { computeHillshade, hillshadeToDataURL } from '../lib/hillshade.js'
 import { buildReliefBands } from '../lib/reliefBands.js'
 import { sampleProfile, buildProfilePath } from '../lib/elevationProfile.js'
@@ -66,11 +66,6 @@ import {
   bearingDeg, bearingToCompass, formatDistanceM,
   findNearestPlace, pointToPolylineDist,
 } from '../lib/mapContext.js'
-import { useCurveBall } from '../composables/useCurveBall.js'
-import CurveBallLayer from '../components/CurveBallLayer.vue'
-import CurveBallHUD from '../components/CurveBallHUD.vue'
-import CurveBallFlippers from '../components/CurveBallFlippers.vue'
-import { t } from '../lib/i18n.js'
 import { APP_VERSION } from '../version.js'
 import {
   STEDSMERKE_KEY_TIMES, STEDSMERKE_DUR, STEDSMERKE_SHADOW_OPACITY,
@@ -133,227 +128,8 @@ const sjokartStatusText = computed(() => {
   }
 })
 
-const curveball = useCurveBall()
 const storedDem = ref(null)             // unpacked DEM, eller null hvis ikke tilgjengelig
-const storedHighestPoint = ref(null)
 
-// v7.4.0: turneringsmodus — kart-rekkefølge og state-bæring mellom kart.
-// userMaps: alle brukerens egne kart (sortert av listMaps i opprettet-desc).
-// visitedMapIds: hvilke kart turneringen allerede har spilt (lagres i sessionStorage).
-const userMaps = ref([])
-// v8.0.0 rebrand-migrering: skriv kun ny nøkkel, men les begge så turneringer
-// fra før-deploy fortsetter å virke. Legacy-keys leses og ryddes etter konsumering.
-const TOURNAMENT_KEY = 'curveball-tournament-state'
-const TOURNAMENT_KEY_LEGACY = 'flippkart-tournament-state'
-
-function readTournamentRaw() {
-  try {
-    return sessionStorage.getItem(TOURNAMENT_KEY)
-        ?? sessionStorage.getItem(TOURNAMENT_KEY_LEGACY)
-  } catch { return null }
-}
-function clearTournamentLegacy() {
-  try { sessionStorage.removeItem(TOURNAMENT_KEY_LEGACY) } catch { /* ignore */ }
-}
-
-// Neste kart i turneringen — første userMap som ikke er gjeldende kart og
-// ikke i visitedMapIds. null hvis ingen flere kart finnes.
-const tournamentNextMap = computed(() => {
-  if (!userMaps.value.length) return null
-  const visited = readVisitedMapIds()
-  const currentId = route.params.id
-  for (const m of userMaps.value) {
-    if (m.id === currentId) continue
-    if (visited.includes(m.id)) continue
-    return { id: m.id, navn: m.navn }
-  }
-  return null
-})
-
-function readVisitedMapIds() {
-  try {
-    const raw = readTournamentRaw()
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed.visitedMapIds) ? parsed.visitedMapIds : []
-  } catch { return [] }
-}
-
-// shareInfo for HUD-modal — bygges fra meta + base-URL. null hvis meta mangler.
-const cbShareInfo = computed(() => {
-  const m = meta.value
-  if (!m || !m.bbox) return null
-  const lat = (m.bbox.south + m.bbox.north) / 2
-  const lon = (m.bbox.west + m.bbox.east) / 2
-  // sizeKm = bredde i km (kvadratiske kart, så bredde≈høyde). Faller tilbake til 4.
-  const sizeKm = m.widthM ? +(m.widthM / 1000).toFixed(2) : 4
-  const equidistanceM = m.equidistance ?? 20
-  const baseUrl = `${window.location.origin}${import.meta.env.BASE_URL.replace(/\/$/, '')}`
-  return { lat, lon, sizeKm, equidistanceM, baseUrl }
-})
-
-async function loadUserMapsForTournament() {
-  // Auto-fliser holdes utenfor turnerings-rotasjonen — de er en flyktig mosaikk-
-  // cache, ikke kart brukeren har valgt å spille på.
-  try { userMaps.value = (await listStoredMaps()).filter(m => !m.isAuto) }
-  catch { userMaps.value = [] }
-}
-
-async function onTournamentNext(next) {
-  if (!next?.id) return
-  // Lagre curveball-state + visited-list for restoring i ny MapView-mount
-  const state = curveball.serializeForTournament()
-  const visited = readVisitedMapIds()
-  if (!visited.includes(route.params.id)) visited.push(route.params.id)
-  try {
-    sessionStorage.setItem(TOURNAMENT_KEY, JSON.stringify({
-      state,
-      visitedMapIds: visited,
-      pendingNextMapId: next.id,
-    }))
-  } catch { /* QuotaExceeded — fall through, restore vil ikke trigge */ }
-  curveball.deactivate()
-  router.push({ name: 'kart-vis', params: { id: next.id } })
-}
-
-function consumeTournamentRestore() {
-  try {
-    const raw = readTournamentRaw()
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (parsed?.pendingNextMapId !== route.params.id) {
-      // Mounted på et annet kart enn forventet — turneringen er brutt.
-      sessionStorage.removeItem(TOURNAMENT_KEY)
-      clearTournamentLegacy()
-      return null
-    }
-    // Behold visitedMapIds for senere "Neste kart"-kjeder, men fjern
-    // state+pendingNextMapId så vi ikke restorer dobbelt. Tøm legacy også
-    // så vi ikke ender med to konkurrerende verdier.
-    sessionStorage.setItem(TOURNAMENT_KEY, JSON.stringify({
-      visitedMapIds: parsed.visitedMapIds ?? [],
-    }))
-    clearTournamentLegacy()
-    return parsed.state ?? null
-  } catch { return null }
-}
-const cbViewBox = computed(() => {
-  if (!meta.value) return '0 0 1 1'
-  return `0 0 ${meta.value.widthM} ${meta.value.heightM}`
-})
-
-// CurveBall ble designet for kvadratiske kart. Etter at A-format (portrett,
-// for A4-utskrift) ble default for nye kart spiller vi MIDLERTIDIG på det
-// største mulige sentrerte kvadratiske utsnittet i stedet for hele rektangelet.
-// cbSquare gir kvadrat-siden (Sm) + meter-offset til kartets origo; alt avledes
-// fra dette: DEM-utklippet (cropDem), render-forskyvningen (cbOffset) og
-// flipper-rektangelet (updateMapRect). Kvadratiske kart → offset (0,0), no-op.
-const cbSquare = computed(() => {
-  if (!meta.value) return null
-  const Sm = Math.min(meta.value.widthM, meta.value.heightM)
-  let offX = (meta.value.widthM - Sm) / 2
-  let offY = (meta.value.heightM - Sm) / 2
-  // ESSENSIELT: snap offset-en til DEM-celle-grenser. cropDem klipper på hele
-  // celler (round), så hvis render-offset-en var den eksakte geometriske
-  // midten kunne fysikk-DEM og det tegnede spill-laget avvike med opptil en
-  // halv celle (~12,5 m på 25 m-DTM) — da flukter ikke Red Curves-konturene
-  // og ball-fysikken med kartets eget kontur-lag/terreng. Med snappet offset
-  // refererer DEM-utklipp, render-translate og annoterings-shift NØYAKTIG
-  // samme grid-celler, og kurvene ligger flush med terrenget.
-  const t = storedDem.value?.transform
-  if (t?.pixelWidth > 0 && t?.pixelHeight > 0) {
-    offX = Math.round(offX / t.pixelWidth) * t.pixelWidth
-    offY = Math.round(offY / t.pixelHeight) * t.pixelHeight
-  }
-  return { Sm, offX, offY }
-})
-const cbOffset = computed(() =>
-  cbSquare.value ? { x: cbSquare.value.offX, y: cbSquare.value.offY } : { x: 0, y: 0 })
-
-// Bygg init-konteksten for CurveBall: kvadratisk DEM-utklipp + bounds, og
-// annoteringer flyttet inn i spill-koord (0..Sm) med dem utenfor kvadratet
-// droppet. Delt mellom direkte start og turnerings-/gjenopprettings-flyten.
-function buildCurveBallContext() {
-  const sq = cbSquare.value
-  if (!sq) {
-    return {
-      dem: storedDem.value,
-      bounds: { width: meta.value.widthM, height: meta.value.heightM },
-      equidistanceM: meta.value.equidistance ?? 20,
-      annotations: annot.annotations.value,
-    }
-  }
-  const { Sm, offX, offY } = sq
-  const dem = storedDem.value
-    ? cropDem(storedDem.value, offX, offY, Sm)
-    : storedDem.value
-  const annotations = (annot.annotations.value ?? [])
-    .filter(a => a?.type === 'point'
-      && a.x >= offX && a.x <= offX + Sm
-      && a.y >= offY && a.y <= offY + Sm)
-    .map(a => ({ ...a, x: a.x - offX, y: a.y - offY }))
-  return {
-    dem,
-    bounds: { width: Sm, height: Sm },
-    equidistanceM: meta.value.equidistance ?? 20,
-    annotations,
-  }
-}
-
-// Skjerm-rekt for kart-SVG-en, oppdatert når curveball er aktiv så Pong-paddles
-// kan posisjoneres relativt til kartets ekte plass på skjermen (etter pinch/pan).
-const mapRect = ref(null)
-
-function updateMapRect() {
-  if (!curveball.active.value) {
-    mapRect.value = null
-    return
-  }
-  const el = svgHostRef.value
-  if (!el || !meta.value) return
-  const r = el.getBoundingClientRect()
-  // SVG bruker preserveAspectRatio="xMidYMid meet" — content-rect er centrert
-  // og letterboxet i host-div-en. Beregn ekte content-rect (der kart-kantene
-  // faktisk er) så paddles følger kantene, ikke host-edges.
-  const containerAR = r.width / r.height
-  const viewBoxAR = meta.value.widthM / meta.value.heightM
-  let contentW, contentH, offsetX, offsetY
-  if (containerAR > viewBoxAR) {
-    // Container bredere → fit by height, horisontal letterbox
-    contentH = r.height
-    contentW = r.height * viewBoxAR
-    offsetY = 0
-    offsetX = (r.width - contentW) / 2
-  } else {
-    contentW = r.width
-    contentH = r.width / viewBoxAR
-    offsetX = 0
-    offsetY = (r.height - contentH) / 2
-  }
-  // CurveBall spiller på det sentrerte kvadratiske utsnittet (se cbSquare),
-  // så flipper-rektangelet er kvadratets skjerm-rekt — ikke hele kart-
-  // innholdet. På kvadratiske kart er offX/offY = 0 → identisk med før.
-  const pxPerM = contentW / meta.value.widthM    // CSS-px per viewBox-meter
-  const sq = cbSquare.value
-  const sqOffX = sq ? sq.offX : 0
-  const sqOffY = sq ? sq.offY : 0
-  const sqSidePx = (sq ? sq.Sm : meta.value.widthM) * pxPerM
-  // v8.0.1: HUD-elementer (paddle-tykkelse, topp-bar, hjerter, exit-knapp)
-  // skal skaleres med kart-utsnittets faktiske skjerm-størrelse. Tidligere
-  // var alt fast i CSS-px slik at små kart fikk store paddles. Referansen
-  // 420px tilsvarer ca. en typisk 4×4km-mapRect på telefon i portrait — der
-  // designet var tunet — så scale=1 der. Clampes så HUD aldri blir mikro
-  // eller dominerer hele kartet.
-  const hudScale = Math.max(0.55, Math.min(1.3, sqSidePx / 420))
-  mapRect.value = {
-    top:    r.top + offsetY + sqOffY * pxPerM,
-    left:   r.left + offsetX + sqOffX * pxPerM,
-    width:  sqSidePx,
-    height: sqSidePx,
-    pxPerM,
-    hudScale,
-  }
-}
 
 const BUILTIN = {
   vardasen: { navn: 'Vardåsen · turkart', file: 'vardasen.svg' },
@@ -711,59 +487,19 @@ function onThemeTap(key) {
   currentTheme.value = key
 }
 
-// v7.3.1: ekstra state for built-in maps som mangler stored DEM
-const cbDemFetching = ref(false)
-const cbDemError = ref(null)
-
-// v8.9.4: ensureDem brukes nå av flere features (CurveBall, hill-shading,
-// høydeprofil) — derav den generelle navngivningen.
+// Lazy DEM-henting for features som trenger høydedata etter at kartet er
+// lastet (hill-shading, høydeprofil).
 async function ensureDem() {
   if (storedDem.value || !meta.value) return !!storedDem.value
-  cbDemFetching.value = true
-  cbDemError.value = null
   try {
     const m = meta.value
     const utmBbox = { minE: m.minE, maxE: m.maxE, minN: m.minN, maxN: m.maxN }
     const dem = await fetchDEM(m.bbox, utmBbox, { resolutionM: 10, useReal: true })
     if (dem && !dem.source?.startsWith('synthetic')) {
       storedDem.value = dem
-      storedHighestPoint.value = findHighestPoint(dem)
     }
-  } catch (e) {
-    cbDemError.value = e?.message ?? 'Kunne ikke hente høydedata'
-  }
-  cbDemFetching.value = false
+  } catch { /* nettverksfeil — kall-sites håndterer manglende DEM */ }
   return !!storedDem.value
-}
-// Alias for å bevare eksisterende kall-sites (CurveBall + Tournament).
-const ensureDemForCurveBall = ensureDem
-
-async function startCurveBall() {
-  if (!meta.value || cbDemFetching.value) return
-  const ok = await ensureDemForCurveBall()
-  if (!ok) return
-  // v8.7.1: rydd annoteringsmodus så indikator-tooltipet ikke henger
-  // inne i spillet (og så et map-tap ikke kan plassere en annotering
-  // bak game-overlayet).
-  annot.selectedSymbol.value = null
-  annot.isAnnotateMode.value = false
-  // v7.4.2: CurveBall skal ALLTID kjøres med Curves-tema aktivt — også i
-  // turneringsmodus, share-link-flow og direkte fra CurveBall-knappen.
-  // Bryterhåndtering bevares (currentTheme er en ref, watch kjører applyTheme).
-  currentTheme.value = 'curves'
-  // v8.7.0: kart-annoteringer blir custom bumpers i tillegg til random pr level.
-  // Stedsmerke-bumper trigger Invaders-modus direkte ved multiball-trigger.
-  // Kvadratisk-utsnitt-kropping skjer i buildCurveBallContext.
-  curveball.init(buildCurveBallContext())
-  curveball.restart()
-  // Reset pinch/zoom så hele kartet er synlig (paddles trenger map-edges på skjermen)
-  reset()
-  curveball.activate()
-  closeDrawer()
-}
-
-function stopCurveBall() {
-  curveball.deactivate()
 }
 
 // Standard zoom-nivå for «Sentrer»-FAB-en (Zoom-panelet, v12.0.18). 1 = dagens
@@ -803,20 +539,6 @@ function onResetAndRefreshGps() {
   // FAB-en er den naturlige «tilbake til standard»-handlingen for visningen.
   labelScaleSlider.value = 0   // watch → applyLabelScale + persist
   if (userPos.isWatching) userPos.refresh()
-}
-
-function onCurveBallRestart() {
-  // v7.4.0: full restart fra game over → glem turneringens visited-list
-  // så neste runde kan re-besøke samme kart. v8.0.0: tøm også legacy-key
-  // for sikkerhet under rebrand-overgangen.
-  try { sessionStorage.removeItem(TOURNAMENT_KEY) } catch { /* noop */ }
-  clearTournamentLegacy()
-  curveball.restart()
-}
-
-// Tap på kart eller HUD-overlay → start nedtelling. Auto-drop ved 0.
-function onCurveBallContinue() {
-  curveball.startCountdown()
 }
 
 function toggleLayer(key) {
@@ -1149,16 +871,15 @@ function applyNameLanguage() {
   }
 }
 
-// Pinch/pan/rotate fryses kun i CurveBall-modus (kartet skal stå i ro under
-// spill) og mens aller første last pågår (ingen kart-DOM ennå). Mens et ferskt
-// kart fyller inn stier og detaljer (terreng-først) ELLER mens et nytt kart
-// bygges on-the-fly, lar vi brukeren pan/zoome/rotere fritt — auto-kart-trigger
+// Pinch/pan/rotate fryses kun mens aller første last pågår (ingen kart-DOM
+// ennå). Mens et ferskt kart fyller inn stier og detaljer (terreng-først)
+// ELLER mens et nytt kart bygges on-the-fly, lar vi brukeren pan/zoome/rotere
+// fritt — auto-kart-trigger
 // er separat gated (checkAutoMapTrigger returnerer på fillingInDetails/
 // buildingOnTheFly), så gestene lager aldri et konkurrerende auto-kart. Når
 // detaljene lander, byttes SVG-en inn via en silent re-render som beholder
 // gjeldende transform, så stier/detaljer dukker opp sømløst i brukerens utsnitt.
-const pinchEnabled = computed(() =>
-  !curveball.active.value && !loading.value)
+const pinchEnabled = computed(() => !loading.value)
 // panAtRest: la kartet dras også ved nullstilt zoom (se clampPan for canvas-rom).
 const { scale, translateX, translateY, rotation, reset, panTo, rotateTo, animating, isGesturing } =
   usePinchZoom(wrapperRef, { enabled: pinchEnabled, panAtRest: true, minScale: () => mosaicMinScale() })
@@ -1721,30 +1442,6 @@ const knobPanelTitle = computed(() => (
   : 'Zoom og kartutsnitt'
 ))
 
-// Pong-paddles: følg kart-SVG-ens skjerm-rekt ved pinch/pan/rotate så de
-// alltid sitter rett ved kartets kanter. nextTick venter til CSS transform
-// faktisk er applied i DOM før vi måler.
-watch([scale, translateX, translateY, rotation], () => {
-  if (curveball.active.value) nextTick(updateMapRect)
-})
-
-watch(() => curveball.active.value, (active) => {
-  // Relieff av under spill / på igjen etterpå (applyHillshade gater på active).
-  applyHillshade()
-  if (active) {
-    nextTick(updateMapRect)
-    // Reset() animerer scale/translate over 200ms — re-mål når transitionen er ferdig.
-    setTimeout(updateMapRect, 250)
-    // Skjul mosaikk-spøkelsene under spill (rent spillbrett).
-    const gc = svgHostRef.value?.querySelector('svg #ghost-tiles')
-    if (gc) gc.style.display = 'none'
-  } else {
-    mapRect.value = null
-    const gc = svgHostRef.value?.querySelector('svg #ghost-tiles')
-    if (gc) gc.style.display = ''
-  }
-})
-
 // Unified transform: translate ∘ rotate ∘ scale med transform-origin 0 0.
 // Én enkelt transform-matrise lar oss rotere rundt vilkårlig pivot (finger-
 // senter) ved å oppdatere translate samtidig — to nested transformer ville
@@ -2303,7 +2000,7 @@ function renderHighlight() {
   const ns = 'http://www.w3.org/2000/svg'
   let layer = svg.querySelector('#search-highlight-layer')
   const h = highlightedFeature.value
-  if (!h || curveball.active.value) {
+  if (!h) {
     if (layer) layer.remove()
     return
   }
@@ -2351,10 +2048,8 @@ function renderHighlight() {
   layer.appendChild(pulse)
 }
 
-// Hold ringen på konstant skjerm-størrelse ved zoom. Re-render ved tema-/
-// spillmodus-bytte.
+// Hold ringen på konstant skjerm-størrelse ved zoom.
 watch(scale, () => { if (highlightedFeature.value) renderHighlight() })
-watch(() => curveball.active.value, () => renderHighlight())
 
 // Mål-markør for et aktivt nærhetsvarsel: en fast-skjerm-størrelse pin pluss
 // en sirkel som viser den ekte utløsnings-radiusen (i meter = user-units).
@@ -2364,7 +2059,7 @@ function renderProximityTarget() {
   const ns = 'http://www.w3.org/2000/svg'
   let layer = svg.querySelector('#proximity-layer')
   const a = proximity.active.value
-  if (!a || curveball.active.value) {
+  if (!a) {
     if (layer) layer.remove()
     return
   }
@@ -2401,7 +2096,6 @@ function renderProximityTarget() {
 
 watch(() => proximity.active.value, renderProximityTarget, { deep: true })
 watch(scale, () => { if (proximity.active.value) renderProximityTarget() })
-watch(() => curveball.active.value, () => renderProximityTarget())
 
 // ── Share-flow ────────────────────────────────────────────────────────────
 // Bygger URL som tar mottaker til samme kart-utsnitt. Built-in kart pekes
@@ -2718,10 +2412,7 @@ async function applyHillshade() {
   // v9.1.13: knaus er nå malt inn i relieffet. Rydd vekk et evt. gammelt
   // separat knaus-lag fra tidligere klient-versjoner.
   svg.querySelector('#knaus-relief-layer')?.remove()
-  // Relieff slås MIDLERTIDIG helt av mens CurveBall kjører (rent spillbrett).
-  // Brukerens valgte relieff-nivå røres ikke — applyHillshade kjøres på nytt
-  // når spillet avsluttes (se curveball.active-watch).
-  const wantOn = reliefEnabled.value && reliefOpacity.value > 0 && !curveball.active.value
+  const wantOn = reliefEnabled.value && reliefOpacity.value > 0
   if (!wantOn) { svg.querySelector('#hillshade-layer')?.remove(); return }
   // Lazy-last DEM hvis nødvendig — built-in Vardåsen fetcher fra Kartverket WCS
   await ensureDem()
@@ -2870,10 +2561,10 @@ function clientToSvgPoint(clientX, clientY) {
 }
 
 function openContextMenuAt(clientX, clientY) {
-  // Long-press skal være no-op mens spillet kjører, mens et annet overlay (søk,
-  // on-the-fly) eier UI-en, eller mens et ferskt kart fortsatt fyller inn detaljer
+  // Long-press skal være no-op mens et annet overlay (søk, on-the-fly) eier
+  // UI-en, eller mens et ferskt kart fortsatt fyller inn detaljer
   // (detalj-insetet ville ellers vist halvbygd data).
-  if (curveball.active.value || buildingOnTheFly.value || searchOpen.value ||
+  if (buildingOnTheFly.value || searchOpen.value ||
       fillingInDetails.value || sti.active.value) return
   const local = clientToSvgPoint(clientX, clientY)
   if (!local) return
@@ -2927,7 +2618,6 @@ function onPointerUpLongPress(e) {
 }
 function onContextMenuEvent(e) {
   // Høyreklikk på desktop. preventDefault stopper browser-menyen.
-  if (curveball.active.value) return
   e.preventDefault()
   openContextMenuAt(e.clientX, e.clientY)
 }
@@ -3744,7 +3434,6 @@ watch([contextMenuOpen, contextMenuPoint, scale, translateX, translateY, rotatio
 watch(animating, (v) => {
   if (v && contextMenuOpen.value && !contextPinRaf) contextPinRaf = requestAnimationFrame(contextPinRafLoop)
 })
-watch(() => curveball.active.value, () => { if (curveball.active.value) closeContextMenu() })
 
 // ── Long-press detalj-inset ──────────────────────────────────────────────
 // Et 150×150 m utsnitt rundt long-press-punktet, rendret som et eget lite
@@ -4018,12 +3707,6 @@ watch(() => annot.visibleTypes.value, () => renderAnnotations())
 // endrer seg, slik at de holder konstant skjerm-størrelse uansett zoom-nivå.
 watch(scale, () => { renderAnnotations(); updateUserDot(); renderTracks() })
 
-// Skjul annoteringer i spillmodus — bumpers representerer de samme
-// posisjonene med konsistent halo+icon-styling, og uten dobbel-render
-// unngår vi at map-annotering-animasjonen (5s loop) overlapper bumper-
-// animasjonen (hit-triggered).
-watch(() => curveball.active.value, () => { renderAnnotations(); renderTracks() })
-
 // Tracks: re-render når spor endres, stil endres, eller synlighet toggles.
 // Deep watch på tracks fordi vi pusher nye punkter inn i samme array under
 // opptak (~hvert 5. m).
@@ -4122,7 +3805,7 @@ function renderMeasure() {
   }
   layer.replaceChildren()
   const v = measureVertices.value
-  if (!v.length || curveball.active.value) return
+  if (!v.length) return
 
   // Stroke-widths: paths inne i [data-layer] arver vector-effect:
   // non-scaling-stroke fra global SVG-CSS (symbolizer.js linje 394). Det
@@ -4183,7 +3866,6 @@ function renderMeasure() {
 }
 
 watch([measureVertices, measureClosed, scale], () => renderMeasure(), { deep: true })
-watch(() => curveball.active.value, () => renderMeasure())
 
 // Stifinner-overlay: 1–3 fargede ruter + start/mål-markører + connector-
 // strek fra valgt punkt til snappet sti-node. Tegnes i et eget <g> på SVG-en
@@ -4204,7 +3886,7 @@ function renderRoutes() {
   layer.replaceChildren()
   // Tegn i både 'showing' og 'pickingVia' (behold ruten synlig mens brukeren
   // sikter et nytt via-punkt).
-  if ((sti.mode.value !== 'showing' && sti.mode.value !== 'pickingVia') || curveball.active.value) return
+  if (sti.mode.value !== 'showing' && sti.mode.value !== 'pickingVia') return
 
   const s = scale.value || 1
   const mk = (d, stroke, width, opts = {}) => {
@@ -4314,12 +3996,6 @@ function renderAnnotations() {
     svg.appendChild(layer)
   }
   layer.replaceChildren()
-
-  // Spillmodus: ikke render annoteringer. Bumpers i CurveBallLayer viser
-  // samme posisjoner med konsistent halo+icon-stil. Annoteringer kommer
-  // tilbake automatisk når spillet avsluttes (curveball.active → false
-  // trigger ny renderAnnotations via watch).
-  if (curveball.active.value) return
 
   // Symbol-størrelse: ~32 CSS px på skjerm uansett zoom-nivå. ISOM-print-
   // størrelse (1.5–2 mm = 6–7.5 px) er usynlig på telefon ved standard
@@ -4637,7 +4313,6 @@ function renderTracks() {
     else svg.appendChild(layer)
   }
   layer.replaceChildren()
-  if (curveball.active.value) return
 
   // v8.9.5: paths inne i [data-layer] arver vector-effect: non-scaling-
   // stroke fra global SVG-CSS, så stroke-width tolkes i CSS-px. Del kun på
@@ -4869,7 +4544,7 @@ const drawerCoversCanvas = computed(() =>
 const extendZonesVisible = computed(() =>
   !loading.value && !loadError.value && !!meta.value &&
   !buildingOnTheFly.value && !fillingInDetails.value &&
-  !curveball.active.value && !annot.isAnnotateMode.value &&
+  !annot.isAnnotateMode.value &&
   !measureMode.value && !sti.active.value && !searchOpen.value && !drawerCoversCanvas.value
 )
 
@@ -5076,10 +4751,10 @@ function maybeAutoPromote() {
 watch([scale, translateX, translateY, rotation], scheduleActivatableCheck)
 
 // Felles gate: ikke kjør auto-kart-logikk når et annet modus eier UI-en
-// (måling, annotering, spill, søk, åpen drawer) — da er skjermsenteret dekket
+// (måling, annotering, søk, åpen drawer) — da er skjermsenteret dekket
 // eller irrelevant.
 function autoMapModeBusy() {
-  return curveball.active.value || annot.isAnnotateMode.value ||
+  return annot.isAnnotateMode.value ||
          measureMode.value || sti.active.value || searchOpen.value || drawerCoversCanvas.value
 }
 
@@ -5408,12 +5083,11 @@ async function loadMap({ silent = false } = {}) {
       if (!stored) throw new Error('Kart ikke funnet i lagring')
       mapTitle.value = stored.navn
       text = stored.svg
-      // v7.2.0: hent DEM hvis lagret (forberedt for CurveBall)
+      // Hent DEM hvis lagret (brukes av relieff og høydeprofil)
       if (stored.dem) {
         try { storedDem.value = unpackDem(stored.dem) } catch { storedDem.value = null }
         demBytes = stored.dem.buffer?.byteLength ?? 0
       }
-      storedHighestPoint.value = stored.highestPoint ?? null
     }
     // Datamengde for dette kartet (vises i drawer-ens Debug + long-press-arket).
     // SVG-en er hoved-payloaden; DEM-en lagres separat (pakket Float32-buffer).
@@ -5978,7 +5652,6 @@ async function renderGhostTiles() {
   const m = meta.value
   if (!svg || !m || m.minE == null) return
   svg.querySelector('#ghost-tiles')?.remove()
-  if (curveball.active.value) return    // ingen spøkelser under spill
 
   let tiles
   try { tiles = await listStoredMaps() } catch { return }
@@ -6276,67 +5949,6 @@ function applyDiagnoseMode() {
 }
 watch(diagnose, applyDiagnoseMode)
 
-/**
- * v7.4.1: Auto-start curveball hvis brukeren akkurat bygde dette kartet
- * fra en delingslenke. Skipper Curves-tema-easter-eggen helt — share-flowen
- * er ekvivalent med at CurveBall-knappen ble trykket.
- */
-function consumeShareAutostart() {
-  try {
-    // v8.0.0: les både ny og legacy share-autostart-key. Begge ryddes
-    // etter konsumering så vi ikke ender med to konkurrerende verdier.
-    const flagId = sessionStorage.getItem('curveball-autostart-mapId')
-                ?? sessionStorage.getItem('flippkart-autostart-mapId')
-    if (!flagId || flagId !== route.params.id) return false
-    sessionStorage.removeItem('curveball-autostart-mapId')
-    sessionStorage.removeItem('flippkart-autostart-mapId')
-    return true
-  } catch { return false }
-}
-
-async function maybeAutostartFromShare() {
-  if (!consumeShareAutostart()) return
-  if (!meta.value) {
-    const stop = watch(meta, async (m) => {
-      if (m) { stop(); await startCurveBall() }
-    })
-  } else {
-    await startCurveBall()
-  }
-}
-
-async function maybeRestoreTournament() {
-  // Sjekk om vi mountet på dette kartet pga «Neste kart»-snarvei. Hvis ja,
-  // init+aktivér curveball med restorert state. Krever at kartet og DEM
-  // er ferdig lastet, så vi venter på loadMap().
-  const state = consumeTournamentRestore()
-  if (!state) return
-  await loadUserMapsForTournament()
-  // Vent til meta er klar — loadMap settes ferdig før onMounted-callback returnerer
-  // hvis kartet ligger i IndexedDB. Hvis ikke, watch på meta nedenfor håndterer det.
-  if (!meta.value) {
-    const stop = watch(meta, async (m) => {
-      if (m) { stop(); await activateRestoredCurveBall(state) }
-    })
-  } else {
-    await activateRestoredCurveBall(state)
-  }
-}
-
-async function activateRestoredCurveBall(state) {
-  if (!meta.value) return
-  const ok = await ensureDemForCurveBall()
-  if (!ok) return
-  // v7.4.2: Curves-tema aktivt for hele turneringsmoduset, ikke bare ved
-  // første start. Sikrer konsistent visuell stil mellom kart-bytter.
-  currentTheme.value = 'curves'
-  curveball.init(buildCurveBallContext())
-  curveball.restoreFromTournament(state)
-  reset()
-  curveball.activate()
-  closeDrawer()
-}
-
 // v8.5.5: tikker hvert sekund mens GPS er på, så debug-readout (alder
 // på siste fix) oppdaterer seg jevnt uten å bero på nye GPS-events.
 const gpsNow = ref(Date.now())
@@ -6473,13 +6085,8 @@ onMounted(() => {
     wrapperResizeObs.observe(wrapperRef.value)
   }
   window.addEventListener('resize', measureWrapper)
-  window.addEventListener('resize', updateMapRect)
   window.addEventListener('resize', scheduleNameLOD)
-  window.addEventListener('orientationchange', updateMapRect)
   loadMap()
-  loadUserMapsForTournament()
-  maybeRestoreTournament()
-  maybeAutostartFromShare()
   screenWake.start()
 })
 
@@ -6515,8 +6122,7 @@ onUnmounted(() => {
          panelbredden) så den midtstilte tittel-badgen re-sentreres responsivt
          når side-panelet endrer bredde, og søke-/meny-knappene ikke havner bak
          panelet. Mobil/lukket: full bredde (panelOffsetPx = 0). -->
-    <div v-if="!curveball.active.value"
-         class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
+    <div class="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 py-3
                 pointer-events-none transition-[right] duration-200"
          :style="{ right: panelOffsetPx + 'px' }">
       <div class="flex items-center gap-2 pointer-events-auto">
@@ -6581,7 +6187,7 @@ onUnmounted(() => {
     <!-- Søke-overlay — synlig når searchOpen=true. Lukker drawer og legger
          seg under topbar slik at brukeren kan se kartet bak. -->
     <Transition name="search-fade">
-      <div v-if="searchOpen && !curveball.active.value"
+      <div v-if="searchOpen"
            class="absolute top-16 left-3 right-3 z-40 rounded-2xl bg-zinc-950/95 backdrop-blur
                   border border-white/10 shadow-2xl overflow-hidden flex flex-col"
            style="max-height: calc(100dvh - 6rem);">
@@ -6680,10 +6286,9 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- Kompass-rose (skjult i CurveBall-modus). På desktop skyves den til
-         venstre for side-panelet når drawer er åpen så den ikke havner bak. -->
-    <div v-if="!curveball.active.value"
-         class="absolute top-20 z-20 pointer-events-auto select-none flex flex-col items-end
+    <!-- Kompass-rose. På desktop skyves den til venstre for side-panelet
+         når drawer er åpen så den ikke havner bak. -->
+    <div class="absolute top-20 z-20 pointer-events-auto select-none flex flex-col items-end
                 transition-[right] duration-200"
          :style="floatRightStyle">
       <button @click="pointNorth"
@@ -6746,12 +6351,12 @@ onUnmounted(() => {
     <!-- FAB-stack: on-the-fly / zoom inn / zoom ut / sentrer. Synlig både når
          drawer er åpen og lukket. Når drawer er åpen flyttes FAB-en opp over
          drawer-toppen så den ikke dekker innstillinger. z-40 sikrer at FAB-en
-         ligger over drawer (z-30). Skjult i CurveBall-modus og når søke-
-         overlayet er åpent (begge bruker z-40 og ville ellers stacke). -->
+         ligger over drawer (z-30). Skjult når søke-overlayet er åpent
+         (begge bruker z-40 og ville ellers stacke). -->
     <!-- FAB-bunn løftes kun når bunn-arket er åpent (mobil). På desktop er
          drawer et side-panel, så FAB-en beholder sin bunn og skyves i stedet
          til venstre for panelet. -->
-    <div v-if="!curveball.active.value && !searchOpen && !(!isDesktop && showControls && drawer.isMaximized.value)"
+    <div v-if="!searchOpen && !(!isDesktop && showControls && drawer.isMaximized.value)"
          class="absolute z-40 flex flex-col gap-2 pointer-events-auto select-none transition-[bottom,right] duration-200"
          :style="{
            right: floatRightStyle.right,
@@ -6842,11 +6447,6 @@ onUnmounted(() => {
          @contextmenu="onContextMenuEvent">
       <div ref="mapInnerRef" class="w-full h-full relative" :style="mapTransformStyle">
         <div ref="svgHostRef" class="w-full h-full" @click="onMapClick"></div>
-        <CurveBallLayer
-          :flipp="curveball"
-          :view-box="cbViewBox"
-          :offset="cbOffset"
-          @drop="onCurveBallContinue"/>
       </div>
       <!-- Long-press-sikte: HTML-overlay UTENFOR pinch-transformen (søsken av det
            transformerte mapInnerRef), så størrelsen er en LITERAL CSS-piksel-
@@ -6873,7 +6473,7 @@ onUnmounted(() => {
          panorerer kartet til siktet står på ønsket start, så «Bekreft». Ligger
          over kartet (pointer-events none) sentrert i kart-flaten (samme right-
          offset som wrapperen så det treffer visibleCenterSvg). -->
-    <div v-if="(sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia') && !curveball.active.value"
+    <div v-if="sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia'"
          class="absolute inset-0 z-20 pointer-events-none flex items-center justify-center"
          :style="{ right: panelOffsetPx + 'px' }">
       <svg viewBox="0 0 80 80" class="w-20 h-20 drop-shadow"
@@ -6892,7 +6492,7 @@ onUnmounted(() => {
       </svg>
     </div>
     <!-- «Bekreft»-knapp (start- eller via-plukk). -->
-    <div v-if="(sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia') && !curveball.active.value"
+    <div v-if="sti.mode.value === 'pickingStart' || sti.mode.value === 'pickingVia'"
          class="absolute left-1/2 -translate-x-1/2 z-30 transition-[left] duration-200"
          :style="[mapCenterStyle, { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }]">
       <button @click="sti.mode.value === 'pickingVia' ? onConfirmVia() : onConfirmStart()"
@@ -6915,7 +6515,7 @@ onUnmounted(() => {
     <!-- Auto-kart runtime-toast (offline / «flyttet sentrum» / på-av): fast
          nederst-midt på kartet siden FAB-en er borte. -->
     <Transition name="chip-fade">
-      <div v-if="autoMapToast && !curveball.active.value && !searchOpen"
+      <div v-if="autoMapToast && !searchOpen"
            class="absolute left-1/2 -translate-x-1/2 z-30 px-3 py-2 rounded-2xl
                   bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
                   text-center max-w-[85%] pointer-events-none border border-white/10
@@ -6928,7 +6528,7 @@ onUnmounted(() => {
     <!-- Terreng-først: kartet viser konturer+relieff straks; chip viser at
          stier og detaljer fylles inn i bakgrunnen (Overpass laster). -->
     <Transition name="chip-fade">
-      <div v-if="fillingInDetails && !curveball.active.value && !searchOpen"
+      <div v-if="fillingInDetails && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-30 pl-2 pr-3.5 py-1.5 rounded-2xl
                   bg-zinc-950/90 text-white text-[12.5px] font-medium shadow-lg backdrop-blur
                   flex items-center gap-2 pointer-events-none border border-white/10
@@ -6961,10 +6561,9 @@ onUnmounted(() => {
     </Transition>
 
     <!-- Highlight-chip — vises når et søkeresultat eller ?hl= har satt en
-         markør. Tap fjerner highlight og dropper søkemodus. Skjules under
-         Curve Invaders så den ikke kolliderer med game-HUD-en. -->
+         markør. Tap fjerner highlight og dropper søkemodus. -->
     <Transition name="chip-fade">
-      <div v-if="highlightedFeature && !curveball.active.value && !searchOpen"
+      <div v-if="highlightedFeature && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-2xl
                   bg-pink-500/95 text-white text-[12px] font-medium shadow-lg
                   flex items-center gap-2 max-w-[85%] pointer-events-auto
@@ -6991,10 +6590,8 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- Annoteringsmodus indikator. v8.7.1: skjules eksplisitt mens
-         Curve Invaders kjører — ellers ble den hengende inne i spill-
-         viewet og så ut som en stor «utilsiktet bumper» midt på kartet. -->
-    <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value && !curveball.active.value"
+    <!-- Annoteringsmodus indikator. -->
+    <div v-if="annot.isAnnotateMode.value && annot.selectedSymbol.value"
          class="absolute top-[16rem] right-3 z-20 px-2.5 py-1.5 rounded-md bg-slate-600
                 text-white text-[11px] font-medium shadow-lg pointer-events-none">
       Trykk på kartet for å plassere
@@ -7007,7 +6604,7 @@ onUnmounted(() => {
          v8.9.6: flyttet til top-left (under back-knappen) så den ikke ligger
          bak FAB-stacken. v9.1.2: X-knapp øverst til høyre avslutter målingen
          direkte fra kartet uten å åpne drawer-en. -->
-    <div v-if="measureMode && !curveball.active.value"
+    <div v-if="measureMode"
          class="absolute top-16 left-3 z-20 rounded-md bg-emerald-600
                 text-white text-[11px] font-medium shadow-lg
                 tabular-nums max-w-[55%] flex items-start gap-1.5 pl-3 pr-1 py-2">
@@ -7031,7 +6628,7 @@ onUnmounted(() => {
     <!-- Stifinner-alert (grønn, X-knapp avslutter — samme mønster som måling).
          To faser: velg startpunkt → ruter funnet. Egen rute-liste (tappbar,
          viser lengde + estimert gangtid). -->
-    <div v-if="sti.active.value && !curveball.active.value"
+    <div v-if="sti.active.value"
          class="absolute top-16 left-3 z-20 rounded-md bg-emerald-600
                 text-white text-[11px] font-medium shadow-lg
                 max-w-[70%] flex items-start gap-1.5 pl-3 pr-1 py-2">
@@ -7129,7 +6726,7 @@ onUnmounted(() => {
 
     <!-- Nærhetsvarsel-alert (blå, X-knapp avbryter). Stables under måle-/sti-
          banneret hvis et av dem er aktivt (begge ligger på top-16 left-3). -->
-    <div v-if="proximity.active.value && !curveball.active.value"
+    <div v-if="proximity.active.value"
          class="absolute left-3 z-20 rounded-md bg-sky-600
                 text-white text-[11px] font-medium shadow-lg
                 tabular-nums max-w-[60%] flex items-start gap-1.5 pl-3 pr-1 py-2"
@@ -7229,7 +6826,7 @@ onUnmounted(() => {
     <!-- Detalj-feil-banner: bakgrunns-byggingen (stier/veier fra Overpass)
          feilet, så kartet viser bare terreng. Lesbart, bryter på flere linjer,
          med «Prøv på nytt»-knapp som bygger kartet på nytt. -->
-    <div v-if="detailsFailed && !loading && !curveball.active.value"
+    <div v-if="detailsFailed && !loading"
          class="absolute bottom-32 left-3 right-20 z-20 max-w-[420px]
                 rounded-lg backdrop-blur bg-amber-600/95 border border-amber-300/40
                 text-white text-[12px] shadow-lg p-3">
@@ -7278,9 +6875,9 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <!-- Skala + ekvidistanse + ISOM-info (skjult i CurveBall-modus og under
-         aktivt søk så den ikke ligger under treff-listen). -->
-    <div v-if="!loading && !curveball.active.value && !searchOpen"
+    <!-- Skala + ekvidistanse + ISOM-info (skjult under aktivt søk så den
+         ikke ligger under treff-listen). -->
+    <div v-if="!loading && !searchOpen"
          class="absolute bottom-3 left-3 z-20 pointer-events-none">
       <div class="px-3 py-2 rounded-lg bg-zinc-950 text-white text-[11px]
                   font-medium space-y-1.5 shadow-lg">
@@ -7303,8 +6900,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Attribusjon (skjult i CurveBall-modus og under aktivt søk) -->
-    <div v-if="!loading && !curveball.active.value && !searchOpen"
+    <!-- Attribusjon (skjult under aktivt søk) -->
+    <div v-if="!loading && !searchOpen"
          class="absolute bottom-3 right-3 z-20 px-2 py-1 rounded-md bg-zinc-950
                 text-white/85 text-[9px] leading-tight pointer-events-none shadow-lg max-w-[180px]">
       © OpenStreetMap-bidragsytere<br>
@@ -7561,24 +7158,6 @@ onUnmounted(() => {
                               : 'bg-white/5 border-white/10 text-white/65'">
                 {{ t.label }}
               </button>
-            </div>
-
-            <!-- Curve Invaders-knapp er en easter egg som dukker opp først
-                 når brukeren har valgt Curves-temaet. -->
-            <button v-if="currentTheme === 'curves'"
-                    @click="startCurveBall"
-                    :disabled="cbDemFetching"
-                    class="w-full mb-2 px-3 py-2.5 rounded-lg bg-gradient-to-r from-fuchsia-500/20 to-cyan-500/20
-                           border border-fuchsia-400/40 text-white text-[12px]
-                           active:scale-[0.98] flex items-center justify-center gap-2
-                           disabled:opacity-60">
-              <span v-if="cbDemFetching">⏳ {{ t('mapview.gameLoading') }}</span>
-              <span v-else>{{ t('mapview.gameButton', { emoji: t('game.emoji'), gameName: t('game.name') }) }}</span>
-            </button>
-            <div v-if="cbDemError"
-                 class="w-full mb-2 px-3 py-2 rounded-lg bg-red-900/30 border border-red-500/40
-                        text-red-200 text-[11px] text-center">
-              {{ cbDemError }}
             </div>
 
             <!-- Font-par for kart-navn (Stedsnavn-typografi). Land = sans
@@ -8309,19 +7888,6 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
-
-    <!-- CurveBall-HUD: 8-bit pixel-overlay (Pac-Man-stil), kun aktivt i spillmodus -->
-    <CurveBallHUD :flipp="curveball"
-                  :tournament-next="tournamentNextMap"
-                  :share-info="cbShareInfo"
-                  :map-rect="mapRect"
-                  @restart="onCurveBallRestart"
-                  @continue="onCurveBallContinue"
-                  @exit="stopCurveBall"
-                  @tournament-next="onTournamentNext"/>
-
-    <!-- Pong-paddles på alle fire kart-kanter, draggable i screen-space -->
-    <CurveBallFlippers :flipp="curveball" :map-rect="mapRect"/>
 
     <!-- FAB-innstillingspanel (v12.0.18): long-press på Strek-/Relieff-/Sentrer-
          FAB-ene åpner ett delt bottom-sheet med panelet for den knappen.
@@ -9450,7 +9016,7 @@ onUnmounted(() => {
          trigger er gated på buildingOnTheFly, så gestene lager ikke et
          konkurrerende bygg. z-[60] holder chippen over drawer/søk visuelt. -->
     <Transition name="chip-fade">
-      <div v-if="buildingOnTheFly && !curveball.active.value && !searchOpen"
+      <div v-if="buildingOnTheFly && !searchOpen"
            class="absolute top-16 left-1/2 -translate-x-1/2 z-[60] px-3 py-1.5 rounded-2xl
                   bg-zinc-950/90 text-white text-[12px] font-medium shadow-lg backdrop-blur
                   flex items-center gap-2 pointer-events-none border border-white/10 max-w-[85%]
