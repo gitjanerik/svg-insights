@@ -504,3 +504,91 @@ export function planRoutesThrough(rg, nodeIds, opts = {}) {
     nodeIds: r.nodeIds,
   }))
 }
+
+// Kostnads-multiplikator på utturens kanter mens hjemveien søkes: sterk nok til
+// at ruteren velger en annen sti tilbake (ekte sløyfe, ikke retrace), men et
+// straff — ikke forbud — så en blindvei fortsatt kan gå samme vei tilbake.
+const LOOP_OUTBOUND_PENALTY = 4
+
+/**
+ * Rundtur (sløyfe) fra `originId` innom `viaIds` og tilbake til `originId`.
+ * Utturen origin → via1 → … → viaN rutes som korteste vei (uten motorvei);
+ * hjemveien viaN → origin søkes på en graf der utturens kanter er straffet, så
+ * den velger en ANNEN sti tilbake — resultatet er en ekte runde, ikke tur/retur.
+ *
+ * Hvorfor ikke `planRoutes` for hjemveien: dens garanterte «kortest»-ledd bruker
+ * `lengthNoMw` (ustraffet) og ville retrace utturen. `kShortestRoutes` leser
+ * `cost`, så utturs-straffen slår inn og gir distinkte hjemveier.
+ *
+ * Blindvei / ingen distinkt hjemvei → retrace utturen som eneste alternativ
+ * (bedre å vise en tur/retur enn ingenting). Motorvei (501) ekskluderes fra
+ * alle ledd, som i `planRoutes`.
+ *
+ * @param {ReturnType<typeof buildRoutingGraph>} rg
+ * @param {string} originId  start = mål (sløyfens origo)
+ * @param {string[]} viaIds  ≥1 vendepunkt, i rekkefølge
+ * @param {{ k?: number, penalty?: number, minShare?: number, maxLengthRatio?: number }} opts
+ * @returns {Array<{coordinates:Array<[number,number]>, lengthM:number, costM:number, loop:true, shortest?:boolean}>}
+ *          sortert på lengthM stigende
+ */
+export function planLoop(rg, originId, viaIds, opts = {}) {
+  const { k = 3 } = opts
+  const { graph: g, route } = rg
+  if (!originId || !g.hasNode(originId)) return []
+  const vias = (viaIds || []).filter(id => id && g.hasNode(id))
+  if (!vias.length) return []
+
+  // Uttur: kjed korteste-vei-ledd origin → via1 → … → viaN (motorvei blokkert).
+  let outCoords = []
+  let outLen = 0
+  const outEdges = new Set()
+  let prev = originId
+  for (const v of vias) {
+    const leg = route(prev, v, 'lengthNoMw')
+    if (!leg) return []   // et vendepunkt er ikke naabart → ingen sløyfe
+    for (const e of routeEdgeSet(g, leg.nodeIds)) outEdges.add(e)
+    outCoords = outCoords.length ? outCoords.concat(leg.coordinates.slice(1)) : leg.coordinates.slice()
+    outLen += leg.lengthM
+    prev = v
+  }
+  const lastVia = vias[vias.length - 1]
+
+  // Straff utturens kanter, finn hjemvei-kandidater, gjenopprett alltid.
+  const saved = new Map()
+  let returns = []
+  try {
+    for (const e of outEdges) {
+      saved.set(e, g.getEdgeAttribute(e, 'cost'))
+      g.setEdgeAttribute(e, 'cost', g.getEdgeAttribute(e, 'cost') * LOOP_OUTBOUND_PENALTY)
+    }
+    returns = kShortestRoutes(rg, lastVia, originId, { k, ...opts })
+      .filter(r => !pathUsesCode(g, r.nodeIds, '501'))
+  } finally {
+    for (const [e, c] of saved) g.setEdgeAttribute(e, 'cost', c)
+  }
+
+  // Behold hjemveier som faktisk skiller seg fra utturen (ekte sløyfe). Straffen
+  // er kostnad, ikke forbud, så `kShortestRoutes` kan fortsatt returnere en
+  // retrace av utturen som «alternativ» — den deler nesten alle kantene med
+  // utturen og faller ut her.
+  let chosen = returns.filter(r => shareOf(routeEdgeSet(g, r.nodeIds), outEdges) < 0.5)
+
+  // Blindvei-fallback: ingen distinkt hjemvei → retrace utturen (tur/retur er
+  // bedre enn ingen rute). Foretrekk korteste kandidat; ellers ren korteste vei.
+  if (!chosen.length) {
+    const back = returns[0] ?? route(lastVia, originId, 'lengthNoMw')
+    if (back && !pathUsesCode(g, back.nodeIds, '501')) chosen = [back]
+  }
+  if (!chosen.length) return []
+
+  const loops = chosen.map(r => ({
+    coordinates: outCoords.concat(r.coordinates.slice(1)),
+    lengthM: outLen + r.lengthM,
+    costM: r.costM,
+    loop: true,
+    nodeIds: r.nodeIds,
+  }))
+  loops.sort((a, b) => a.lengthM - b.lengthM)
+  if (loops[0]) loops[0].shortest = true
+  return loops
+}

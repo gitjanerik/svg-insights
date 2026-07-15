@@ -193,3 +193,48 @@ describe('useStifinner – via-punkter', () => {
     expect(sti.mode.value).toBe('idle')
   })
 })
+
+// Lukket firkant: (0,0)→(1000,0)→(1000,1000)→(0,1000)→(0,0). To like veier
+// rundt gir en ekte sløyfe (ut én side, hjem den andre).
+function loopSvg() {
+  const d = 'M0,0L1000,0L1000,1000L0,1000L0,0'
+  const sti = fakeEl('g', { 'data-iso': '505' }, [fakeEl('path', { d })])
+  return fakeEl('svg', {}, [sti])
+}
+
+describe('useStifinner – rundtur (loop)', () => {
+  it('beginLoop setter origo = start = mål og går rett til vendepunkt-plukk', () => {
+    const sti = useStifinner()
+    sti.beginLoop({ svgX: 0, svgY: 0 })
+    expect(sti.isLoop.value).toBe(true)
+    expect(sti.mode.value).toBe('pickingVia')
+    expect(sti.start.value).toEqual({ svgX: 0, svgY: 0 })
+    expect(sti.destination.value).toEqual({ svgX: 0, svgY: 0 })
+    expect(sti.via.value).toEqual([])
+    expect(sti.directDistanceM.value).toBe(null) // origo == mål → ingen luftlinje
+  })
+
+  it('confirmVia (vendepunkt) beregner en sløyfe rundt firkanten', () => {
+    const sti = useStifinner()
+    sti.beginLoop({ svgX: 0, svgY: 0 })
+    sti.confirmVia({ x: 1000, y: 1000 }, loopSvg())
+    expect(sti.mode.value).toBe('showing')
+    expect(sti.error.value).toBe('')
+    expect(sti.routes.value.length).toBeGreaterThan(0)
+    const r = sti.routes.value[0]
+    expect(r.loop).toBe(true)
+    expect(r.lengthM).toBeCloseTo(4000, 0)        // full omkrets: ut én side, hjem den andre
+    expect(r.coordinates[0]).toEqual([0, 0])       // start i origo
+    expect(r.coordinates.at(-1)).toEqual([0, 0])   // og tilbake til origo
+  })
+
+  it('cancel nullstiller loop-modus', () => {
+    const sti = useStifinner()
+    sti.beginLoop({ svgX: 0, svgY: 0 })
+    sti.confirmVia({ x: 1000, y: 1000 }, loopSvg())
+    sti.cancel()
+    expect(sti.isLoop.value).toBe(false)
+    expect(sti.mode.value).toBe('idle')
+    expect(sti.via.value).toEqual([])
+  })
+})
